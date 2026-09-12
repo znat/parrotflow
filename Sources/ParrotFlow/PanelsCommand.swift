@@ -227,6 +227,256 @@ enum PanelsCommand {
         words: sampleSentence, warning: sampleWarning
     )
 
+    /// The beats of the vocabulary tour, in the order the story tells them:
+    /// two dictations that are corrected by hand, and then two that are asked
+    /// about instead.
+    static let tutorialBeats: [(name: String, at: TimeInterval)] = [
+        ("listening", Tutorial.leadIn + 1.2),
+        ("transcribing", Tutorial.leadIn + Tutorial.held + 0.25),
+        ("landed 1", Tutorial.firstLands + 0.2),
+        ("placed 1", Tutorial.firstLands + Tutorial.Beat.placed.rawValue + 0.4),
+        ("inserted 1", Tutorial.firstLands + Tutorial.Beat.inserted.rawValue + 0.4),
+        ("offer 1", Tutorial.firstLands + Tutorial.Beat.offering.rawValue + 0.5),
+        ("clicked 1", Tutorial.firstLands + Tutorial.Beat.clicking.rawValue + 0.4),
+        ("saved 1", Tutorial.firstLands + Tutorial.Beat.saved.rawValue + 0.4),
+        ("landed 2", Tutorial.secondLands + 0.2),
+        ("inserted 2", Tutorial.secondLands + Tutorial.Beat.inserted.rawValue + 0.4),
+        ("offer 2", Tutorial.secondLands + Tutorial.Beat.offering.rawValue + 0.5),
+        ("saved 2", Tutorial.secondLands + Tutorial.Beat.saved.rawValue + 0.4),
+        ("written 1", Tutorial.thirdLands + 0.25),
+        ("listening 2", Tutorial.fourthAt + Tutorial.leadIn + 0.5),
+        ("transcribing 2",
+         Tutorial.fourthAt + Tutorial.dictated(4) - Tutorial.settling + 0.25),
+        ("written 2", Tutorial.fourthLands + Tutorial.sheenDelay + 0.25),
+    ]
+
+    /// The beats of the slack tour. *clicking* is taken while the chip is lit,
+    /// because which of the two the pointer takes is the lesson.
+    static let slackBeats: [(name: String, at: TimeInterval)] = [
+        ("listening", Tutorial.leadIn + 0.6),
+        ("transcribing", Tutorial.leadIn + Tutorial.held + 0.25),
+        ("landed", TutorialSlack.landsAt + 0.2),
+        (
+            "link callout",
+            TutorialSlack.landsAt + TutorialSlack.Beat.captioned.rawValue + 0.8
+        ),
+        ("tab", TutorialSlack.landsAt + 0.2),
+        (
+            "key shimmer",
+            TutorialSlack.landsAt + TutorialSlack.Beat.shimmering.rawValue + 0.3
+        ),
+        ("panel", TutorialSlack.landsAt + TutorialSlack.Beat.opening.rawValue + 0.4),
+        ("clicked", TutorialSlack.landsAt + TutorialSlack.Beat.clicking.rawValue + 0.4),
+        ("handled", TutorialSlack.landsAt + TutorialSlack.Beat.handled.rawValue + 0.3),
+        ("sent", TutorialSlack.landsAt + TutorialSlack.Beat.sending.rawValue + 0.2),
+        ("posted", TutorialSlack.landsAt + TutorialSlack.Beat.posted.rawValue + 0.4),
+    ]
+
+    /// The beats of the Hackable output screen: each card arriving, and the
+    /// panel on the last one.
+    static let hackBeats: [(name: String, at: TimeInterval)] = [
+        ("replacements", TutorialHack.arrives(.replacements) + 0.5),
+        (
+            "its mark",
+            TutorialHack.arrives(.replacements) + TutorialHack.after + 0.45
+        ),
+        ("scripts", TutorialHack.arrives(.scripts) + 0.5),
+        ("panel", TutorialHack.arrives(.scripts) + TutorialHack.step + 0.3),
+        ("prompts", TutorialHack.arrives(.prompts) + 0.5),
+        (
+            "its mark",
+            TutorialHack.arrives(.prompts) + TutorialHack.after + 0.45
+        ),
+        ("coding agent", TutorialHack.arrives(.agent) + 0.6),
+        (
+            "its answer",
+            TutorialHack.arrives(.agent) + TutorialHack.answer
+                + TutorialHack.answerFade + 0.2
+        ),
+    ]
+
+    /// The downloads screen, at the two moments that differ: the bar in the
+    /// middle of it, and the bar gone up to the corner.
+    static let downloadBeats: [(name: String, at: TimeInterval)] = [
+        ("downloading", 0.8),
+        ("lifted", TutorialDownloadsPane.lifts + TutorialDownloadsPane.lifting + 0.2),
+    ]
+
+    /// The last screen is one still life: there is no clock in it.
+    static let readyBeats: [(name: String, at: TimeInterval)] = [("ready", 0)]
+
+    static func beats(of screen: TourScreen) -> [(name: String, at: TimeInterval)] {
+        switch screen {
+        case .downloads: return downloadBeats
+        case .names: return tutorialBeats
+        case .slack: return slackBeats
+        case .hack: return hackBeats
+        case .ready: return readyBeats
+        }
+    }
+
+    /// Which beat of a screen the walk sheet draws: the one it has the most to
+    /// say on, and never one with the pill up — `cacheDisplay` hands a blur
+    /// back in a black box. Every screen's last beat, except the opening's,
+    /// whose last beat is the bar already gone to the corner.
+    private static func walkBeat(_ screen: TourScreen) -> TimeInterval {
+        switch screen {
+        case .downloads: return downloadBeats.first?.at ?? 0
+        default: return beats(of: screen).last?.at ?? 0
+        }
+    }
+
+    /// One screen of the tour, inside the frame the setup window puts round it.
+    private static func walkFrame(_ screen: TourScreen) -> AnyView {
+        // On the walk's own clock, not the screen's, so each frame carries the
+        // foot the window would draw on it: no Back on the first screen.
+        let before = TourWalk.screens
+            .prefix(while: { $0 != screen })
+            .reduce(0) { $0 + $1.length }
+        // Through the setup window's own view, and not the tour on its own:
+        // this sheet is for the frame the window puts around it — the width,
+        // the height it keeps for every screen, and the bar fed by a real
+        // registry.
+        let downloads = sampleDownloads(speech: .downloading(percent: 40))
+        return AnyView(
+            PermissionsView()
+                .environmentObject(
+                    PermissionsModel.showingTour(
+                        downloads, at: before + walkBeat(screen)
+                    )
+                )
+                .environmentObject(downloads)
+        )
+    }
+
+    /// `--tutorial-sheet <out.png> [slack]` — one screen of the tour, one frame
+    /// per beat, stacked.
+    ///
+    /// The tour is a moving thing and this is the only way to look at one beat
+    /// of it without waiting twenty seconds for the loop to come round. It is
+    /// the same argument as `--panel-sheet`, for the one surface whose states
+    /// are a sequence rather than a set.
+    ///
+    /// `walk` is the other question: every screen as the setup window frames
+    /// it, with the foot on. It is drawn the other way — see below — so the
+    /// buttons are the real ones.
+    static func tutorialSheet(to path: String, stage: String) -> Int32 {
+        let walk = stage == "walk"
+        guard walk || TourScreen(rawValue: stage) != nil else { return 2 }
+        let screen = TourScreen(rawValue: stage) ?? .names
+        // No foot on a screen's own beats: `ImageRenderer` cannot draw an
+        // AppKit-backed button and puts a yellow placeholder where one is,
+        // which would be sixteen of them down the sheet. The buttons do not
+        // change beat to beat, and `walk` is where they are looked at.
+        let beats = walk ? [] : beats(of: screen)
+        let views: [AnyView] = walk
+            ? TourWalk.screens.map(walkFrame)
+            : beats.map { beat in
+                switch screen {
+                case .slack:
+                    return AnyView(
+                        TutorialSlackPane(
+                            run: TutorialSlackRun(beat.at), showsFoot: false,
+                            progress: 0.42
+                        )
+                    )
+                case .hack:
+                    return AnyView(
+                        TutorialHackPane(
+                            elapsed: beat.at, showsFoot: false, progress: 0.42
+                        )
+                    )
+                case .ready:
+                    return AnyView(TutorialReadyPane(showsFoot: false))
+                case .downloads:
+                    return AnyView(
+                        TutorialDownloadsPane(
+                            elapsed: beat.at, progress: 0.42, showsFoot: false
+                        )
+                    )
+                case .names:
+                    return AnyView(
+                        TutorialPane(
+                            run: TutorialRun(beat.at), showsFoot: false, progress: 0.42
+                        )
+                    )
+                }
+            }
+        let natural = views.map { NSHostingView(rootView: $0).fittingSize }
+
+        let margin: CGFloat = 24
+        let gap: CGFloat = 16
+        let width = (natural.map(\.width).max() ?? 0) + margin * 2
+        let height = natural.reduce(0) { $0 + $1.height }
+            + gap * CGFloat(max(0, natural.count - 1)) + margin * 2
+
+        guard let canvas = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(width * 2), pixelsHigh: Int(height * 2),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ) else { return 1 }
+        canvas.size = NSSize(width: width, height: height)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: canvas)
+
+        // On the dark column, because that is the window the tour plays in.
+        NSColor(white: 0.13, alpha: 1).setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+
+        var top = height - margin
+        for (index, view) in views.enumerated() {
+            let size = natural[index]
+            let box = NSRect(
+                x: margin, y: top - size.height, width: size.width, height: size.height
+            )
+            if walk {
+                // The other way round from the beats: `cacheDisplay` is the
+                // only one that draws a real button, and the foot is what this
+                // sheet is for. The cost is the pill, which comes back in a
+                // black box — its bloom is a blur, and a blur makes SwiftUI
+                // rasterise the layer. See `sheet`.
+                let hosting = NSHostingView(rootView: view)
+                hosting.appearance = NSAppearance(named: .darkAqua)
+                hosting.frame = NSRect(origin: .zero, size: size)
+                hosting.layoutSubtreeIfNeeded()
+                if let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) {
+                    hosting.cacheDisplay(in: hosting.bounds, to: rep)
+                    rep.draw(in: box)
+                }
+            } else {
+                // `ImageRenderer` and not `cacheDisplay`: the pill's bloom is a
+                // blur, a blur makes SwiftUI rasterise the layer, and
+                // `cacheDisplay` hands that back opaque. See `sheet`.
+                let rendered = MainActor.assumeIsolated { () -> NSImage? in
+                    let renderer = ImageRenderer(
+                        content: view
+                            .environment(\.colorScheme, .dark)
+                            .frame(width: size.width, height: size.height)
+                    )
+                    renderer.scale = 2
+                    renderer.isOpaque = false
+                    return renderer.nsImage
+                }
+                rendered?.draw(in: box)
+            }
+            top -= size.height + gap
+        }
+
+        NSGraphicsContext.restoreGraphicsState()
+
+        guard let png = canvas.representation(using: .png, properties: [:]) else { return 1 }
+        do {
+            try png.write(to: URL(fileURLWithPath: path))
+            print("wrote \(path)")
+            return 0
+        } catch {
+            print("✗ \(error.localizedDescription)")
+            return 1
+        }
+    }
+
     /// Draws every surface into one PNG, light beside dark.
     ///
     /// The panels are the one part of the app with no test: they are looked at,
@@ -1103,11 +1353,31 @@ enum PanelsCommand {
                     DispatchQueue.main.asyncAfter(deadline: .now() + turn + at, execute: step)
                 }
             }
+        // The tour the setup window plays, on its own clock. `tutorial` plays
+        // every screen of it one after the other; a name plays one on its own,
+        // which is what you want while editing one.
+        case "tutorial", "names", "slack", "hack", "downloads", "ready":
+            let screens: [TourScreen] = surface == "tutorial"
+                ? TourScreen.allCases
+                : TourScreen.allCases.filter { $0.rawValue == surface }
+            setupWindow = window(
+                for: AnyView(TourPreview(screens: screens)),
+                size: NSSize(
+                    width: PermissionMetrics.setupWidth,
+                    // The tallest beat of every screen being played, so no
+                    // frame of the loop resizes the window under the pointer.
+                    // One screen by itself gets its own height and not the
+                    // tallest of them all: a window that keeps room for a
+                    // message this screen never sends ends in a gap.
+                    height: TourWalk.height(of: screens)
+                )
+            )
         default:
             print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
                 + "|confidence|vocabulary|punctuation|rule|dictation|preview|microphone"
                 + "|keyboard|pill|learn|learn-long|selector|selector-long|selector-two"
-                + "|update|setup|launch|sequence> [seconds]")
+                + "|update|models|setup|launch|sequence|tutorial|names|slack|hack"
+                + "|downloads|ready> [seconds]")
             return 2
         }
 
@@ -1119,5 +1389,34 @@ enum PanelsCommand {
         }
         app.run()
         return 0
+    }
+}
+
+/// The tour, on its own clock, for `--panels`.
+///
+/// Next and Back move the clock, the way they do in the setup window. There is
+/// nothing here to hand the walk on to, so the last screen's Next starts the
+/// tour again rather than leaving it.
+private struct TourPreview: View {
+    let screens: [TourScreen]
+
+    @State private var started = Date()
+    /// What Next and Back have moved the clock by.
+    @State private var skew: TimeInterval = 0
+
+    var body: some View {
+        TimelineView(.periodic(from: started, by: 1.0 / 60)) { context in
+            let ran = context.date.timeIntervalSince(started)
+            SetupTour(
+                elapsed: ran + skew,
+                // Nothing here downloads anything, so the bar is the clock: a
+                // slow climb to the cap, which from the outside is what a real
+                // one looks like. The app passes the downloader's own number.
+                progress: min(0.9, 0.05 + (ran + skew) / 180),
+                screens: screens,
+                onFinish: { skew = -ran },
+                onSeek: { skew = $0 - ran }
+            )
+        }
     }
 }

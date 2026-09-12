@@ -82,10 +82,14 @@ enum PermissionStep: CaseIterable {
 }
 
 /// A screen in the walk. The permissions are asked for one at a time, then the
-/// models this launch is fetching are listed, then the walk ends on eSpeak NG.
+/// models this launch is fetching are listed, then the tour plays while they
+/// come down, then the walk ends on eSpeak NG.
 enum SetupStep: Equatable {
     case permission(PermissionStep)
     case models
+    /// The demonstration of what the app does, played while the models
+    /// download. See `TourWalk`.
+    case tour
     case setup
 }
 
@@ -167,13 +171,54 @@ final class PermissionsModel: ObservableObject {
         // Only while installing, and only when there is something to list. It
         // says what is about to be downloaded, which is news once. Opening the
         // window from the menu bar a week later, it is a screen to click past.
-        if context == .installing, !downloads.rows.isEmpty { steps.append(.models) }
+        //
+        // The tour goes with it, on the same condition and for the same reason:
+        // it is what the wait for those downloads is spent on, and there is no
+        // wait on a revisit.
+        if context == .installing, !downloads.rows.isEmpty {
+            steps.append(.models)
+            steps.append(.tour)
+        }
         steps.append(.setup)
         index = 0
         asked = false
+        tourStartedAt = nil
+        tourSkew = 0
     }
 
     func markAsked() { asked = true }
+
+    // MARK: - The tour's clock
+
+    /// When the tour went up, and what Next and Back have moved it by.
+    ///
+    /// Nil until it is on screen: the time somebody spent granting permissions
+    /// is not time the tour has been playing. Held here rather than in the view
+    /// because the poll that ends the tour has to be able to read it.
+    @Published private(set) var tourStartedAt: Date?
+    @Published private(set) var tourSkew: TimeInterval = 0
+    /// One moment of the tour and no clock at all, for `--tutorial-sheet walk`.
+    /// A start put in the past drifts by however long the sheet spends
+    /// measuring and drawing, which is enough to land on the next screen.
+    @Published private(set) var tourFrozenAt: TimeInterval?
+
+    func startTour() {
+        guard tourStartedAt == nil else { return }
+        tourStartedAt = Date()
+    }
+
+    func tourElapsed(at moment: Date = Date()) -> TimeInterval {
+        if let tourFrozenAt { return tourFrozenAt }
+        guard let tourStartedAt else { return 0 }
+        return max(0, moment.timeIntervalSince(tourStartedAt) + tourSkew)
+    }
+
+    /// Where Next and Back put the clock. The screens are a function of it, so
+    /// skipping is moving it.
+    func seekTour(to elapsed: TimeInterval) {
+        guard let tourStartedAt else { return }
+        tourSkew = elapsed - Date().timeIntervalSince(tourStartedAt)
+    }
 
     /// Move on one screen: Next on the models screen, and the skip a revisit
     /// offers on a permission screen. It cannot walk past the last one — that
@@ -209,7 +254,21 @@ final class PermissionsModel: ObservableObject {
 
     /// Every screen of a first run, which is what the sheet draws against.
     private static var walk: [SetupStep] {
-        PermissionStep.allCases.map(SetupStep.permission) + [.models, .setup]
+        PermissionStep.allCases.map(SetupStep.permission) + [.models, .tour, .setup]
+    }
+
+    /// Parked on the tour, `at` seconds into it, for `--tutorial-sheet walk`.
+    static func showingTour(
+        _ downloads: ModelDownloads, at: TimeInterval
+    ) -> PermissionsModel {
+        let model = PermissionsModel(downloads: downloads)
+        model.micStatus = .granted
+        model.axStatus = .granted
+        model.steps = walk
+        model.index = walk.firstIndex(of: .tour) ?? 0
+        model.tourStartedAt = Date()
+        model.tourFrozenAt = at
+        return model
     }
 
     /// Parked on the setup screen, for `--panel-sheet` and `--panels setup`.
@@ -310,7 +369,7 @@ final class PermissionsWindowController {
         window?.styleMask = context == .installing ? [.titled] : [.titled, .closable]
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
-        resizeToContent()
+        stepSettled()
         window?.center()
         centred = true
         fronting = nil
@@ -326,6 +385,7 @@ final class PermissionsWindowController {
         model.refresh()
         pollEspeak()
         model.advancePastGranted()
+        leaveTourIfDone()
         guard model.current != nil else { fronting = nil; return }
 
         // Once this step has been in front at all, it is done — regardless
@@ -356,6 +416,31 @@ final class PermissionsWindowController {
         }
     }
 
+    /// The tour loops for as long as the models take, so something has to end
+    /// it.
+    ///
+    /// Two things do. A failure nobody can wait out ends it at once: the last
+    /// screen is the only one that names the row and offers the retry. And a
+    /// pass that has played through with nothing left to wait for ends it on
+    /// the next screen's first second, so no demonstration is cut in half.
+    private func leaveTourIfDone() {
+        guard model.current == .tour else { return }
+        if model.downloads.blockingFailure != nil { advanceItself(); return }
+        let at = model.tourElapsed()
+        guard at >= TourWalk.total(of: TourWalk.screens) else { return }
+        guard model.downloads.speechIsIn else { return }
+        guard TourWalk.at(at).clock < 1.2 else { return }
+        advanceItself()
+    }
+
+    /// The walk moving on by itself, which is not a step to bring the window
+    /// forward for: nobody pressed anything, and it happens a minute or two
+    /// after they last looked at it. See `succeededIndex`.
+    private func advanceItself() {
+        model.advance()
+        succeededIndex = model.index
+    }
+
     /// No "check again" button. The binary is looked for on the same tick that
     /// looks for a ticked checkbox, so an install in Terminal lands on its own.
     private func pollEspeak() {
@@ -384,6 +469,10 @@ final class PermissionsWindowController {
     private static let terminalGiveUpSeconds: TimeInterval = 300
 
     private func build() {
+        // Measured once, here. Read first from the body of the screen the tour
+        // arrives on, it would lay six panes out in the middle of an update.
+        _ = TourWalk.height(of: TourWalk.screens)
+
         let view = PermissionsView(
             onAsk: { [weak self] step in self?.ask(step) },
             onDecline: { [weak self] in self?.decline() },
@@ -413,7 +502,7 @@ final class PermissionsWindowController {
         // height has not changed.
         sizeWatch = Publishers.Merge(model.objectWillChange, model.downloads.objectWillChange)
             .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in self?.resizeToContent() }
+            .sink { [weak self] _ in self?.stepSettled() }
 
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
@@ -490,6 +579,21 @@ final class PermissionsWindowController {
     /// back afterwards, because `setContentSize` keeps the bottom-left corner
     /// and a window that grows upward moves its own title bar out from under
     /// the pointer.
+    /// The window takes the shape and the shade of whatever screen is on it.
+    private func stepSettled() {
+        // The tour is drawn in whites over dark glass, and it is the one screen
+        // in the walk that is. The others are drawn in whatever the Mac is set
+        // to.
+        //
+        // Only on a change. This runs on every download report, and every
+        // assignment makes the whole tree work out its appearance again.
+        let wanted: NSAppearance.Name? = model.current == .tour ? .darkAqua : nil
+        if window?.appearance?.name != wanted {
+            window?.appearance = wanted.map { NSAppearance(named: $0) } ?? nil
+        }
+        resizeToContent()
+    }
+
     private func resizeToContent() {
         guard let window, let content = window.contentViewController?.view else { return }
         let fitting = content.fittingSize
@@ -546,14 +650,17 @@ enum PermissionMetrics {
     static func width(for step: SetupStep) -> CGFloat {
         switch step {
         case .permission: return width
-        case .models, .setup: return setupWidth
+        // The tour is drawn at the same width, from its own `Pane.width`.
+        case .models, .tour, .setup: return setupWidth
         }
     }
 
-    /// The margin around the pane, on the same scale as what it holds.
+    /// The margin around the pane, on the same scale as what it holds. The tour
+    /// carries its own, because it is played on its own as well.
     static func padding(for step: SetupStep) -> CGFloat {
         switch step {
         case .permission: return 28
+        case .tour: return 0
         case .models, .setup: return SetupMetrics.at(28)
         }
     }
@@ -569,6 +676,9 @@ enum PermissionMetrics {
     static func height(for step: SetupStep) -> CGFloat? {
         switch step {
         case .permission: return height
+        // The tallest beat of any screen in it. A tour sized to its own frame
+        // would resize the window sixty times a second.
+        case .tour: return TourWalk.height(of: TourWalk.screens)
         case .models, .setup: return nil
         }
     }
@@ -591,6 +701,18 @@ struct PermissionsView: View {
     }
 
     var body: some View {
+        // The tour draws its own header, its own margin and its own width — it
+        // is played on its own as well, by `--panels tutorial` — so it is not
+        // put inside this screen's chrome.
+        if model.current == .tour {
+            SetupTourPane()
+                .frame(height: PermissionMetrics.height(for: .tour), alignment: .top)
+        } else {
+            walk
+        }
+    }
+
+    private var walk: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: header(8)) {
                 PlumageMark(size: header(13))
@@ -619,6 +741,9 @@ struct PermissionsView: View {
                 )
             case .models:
                 ModelsPane(onNext: { model.advance() })
+            case .tour:
+                // Drawn above, outside this chrome.
+                EmptyView()
             case .setup:
                 SetupPane(
                     micStatus: model.micStatus, axStatus: model.axStatus,

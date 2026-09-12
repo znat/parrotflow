@@ -134,9 +134,17 @@ grep "launched —" ~/Library/Logs/ParrotFlow.log | tail -1
 Want `accessibility=Granted`. `NotGranted` means the switch is off or they
 ticked a different app.
 
-**The last two screens.** After the permissions the setup window lists the
-models it is fetching — about 1.5 GB, started at launch — with what each one
-costs. *Download* moves on; the fetches started at launch and carry on behind it.
+**After the permissions.** The setup window lists the models it is fetching —
+about 1.5 GB, started at launch — with what each one costs. *Download* moves on;
+the fetches started at launch and carry on behind it.
+
+**The tour.** Then the window plays a demonstration of what the app does, for
+as long as the models take: correcting a name and having it remembered, a
+sentence in Slack, and the three kinds of transform. A thin bar in the corner
+says the download is moving, without a figure on it. *Next* skips to the next
+screen and *Back* goes back one. It ends by itself when the models a dictation
+waits on are in, and at once if one of them fails — that is the last screen's
+job, and waiting cannot fix it.
 
 The last screen is eSpeak NG, the one thing the app cannot fetch for you. It
 helps ParrotFlow understand your own terms — your jargon, your teammates'

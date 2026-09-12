@@ -850,18 +850,79 @@ real character and neither end of the replacement is whitespace.
 ## Looking at the floating surfaces
 
 ```sh
-$PF --panels preview 20   # put one surface on screen and leave it there
-$PF --panels sequence 40  # run a whole dictation's worth of states, on a loop
-$PF --panel-sheet s.png   # draw every surface into one PNG, light beside dark
+$PF --panels preview 20       # put one surface on screen and leave it there
+$PF --panels sequence 40      # run a whole dictation's worth of states, on a loop
+$PF --panels tutorial 60      # every tour screen, on a loop, in one window
+$PF --panels names 40         # just the vocabulary screen
+$PF --panels slack 30         # just the Slack screen
+$PF --panels hack 20          # just the transforms screen
+$PF --panel-sheet s.png       # draw every surface into one PNG, light beside dark
+$PF --tutorial-sheet t.png    # the tour's beats, one per row
+$PF --tutorial-sheet n.png names     # one screen's beats
+$PF --tutorial-sheet s.png slack
+$PF --tutorial-sheet h.png hack
+$PF --tutorial-sheet w.png walk      # every screen as the setup window frames it
 ```
 
 `--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`, `offer`,
 `confidence`, `learn`, `learn-long`, `selector`, `selector-long`,
 `selector-two`, `vocabulary`, `punctuation`, `rule`, `dictation`, `preview`,
-`microphone`, `keyboard`, `update`, `models`, `setup`, `launch` or
-`sequence`.
+`microphone`, `keyboard`, `update`, `models`, `setup`, `launch`, `sequence`,
+`tutorial`, `names`, `slack`, `hack`, `downloads` or `ready`.
 `--panel-sheet` draws all of
 them at once, which is where drift between them shows up.
+
+The tour is what the setup window really plays while the models download. It
+comes after the permission screens and the list of models, it loops for as long
+as the download takes, and the walk moves on to its last screen when there is
+nothing left to wait for. *Next* skips to the screen after the one showing and
+*Back* to the one before it; `downloads` is first and has no *Back*. The bar in
+the corner is the downloader's own figure, drawn and never read out.
+
+There are three demonstrations, and a screen that opens them.
+
+The opening is `downloads`: the words "Downloading models" and a bar, in the
+middle of the screen, which then lift into the corner and stay there for every
+screen after it.
+
+The first demonstration is **Two names, one sound**, told in four dictations. Two of them are
+corrected by hand and the app offers to keep each correction: `My teammate Mick
+is a software engineer.` becomes `Mik`, and then the field is emptied and `my
+friend Mick plays the guitar.` comes back as `my friend Mik plays the guitar.` —
+the rule the first correction saved, written over the second name — so the person
+puts the letter back and the app keeps that too. Two names are one sound after
+that, and the last two dictations are dictated into a field that already holds
+the first of them and need nothing done to them: `Mik is writing code.` is said,
+and then `Mick is a musician.` goes in at the end of the same line, where the
+caret was left.
+
+The second is **Links, mentions, anything**: a sentence in the Slack composer, a PR number
+that arrives as a link, the options panel on the hotkey, `add slack handle`
+turning a name into a mention, and the message going out with its preview.
+
+The third is **Hackable output**: the three kinds of transform — a `replace:`
+table, a `prompt:` and a `command:` — each shown as the config file writes it and
+as it changes a dictation, ending on the panel those transforms put on the pill,
+with the key each was given drawn on its chip.
+
+The first two are dictated into the same composer — one surface, drawn once —
+with their own line in it. `tutorial` plays every screen on one clock, cutting
+from each into the next; `names`, `slack` and `hack` play one on its own, which
+is what you want while editing one. They were cross-faded for a while and are
+not any more: an `opacity` over a whole screen is one SwiftUI draws into a layer
+of its own, and the window stopped drawing new frames from the hand-off onwards.
+Each screen is a function of how long it has been running rather than a list of
+timers, so they loop for as long as you give them without drifting, and a
+dropped frame cannot leave one a beat behind. They need the app bundle rather
+than the bare binary — the meter is drawn from `ParrotSolid`, and without the
+resources it falls back to a capsule.
+
+`--tutorial-sheet <png> <screen>` stacks one frame per beat, which is the only
+way to look at a beat without waiting for the loop to come round. The foot is
+left off those frames: `ImageRenderer` cannot draw a button. `--tutorial-sheet
+<png> walk` answers the other question — every screen inside the setup window's
+own frame, with the buttons on. It is drawn the other way round, so the pill
+comes back in a black box on the beats that have one.
 
 `confidence` is the same offer with `feedback.confidence` on: the sentence
 above the chips, each word coloured by how sure the decoder was of it, and the

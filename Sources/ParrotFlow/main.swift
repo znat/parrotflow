@@ -843,9 +843,24 @@ if let index = arguments.firstIndex(of: "--panel-sheet") {
     exit(PanelsCommand.sheet(to: arguments[index + 1]))
 }
 
+if let index = arguments.firstIndex(of: "--tutorial-sheet") {
+    let usage = "usage: ParrotFlow --tutorial-sheet <out.png>"
+        + " [names|slack|hack|downloads|ready|walk]"
+    guard arguments.indices.contains(index + 1) else {
+        print(usage)
+        exit(2)
+    }
+    let stage = arguments.indices.contains(index + 2) ? arguments[index + 2] : "names"
+    guard stage == "walk" || TourScreen(rawValue: stage) != nil else {
+        print(usage)
+        exit(2)
+    }
+    exit(PanelsCommand.tutorialSheet(to: arguments[index + 1], stage: stage))
+}
+
 if let index = arguments.firstIndex(of: "--panels") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|confidence|learn|learn-long|selector|selector-long|selector-two|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|update|models|setup|launch|sequence> [seconds]")
+        print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|confidence|learn|learn-long|selector|selector-long|selector-two|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|update|models|setup|launch|sequence|tutorial|names|slack|hack|downloads|ready> [seconds]")
         exit(2)
     }
     let seconds = arguments.indices.contains(index + 2) ? Double(arguments[index + 2]) : nil
