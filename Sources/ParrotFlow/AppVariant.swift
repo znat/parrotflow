@@ -10,9 +10,8 @@ import Foundation
 /// identifier means work in progress cannot reach into a working install.
 ///
 /// Everything that would otherwise collide is derived from here: the config
-/// file, the log, where recordings land, and the hotkey. The hotkey matters most
-/// — two builds listening to the same key both record the same sentence and both
-/// paste it.
+/// file, the log, and the hotkey. The hotkey matters most — two builds
+/// listening to the same key both record the same sentence and both paste it.
 ///
 /// The variant is read from the bundle identifier rather than compiled in, so
 /// one binary serves both and `scripts/build-app.sh` decides by writing a
@@ -49,10 +48,6 @@ enum AppVariant {
             ?? FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Application Support", isDirectory: true)
         return base.appendingPathComponent(displayName, isDirectory: true)
-    }
-
-    static var defaultOutputDir: String {
-        isDev ? "~/Recordings/ParrotFlow Dev" : "~/Recordings/ParrotFlow"
     }
 
     /// Right ⌥ for dev, Right ⌘ for release, so both builds can run at once

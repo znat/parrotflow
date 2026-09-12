@@ -196,9 +196,9 @@ transforms:
 - Two seconds is right for a script and wrong for one that asks a model. A
   command ending in `--model something` wants `timeout_seconds: 12` beside it.
 
-`examples/transforms/code_identifiers/code_identifiers.py` is the shipped one, and the best template: rules
-first, model behind a flag, a table of language conventions that is edited
-rather than prompted.
+`examples/transforms/disfluency/disfluency.py` is the shipped one, and the best
+template: rules first, the one rule that needs a parse behind a check for it,
+and a case file beside the script.
 
 **Remember that this makes `config.yaml` execute code.** Nothing else in that
 file does. `--check-config` names every `command:` transform out loud, every
@@ -215,9 +215,9 @@ variables. See [pipelines.md](pipelines.md#variables) for what a condition can
 then do with them.
 
 ```yaml
-  - name: code_identifiers
-    description: spoken names as identifiers
-    command: code_identifiers.py
+  - name: disfluency
+    description: delete hesitations, repeats and false starts
+    command: disfluency.py
     returns: json
 ```
 
@@ -357,12 +357,12 @@ and you stop running it.
 - **Include negatives — a lot of them.** Roughly one in five, and closer to
   half for anything that runs on every transcript rather than on demand. Models
   are strongly biased toward producing output, and a confident wrong answer
-  beats a refusal on any set without negatives. `examples/transforms/code_identifiers/cases.yaml`
-  is 32 of 75 cases that must come back untouched, and that half is the one that
+  beats a refusal on any set without negatives. `examples/transforms/disfluency/cases.yaml`
+  carries the cases that must come back untouched, and that half is the one that
   catches regressions.
-- **Keep the residue in, failing.** `examples/transforms/dotted/cases.txt` scores 73/73 and
-  carries three more it cannot do. A set that reaches 100% by dropping what it
-  cannot do is worse than a number.
+- **Keep the residue in, failing.** A set that reaches 100% by dropping what it
+  cannot do is worse than a number. Record the cases the rule cannot reach and
+  let them fail, so the score says what the feature actually covers.
 - **Write the contract at the top of the file**, in prose: what counts as a
   case for this feature and what is deliberately out of scope. It is the thing
   you will disagree with yourself about in a week.
@@ -383,7 +383,7 @@ to a built-in stage or to the router have nowhere else to be and stay in
 
 | Where | Sets |
 |---|---|
-| `examples/transforms/<name>/` | `code_identifiers` (78), `dotted` (84), `dates` (133, two languages), `numbers` (99, two languages), `punctuation` (57), `grammar` (17), `email` (26), `disfluency` (100) |
+| `examples/transforms/<name>/` | `dates` (133, two languages), `numbers` (99, two languages), `grammar` (17), `email` (26), `join`, `priorities`, `disfluency` (100) |
 | `tests/` | `spelling` (62), `french` (45), `routing` (45), `wake` (25), `split` (14), `generic`, `dates`, `inplace`, `pipeline`, `replacement`, `word-gate` (25) |
 
 Each has a runner in `scripts/`, or a `score.py` beside the set as `dates`

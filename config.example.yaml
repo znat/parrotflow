@@ -15,24 +15,11 @@ hotkey:
   # Any of: command, control, option, shift.
   modifiers: []
 
-  # push_to_talk records while held; toggle taps on/off. Bare modifiers need
-  # push_to_talk, or typing an accented character would start recording.
+  # push_to_talk records while held, toggle taps on/off. A bare modifier
+  # needs push_to_talk.
   mode: push_to_talk
 
-  # Keeps the mic open this long after release, so the last syllable is not
-  # cut. push_to_talk only; 0 turns it off.
-  release_tail_seconds: 0.3
-
-  # A bare modifier is still a real modifier: ⌘S saves, ⌥3 types # on a French
-  # layout. So it has to be held this long with nothing else pressed before it
-  # counts as dictation, and a key or click that arrives later drops the
-  # dictation it started. Bare modifiers only; 0 starts on the down edge.
-  press_delay_seconds: 0.18
-
 audio:
-  # Where recordings and trace.jsonl go.
-  output_dir: ~/Recordings/ParrotFlow
-
   # Which microphone to record through, best first. The first one that is
   # plugged in wins, whatever System Settings has the default set to, and
   # nothing else on the Mac is moved. Names come from `--microphones`; the
@@ -50,65 +37,55 @@ audio:
   # false to keep the 100ms. Needs speech_gate.
   second_opinion: true
 
-feedback:
-  sound: true     # a click when recording starts and stops
-  sound_volume: 0.3  # 0 to 1, on top of system volume. 1.0 is the alert level.
-  overlay: true   # the floating pill while you speak
-  # After the words land, the pill offers what to do for 6s, the last 2 of
-  # them fading. Click a chip to run it, or tap the hotkey for the panel.
-  correct_offer: true
-  # Colours each word by decoder confidence. For diagnosing your own
-  # dictation, not everyday use — off by default.
-  confidence: false
-  # Warns when a dictation may be wrong: pill turns amber, names the word.
-  # Both the sentence-mean and the worst-word confidence must trip — either
-  # alone is too noisy. hold_return delays a bare Return so a reflex press
-  # cannot confirm unread text. 0 on either setting turns it off.
-  low_confidence:
-    sentence: 0.80
-    word: 0.50
-    hold_return: 1.5
-
 logging:
-  # Line-by-line log at ~/Library/Logs/ParrotFlow.log. Leave it on.
-  text: true
-
-  # Saves each dictation's recording to audio.output_dir, for --transcribe,
-  # calibration, or hearing what the app heard. Off by default.
+  # Saves each dictation's recording to ~/.config/parrotflow/recordings, for
+  # --transcribe, calibration, or hearing what the app heard.
   audio: false
 
 transcription:
-  # paste     -> typed into the frontmost app (needs Accessibility)
-  # clipboard -> copied, you press Cmd-V
-  insert_mode: paste
-
-  # Say one of these and what follows is an instruction. Empty list turns it off.
-  activation_phrases: [hey parrot, by the way parrot]
-
-  # Terminals only — the input line is cleared and retyped, since it cannot
-  # be edited in place.
-  rewrite_line: true
-
   # Languages you dictate in, most spoken first. Supported: en, fr. One
   # entry turns off language detection.
   languages: [en, fr]
 
-  # What a transcript runs through, in order. Remove a line to skip that
-  # stage. One list for every language, and a step can carry a condition of
-  # its own. See docs/pipelines.md.
+  # What you meant, where the decoder wrote what it heard. A pause makes it
+  # write a period or a question mark mid-sentence and capitalise the next
+  # word; this reads each boundary and takes the mark out again. English only,
+  # and only where the model is already on disk.
+  #
+  # Not a pipeline step: it reads the decoder's own word timings, so anything
+  # that rewrote a word above it would break the alignment. It runs first.
+  sentence_repair:
+    enabled: true
+    # capitals: true         # read a capital with no mark in front as a boundary
+    # pause: 0.35            # seconds of silence a bare capital needs first
+    # marks: [".", ",", "?"] # what a boundary may be written with
+
+  # Matches vocabulary.yaml renderings and settles each match against the
+  # sentence it stands in. No model.
+  #
+  # Not a pipeline step either: it is handed spans measured on the transcript
+  # as the decoder wrote it, and any edit above it moves them. It runs second,
+  # after `sentence_repair` and before everything below.
+  vocabulary:
+    enabled: true
+    # sound_below: 0.85      # how close a run of words must sound to a term
+    # gate_sentence: true    # read the sentence before keeping a match
+    # asks: true             # ask before typing a name it could not settle
+    #
+    # The rest switch off one half of the pass so the other can be scored.
+    # See docs/pipelines.md before changing them.
+    # near_misses: true      # also match a rendering one edit away
+    # by_sound: true         # also match words that sound like a term
+    # gate: true             # the word lists and the slot's part of speech
+    # slot_gate: true        # the mmBERT slot — false downloads nothing
+    # portrait: true         # a term's own sentences and its counter-examples
+    # lowercase_refused: true
+
+  # What a transcript runs through, in order. Everything here rewrites text
+  # and may be moved. Remove a line to skip that stage. One list for every
+  # language, and a step can carry a condition of its own. See
+  # docs/pipelines.md.
   pipeline:
-    # What you meant, where the decoder wrote what it heard. A pause makes it
-    # write a period or a question mark mid-sentence and capitalise the next
-    # word; this reads each boundary and takes the mark out again. English
-    # only, and only where the model is already on disk. See docs/pipelines.md
-    # for `marks:`, `capitals:` and `pause:`.
-    - interpret
-    # Matches vocabulary.yaml renderings and settles each match against the
-    # sentence it stands in. No model. Above everything that edits the text.
-    #   near_misses: false   match exactly, never one edit away
-    #   by_sound: false      match spelling only, never how a word sounds
-    #   lowercase_refused: false   revert a refused glued span as heard
-    - vocabulary
     # Hesitation sounds, above the number stages and not below them: a filler
     # inside a number splits it, and "two uh two three" comes out "two uh 23".
     - transform: fillers
@@ -119,23 +96,9 @@ transcription:
     # numbers eats its words. French ships too, see docs/pipelines.md.
     - transform: dates_en
     - transform: numbers_en
-    - transform: punctuation             # "is that true question mark" -> is that true?
     # Repeats, false starts and empty markers. Below the number stages, or
     # "two two three" collapses to 23 before anything reads it as 223.
     - transform: disfluency
-
-    # "read user dot name" -> read user.name, in code-ish windows only.
-    - transform: dotted
-      app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
-    # `backticks` does the same for chat. Not enabled: its output is one
-    # line, and markup is only sent as rich text for block structure.
-    - transform: code_identifiers
-      app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
-      when: /\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\b/
-    # A bare `when:` reads what earlier stages published, e.g.
-    # `code_identifiers.count` or `<stage>.ran`/`.ok`/`.changed`/`.ms`:
-    #   - { transform: dotted, when: code_identifiers.count == 0 }
-    # Publishing a variable needs `returns: json` — see docs/authoring.md.
 
 # Every model this config can reach, under a name you pick. `api:` is the
 # protocol (ollama, openai, anthropic); other providers work through an
@@ -178,12 +141,7 @@ commands:
   # An instruction no capability covers. `false` refuses them.
   # catch_all: gpt
 
-# One call a day to GitHub's release API. -1 never asks, 0 offers a release
-# the day it ships, 7 waits a week.
-updates:
-  after_days: 0
-
-# Word lists, written once and named — `{{determiners}}` in a `replace:`, or
+# Word lists, written once and named — `{{fillers_en}}` in a `replace:`, or
 # `ctx["vars"]["lists"]` in a script. Quote every entry: `on`/`no`/`off` are
 # booleans in YAML 1.1.
 lists:
@@ -202,28 +160,6 @@ lists:
   # somebody.
   fillers_fr: ["euh", "heu", "hein"]
 
-  # A determiner before a spoken name means prose: "the dot com bubble".
-  determiners: ["le", "la", "les", "l", "un", "une", "des", "du", "de", "d", "ce", "cet", "cette", "ces", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "notre", "nos", "votre", "vos", "leur", "leurs", "au", "aux", "à", "quel", "quelle", "chaque", "autre", "même", "premier", "première", "deuxième", "dernier", "dernière", "seul", "seule", "bon", "bonne", "mauvais", "certain", "tel", "telle", "quelque", "the", "a", "an", "my", "your", "his", "her", "its", "our", "their", "this", "that", "these", "those", "each", "every", "another", "other", "same", "which", "what", "some", "any", "no", "one", "first", "second", "last", "only"]
-
-  # Words meaning the speaker is joining ideas, not names — only `dash` needs these.
-  connectors: ["this", "that", "about", "and", "or", "it"]
-
-  # What may precede a slash that starts a path, not a join: "in slash tmp".
-  path_lead: ["in", "to", "at", "from", "on", "of", "into", "onto", "under", "sure", "is", "was", "be"]
-
-  # What may follow "point"/"dot" in prose, mostly French set phrases.
-  prose_after_point: ["de", "du", "des", "d", "le", "la", "les", "l", "un", "une", "sur", "dans", "en", "et", "ou", "que", "qui", "où", "à", "au", "aux", "pour", "par", "avec", "sans", "est", "sont", "était", "sera", "me", "te", "se", "ne", "n", "c", "il", "elle", "je", "tu", "nous", "vous", "ils", "elles", "ce", "plus", "moins", "très", "mais", "donc", "car", "si", "comme", "final", "finale", "barre", "virgule", "commun", "commune", "faible", "faibles", "fort", "forts", "mort", "culminant", "névralgique", "chaud", "sensible", "positif", "négatif", "clé", "focal", "nommé", "com", "net", "org", "matrix", "product", "notation", "plot"]
-
-  # A real hyphen-join never has one of these on its right — English function words.
-  function_words: ["to", "the", "a", "an", "of", "for", "in", "on", "at", "from", "with", "is", "was", "are", "were", "and", "or", "it", "its", "this", "that"]
-
-  # Names of the marks themselves — saying them is talking about them.
-  mark_names: ["semicolon", "semi", "ellipsis", "comma", "colon", "dot", "dash", "hyphen", "underscore", "period", "quote", "unquote", "bracket", "brackets", "paren", "parens", "parenthesis", "point", "virgule"]
-
-  # A word before a spoken mark that means it is the noun, not the mark: "a comma splice".
-  talked_about: ["a", "an", "the", "and", "or", "nor", "around", "oxford"]
-
-
 # What the activation phrase can reach, and what a pipeline can name.
 #   name          the id a pipeline or `when:` names
 #   description   matched against what you say — write it as you would say it
@@ -235,15 +171,9 @@ lists:
 #   command:      a program of yours — transcript in on stdin, rewrite out on stdout
 #   confirm       shows the result first; set to false to skip that
 #   path          a body too long for here — transforms/X/, e.g. prompt: { path: slack.md }
-# See docs/pipelines.md.
+# More of them ship unwired in examples/transforms/ — spoken punctuation,
+# dotted paths, code identifiers. See docs/pipelines.md.
 transforms:
-  - name: terse
-    description: shorten text without losing anything it says
-    display: Cutting it down
-    prompt: |
-      Cut this down. No filler, same facts, same voice.
-      Return only the shortened text.
-
   - name: grammar
     description: fix grammar and punctuation mistakes, not formatting or numbers
     display: Fixing grammar
@@ -272,26 +202,6 @@ transforms:
 
       Return only the text.
 
-  # Refuses when either side is not a code word, so "voilà le point sur les
-  # tests" stays as words. A single letter either side is always code.
-  - name: dotted
-    description: spoken dot, hyphen, dash, slash and underscore paths as code
-    replace:
-      '$1.': ['/\b(?!(?:{{determiners}})\b)(\w+) (?:dot|point) (?!(?:{{prose_after_point}})\b)(?=\w)/',
-              '/\b([A-Za-z]) (?:dot|point) (?=[A-Za-z]\b)/']
-      '$1-': ['/\b(?!(?:{{determiners}})\b)(\w+) (?:hyphen|tiret(?! bas)) (?!(?:{{prose_after_point}})\b)(?=\w)/',
-              '/\b(?!(?:{{determiners}}|{{connectors}})\b)(\w+) (?:dash) (?!(?:{{prose_after_point}}|{{function_words}})\b)(?=\w)/',
-              '/\b([A-Za-z]) (?:hyphen|tiret(?! bas)|dash) (?=[A-Za-z]\b)/']
-      # `(?<!slash )` stops a leading-slash path half-converting.
-      '$1/': ['/\b(?!(?:{{determiners}}|{{path_lead}})\b)(?<!slash )(?<!barre oblique )(\w+) (?:slash|barre oblique) (?!(?:{{mark_names}})\b)(?=\w)/']
-      '$1_': ['/\b(?!(?:{{determiners}})\b)(\w+) (?:underscore|souligné|tiret bas) (?!(?:{{prose_after_point}})\b)(?=\w)/',
-              '/\b([A-Za-z]) (?:underscore|souligné|tiret bas) (?=[A-Za-z]\b)/']
-
-  - name: backticks
-    description: wrap dotted paths in backticks, for chat
-    replace:
-      '`$1`': ['/\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)/']
-
   # "PR one two three is ready" -> a clickable #123. Defined, not in the
   # pipeline: the repository is yours, not this file's. Put your own in both
   # URLs and add `- transform: github_refs` after `numbers`, which has already
@@ -307,20 +217,6 @@ transforms:
         ['/\b(?:pull request|PR|P\.R\.)\s*(?:(?:{{ref_words}})\s+)?#?(\d+)\b/']
       '[#$1](https://github.com/OWNER/REPO/issues/$1)':
         ['/\bissues?\s+(?:(?:{{ref_words}})\s+)?#?(\d+)\b/']
-
-  # A program, not a table — casing words needs code. Copy the examples/
-  # folder to transforms/code_identifiers/ to edit it.
-  - name: code_identifiers
-    description: spoken names as identifiers
-    display: Formatting identifiers
-    command: examples/code_identifiers/code_identifiers.py
-
-  # A spoken mark replaces whatever punctuation the decoder guessed next to
-  # it: "we could find. exclamation point" -> "we could find!".
-  - name: punctuation
-    description: spoken marks as punctuation
-    command: examples/punctuation/punctuation.py
-    returns: json
 
   # "at ten fifteen" -> at 10:15, "March third" -> March 3. One script per
   # language. `tests:` is what sends --eval to the right case file.

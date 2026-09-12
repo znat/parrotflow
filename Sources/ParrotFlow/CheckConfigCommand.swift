@@ -126,13 +126,13 @@ enum CheckConfigCommand {
                 emit("      \(name)  slot floor \(floors)"
                     + "  \(gates(of: step, config: config))")
             }
-            if !vocabularySteps.isEmpty, !config.vocabulary.gateSentence {
+            if !vocabularySteps.isEmpty, !config.gatesSentence {
                 emit("      the sentence tests are off —"
-                    + " `vocabulary.gate_sentence: false`")
+                    + " `transcription.vocabulary.gate_sentence: false`")
             }
             // The set the step runs with. Silent when the pipeline holds no
             // step at all, which is also what says nothing is downloaded for it.
-            if let step = pipeline.steps.first(where: { $0.stage == .interpret }) {
+            if let step = pipeline.steps.first(where: { $0.stage == .sentenceRepair }) {
                 let marks = step.marks ?? transcription.marks(for: "en")
                 emit("  · sentence marks    \(marks.joined(separator: " "))"
                     + (step.capitals == false ? "  (bare capitals off)" : ""))
@@ -480,7 +480,7 @@ enum CheckConfigCommand {
     /// read by the lexical gate, which that key has never touched.
     private static func gates(of step: Pipeline.Step, config: Config) -> String {
         let slot = step.slotGate ?? true
-        let portrait = (step.portrait ?? true) && config.vocabulary.gateSentence
+        let portrait = (step.portrait ?? true) && config.gatesSentence
         // Named only when it is off, as `(bare capitals off)` is on the
         // `interpret` line. On is the default and the line is long already.
         let lowercase = step.lowercaseRefused == false ? "  (lowercase refused off)" : ""

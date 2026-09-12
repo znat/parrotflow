@@ -214,7 +214,7 @@ enum PipelineCommand {
                 }
                 // Only for a pipeline that holds the step. It is 320 MB, and a
                 // fixture without the step has nothing to read them.
-                if pipeline.stages.contains(.interpret) {
+                if pipeline.stages.contains(.sentenceRepair) {
                     do { try await SentenceReadings.shared.prepare() } catch {
                         found.append("sentence readings — \(error.localizedDescription)")
                     }

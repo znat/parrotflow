@@ -135,11 +135,6 @@ jobs:
       - name: Instruction inside a dictation
         run: scripts/check-split.sh
 
-      # Reads its pattern out of Config.defaultYAML, so this is also what keeps
-      # the shipped default honest: the one rewrite that fires on ordinary
-      # language rather than on a name someone taught it.
-      - name: Dotted paths
-        run: scripts/check-dotted.sh
 
       - name: Dates
         run: scripts/check-dates.sh

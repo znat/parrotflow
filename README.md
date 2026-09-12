@@ -232,11 +232,11 @@ transcription:
 
 ### More examples
 
-Each with its own test cases, in [examples/transforms](examples/transforms):
+Each with its own test cases, in [examples/transforms](examples/transforms).
+`numbers`, `dates` and `disfluency` are in the pipeline a new install gets; the
+rest ship with no step — see [What ships
+unwired](docs/pipelines.md#what-ships-unwired).
 
-- [code_identifiers](examples/transforms/code_identifiers) — spoken names
-  cased for the language, *"a python function called max retries"* →
-  `max_retries`.
 - [numbers](examples/transforms/numbers) — spoken numbers as digits, one
   script per language: *"two hundred forty-three"* → `243`,
   *"soixante-quinze pour cent"* → `75%`.
@@ -245,11 +245,9 @@ Each with its own test cases, in [examples/transforms](examples/transforms):
   begun again, *"in the ter in the terminal"*; and a marker that carries
   nothing, *"so use like you know five"* → *"so use five"*. Only that last one
   wants a parse; the rest are string work.
-- [punctuation](examples/transforms/punctuation) — spoken marks as
-  punctuation, *"is that true question mark"* → *"is that true?"*.
 - [dates](examples/transforms/dates) — a dictated date or time in the shape it
   was said, *"at ten fifteen"* → *"at 10:15"*. One script per language, above
-  the numbers step; English ships in the pipeline and French is two lines of
+  the numbers step; English is in the pipeline and French is two lines of
   config away.
 
 [Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md) ·
