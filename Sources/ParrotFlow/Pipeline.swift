@@ -870,6 +870,17 @@ struct Pipeline: Equatable, Codable {
                 "ms": .double((seconds * 1000).rounded()),
             ], under: namespace)
             scope.merge(result.vars, under: namespace)
+
+            // The one thing a transform may ask the app for. It is published
+            // only when the work was actually wanted and the install is not
+            // there — `disfluency` asks after somebody said "you know" and it
+            // had nothing to judge it with. Nothing is fetched for a person
+            // whose dictations never reach the rule.
+            if result.vars["needs"] == .string("parsing") {
+                // The interpreter is already resolved: a transform reported
+                // this, so one just ran through `CommandRunner`.
+                ParsingInstall.finishQuietly()
+            }
             // The one bare name that moves. A condition reads the text as it
             // stands at that point in the pipeline — that has always been true
             // of a `when:` pattern, and an expression asking `text.matches(…)`

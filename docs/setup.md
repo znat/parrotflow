@@ -156,14 +156,20 @@ answer, so the question is asked once per install and not once per launch.
 *Finish Setup…* stays in the menu bar while eSpeak NG is missing, and opening it
 that way shows the command again — it is the only route back to it.
 
-**What happens after eSpeak NG lands.** The app installs the Python a parse
-needs, quietly, in the background: about 170 MB into `~/Library/Application
-Support/ParrotFlow/python`. It is the fifth rule of the `disfluency` transform,
-the one that tells "we'll let you know" from "you know, it broke". The order is
-the point — the line that installs eSpeak NG installs Homebrew first when there
-is none, and the Homebrew installer installs the Command Line Tools, so by then
-there is a real `python3` to build on. Nothing waits for it and a failure is one
-line in the log. `ParrotFlow --setup-parsing` still does it by hand.
+**The Python a parse needs.** Nothing fetches it until something wants it. The
+fifth rule of the `disfluency` transform needs a parse — it is the one that
+tells "we'll let you know" from "you know, it broke" — and it only runs when a
+dictation actually carries `you know`, `i mean` or `like`. On 24,576 dictations
+in one archive that was 3.8% of them.
+
+The first time one of those arrives with no spaCy on the Mac, the transform
+publishes `needs: parsing` and the app installs it in the background: about
+170 MB into `~/Library/Application Support/ParrotFlow/python`. That dictation
+keeps the other four rules and says so in `disfluency.declined`; the next one
+is judged. Nothing is asked, nothing waits for it, and a failure is one line in
+the log. Someone who never says any of the three never downloads it.
+
+`ParrotFlow --setup-parsing` still does it by hand.
 
 ## Step 3 — Prove transcription works with no voice
 

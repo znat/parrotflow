@@ -166,15 +166,14 @@ enum ParsingInstall {
     /// Everything a parse needs is here, eSpeak NG aside.
     static var isComplete: Bool { isInstalled && models.allSatisfy(has) }
 
-    /// Installs it quietly, once eSpeak NG is on this Mac.
+    /// Installs it quietly, the first time something actually needs a parse.
     ///
-    /// The order is the whole point. eSpeak NG is the one thing a person has to
-    /// install themselves, and the line that installs it installs Homebrew in
-    /// front of it when there is none — and the Homebrew installer installs the
-    /// Command Line Tools. So the moment eSpeak NG lands, `/usr/bin/python3` is
-    /// a real interpreter rather than the shim that opens Apple's installer
-    /// dialog when it is run. That is what makes this safe to do silently,
-    /// where `--setup-parsing` had to be typed.
+    /// Called when a transform publishes `needs: parsing` — see `Pipeline`.
+    /// That only happens when the work was wanted and the install was not
+    /// there, so a person whose dictations never reach the rule never fetches
+    /// the 170 MB. Nothing is asked and nothing is shown: a transform reported
+    /// this, so a `python3` already runs on this Mac and there is no installer
+    /// dialog left to trigger.
     ///
     /// Built on the interpreter a transform will actually run under, not on
     /// whichever one this process would pick. `--setup-parsing` prefers
@@ -185,7 +184,7 @@ enum ParsingInstall {
     ///
     /// Fails open, into the log. Nothing waits for it.
     static func finishQuietly() {
-        guard Phonemes.locate() != nil, !isComplete else { return }
+        guard !isComplete else { return }
         lock.lock()
         guard !running else { lock.unlock(); return }
         running = true

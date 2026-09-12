@@ -53,7 +53,7 @@ def collapsed(text):
     string you wanted.
     """
     applied = []
-    out, applied, _ = disfluency.clean(text)
+    out, applied, _, _ = disfluency.clean(text)
     return out, applied
 
 

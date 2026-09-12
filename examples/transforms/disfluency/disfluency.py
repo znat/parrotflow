@@ -587,12 +587,12 @@ def clean(text, language="en"):
         out = collapse(text, applied)
     except Exception:
         # Fail open — never drop the whole transcript because a guard threw.
-        return text, [], ""
+        return text, [], "", ""
 
     # The parse rule last: by now "I mean I mean" is one marker, and a restart
     # that hid a marker has been cleared out of the way.
     if language != "en":
-        return out, applied, ""
+        return out, applied, "", ""
     markers = dict(CLAUSE)
     markers["like"] = None
 
@@ -602,17 +602,22 @@ def clean(text, language="en"):
     # load — measured 0.53s and 0.21s, against 0.04s for the rest of this
     # file — on every dictation that carries no marker at all.
     if not any(marker_pattern(phrase).search(out) for phrase in markers):
-        return out, applied, ""
+        return out, applied, "", ""
 
     spacy = spacy_or_none()
     if spacy is None:
-        return out, applied, "word fillers: no spacy — run ParrotFlow --setup-parsing"
+        # A marker was said and there is nothing to judge it with. `needs` is
+        # what the app watches for: it installs the parsing Python in the
+        # background, so the next dictation carrying a marker is judged. Only
+        # reached behind the gate above, so nothing is fetched for a person
+        # who never says one.
+        return out, applied, "word fillers: no spacy — run ParrotFlow --setup-parsing", "parsing"
     try:
         out, marked = resolve(out, markers, spacy.load("en_core_web_sm"))
         applied.extend(marked)
     except Exception as error:
         declined = "word fillers: %s" % error
-    return out, applied, declined
+    return out, applied, declined, ""
 
 
 def main():
@@ -620,7 +625,7 @@ def main():
     raw = sys.stdin.read()
     payload = json.loads(raw) if structured else {"text": raw}
 
-    out, applied, declined = clean(
+    out, applied, declined, needs = clean(
         payload["text"], (payload.get("ctx") or {}).get("language", "en"))
 
     if not structured:
@@ -633,7 +638,8 @@ def main():
         # Deduplicated: three of the same fault name it once.
         "vars": {"applied": ", ".join(dict.fromkeys(applied)),
                  "edits": len(applied),
-                 "declined": declined},
+                 "declined": declined,
+                 "needs": needs},
     }))
     return 0
 

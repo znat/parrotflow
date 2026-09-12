@@ -629,10 +629,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissions.onRetryDownloads = { [weak self] in self?.retryDownloads() }
         warmModels()
 
-        // The rest of the setup, if eSpeak NG is already here. Nothing waits
-        // for it and nothing is said about it — see `ParsingInstall`.
-        ParsingInstall.finishQuietly()
-
         // After a grace, not with the fetches. `warmModels` declares every row
         // as `waiting` and the ones already on disk report `installed` a moment
         // later, so asking immediately would put a panel up on every launch and
