@@ -291,9 +291,10 @@ No new primitive. `command:`, `offer:` and `key:` already exist
 (`Config.swift:780-782`), the chip row is built from them
 (`AppDelegate.swift:513-515`), and `OfferKeys` claims the letter.
 
-**It does not ship in `config.example.yaml`.** No default pipeline gains a
-stage, and no install gains a chip. It is documented in `docs/cli.md` as
-something to paste into your own config:
+**No default pipeline gains a stage, and no install gains a chip.** It ships in
+`config.example.yaml` with `offer:` and `key:` commented out, so it is reachable
+by voice through `say:` and nothing else until you uncomment them. `docs/cli.md`
+carries the same entry:
 
 ```yaml
 transforms:
@@ -561,7 +562,9 @@ Two things in this document were **not** built:
    rejecting them correctly is now answerable from the trace, and is not
    answered here.
 4. **The per-call `model` span**, and the fields that depend on it.
-5. **Whether the chip ships.** It does not. It is documented in `docs/cli.md`.
+5. **Whether the chip ships.** It does not. The transform is in
+   `config.example.yaml` with `offer:` and `key:` commented out — reachable by
+   voice, and one uncomment away from a chip.
 
 ## Build order
 
@@ -581,7 +584,7 @@ guard (#272) and the empty-decode retry live. ~200 lines.
 
 **PR 3 — reading one.** `--trace-view` and `TraceText`, the Trace Event export
 behind `--perfetto`, `--redacted`, the `done:` key on a transform, the transform
-documented in `docs/cli.md` — not added to `config.example.yaml` — and the
-wordless timeline in `--bug-report`. None of it in the dictation path.
+in `config.example.yaml` with its chip commented out, and the wordless timeline
+in `--bug-report`. None of it in the dictation path.
 
 All three shipped together, in one pull request.

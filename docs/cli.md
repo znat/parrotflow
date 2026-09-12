@@ -1234,20 +1234,28 @@ look at a chart.
 Not shipped, because a chip claims its letter from every dictation for the nine
 seconds the offer is up. Paste it into your own config if you want it:
 
+`config.example.yaml` ships this entry with `offer:` and `key:` commented out,
+so a fresh install can ask for a trace out loud and gains no chip:
+
 ```yaml
 transforms:
   - name: trace
     description: open this dictation's trace
     display: Opening the trace
-    offer: true
-    key: t
+    say: [timeline, timings, why that was slow]
+    # offer: true
+    # key: t
     done: Trace opened
-    command: /Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --trace-view
+    command: sh -c 'said=$(cat); app=/Applications/ParrotFlow.app;
+      [ -x "$app/Contents/MacOS/ParrotFlow" ] || app=/Applications/ParrotFlowDev.app;
+      "$app/Contents/MacOS/ParrotFlow" --trace-view >/dev/null; printf %s "$said"'
 ```
 
-The full path, because `ParrotFlow` is not on `PATH` — and the dev build's is
-`/Applications/ParrotFlowDev.app/...`, which is also the one whose `spans.jsonl`
-it will read.
+A full path, because `ParrotFlow` is not on `PATH`, and chosen at run time
+because the dev build is at `/Applications/ParrotFlowDev.app/...` and reads its
+own `spans.jsonl`. Writing one path literally also makes `--check-config` report
+an error on a machine that has only the other build, and that is a check
+failure, not a warning.
 
 **Whatever a `command:` transform prints becomes the new transcript.** That is
 why `--trace-view` writes everything a person reads to stderr and hands stdin
