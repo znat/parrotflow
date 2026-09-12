@@ -646,6 +646,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.launchPanelGraceSeconds) {
             [weak self] in
             guard let self else { return }
+            // Not underneath the setup walk. Its second screen is a list of
+            // the same downloads, and the panel would say it again in front of
+            // it. The walk owns the story until Done; the panel is for an
+            // ordinary launch, where there is no window and somebody wants to
+            // know why dictation is not answering yet.
+            guard !self.permissions.isShowing else { return }
             self.launch.showIfNeeded(hotkey: self.hotKeys.binding?.displayName)
         }
 

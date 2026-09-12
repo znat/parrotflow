@@ -258,6 +258,11 @@ final class PermissionsWindowController {
     /// Set by `AppDelegate`; the window neither owns nor starts a download.
     var onRetryDownloads: (() -> Void)?
     private var window: NSWindow?
+
+    /// Whether the walk is on screen. The launch panel asks, so it does not
+    /// list the same downloads a second time underneath the screen whose job
+    /// that is.
+    var isShowing: Bool { window?.isVisible == true }
     private var timer: Timer?
     private var sizeWatch: AnyCancellable?
     /// Set once the window has been centred, so a later resize can keep the
