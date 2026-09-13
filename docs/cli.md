@@ -873,19 +873,17 @@ $PF --tutorial-sheet w.png walk      # every screen as the setup window frames i
 them at once, which is where drift between them shows up.
 
 The tour is what the setup window really plays while the models download. It
-comes straight after the permission screens, it loops for as long as the
-download takes, and the walk moves on to its last screen once it has played
-through once and every model is in. Both halves matter: the download often
-finishes while the permissions are still being granted, and the speech model
-lands about a gigabyte before the rest. *Next* skips to the screen after the one showing
-and *Back* to the one before it. On the last screen *Next* goes round to the
-first while a dictation would still fail, and leaves the tour once one would
-work: until then the screen after it is a bar with a greyed button.
-`downloads` is first and has no *Back*. Under `--panels` there is nothing to
-leave for, so the last screen's *Next* always wraps. The bar in the corner is
-the downloader's own figure. It is drawn and never read out, and it fills when
-the models are in. Each screen keeps the height of its own tallest beat, so the
-window changes size at a cut and never inside one.
+comes after the permission screens and the list of models, it loops for as long
+as the download takes, and the walk moves on to eSpeak NG once it has played
+through once and every model is in. Both halves of that matter: the download
+often finishes while the permissions are still being granted, and the speech
+model lands about a gigabyte before the rest.
+
+There is nothing to press on it. The tour turns its own pages, and under
+`--panels` it simply loops. The bar in the corner is the downloader's own
+figure: drawn, never read out, and full when the models are in. Each screen
+keeps the height of its own tallest beat, so the window changes size at a cut
+and never inside one.
 
 There are three demonstrations, and a screen that opens them.
 

@@ -142,8 +142,7 @@ the fetches started at launch and carry on behind it.
 as long as the models take:
 correcting a name and having it remembered, a sentence in Slack, and the three
 kinds of transform. A thin bar in the corner says the download is moving,
-without a figure on it. *Next* skips to the next screen and *Back* goes back
-one.
+without a figure on it. There is nothing to press: it turns its own pages.
 
 The tour ends by itself once it has played through once **and** every model is
 in, at the next screen, and at once if a fetch a dictation waits on fails. That
@@ -155,10 +154,6 @@ granting accessibility: without the first condition the tour is reached with
 nothing left to wait for and skipped before it draws a frame. And the second is
 every model rather than the speech model, because that one lands first with
 about a gigabyte still behind it.
-
-Nobody is held by it. On the last screen *Next* ends the tour as soon as a
-dictation would work, which is sooner; before that it starts again at the first
-screen.
 
 The last screen is eSpeak NG, the one thing the app cannot fetch for you. It
 helps ParrotFlow understand your own terms — your jargon, your teammates'
