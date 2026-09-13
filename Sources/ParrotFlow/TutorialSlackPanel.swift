@@ -399,20 +399,13 @@ struct TutorialSlackRun: Equatable {
 /// The screen the slack tour plays on.
 struct TutorialSlackPane: View {
     let run: TutorialSlackRun
-    /// Off for the offscreen sheet. See `PanelsCommand.tutorialSheet`.
-    var showsFoot = true
     /// The downloads, for the bar under the header.
     var progress: Double?
-    var onNext: () -> Void = {}
-    var onBack: (() -> Void)?
 
     var body: some View {
         TutorialScreen(
             title: TutorialSlack.title,
             lead: "",
-            showsFoot: showsFoot,
-            onNext: onNext,
-            onBack: onBack,
             showsLead: false,
             progress: progress
         ) {

@@ -614,14 +614,6 @@ private enum Pane {
 struct TutorialScreen<Stage: View>: View {
     let title: String
     let lead: String
-    /// Off for the offscreen sheet, where a `Button` cannot be drawn. See
-    /// `PanelsCommand.tutorialSheet`.
-    var showsFoot = true
-    /// The two ways through. *Next* skips to the screen after this one rather
-    /// than waiting for the demonstration to finish, and *Back* goes to the one
-    /// before it. Off on the first screen, which has nothing behind it.
-    var onNext: () -> Void = {}
-    var onBack: (() -> Void)?
     /// The lead's own size and weight of colour. A caption under a title is
     /// set small and dimmed; a sentence that opens a screen is the thing being
     /// read, and is set a step larger and in the text colour.
@@ -669,18 +661,6 @@ struct TutorialScreen<Stage: View>: View {
             stage.padding(.top, at(14))
 
             Spacer(minLength: at(20))
-
-            if showsFoot {
-                HStack(spacing: at(10)) {
-                    if let onBack {
-                        Button("Back", action: onBack).controlSize(.large)
-                    }
-                    Spacer()
-                    Button("Next", action: onNext)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                }
-            }
         }
         .padding(Pane.margin)
         .frame(width: Pane.width, alignment: .leading)
@@ -757,20 +737,14 @@ struct TutorialScreen<Stage: View>: View {
 /// The screen the vocabulary tour plays on.
 struct TutorialPane: View {
     let run: TutorialRun
-    /// Off for the offscreen sheet. See `PanelsCommand.tutorialSheet`.
-    var showsFoot = true
     /// The downloads, for the bar under the header. See `TutorialScreen`.
     var progress: Double?
-    var onNext: () -> Void = {}
-    var onBack: (() -> Void)?
 
     var body: some View {
         TutorialScreen(
             title: "Two names, one sound",
-            lead: "Correct a word and ParrotFlow remembers it.",
-            showsFoot: showsFoot,
-            onNext: onNext,
-            onBack: onBack,
+            lead: "",
+            showsLead: false,
             progress: progress
         ) {
             // The same room above the composer the Slack screen keeps for its
@@ -797,10 +771,6 @@ struct TutorialDownloadsPane: View {
     /// Seconds since the walk began.
     let elapsed: TimeInterval
     let progress: Double
-    /// Off for the offscreen sheet. See `PanelsCommand.tutorialSheet`.
-    var showsFoot = true
-    var onNext: () -> Void = {}
-    var onBack: (() -> Void)?
 
     /// Long enough to have said it and to have moved, and no longer: three
     /// seconds of a bar in the middle of the screen, and then it is out of the
@@ -821,9 +791,6 @@ struct TutorialDownloadsPane: View {
         TutorialScreen(
             title: "",
             lead: "",
-            showsFoot: showsFoot,
-            onNext: onNext,
-            onBack: onBack,
             showsLead: false,
             centresStage: true,
             progressFade: lifted,
@@ -857,18 +824,11 @@ struct TutorialReadyPane: View {
     /// start of the app, and the first thing anybody does with a finished setup
     /// window is read it and then try the key.
     static let length: TimeInterval = 45
-    /// Off for the offscreen sheet. See `PanelsCommand.tutorialSheet`.
-    var showsFoot = true
-    var onNext: () -> Void = {}
-    var onBack: (() -> Void)?
 
     var body: some View {
         TutorialScreen(
             title: "Ready",
             lead: "Hold the dictation key to start dictating.",
-            showsFoot: showsFoot,
-            onNext: onNext,
-            onBack: onBack
         ) {
             hold
         }

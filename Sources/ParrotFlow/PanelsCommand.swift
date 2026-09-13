@@ -376,28 +376,26 @@ enum PanelsCommand {
                 case .slack:
                     return AnyView(
                         TutorialSlackPane(
-                            run: TutorialSlackRun(beat.at), showsFoot: false,
-                            progress: 0.42
+                            run: TutorialSlackRun(beat.at),                            progress: 0.42
                         )
                     )
                 case .hack:
                     return AnyView(
                         TutorialHackPane(
-                            elapsed: beat.at, showsFoot: false, progress: 0.42
+                            elapsed: beat.at, progress: 0.42
                         )
                     )
                 case .ready:
-                    return AnyView(TutorialReadyPane(showsFoot: false))
+                    return AnyView(TutorialReadyPane())
                 case .downloads:
                     return AnyView(
                         TutorialDownloadsPane(
-                            elapsed: beat.at, progress: 0.42, showsFoot: false
-                        )
+                            elapsed: beat.at, progress: 0.42,                        )
                     )
                 case .names:
                     return AnyView(
                         TutorialPane(
-                            run: TutorialRun(beat.at), showsFoot: false, progress: 0.42
+                            run: TutorialRun(beat.at), progress: 0.42
                         )
                     )
                 }
@@ -1440,7 +1438,6 @@ private struct TourPreview: View {
                 // own number, and that one arrives.
                 progress: min(0.9, 0.05 + elapsed / 180),
                 screens: screens,
-                onSeek: { skew = $0 - ran }
             )
             .frame(height: screens[index].height, alignment: .top)
             .onChange(of: index) { _, _ in onScreen(screens[index]) }

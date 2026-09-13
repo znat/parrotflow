@@ -29,37 +29,28 @@ enum TourScreen: String, CaseIterable {
     }
 
     /// The screen, at one moment in its own pass.
-    @ViewBuilder func pane(
-        clock: TimeInterval,
-        progress: Double?,
-        onNext: @escaping () -> Void = {},
-        onBack: (() -> Void)? = nil
-    ) -> some View {
+    @ViewBuilder func pane(clock: TimeInterval, progress: Double?) -> some View {
         switch self {
         case .downloads:
             TutorialDownloadsPane(
-                elapsed: clock, progress: progress ?? 0,
-                onNext: onNext, onBack: onBack
+                elapsed: clock, progress: progress ?? 0
             )
         case .names:
             TutorialPane(
-                run: TutorialRun(clock), progress: progress,
-                onNext: onNext, onBack: onBack
+                run: TutorialRun(clock), progress: progress
             )
         case .slack:
             TutorialSlackPane(
-                run: TutorialSlackRun(clock), progress: progress,
-                onNext: onNext, onBack: onBack
+                run: TutorialSlackRun(clock), progress: progress
             )
         case .hack:
             TutorialHackPane(
-                elapsed: clock, progress: progress,
-                onNext: onNext, onBack: onBack
+                elapsed: clock, progress: progress
             )
         case .ready:
             // No bar: there is nothing left to wait for, which is the whole of
             // what this screen says.
-            TutorialReadyPane(onNext: onNext, onBack: onBack)
+            TutorialReadyPane()
         }
     }
 
@@ -138,80 +129,23 @@ enum TourWalk {
         return (list.count - 1, 0)
     }
 
-    /// Where the screen after the one showing at `elapsed` begins.
-    ///
-    /// On the last screen that is the first screen again, because the tour
-    /// loops. Whether Next takes that wrap or leaves the tour instead is the
-    /// window's to decide, not this one's — see `SetupTour.onFinish`.
-    static func next(
-        after elapsed: TimeInterval, in list: [TourScreen] = screens
-    ) -> TimeInterval {
-        let (index, _) = at(elapsed, in: list)
-        return start(of: index + 1, at: elapsed, in: list)
-    }
-
-    /// Where the screen before it begins, or nil on the first one.
-    static func previous(
-        before elapsed: TimeInterval, in list: [TourScreen] = screens
-    ) -> TimeInterval? {
-        let (index, _) = at(elapsed, in: list)
-        guard index > 0 else { return nil }
-        return start(of: index - 1, at: elapsed, in: list)
-    }
-
-    /// Where a screen begins, counted from the start of the pass `elapsed` is
-    /// in — so skipping forward on the third screen of the second pass lands on
-    /// the fourth screen of that pass, and not on the first pass's.
-    ///
-    /// One past the last screen is the first screen of the next pass, which is
-    /// what `next` leans on to wrap.
-    private static func start(
-        of index: Int, at elapsed: TimeInterval, in list: [TourScreen]
-    ) -> TimeInterval {
-        let loop = total(of: list)
-        let pass = (elapsed / loop).rounded(.down) * loop
-        return pass + list.prefix(index).reduce(0) { $0 + $1.length }
-    }
 }
 
-/// The tour at one moment: one screen, and the two ways through it.
+/// The tour at one moment: whichever screen its clock is inside.
 ///
-/// A function of `elapsed` and nothing else, like the screens it draws. Next
-/// and Back do not move a screen along; they hand back where the clock should
-/// be, and whoever owns the clock puts it there.
+/// A function of `elapsed` and nothing else, like the screens it draws. There
+/// is nothing to press: the tour turns its own pages and the window decides
+/// when it is over.
 struct SetupTour: View {
     let elapsed: TimeInterval
     /// How far the model downloads have come, for the bar in the corner. See
     /// `TutorialScreen.progress`.
     var progress: Double?
     var screens: [TourScreen] = TourWalk.screens
-    /// Where Next goes from the last screen, when there is somewhere to go.
-    ///
-    /// Nil while the models are still coming, and then Next wraps to the first
-    /// screen: the screen after the tour would be a bar with a greyed button
-    /// on it, and during an install there is no way back off it. Once the wait
-    /// is over it is the way out, so nobody is held in a demonstration of an
-    /// app that is already ready.
-    var onFinish: (() -> Void)?
-    /// Where Next and Back want the clock put.
-    var onSeek: (TimeInterval) -> Void = { _ in }
 
     var body: some View {
         let (index, clock) = TourWalk.at(elapsed, in: screens)
-        screens[index].pane(
-            clock: clock,
-            progress: progress,
-            onNext: {
-                if index + 1 == screens.count, let onFinish {
-                    onFinish()
-                    return
-                }
-                onSeek(TourWalk.next(after: elapsed, in: screens))
-            },
-            onBack: TourWalk.previous(before: elapsed, in: screens).map { to in
-                { onSeek(to) }
-            }
-        )
+        screens[index].pane(clock: clock, progress: progress)
         // The screens are drawn in whites over dark glass. A light window makes
         // them unreadable, and the window they play in is whatever the Mac is
         // set to.
@@ -249,10 +183,6 @@ struct SetupTourPane: View {
                 // bar is drawn from. Never read out: a figure is a claim about
                 // the network that goes wrong the moment the connection does.
                 progress: downloads.fraction,
-                // Only once there is something to leave for. See
-                // `SetupTour.onFinish`.
-                onFinish: downloads.speechIsIn ? { model.advance() } : nil,
-                onSeek: { model.seekTour(to: $0) }
             )
             // Each screen keeps the height of its own tallest beat. Fixed
             // inside one screen, so no frame of a pass resizes the window;

@@ -410,12 +410,8 @@ struct TutorialHackRun: Equatable {
 struct TutorialHackPane: View {
     /// Seconds since this screen's demonstration started.
     let elapsed: TimeInterval
-    /// Off for the offscreen sheet. See `PanelsCommand.tutorialSheet`.
-    var showsFoot = true
     /// The downloads, for the bar under the header.
     var progress: Double?
-    var onNext: () -> Void = {}
-    var onBack: (() -> Void)?
 
     /// How much of the pass has been held back by every pause so far.
     @State private var held: TimeInterval = 0
@@ -445,9 +441,6 @@ struct TutorialHackPane: View {
         TutorialScreen(
             title: TutorialHack.title,
             lead: "",
-            showsFoot: showsFoot,
-            onNext: onNext,
-            onBack: onBack,
             showsLead: false,
             progress: progress
         ) {

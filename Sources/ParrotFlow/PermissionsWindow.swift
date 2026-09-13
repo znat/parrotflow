@@ -178,20 +178,18 @@ final class PermissionsModel: ObservableObject {
         index = 0
         asked = false
         tourStartedAt = nil
-        tourSkew = 0
     }
 
     func markAsked() { asked = true }
 
     // MARK: - The tour's clock
 
-    /// When the tour went up, and what Next and Back have moved it by.
+    /// When the tour went up.
     ///
     /// Nil until it is on screen: the time somebody spent granting permissions
     /// is not time the tour has been playing. Held here rather than in the view
     /// because the poll that ends the tour has to be able to read it.
     @Published private(set) var tourStartedAt: Date?
-    @Published private(set) var tourSkew: TimeInterval = 0
     /// One moment of the tour and no clock at all, for `--tutorial-sheet walk`.
     /// A start put in the past drifts by however long the sheet spends
     /// measuring and drawing, which is enough to land on the next screen.
@@ -205,15 +203,9 @@ final class PermissionsModel: ObservableObject {
     func tourElapsed(at moment: Date = Date()) -> TimeInterval {
         if let tourFrozenAt { return tourFrozenAt }
         guard let tourStartedAt else { return 0 }
-        return max(0, moment.timeIntervalSince(tourStartedAt) + tourSkew)
+        return max(0, moment.timeIntervalSince(tourStartedAt))
     }
 
-    /// Where Next and Back put the clock. The screens are a function of it, so
-    /// skipping is moving it.
-    func seekTour(to elapsed: TimeInterval) {
-        guard let tourStartedAt else { return }
-        tourSkew = elapsed - Date().timeIntervalSince(tourStartedAt)
-    }
 
     /// Move on one screen: Next on the models screen, and the skip a revisit
     /// offers on a permission screen. It cannot walk past the last one — that
