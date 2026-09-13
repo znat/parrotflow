@@ -141,11 +141,16 @@ kinds of transform. A thin bar in the corner says the download is moving,
 without a figure on it. *Next* skips to the next screen and *Back* goes back
 one.
 
-The tour ends by itself at the next screen once every model is in, and at once
-if a fetch a dictation waits on fails. That is the last screen's job, and
-waiting cannot fix it. It does not end when the speech model lands: that one
-arrives first and about a gigabyte of language models follows it, so leaving
-there would cut the tour away from most of the wait.
+The tour ends by itself once it has played through once **and** every model is
+in, at the next screen, and at once if a fetch a dictation waits on fails. That
+last one is the last screen's job, and waiting cannot fix it.
+
+Both conditions earn their place. The downloads start at launch and the tour
+starts after the permissions, so most of the wait is spent in System Settings
+granting accessibility: without the first condition the tour is reached with
+nothing left to wait for and skipped before it draws a frame. And the second is
+every model rather than the speech model, because that one lands first with
+about a gigabyte still behind it.
 
 Nobody is held by it. On the last screen *Next* ends the tour as soon as a
 dictation would work, which is sooner; before that it starts again at the first

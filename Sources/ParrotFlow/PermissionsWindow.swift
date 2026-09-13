@@ -419,19 +419,28 @@ final class PermissionsWindowController {
     /// Otherwise it ends the moment there is nothing left to wait for, on the
     /// next cut, so no demonstration is cut in half.
     ///
-    /// It does not wait for a pass to finish, and it does not leave on the
-    /// speech model either. That model lands first and about a gigabyte of
-    /// language models follows it, so leaving there cut the tour away with a
-    /// third of the bytes down — from the one wait it was built to fill.
-    /// Measured on this Mac: speech in at 105 seconds, everything at 143.
+    /// Two conditions, and the first is that it has been watched once through.
     ///
-    /// Nobody is held by it. Next leaves as soon as there is somewhere to go,
-    /// which is the moment a dictation would work. See `SetupTour.onFinish`.
+    /// The downloads start at launch and the tour starts after the
+    /// permissions, so the wait is mostly spent in System Settings: measured
+    /// here, every model was in 95 seconds after launch, which is about how
+    /// long granting accessibility takes. Without this the tour was reached
+    /// with nothing left to wait for and skipped before it drew a frame, which
+    /// is what it did on two runs of a real install.
+    ///
+    /// The second is that the download is over. Not that the speech model is
+    /// in: that one lands first and about a gigabyte of language models
+    /// follows it.
+    ///
+    /// Nobody is held by either. Next leaves as soon as a dictation would
+    /// work, which is sooner than both. See `SetupTour.onFinish`.
     private func leaveTourIfDone() {
         guard model.current == .tour else { return }
         if model.downloads.blockingFailure != nil { advanceItself(); return }
+        let at = model.tourElapsed()
+        guard at >= TourWalk.total(of: TourWalk.screens) else { return }
         guard model.downloads.everythingIsIn else { return }
-        guard TourWalk.at(model.tourElapsed()).clock < 1.2 else { return }
+        guard TourWalk.at(at).clock < 1.2 else { return }
         advanceItself()
     }
 

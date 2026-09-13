@@ -874,9 +874,10 @@ them at once, which is where drift between them shows up.
 
 The tour is what the setup window really plays while the models download. It
 comes straight after the permission screens, it loops for as long as the
-download takes, and the walk moves on to its last screen once every model is
-in. Not once the speech model is in: that one lands first and about a gigabyte
-of language models follows it. *Next* skips to the screen after the one showing
+download takes, and the walk moves on to its last screen once it has played
+through once and every model is in. Both halves matter: the download often
+finishes while the permissions are still being granted, and the speech model
+lands about a gigabyte before the rest. *Next* skips to the screen after the one showing
 and *Back* to the one before it. On the last screen *Next* goes round to the
 first while a dictation would still fail, and leaves the tour once one would
 work: until then the screen after it is a bar with a greyed button.
