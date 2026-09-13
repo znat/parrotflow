@@ -382,6 +382,7 @@ final class PermissionsWindowController {
         model.refresh()
         pollEspeak()
         model.advancePastGranted()
+        leaveEspeakIfFound()
         leaveTourIfDone()
         guard model.current != nil else { fronting = nil; return }
 
@@ -436,6 +437,14 @@ final class PermissionsWindowController {
     ///
     /// Nobody is held by either. Next leaves as soon as a dictation would
     /// work, which is sooner than both. See `SetupTour.onFinish`.
+    /// The eSpeak NG screen asks for one thing. Once it is here there is
+    /// nothing left on it to read, so the walk goes straight on to the tour
+    /// rather than leaving a title and a button nobody needs to press.
+    private func leaveEspeakIfFound() {
+        guard model.current == .espeak, model.espeak == .found else { return }
+        advanceItself()
+    }
+
     private func leaveTourIfDone() {
         guard model.current == .tour else { return }
         if model.downloads.blockingFailure != nil { advanceItself(); return }
@@ -1220,8 +1229,16 @@ private struct SetupPane: View {
 
     /// The models are still coming and nothing has gone wrong. Both the bar and
     /// the greyed button are that one condition.
+    /// Greyed while a dictation would still fail. That is about Done, which
+    /// closes the window: an app closed over a half-finished fetch is one that
+    /// does not work yet.
+    ///
+    /// Never about Continue. That moves the walk on to the tour, which is what
+    /// the wait is spent watching, so gating it on the download left nothing to
+    /// press on a screen that had already been dealt with.
     private var waiting: Bool {
-        (moment == .espeak || moment == .almostReady) && !downloads.speechIsIn
+        guard !asking else { return false }
+        return (moment == .espeak || moment == .almostReady) && !downloads.speechIsIn
     }
 
     /// The bar waits for eSpeak NG to be settled. While the card is up the
