@@ -141,10 +141,8 @@ enum TourWalk {
     /// Where the screen after the one showing at `elapsed` begins.
     ///
     /// On the last screen that is the first screen again, because the tour
-    /// loops. Next means "skip this screen" and never means "leave": leaving is
-    /// for the moment there is something to leave for, and that is the window's
-    /// to decide. A Next that handed the walk on early parked somebody on a bar
-    /// with nothing to press and no way back.
+    /// loops. Whether Next takes that wrap or leaves the tour instead is the
+    /// window's to decide, not this one's — see `SetupTour.onFinish`.
     static func next(
         after elapsed: TimeInterval, in list: [TourScreen] = screens
     ) -> TimeInterval {
@@ -187,6 +185,14 @@ struct SetupTour: View {
     /// `TutorialScreen.progress`.
     var progress: Double?
     var screens: [TourScreen] = TourWalk.screens
+    /// Where Next goes from the last screen, when there is somewhere to go.
+    ///
+    /// Nil while the models are still coming, and then Next wraps to the first
+    /// screen: the screen after the tour would be a bar with a greyed button
+    /// on it, and during an install there is no way back off it. Once the wait
+    /// is over it is the way out, so nobody is held in a demonstration of an
+    /// app that is already ready.
+    var onFinish: (() -> Void)?
     /// Where Next and Back want the clock put.
     var onSeek: (TimeInterval) -> Void = { _ in }
 
@@ -195,7 +201,13 @@ struct SetupTour: View {
         screens[index].pane(
             clock: clock,
             progress: progress,
-            onNext: { onSeek(TourWalk.next(after: elapsed, in: screens)) },
+            onNext: {
+                if index + 1 == screens.count, let onFinish {
+                    onFinish()
+                    return
+                }
+                onSeek(TourWalk.next(after: elapsed, in: screens))
+            },
             onBack: TourWalk.previous(before: elapsed, in: screens).map { to in
                 { onSeek(to) }
             }
@@ -237,6 +249,9 @@ struct SetupTourPane: View {
                 // bar is drawn from. Never read out: a figure is a claim about
                 // the network that goes wrong the moment the connection does.
                 progress: downloads.fraction,
+                // Only once there is something to leave for. See
+                // `SetupTour.onFinish`.
+                onFinish: downloads.speechIsIn ? { model.advance() } : nil,
                 onSeek: { model.seekTour(to: $0) }
             )
             // Each screen keeps the height of its own tallest beat. Fixed

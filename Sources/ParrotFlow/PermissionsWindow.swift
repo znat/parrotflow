@@ -420,16 +420,18 @@ final class PermissionsWindowController {
     /// it.
     ///
     /// Two things do. A failure nobody can wait out ends it at once: the last
-    /// screen is the only one that names the row and offers the retry. And a
-    /// pass that has played through with nothing left to wait for ends it on
-    /// the next screen's first second, so no demonstration is cut in half.
+    /// screen is the only one that names the row and offers the retry.
+    /// Otherwise it ends the moment there is nothing left to wait for, on the
+    /// next cut, so no demonstration is cut in half.
+    ///
+    /// It does not wait for a pass to finish. A cached install has the speech
+    /// model in twenty seconds, and a tour nobody can leave is worse than a
+    /// tour nobody saw: during an install this window has no close box.
     private func leaveTourIfDone() {
         guard model.current == .tour else { return }
         if model.downloads.blockingFailure != nil { advanceItself(); return }
-        let at = model.tourElapsed()
-        guard at >= TourWalk.total(of: TourWalk.screens) else { return }
         guard model.downloads.speechIsIn else { return }
-        guard TourWalk.at(at).clock < 1.2 else { return }
+        guard TourWalk.at(model.tourElapsed()).clock < 1.2 else { return }
         advanceItself()
     }
 
