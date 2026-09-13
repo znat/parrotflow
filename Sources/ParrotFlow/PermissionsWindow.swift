@@ -419,13 +419,18 @@ final class PermissionsWindowController {
     /// Otherwise it ends the moment there is nothing left to wait for, on the
     /// next cut, so no demonstration is cut in half.
     ///
-    /// It does not wait for a pass to finish. A cached install has the speech
-    /// model in twenty seconds, and a tour nobody can leave is worse than a
-    /// tour nobody saw: during an install this window has no close box.
+    /// It does not wait for a pass to finish, and it does not leave on the
+    /// speech model either. That model lands first and about a gigabyte of
+    /// language models follows it, so leaving there cut the tour away with a
+    /// third of the bytes down — from the one wait it was built to fill.
+    /// Measured on this Mac: speech in at 105 seconds, everything at 143.
+    ///
+    /// Nobody is held by it. Next leaves as soon as there is somewhere to go,
+    /// which is the moment a dictation would work. See `SetupTour.onFinish`.
     private func leaveTourIfDone() {
         guard model.current == .tour else { return }
         if model.downloads.blockingFailure != nil { advanceItself(); return }
-        guard model.downloads.speechIsIn else { return }
+        guard model.downloads.everythingIsIn else { return }
         guard TourWalk.at(model.tourElapsed()).clock < 1.2 else { return }
         advanceItself()
     }

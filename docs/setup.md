@@ -134,19 +134,22 @@ grep "launched —" ~/Library/Logs/ParrotFlow.log | tail -1
 Want `accessibility=Granted`. `NotGranted` means the switch is off or they
 ticked a different app.
 
-**After the permissions.** The setup window lists the models it is fetching —
-about 1.5 GB, started at launch — with what each one costs. *Download* moves on;
-the fetches started at launch and carry on behind it.
+**After the permissions.** The window plays a demonstration of what the app
+does, for as long as the models take — about 1.5 GB, started at launch:
+correcting a name and having it remembered, a sentence in Slack, and the three
+kinds of transform. A thin bar in the corner says the download is moving,
+without a figure on it. *Next* skips to the next screen and *Back* goes back
+one.
 
-**The tour.** Then the window plays a demonstration of what the app does, for
-as long as the models take: correcting a name and having it remembered, a
-sentence in Slack, and the three kinds of transform. A thin bar in the corner
-says the download is moving, without a figure on it. *Next* skips to the next
-screen and *Back* goes back one. The tour ends by itself at the next screen the
-moment the models a dictation waits on are in, and at once if one of them
-fails. That is the last screen's job, and waiting cannot fix it. On the last
-screen *Next* ends it too, once the models are in; before that it starts again
-at the first screen.
+The tour ends by itself at the next screen once every model is in, and at once
+if a fetch a dictation waits on fails. That is the last screen's job, and
+waiting cannot fix it. It does not end when the speech model lands: that one
+arrives first and about a gigabyte of language models follows it, so leaving
+there would cut the tour away from most of the wait.
+
+Nobody is held by it. On the last screen *Next* ends the tour as soon as a
+dictation would work, which is sooner; before that it starts again at the first
+screen.
 
 The last screen is eSpeak NG, the one thing the app cannot fetch for you. It
 helps ParrotFlow understand your own terms — your jargon, your teammates'

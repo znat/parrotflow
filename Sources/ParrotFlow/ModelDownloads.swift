@@ -210,6 +210,28 @@ final class ModelDownloads: ObservableObject {
         }
     }
 
+    /// True when no fetch is still moving, whether or not a dictation waited
+    /// on it.
+    ///
+    /// `speechIsIn` answers "can this person dictate", which is what Ready
+    /// means. This answers "is the download over", which is what the tour
+    /// fills, and the two are minutes apart: the speech model lands first and
+    /// about a gigabyte of language models follows it.
+    ///
+    /// A row that failed is counted as in. Nothing more is coming for it, and
+    /// a blocking failure has already ended the tour by another route.
+    /// `loading` counts as in for the same reason the bar counts it whole: its
+    /// bytes are down.
+    var everythingIsIn: Bool {
+        guard !rows.isEmpty else { return false }
+        return rows.allSatisfy {
+            switch $0.state {
+            case .installed, .off, .failed, .loading: return true
+            case .waiting, .downloading: return false
+            }
+        }
+    }
+
     /// How far every fetch has got together, 0 to 1, weighted by size.
     ///
     /// One bar rather than six percentages: the last screen asks "is this
