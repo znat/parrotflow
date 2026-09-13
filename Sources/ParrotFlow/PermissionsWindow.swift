@@ -168,15 +168,10 @@ final class PermissionsModel: ObservableObject {
         steps = PermissionStep.allCases
             .filter { status(of: $0) != .granted }
             .map(SetupStep.permission)
-        // Only while installing, and only when there is something to list. It
-        // says what is about to be downloaded, which is news once. Opening the
-        // window from the menu bar a week later, it is a screen to click past.
-        //
-        // The tour goes with it, on the same condition and for the same reason:
-        // it is what the wait for those downloads is spent on, and there is no
-        // wait on a revisit.
+        // Only while installing, and only when there is something to wait for:
+        // the tour is what that wait is spent on, and there is no wait on a
+        // revisit.
         if context == .installing, !downloads.rows.isEmpty {
-            steps.append(.models)
             steps.append(.tour)
         }
         steps.append(.setup)
