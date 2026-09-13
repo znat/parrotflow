@@ -11,13 +11,12 @@ set -eu
 cd "$(dirname "$0")/.."
 . scripts/variant.sh
 
-ESPEAK=1 PARSING=1 CONFIG=0 PURGE=0 INSTALL=1
+ESPEAK=1 PARSING=1 CONFIG=0 INSTALL=1
 for arg in "$@"; do
     case "$arg" in
         --keep-espeak) ESPEAK=0 ;;
         --keep-parsing) PARSING=0 ;;
         --config)      CONFIG=1 ;;
-        --purge-old)   PURGE=1 ;;
         --no-install)  INSTALL=0 ;;
         -h|--help)
             cat <<'USAGE'
@@ -26,7 +25,6 @@ usage: scripts/fresh-setup.sh [options]
   --keep-espeak   leave eSpeak NG installed
   --keep-parsing  leave the spaCy venv in place
   --config        move the config directory aside too
-  --purge-old     delete .moved-* copies left by earlier runs
   --no-install    stop after the reset, do not build or launch
 
   VARIANT=release scripts/fresh-setup.sh   act on the shipped build instead
@@ -56,14 +54,13 @@ echo "  quit it, and remove /Applications/$APP_NAME.app"
 echo "  tccutil reset All $BUNDLE_ID"
 echo "  delete its defaults — the espeak answer, the microphone notice, the update reminder"
 echo "  delete $SUPPORT/models"
-echo "  move aside the speech models, which the other build reads from the same place:"
+echo "  delete the speech models, which the other build reads from the same place:"
 echo "      $SHARED/{parakeet-tdt-0.6b-v3,silero-vad}"
 echo "      $G2P"
 espeak_here && echo "  brew uninstall espeak-ng — this takes it from the other build too"
 [ "$PARSING" -eq 1 ] && [ -d "$PARSING_DIR" ] \
-    && echo "  move aside the spaCy venv — the other build reads the same copy"
+    && echo "  delete the spaCy venv — the other build reads the same copy"
 [ "$CONFIG" -eq 1 ] && echo "  move $HOME/$CONFIG_DIR aside"
-[ "$PURGE" -eq 1 ] && echo "  delete every .moved-* copy from earlier runs"
 [ "$INSTALL" -eq 1 ] && echo "  build, install and launch it again"
 echo
 echo "  kept: portraits and the phoneme table in $SUPPORT"
@@ -87,26 +84,27 @@ echo "==> Defaults deleted."
 rm -rf "$SUPPORT/models" "$SUPPORT/install-espeak-ng.command"
 echo "==> Removed this build's own models."
 
-# Moved rather than deleted. These three live outside the per-build directory,
-# so deleting them costs the other build a 560 MB download it did not ask for.
-# Once this run has downloaded them again the copies are dead weight.
+# Deleted, not moved. These live outside the per-build directory, so this
+# costs the other build the download too. They were kept as .moved-* copies
+# for a while and the copies were never read: a reset is run to see a first
+# run, and a first run fetches them again anyway.
 for name in parakeet-tdt-0.6b-v3 silero-vad; do
-    if [ -d "$SHARED/$name" ]; then
-        mv "$SHARED/$name" "$SHARED/$name.moved-$STAMP"
-    fi
+    rm -rf "$SHARED/$name"
 done
-if [ -d "$G2P" ]; then
-    mv "$G2P" "$G2P.moved-$STAMP"
-fi
-echo "==> Shared speech models moved aside as .moved-$STAMP."
+rm -rf "$G2P"
+echo "==> Shared speech models deleted."
 
-# Moved, like the speech models and for the same reason: it is shared with the
-# other build, and this run only fetches it again if a dictation asks for a
-# parse. `ParsingInstall.finishQuietly` rebuilds it on the first marker said.
+# Deleted for the same reason. This run only fetches it again if a dictation
+# asks for a parse; `ParsingInstall.finishQuietly` rebuilds it on the first
+# marker said.
 if [ "$PARSING" -eq 1 ] && [ -d "$PARSING_DIR" ]; then
-    mv "$PARSING_DIR" "$PARSING_DIR.moved-$STAMP"
-    echo "==> spaCy venv moved aside as .moved-$STAMP."
+    rm -rf "$PARSING_DIR"
+    echo "==> spaCy venv deleted."
 fi
+
+# Whatever earlier runs left behind. Nothing writes these any more.
+find "$SHARED" "$SUPPORT" "$(dirname "$G2P")" "$(dirname "$PARSING_DIR")" -maxdepth 1 \
+    -name "*.moved-*" -exec rm -rf {} + 2>/dev/null || true
 
 if espeak_here; then
     brew uninstall espeak-ng
@@ -118,12 +116,6 @@ if [ "$CONFIG" -eq 1 ] && [ -d "$HOME/$CONFIG_DIR" ]; then
     echo "==> Config moved to ~/$CONFIG_DIR.moved-$STAMP."
 fi
 
-if [ "$PURGE" -eq 1 ]; then
-    find "$SHARED" "$SUPPORT" "$(dirname "$G2P")" "$(dirname "$PARSING_DIR")" -maxdepth 1 \
-        -name "*.moved-*" ! -name "*$STAMP" -exec rm -rf {} + 2>/dev/null || true
-    echo "==> Earlier .moved-* copies deleted."
-fi
-
 if [ "$INSTALL" -eq 1 ]; then
     echo
     make --no-print-directory install VARIANT="$VARIANT"
@@ -131,5 +123,4 @@ if [ "$INSTALL" -eq 1 ]; then
     echo "==> The setup window is open. Six models are downloading, about 1.5 GB."
     echo "    Watch them:  make logs VARIANT=$VARIANT"
     echo "    Stuck microphone dialog:  killall UserNotificationCenter"
-    echo "    When the downloads finish:  scripts/fresh-setup.sh --purge-old --no-install"
 fi
