@@ -85,7 +85,7 @@ enum Chat {
         let states: [PillState] = [.recording(nil), .working("Transcribing…")]
         let sizes = states.map {
             PillMetrics.panelSize(
-                for: $0, hasIcon: true, hotkey: "Right ⌥", dock: .below
+                for: $0, hasIcon: true, hotkey: Tutorial.hotkey, dock: .below
             )
         }
         return NSSize(
@@ -467,7 +467,7 @@ struct ChatStage<Channel: View>: View {
     /// vocabulary tour wants the centring.
     private func slack(for state: PillState) -> CGFloat {
         let size = PillMetrics.panelSize(
-            for: state, hasIcon: true, hotkey: "Right ⌥", dock: .below
+            for: state, hasIcon: true, hotkey: Tutorial.hotkey, dock: .below
         )
         return max(0, (reserved.width - size.width) / 2)
     }

@@ -990,6 +990,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pill.model.hotkey = ""
         }
 
+        // Before the setup window is built, because that is where the tour
+        // measures the boxes it reserves for a surface and a different key is a
+        // different width. What registered, or failing that what the config
+        // asked for: a demonstration that names no key teaches nothing.
+        Tutorial.hotkey = hotKeys.binding?.displayName
+            ?? KeyCodes.displayString(
+                key: config.hotkey.key, modifiers: config.hotkey.modifiers
+            )
+
         startKeepWarm()
         startUpdateChecks()
         updateUI()

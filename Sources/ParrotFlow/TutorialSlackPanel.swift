@@ -108,7 +108,7 @@ enum TutorialSlack {
     static var keyCentre: CGFloat {
         let closed = PillState.offer(chips, nil, Confidence.Reading(), open: false)
         let panel = PillMetrics.panelSize(
-            for: closed, hasIcon: true, hotkey: "Right ⌥", dock: .below
+            for: closed, hasIcon: true, hotkey: Tutorial.hotkey, dock: .below
         )
         return Chat.inset + (panel.width - 2 * PillMetrics.bleed(for: closed)) * 0.69
     }
@@ -166,7 +166,7 @@ enum TutorialSlack {
         ]
         let sizes = states.map {
             PillMetrics.panelSize(
-                for: $0, hasIcon: true, hotkey: "Right ⌥", dock: .below
+                for: $0, hasIcon: true, hotkey: Tutorial.hotkey, dock: .below
             )
         }
         return NSSize(

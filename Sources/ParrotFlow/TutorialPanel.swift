@@ -119,8 +119,20 @@ enum Tutorial {
     static let names: [String] = ["Mik", "Mick"]
 
     /// The key the tour tells everyone to hold, in one place: the pill writes
-    /// it on the offer and the last screen names it.
-    static let hotkey = "Right ⌥"
+    /// it on the offer, the last screen names it, and every box reserved for a
+    /// surface is measured with it, because a different key is a different
+    /// width.
+    ///
+    /// Written from what this Mac bound, by `applyConfig`, before any of those
+    /// boxes is measured. They are measured once, so a hotkey changed while
+    /// the tour is on screen keeps the old key's width; the tour only plays
+    /// during an install, where nobody is editing config.yaml.
+    ///
+    /// The literal is the fallback for `--panels` and the sheets, where
+    /// nothing is bound. It used to be the only value, and the shipped default
+    /// is `right_command`, so the tour told everyone but this machine to hold
+    /// the wrong key.
+    static var hotkey = "Right ⌥"
 
     /// After the light has crossed both names, how long the finished line is
     /// left up before the walk moves on to the next screen. A second and a half
@@ -168,7 +180,7 @@ enum Tutorial {
     static let reservedPanel: NSSize = {
         let sizes = states.map {
             PillMetrics.panelSize(
-                for: $0, hasIcon: true, hotkey: "Right ⌥", dock: .below
+                for: $0, hasIcon: true, hotkey: Tutorial.hotkey, dock: .below
             )
         }
         return NSSize(
@@ -199,7 +211,7 @@ enum Tutorial {
     /// the composer, and the room reserved under it is measured from here.
     static let tallestSurface: CGFloat = states.map {
         PillMetrics.panelSize(
-            for: $0, hasIcon: true, hotkey: "Right ⌥", dock: .below
+            for: $0, hasIcon: true, hotkey: Tutorial.hotkey, dock: .below
         ).height - PillMetrics.bleed(for: $0) * 2
     }.max() ?? 0
 }

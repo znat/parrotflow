@@ -311,7 +311,7 @@ enum TutorialHack {
     /// shows the panel once, already open.
     static let reserved: NSSize = PillMetrics.panelSize(
         for: .offer(chips, nil, Confidence.Reading(), open: true),
-        hasIcon: true, hotkey: "Right ⌥", dock: .below
+        hasIcon: true, hotkey: Tutorial.hotkey, dock: .below
     )
 }
 
