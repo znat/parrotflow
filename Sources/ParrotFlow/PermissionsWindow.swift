@@ -168,10 +168,15 @@ final class PermissionsModel: ObservableObject {
         steps = PermissionStep.allCases
             .filter { status(of: $0) != .granted }
             .map(SetupStep.permission)
-        // Only while installing, and only when there is something to wait for:
-        // the tour is what that wait is spent on, and there is no wait on a
-        // revisit.
+        // Only while installing, and only when there is something to list. It
+        // says what is about to be downloaded, which is news once. Opening the
+        // window from the menu bar a week later, it is a screen to click past.
+        //
+        // The tour goes with it, on the same condition and for the same reason:
+        // it is what the wait for those downloads is spent on, and there is no
+        // wait on a revisit.
         if context == .installing, !downloads.rows.isEmpty {
+            steps.append(.models)
             steps.append(.tour)
         }
         steps.append(.setup)
@@ -1164,15 +1169,17 @@ private struct SetupPane: View {
         if lostPermission != nil { return .permissionLost }
         if downloads.rows.isEmpty { return .dictationOff }
         if downloads.blockingFailure != nil { return .somethingDidNotArrive }
-        // Opened from the menu bar, eSpeak NG is the reason: the item only
-        // appears while something is unfinished, and this is where the command
-        // to install it lives. Ready would hide the one thing being asked for.
-        if context == .revisiting, espeak != .found { return .espeak }
-        // Setting up, Ready wins. The walk ends the moment the models land,
-        // and this screen reads the same whether eSpeak NG was installed or
-        // not — Done asks about it once, in its own alert.
+        // eSpeak NG is the reason this screen is still up, in either context.
+        // Ready would hide the one thing being asked for.
+        //
+        // Setting up, Ready used to win here: the walk ended the moment the
+        // models landed, so the card had the rest of the download to be read
+        // in. The tour holds the screen for all of it now, so by the time this
+        // one is reached the models are always in, and the card was never
+        // drawn once.
+        if espeak != .found { return .espeak }
         if downloads.speechIsIn { return .ready }
-        return espeak == .found ? .almostReady : .espeak
+        return .almostReady
     }
 
     private var lostPermission: PermissionStep? {

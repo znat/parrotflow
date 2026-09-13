@@ -134,8 +134,12 @@ grep "launched —" ~/Library/Logs/ParrotFlow.log | tail -1
 Want `accessibility=Granted`. `NotGranted` means the switch is off or they
 ticked a different app.
 
-**After the permissions.** The window plays a demonstration of what the app
-does, for as long as the models take — about 1.5 GB, started at launch:
+**After the permissions.** The setup window lists the models it is fetching —
+about 1.5 GB, started at launch — with what each one costs. *Download* moves on;
+the fetches started at launch and carry on behind it.
+
+**The tour.** Then the window plays a demonstration of what the app does, for
+as long as the models take:
 correcting a name and having it remembered, a sentence in Slack, and the three
 kinds of transform. A thin bar in the corner says the download is moving,
 without a figure on it. *Next* skips to the next screen and *Back* goes back
