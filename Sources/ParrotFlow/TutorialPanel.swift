@@ -743,8 +743,7 @@ struct TutorialPane: View {
     var body: some View {
         TutorialScreen(
             title: "Two names, one sound",
-            lead: "",
-            showsLead: false,
+            lead: "ParrotFlow understands what and who you are talking about.",
             progress: progress
         ) {
             // The same room above the composer the Slack screen keeps for its

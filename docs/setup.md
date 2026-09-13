@@ -138,32 +138,33 @@ ticked a different app.
 about 1.5 GB, started at launch — with what each one costs. *Download* moves on;
 the fetches started at launch and carry on behind it.
 
-**The tour.** Then the window plays a demonstration of what the app does, for
-as long as the models take:
-correcting a name and having it remembered, a sentence in Slack, and the three
-kinds of transform. A thin bar in the corner says the download is moving,
-without a figure on it. There is nothing to press: it turns its own pages.
-
-The tour ends by itself once it has played through once **and** every model is
-in, at the next screen, and at once if a fetch a dictation waits on fails. That
-last one is the last screen's job, and waiting cannot fix it.
-
-Both conditions earn their place. The downloads start at launch and the tour
-starts after the permissions, so most of the wait is spent in System Settings
-granting accessibility: without the first condition the tour is reached with
-nothing left to wait for and skipped before it draws a frame. And the second is
-every model rather than the speech model, because that one lands first with
-about a gigabyte still behind it.
-
-The last screen is eSpeak NG, the one thing the app cannot fetch for you. It
-helps ParrotFlow understand your own terms — your jargon, your teammates'
-names. It is GPL-3 and a separate library, so the screen shows the Homebrew
-command, and
+**eSpeak NG.** Then the one thing the app cannot fetch for you. It helps
+ParrotFlow understand your own terms — your jargon, your teammates' names. It is
+GPL-3 and a separate library, so the screen shows the Homebrew command, and
 *Install with Terminal* runs it where it can be watched. The screen notices the
-binary landing by itself. Once eSpeak NG is settled the title becomes the state:
-"Almost ready" while a model a dictation waits on is still coming, then "Ready"
-with the key to hold. The bar appears once eSpeak NG is settled: while the card
-is up the screen is asking for one thing.
+binary landing by itself. *Continue* moves on whether or not it is here.
+
+It comes before the tour on purpose: it is the one step with a person in it, so
+it is done while there is still a download to wait on.
+
+**The tour.** Then the window plays a demonstration of what the app does, for as
+long as the models take: correcting a name and having it remembered, a sentence
+in Slack, and the three kinds of transform. A thin bar in the corner says the
+download is moving, without a figure on it. There is nothing to press: it turns
+its own pages.
+
+It ends by itself once it has played through once **and** every model is in, at
+the next screen, and at once if a fetch a dictation waits on fails. Both
+conditions earn their place. The downloads start at launch and the tour starts
+after the permissions, so most of the wait is spent in System Settings granting
+accessibility: without the first condition the tour is reached with nothing left
+to wait for and skipped before it draws a frame. And the second is every model
+rather than the speech model, because that one lands first with about a gigabyte
+still behind it.
+
+**Ready.** The last screen. The title is the state: "Almost ready" while a model
+a dictation waits on is still coming, then "Ready" with the key to hold, and one
+bar under it for every download together.
 
 *Done* is greyed until those models are in — it closes the window, and an app
 closed over a half-finished fetch is one that does not work yet. Pressing it

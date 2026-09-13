@@ -82,11 +82,15 @@ enum PermissionStep: CaseIterable {
 }
 
 /// A screen in the walk. The permissions are asked for one at a time, then the
-/// models this launch is fetching are listed, then the tour plays while they
-/// come down, then the walk ends on eSpeak NG.
+/// models this launch is fetching are listed, then eSpeak NG is asked for, then
+/// the tour plays while the models come down, and the walk ends on Ready.
 enum SetupStep: Equatable {
     case permission(PermissionStep)
     case models
+    /// eSpeak NG, the one thing the app cannot fetch. Before the tour, so the
+    /// one job with a person in it is done while there is still a download to
+    /// wait on.
+    case espeak
     /// The demonstration of what the app does, played while the models
     /// download. See `TourWalk`.
     case tour
@@ -177,6 +181,7 @@ final class PermissionsModel: ObservableObject {
         // wait on a revisit.
         if context == .installing, !downloads.rows.isEmpty {
             steps.append(.models)
+            if espeak != .found { steps.append(.espeak) }
             steps.append(.tour)
         }
         steps.append(.setup)
@@ -246,7 +251,7 @@ final class PermissionsModel: ObservableObject {
 
     /// Every screen of a first run, which is what the sheet draws against.
     private static var walk: [SetupStep] {
-        PermissionStep.allCases.map(SetupStep.permission) + [.models, .tour, .setup]
+        PermissionStep.allCases.map(SetupStep.permission) + [.models, .espeak, .tour, .setup]
     }
 
     /// Parked on the tour, `at` seconds into it, for `--tutorial-sheet walk`.
@@ -660,7 +665,7 @@ enum PermissionMetrics {
         switch step {
         case .permission: return width
         // The tour is drawn at the same width, from its own `Pane.width`.
-        case .models, .tour, .setup: return setupWidth
+        case .models, .espeak, .tour, .setup: return setupWidth
         }
     }
 
@@ -670,7 +675,7 @@ enum PermissionMetrics {
         switch step {
         case .permission: return 28
         case .tour: return 0
-        case .models, .setup: return SetupMetrics.at(28)
+        case .models, .espeak, .setup: return SetupMetrics.at(28)
         }
     }
     static let height: CGFloat = 328
@@ -687,7 +692,7 @@ enum PermissionMetrics {
         case .permission: return height
         // The tour is measured, like the other two. Every screen in it has its
         // own height and it says so as it cuts — see `SetupTourPane`.
-        case .models, .tour, .setup: return nil
+        case .models, .espeak, .tour, .setup: return nil
         }
     }
 }
@@ -754,6 +759,16 @@ struct PermissionsView: View {
             case .tour:
                 // Drawn above, outside this chrome.
                 EmptyView()
+            case .espeak:
+                SetupPane(
+                    micStatus: model.micStatus, axStatus: model.axStatus,
+                    hotkeyDisplay: model.hotkeyDisplay,
+                    hotkeyRegistered: model.hotkeyRegistered,
+                    context: model.context, espeak: model.espeak,
+                    onClose: { model.advance() }, onRetry: onRetry,
+                    onInstallEspeak: onInstallEspeak,
+                    asking: true
+                )
             case .setup:
                 SetupPane(
                     micStatus: model.micStatus, axStatus: model.axStatus,
@@ -1117,6 +1132,10 @@ private struct SetupPane: View {
     let onClose: () -> Void
     let onRetry: () -> Void
     let onInstallEspeak: () -> Void
+    /// The screen before the tour rather than the one after it: it is about
+    /// eSpeak NG and nothing else, and its button moves the walk on instead of
+    /// closing the window.
+    var asking = false
 
     @EnvironmentObject private var downloads: ModelDownloads
 
@@ -1169,17 +1188,16 @@ private struct SetupPane: View {
         if lostPermission != nil { return .permissionLost }
         if downloads.rows.isEmpty { return .dictationOff }
         if downloads.blockingFailure != nil { return .somethingDidNotArrive }
-        // eSpeak NG is the reason this screen is still up, in either context.
-        // Ready would hide the one thing being asked for.
-        //
-        // Setting up, Ready used to win here: the walk ended the moment the
-        // models landed, so the card had the rest of the download to be read
-        // in. The tour holds the screen for all of it now, so by the time this
-        // one is reached the models are always in, and the card was never
-        // drawn once.
-        if espeak != .found { return .espeak }
+        // The screen before the tour is about eSpeak NG whatever else is true.
+        if asking { return .espeak }
+        // Opened from the menu bar, eSpeak NG is the reason: the item only
+        // appears while something is unfinished, and this is where the command
+        // to install it lives. Ready would hide the one thing being asked for.
+        if context == .revisiting, espeak != .found { return .espeak }
+        // Setting up, Ready wins. eSpeak NG had its own screen before the
+        // tour, and Done asks once more in its own alert.
         if downloads.speechIsIn { return .ready }
-        return .almostReady
+        return espeak == .found ? .almostReady : .espeak
     }
 
     private var lostPermission: PermissionStep? {
@@ -1287,6 +1305,7 @@ private struct SetupPane: View {
     /// A failure nobody is waiting on stays off this screen. Only a model a
     /// dictation waits for reaches the foot.
     private var primaryTitle: String {
+        if asking { return "Continue" }
         guard moment == .somethingDidNotArrive else { return "Done" }
         return downloads.blockingFailure?.state.failure?.retryTitle ?? "Done"
     }
