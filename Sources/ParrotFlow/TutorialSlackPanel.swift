@@ -245,6 +245,50 @@ struct TutorialSlackRun: Equatable {
         return nil
     }
 
+    /// One stretch of the pass the screen dims over, and what stays lit.
+    ///
+    /// Two of them, which are the screen's two lessons. The link, while the
+    /// callout is up saying what happened to it — the callout is lit with it,
+    /// because a sentence about the link is no use dimmed. Then the mention,
+    /// from the drag over the name to the send: the name, and the surface that
+    /// offers to rewrite it.
+    ///
+    /// Counted from the words landing, like every other beat here.
+    static var lighting: [(from: TimeInterval, to: TimeInterval, runs: Set<Int>, surface: Bool, callout: Bool)] {
+        let captioned = TutorialSlack.Beat.captioned.rawValue
+        return [
+            (
+                from: TutorialSlack.landsAt + captioned,
+                to: TutorialSlack.landsAt + captioned + TutorialSlack.callout,
+                runs: [3], surface: false, callout: true
+            ),
+            (
+                from: TutorialSlack.landsAt + captioned + TutorialSlack.callout
+                    + TutorialSlack.pause,
+                to: TutorialSlack.landsAt + TutorialSlack.Beat.sending.rawValue,
+                runs: [1], surface: true, callout: false
+            ),
+        ]
+    }
+
+    private var lighting:
+        (from: TimeInterval, to: TimeInterval, runs: Set<Int>, surface: Bool, callout: Bool)?
+    {
+        TutorialSlackRun.lighting.first { t >= $0.from && t < $0.to }
+    }
+
+    /// How far the rest of the screen is down, nought to one.
+    var spotlight: Double {
+        guard let lighting else { return 0 }
+        let up = (t - lighting.from) / Tutorial.dimming
+        let down = (lighting.to - t) / Tutorial.dimming
+        return min(1, max(0, min(up, down)))
+    }
+
+    var lit: Set<Int> { lighting?.runs ?? [] }
+    var litSurface: Bool { lighting?.surface ?? false }
+    var litCallout: Bool { lighting?.callout ?? false }
+
     /// Seconds since the words landed, or nil before they did.
     private var local: TimeInterval? {
         guard t >= TutorialSlack.landsAt else { return nil }
@@ -413,6 +457,7 @@ struct TutorialSlackPane: View {
         ) {
             stage
         }
+        .tourSpotlight(run.spotlight)
     }
 
     private var stage: some View {
@@ -423,7 +468,8 @@ struct TutorialSlackPane: View {
             channelHeight: Chat.channel,
             reserved: TutorialSlack.reserved,
             room: TutorialSlack.room,
-            anchor: run.anchor
+            anchor: run.anchor,
+            lit: run.lit, litSurface: run.litSurface, litCallout: run.litCallout
         ) {
             channel
         }

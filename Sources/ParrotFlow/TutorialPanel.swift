@@ -114,9 +114,20 @@ enum Tutorial {
         "Mick is a musician.",
     ]
 
-    /// The name each of those two is about: the word the light crosses when its
-    /// sentence lands.
+    /// The name each of those two is about: the two words left lit when the
+    /// line holds both of them.
     static let names: [String] = ["Mik", "Mick"]
+
+    /// Which words of the field say where they are, so the screen can dim
+    /// round them. See `TourSpot`.
+    enum Lit: Equatable {
+        case none
+        /// The word carrying the caret, which during a correction is the one
+        /// being corrected.
+        case caret
+        /// Words by what they say.
+        case words([String])
+    }
 
     /// The key the tour tells everyone to hold, in one place: the pill writes
     /// it on the offer, the last screen names it, and every box reserved for a
@@ -134,10 +145,11 @@ enum Tutorial {
     /// the wrong key.
     static var hotkey = "Right ⌥"
 
-    /// After the light has crossed both names, how long the finished line is
-    /// left up before the walk moves on to the next screen. A second and a half
-    /// after the light, and then the last of it.
-    static let settled: TimeInterval = 1.5
+    /// How long the two names are held lit before the walk moves on. Two
+    /// seconds, which is the second and a half the finished line was left up
+    /// for plus the half second the light used to take to cross it — the pass
+    /// is the length it was.
+    static let settled: TimeInterval = 2.0
     /// The rest of the pass, held on the finished line before the next screen
     /// is cut to.
     ///
@@ -156,16 +168,24 @@ enum Tutorial {
     /// a caret that is not there, and every still of this screen is read at
     /// whatever moment its beat falls on.
     static let caretDim: Double = 0.15
-    /// The light that crosses both names at once, and how long after the last
-    /// sentence lands it starts. A second first, so the line is read as what the
-    /// app wrote before anything moves over it, and half a second of light. It
-    /// is over well before the loop.
-    static let sheen: TimeInterval = 0.5
-    static let sheenDelay: TimeInterval = 1.0
+    /// How far down the rest of the screen goes while something on it is being
+    /// pointed at, and how long the dimming takes to arrive and leave.
+    static let dimmed = 0.66
+    static let dimming: TimeInterval = 0.3
 
-    /// One pass: the four dictations, the light, the wait, and the hand-off.
+    /// How long after the last sentence lands the two names are lit. A second
+    /// first, so the line is read as what the app wrote before anything is
+    /// said about it.
+    ///
+    /// This was a band of light crossing both names. The screen dims round
+    /// them instead — the same thing the corrections do, and the one gesture
+    /// this screen makes twice already.
+    static let beforeNames: TimeInterval = 1.0
+
+    /// One pass: the four dictations, the names lit, the wait, and the
+    /// hand-off.
     static var total: TimeInterval {
-        fourthLands + sheenDelay + sheen + settled + handoff
+        fourthLands + beforeNames + settled + handoff
     }
 
     /// The largest the pill gets, and the box the stage reserves for it in
@@ -291,22 +311,6 @@ struct TutorialExample: Equatable {
     var saved: String { "Saved  \(heard) → \(term)" }
 }
 
-/// A light crossing some words: which ones, and how far across them it is.
-///
-/// The same progress is drawn on each of them, so two names carry the light at
-/// once rather than one after the other. A light travelling across the whole
-/// line instead would reach the second name only once it had left the first,
-/// which is the one thing this is not.
-///
-/// Amber, the app's warm one, and not the leaf green: this is a light going over
-/// the words rather than a mark saying they are right, and green over a name
-/// that is already white reads as a different kind of state.
-struct WordSheen: Equatable {
-    let words: Set<String>
-    /// 0 as it reaches a word's left edge, 1 as it leaves its right.
-    let at: Double
-}
-
 /// What the tour is doing at one moment.
 struct TutorialRun: Equatable {
     /// Seconds into one pass.
@@ -420,19 +424,6 @@ struct TutorialRun: Equatable {
         return Tutorial.caretDim + (1 - Tutorial.caretDim) * up
     }
 
-    /// The light that crosses both names at once, once the last sentence has
-    /// landed and the line holds the two of them.
-    ///
-    /// That line is the point of the screen: nobody was asked about either
-    /// name, and the app wrote both of them right. The light is what says so,
-    /// and it says it about both together, because that is the thing that was
-    /// learned.
-    var sheen: WordSheen? {
-        let u = (t - TutorialRun.landed(4) - Tutorial.sheenDelay) / Tutorial.sheen
-        guard u >= 0, u <= 1 else { return nil }
-        return WordSheen(words: Set(Tutorial.names), at: u)
-    }
-
     /// Which dictation the meter is on, or nil when no key is down.
     private var listening: Int? {
         guard case .listening(let number) = phase else { return nil }
@@ -495,6 +486,66 @@ struct TutorialRun: Equatable {
                 return .notice(example.saved, .done)
             }
         }
+    }
+
+    /// One stretch of the pass the screen dims over, and what stays lit.
+    struct Lighting: Equatable {
+        let from: TimeInterval
+        let to: TimeInterval
+        /// When the offer's surface joins the word, or nil for a stretch with
+        /// no surface in it.
+        let opens: TimeInterval?
+        let lit: Tutorial.Lit
+    }
+
+    /// Every stretch of the pass the screen dims over.
+    ///
+    /// The two corrections: from the caret moving into the word, a beat before
+    /// the keystroke, to the offer being answered. Then the end of the pass,
+    /// where the line holds both names and nobody was asked about either —
+    /// which is the point of the screen, so it is said the same way.
+    ///
+    /// `--tour-film` reads these too, to hold the film at 1x over them.
+    static var lighting: [Lighting] {
+        [Tutorial.firstLands, Tutorial.secondLands].map { lands in
+            Lighting(
+                from: lands + Tutorial.Beat.placed.rawValue,
+                to: lands + Tutorial.Beat.saved.rawValue,
+                opens: lands + Tutorial.Beat.offering.rawValue,
+                lit: .caret
+            )
+        } + [
+            Lighting(
+                from: Tutorial.fourthLands + Tutorial.beforeNames,
+                to: Tutorial.total - Tutorial.handoff,
+                opens: nil,
+                lit: .words(Tutorial.names)
+            ),
+        ]
+    }
+
+    private var lighting: Lighting? {
+        TutorialRun.lighting.first { t >= $0.from && t < $0.to }
+    }
+
+    /// How far the rest of the screen is down, nought to one.
+    var spotlight: Double {
+        guard let lighting else { return 0 }
+        let up = (t - lighting.from) / Tutorial.dimming
+        let down = (lighting.to - t) / Tutorial.dimming
+        return min(1, max(0, min(up, down)))
+    }
+
+    /// Which words of the field stay lit: the name being corrected for the
+    /// whole of a correction, or both names at the end of the pass.
+    var lit: Tutorial.Lit { lighting?.lit ?? .none }
+
+    /// The surface joins the word once it starts to land. They are the same
+    /// word twice — the one that was changed and the offer to keep the change
+    /// — and a correction is about the pair of them.
+    var litSurface: Bool {
+        guard let lighting, let opens = lighting.opens else { return false }
+        return t >= opens
     }
 
     /// Which chip the pointer is on, or nil. Zero is *Yes*, and it is only lit
@@ -816,7 +867,8 @@ struct TutorialPane: View {
     var body: some View {
         TutorialScreen(
             title: "ParrotFlow understands what and who you are talking about",
-            lead: "Example: 2 different people whose names sound the same (Mik and Mick)",
+            lead: "",
+            showsLead: false,
             progress: progress,
             fetching: fetching
         ) {
@@ -828,10 +880,104 @@ struct TutorialPane: View {
                 TourField(
                     lines: run.lines, pill: run.pill, level: run.level,
                     clicked: run.clicked, landing: run.landing,
-                    blink: run.caret, sheen: run.sheen
+                    blink: run.caret,
+                    lit: run.lit, litSurface: run.litSurface
                 )
             }
         }
+        .tourSpotlight(run.spotlight)
+    }
+}
+
+/// Everything but what the screen is pointing at, taken down.
+///
+/// A whole sentence at full brightness reads before the one word in it that
+/// changed does, and that word is what the screen is about. Both chat screens
+/// use it: the vocabulary screen over each correction and over the two names it
+/// ends on, the Slack screen over the link and over the mention.
+///
+/// The lit boxes are the views' own, reported up by the words, the surface and
+/// the callout. They were numbers written down once, measured off a render, and
+/// taking one line off a screen moved every one of them.
+struct TourSpotlight: ViewModifier {
+    /// How far the rest is down, nought to one.
+    let amount: Double
+
+    func body(content: Content) -> some View {
+        content.overlayPreferenceValue(TourSpot.self) { spots in
+            if amount > 0, !spots.isEmpty {
+                GeometryReader { space in
+                    Color.black.opacity(Tutorial.dimmed * amount)
+                        .mask {
+                            // The dim, with the lit boxes taken out of its own
+                            // alpha. A mask rather than one even-odd path: the
+                            // two kinds of box want different edges, and a blur
+                            // applies to a whole path at once.
+                            Rectangle()
+                                .fill(Color.white)
+                                .overlay {
+                                    ZStack {
+                                        ForEach(spots.indices, id: \.self) { at in
+                                            TourSpotlight.hole(spots[at], in: space)
+                                        }
+                                    }
+                                    .compositingGroup()
+                                    .blendMode(.destinationOut)
+                                }
+                                .compositingGroup()
+                        }
+                }
+                .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// One box taken out of the dim.
+    ///
+    /// A word gets a soft edge and a few points of room: a rectangle round one
+    /// word of a sentence reads as a box drawn on the words, and soft it reads
+    /// as light. A surface gets a hard edge on its own rim, a point and a half
+    /// out so a corner radius that does not match cannot dim one of its
+    /// corners. Blurred, that edge only smears the edge the surface already
+    /// has.
+    static func hole(_ spot: TourSpot.Lit, in space: GeometryProxy) -> some View {
+        let box = space[spot.box]
+        let out: CGFloat = spot.soft ? 5 : 1.5
+        let down: CGFloat = spot.soft ? 3 : 1.5
+        let radius: CGFloat = spot.soft ? 7 : PillMetrics.dockRadius + 1.5
+        let lit = box.insetBy(dx: -out, dy: -down)
+        return RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .fill(Color.black)
+            .frame(width: lit.width, height: lit.height)
+            .position(x: lit.midX, y: lit.midY)
+            .blur(radius: spot.soft ? 7 : 0)
+    }
+}
+
+extension View {
+    func tourSpotlight(_ amount: Double) -> some View {
+        modifier(TourSpotlight(amount: amount))
+    }
+}
+
+/// Where what is being pointed at is, reported by the views drawing it: a word
+/// of the line, the surface asking about it, or the callout saying what it did.
+struct TourSpot: PreferenceKey {
+    /// One lit box, and how its edge is cut.
+    ///
+    /// A word has nothing but words around it, and a rectangle round one reads
+    /// as a box drawn on the sentence; soft, it reads as light. A surface has
+    /// its own drawn edge, and light spilling past that edge only blurs the
+    /// edge the surface already has.
+    struct Lit: Equatable {
+        let box: Anchor<CGRect>
+        let soft: Bool
+    }
+
+    static let defaultValue: [Lit] = []
+
+    static func reduce(value: inout [Lit], nextValue: () -> [Lit]) {
+        value.append(contentsOf: nextValue())
     }
 }
 
@@ -993,8 +1139,10 @@ private struct TourField: View {
     let landing: Double
     /// How visible the caret is. See `TutorialRun.caret`.
     let blink: Double
-    /// The light crossing one word, or nil. See `TutorialRun.sheen`.
-    let sheen: WordSheen?
+    /// Which words say where they are, and whether the surface does. See
+    /// `TourSpot`.
+    var lit: Tutorial.Lit = .none
+    var litSurface = false
 
     /// How far under the words the surface starts. A few points, so that the two
     /// are not touching, and no more than that.
@@ -1012,7 +1160,8 @@ private struct TourField: View {
                         reserved: NSSize(
                             width: Pane.stage, height: Tutorial.reservedPanel.height
                         ),
-                        hangsAt: hang
+                        hangsAt: hang,
+                        lit: litSurface
                     )
                     .offset(y: top(of: pill))
                 }
@@ -1031,7 +1180,7 @@ private struct TourField: View {
     /// built at that size rather than a Slack one with small words in it.
     private var composer: some View {
         ChatComposerFrame(size: Line.size) {
-            Line(pieces: lines.first ?? [], sheen: sheen, blink: blink)
+            Line(pieces: lines.first ?? [], blink: blink, lit: lit)
         }
     }
 
@@ -1062,10 +1211,10 @@ private struct TourField: View {
 /// into, and pretending otherwise would only invite it.
 private struct Line: View {
     let pieces: [TutorialRun.Piece]
-    /// The light crossing one word of it, or nil.
-    var sheen: WordSheen?
     /// How visible the caret is.
     var blink: Double = 1
+    /// Which of its words report where they are. See `TourSpot`.
+    var lit: Tutorial.Lit = .none
 
     /// The face the words are set in, and everything measured off it.
     ///
@@ -1091,6 +1240,9 @@ private struct Line: View {
                 switch piece {
                 case .word(let text, let caret):
                     word(text, caret: caret)
+                        .anchorPreference(key: TourSpot.self, value: .bounds) {
+                            says(text, caret: caret) ? [.init(box: $0, soft: true)] : []
+                        }
                 case .caret:
                     mark(at: 0)
                 }
@@ -1099,42 +1251,27 @@ private struct Line: View {
         }
     }
 
-    /// One word: the insertion point inside it if it carries one, and the light
-    /// crossing it if that is the word the light is on.
+    /// Whether this word is one of the ones the screen is dimming round.
     ///
-    /// The light is drawn over the word in the app's leaf colour rather than in
-    /// white. White is what the words already are, and a light that only made
-    /// them white again would say nothing.
-    @ViewBuilder private func word(_ text: String, caret at: Int?) -> some View {
-        ZStack(alignment: .topLeading) {
-            Text(text)
-                .font(.system(size: Line.size))
-                .foregroundStyle(Color(white: 0.88))
-                .overlay(alignment: .topLeading) {
-                    if let at { mark(at: Line.caretX(in: text, at: at)) }
-                }
-            if let sheen, sheen.words.contains(text) {
-                // The band, and the same band blurred under it. The blur is what
-                // makes it read as a light going over the words rather than as a
-                // second colour arriving on them: a sharp edge on its own is a
-                // mark someone drew.
-                let band = Text(text)
-                    .font(.system(size: Line.size))
-                    .foregroundStyle(Parrot.amber)
-                    .mask(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .clear, location: max(0, sheen.at - 0.5)),
-                                .init(color: .white, location: sheen.at),
-                                .init(color: .clear, location: min(1, sheen.at + 0.5)),
-                            ],
-                            startPoint: .leading, endPoint: .trailing
-                        )
-                    )
-                band.blur(radius: Line.size * 0.35).opacity(0.7)
-                band
-            }
+    /// A word is named either by carrying the caret — during a correction that
+    /// is the word being corrected — or by what it says, which is how the two
+    /// names are picked out of the finished line.
+    private func says(_ text: String, caret: Int?) -> Bool {
+        switch lit {
+        case .none: return false
+        case .caret: return caret != nil
+        case .words(let names): return names.contains(text)
         }
+    }
+
+    /// One word, with the insertion point inside it if it carries one.
+    private func word(_ text: String, caret at: Int?) -> some View {
+        Text(text)
+            .font(.system(size: Line.size))
+            .foregroundStyle(Color(white: 0.88))
+            .overlay(alignment: .topLeading) {
+                if let at { mark(at: Line.caretX(in: text, at: at)) }
+            }
     }
 
     /// The insertion point, `x` from the left of whatever it stands in.
@@ -1193,6 +1330,8 @@ struct TourPill: View {
     /// Where the caret the surface hangs off stands, in the box the surface is
     /// laid out in, or nil to leave it centred.
     var hangsAt: CGFloat?
+    /// Whether the surface reports where it is drawn. See `TourSpot`.
+    var lit = false
 
     @StateObject private var model: PillModel
 
@@ -1202,7 +1341,7 @@ struct TourPill: View {
     init(
         state: PillState, level: Double, clicked: Int?, landing: Double = 1,
         reserved: NSSize = Tutorial.reservedPanel, sheen: Double = 0,
-        hangsAt: CGFloat? = nil
+        hangsAt: CGFloat? = nil, lit: Bool = false
     ) {
         self.state = state
         self.level = level
@@ -1211,6 +1350,7 @@ struct TourPill: View {
         self.reserved = reserved
         self.sheen = sheen
         self.hangsAt = hangsAt
+        self.lit = lit
         _model = StateObject(wrappedValue: {
             let model = PillModel()
             // The key is written on the offer, and the shipped default is
@@ -1239,6 +1379,23 @@ struct TourPill: View {
         PillView()
             .environmentObject(model)
             .frame(width: size.width, height: size.height)
+            // Where the drawn surface is: this frame, less the transparent
+            // margin the bloom is carried in. On the surface's own frame and
+            // not on the reserved box below — the box is the whole stage, and
+            // reported from there this said the composer was the surface.
+            .overlay {
+                if lit {
+                    // Reported before the padding, not after: the bounds of a
+                    // padded view are the padded ones, so the other way round
+                    // this named the frame and left a bleed of undimmed screen
+                    // round the surface.
+                    Color.clear
+                        .anchorPreference(key: TourSpot.self, value: .bounds) {
+                            [.init(box: $0, soft: false)]
+                        }
+                        .padding(PillMetrics.bleed(for: state))
+                }
+            }
             // The reserved box, top-aligned so the surface keeps hanging off the
             // line where it did when it was smaller.
             .frame(

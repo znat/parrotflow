@@ -247,7 +247,7 @@ enum PanelsCommand {
         ("listening 2", Tutorial.fourthAt + Tutorial.leadIn + 0.5),
         ("transcribing 2",
          Tutorial.fourthAt + Tutorial.dictated(4) - Tutorial.settling + 0.25),
-        ("written 2", Tutorial.fourthLands + Tutorial.sheenDelay + 0.25),
+        ("written 2", Tutorial.fourthLands + Tutorial.beforeNames + 0.25),
     ]
 
     /// The beats of the slack tour. *clicking* is taken while the chip is lit,
