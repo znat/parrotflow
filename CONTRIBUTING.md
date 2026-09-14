@@ -3,6 +3,9 @@
 Thanks for being here. This page is short on purpose: it says where to start,
 how to check your change, and what a commit has to carry.
 
+ParrotFlow is [GPL-3.0](LICENSE). A change you send goes in under the same
+terms — that is what signing off certifies.
+
 ## Where to start
 
 | You want to | Read |
