@@ -1380,6 +1380,11 @@ private struct SetupPane: View {
                 EmptyView()
             }
         }
+        // Under whatever else is here, and on every moment: a model that did
+        // not arrive is worth saying whether or not there is a screen about it.
+        if !downloads.quietFailures.isEmpty {
+            QuietFailureNote(rows: downloads.quietFailures).padding(.top, at(16))
+        }
     }
 }
 
@@ -1518,6 +1523,47 @@ private struct EspeakCard: View {
         .padding(.horizontal, SetupMetrics.at(11))
         .padding(.top, SetupMetrics.at(9))
         .padding(.bottom, SetupMetrics.at(10))
+        .background(
+            Parrot.amber.opacity(0.11),
+            in: RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)
+                .strokeBorder(Parrot.amber.opacity(0.38), lineWidth: SetupMetrics.at(1))
+        }
+    }
+}
+
+/// The models that did not arrive and that nothing waits for.
+///
+/// No button. Each of these is fetched again on the dictation that first needs
+/// it — the fetch clears its own handle when it fails, see
+/// `Transcriber.warmSlotModel` — so the only thing to say is what is missing,
+/// what it costs until then, and that nobody has to do anything.
+///
+/// A blocking failure never reaches here. That one owns the title, the sentence
+/// and the retry, because without it nothing transcribes at all.
+private struct QuietFailureNote: View {
+    let rows: [ModelDownload]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SetupMetrics.at(5)) {
+            Text(rows.count == 1 ? "One model did not arrive" : "\(rows.count) models did not arrive")
+                .font(.system(size: SetupMetrics.at(12), weight: .semibold))
+            ForEach(rows) { row in
+                Text("\(row.name) — \(row.costOfFailure).")
+                    .font(.system(size: SetupMetrics.at(11)))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("ParrotFlow downloads each of them again the first time it needs"
+                + " one. Nothing to do.")
+                .font(.system(size: SetupMetrics.at(11)))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(Parrot.amber)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, SetupMetrics.at(11))
+        .padding(.vertical, SetupMetrics.at(10))
         .background(
             Parrot.amber.opacity(0.11),
             in: RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)

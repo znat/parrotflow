@@ -210,6 +210,16 @@ still behind it.
 a dictation waits on is still coming, then "Ready" with the key to hold, and one
 bar under it for every download together.
 
+**A model that did not arrive.** If one of the four a dictation never waits for
+fails, the last screen says so: the name, what it costs until it is here, and
+that ParrotFlow fetches it again the first time it needs one. No button. Each
+fetch clears its own handle when it fails, so the next dictation that reads the
+model tries again on its own.
+
+The two a dictation does wait on — Parakeet and Silero VAD — are not this. One
+of those failing takes the title, the sentence and the retry, and ends the tour
+at once.
+
 *Done* is greyed until those models are in — it closes the window, and an app
 closed over a half-finished fetch is one that does not work yet. Pressing it
 without eSpeak NG asks once, *Install it* or *Not now*, and remembers the

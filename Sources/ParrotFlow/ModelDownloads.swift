@@ -264,6 +264,18 @@ final class ModelDownloads: ObservableObject {
         rows.first { $0.blocking && $0.state.hasFailed }
     }
 
+    /// The rows that failed and that nothing waits for.
+    ///
+    /// A blocking failure is the title's business — see `blockingFailure`, and
+    /// it ends the tour at once. These are the models a dictation never waits
+    /// for: the stages that read them stand aside, and each is fetched again on
+    /// the dictation that first needs it, because the fetch clears its own
+    /// handle when it fails. So they are a line at the end of the walk rather
+    /// than a screen, and there is nothing to press on it.
+    var quietFailures: [ModelDownload] {
+        rows.filter { !$0.blocking && $0.state.hasFailed }
+    }
+
     /// The rows whose bytes are on disk and will not load. Their repair is to
     /// throw the cache away, which the retry does before it fetches again.
     var damaged: Set<String> {
