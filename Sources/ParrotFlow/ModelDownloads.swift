@@ -186,8 +186,8 @@ final class ModelDownloads: ObservableObject {
 
     // MARK: - The crawl
 
-    /// Filling in between reports: a downloading row gains a point every two
-    /// seconds on its own.
+    /// The bar's own figure: the truth, or the crawl when the truth has
+    /// stopped moving.
     ///
     /// Measured on a real install: the bar sat at 15% for a minute or two,
     /// stepped to 31%, stalled again, then ran smoothly. Nothing was wrong.
@@ -196,25 +196,33 @@ final class ModelDownloads: ObservableObject {
     /// download and there is nothing to say until the next one lands. A bar
     /// that has not moved for ninety seconds is a bar people cancel.
     ///
-    /// So this is a guess between two known points, and it is a slow one: a
-    /// point every two seconds is 200 seconds for a whole row, and no row has
-    /// ever taken that long here. The real report is almost always further on,
-    /// and when it is, it wins. What this covers is the gap.
+    /// So the whole bar gains a point every three seconds on its own, and the
+    /// real figure wins whenever it is further on.
     ///
-    /// It stops at 99. A hundred is the fetch ending, and only the fetch says
-    /// that.
+    /// Crawled here and not on the rows, which is where it was first: a row
+    /// stops one point short of full, and Parakeet is 31% of the download, so
+    /// a crawl that filled Parakeet's row took the bar to 30% and parked it
+    /// there.
+    ///
+    /// A point every three seconds is 300 seconds for the whole download, and
+    /// 1.5 GB has taken about two minutes on every install measured here, so
+    /// the truth is almost always ahead of this. What it covers is the gap.
+    @Published private(set) var crept: Double = 0
     private var crawler: Timer?
-    private static let crawlEvery: TimeInterval = 2.0
-    private static let crawlCeiling = 99
+    private static let crawlEvery: TimeInterval = 3.0
+    private static let crawlStep = 0.01
+    /// It stops one point short. A hundred is the download ending, and only
+    /// the download says that.
+    private static let crawlCeiling = 0.99
 
-    /// Start the crawl while anything is downloading, and stop it when nothing
-    /// is. Nothing else has to remember to call this: every report goes
-    /// through `update`.
+    /// What the bar draws. `fraction` is what is actually known.
+    var shown: Double { max(fraction, crept) }
+
+    /// Start the crawl while anything is still coming, and stop it when
+    /// nothing is. Nothing else has to remember to call this: every report
+    /// goes through `update`.
     private func crawl() {
-        let fetching = rows.contains {
-            if case .downloading = $0.state { return true } else { return false }
-        }
-        guard fetching else {
+        guard !rows.isEmpty, !everythingIsIn else {
             crawler?.invalidate()
             crawler = nil
             return
@@ -228,12 +236,7 @@ final class ModelDownloads: ObservableObject {
     }
 
     private func crawled() {
-        for at in rows.indices {
-            guard case .downloading(let percent) = rows[at].state else { continue }
-            let next = min(ModelDownloads.crawlCeiling, (percent ?? 0) + 1)
-            guard next != percent else { continue }
-            rows[at].state = .downloading(percent: next)
-        }
+        crept = min(ModelDownloads.crawlCeiling, shown + ModelDownloads.crawlStep)
         crawl()
     }
 

@@ -180,12 +180,17 @@ time rather than one byte at a time, so the figure sat at 15% for a minute or
 two and then stepped to 31%. A name that changes six times is something
 happening on a bar that looks stopped.
 
-The figure also fills its own gaps. A row that is downloading gains a point
-every two seconds on its own, and a real report that is further on wins. It is
-a guess between two known points and a slow one — a point every two seconds is
-200 seconds for one row, and no row here has taken that long — so the real
-number is almost always ahead of it. It stops at 99: a hundred is the fetch
-ending, and only the fetch says that. The figure is the downloader's own, weighted by the size
+The figure also fills its own gaps. The bar gains a point every three seconds on
+its own, and the real figure wins whenever it is further on. It is a guess
+between two known points and a slow one — a point every three seconds is 300
+seconds for the whole download, and 1.5 GB has taken about two minutes on every
+install measured here — so the truth is almost always ahead of it. It stops one
+point short of full: a hundred is the download ending, and only the download
+says that.
+
+On the whole bar, not on the rows, which is where it was first. A row stops one
+point short too, and Parakeet is 31% of the download, so a crawl that filled
+Parakeet's row took the bar to 30% and parked it there. The figure is the downloader's own, weighted by the size
 of each model, and it never reads 100%: a hundred is what ends the tour, so a
 screen still up saying it has arrived would be contradicting itself.
 

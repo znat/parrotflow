@@ -1185,7 +1185,7 @@ private struct SetupPane: View {
 
             Spacer(minLength: at(20))
 
-            if showsBar { DownloadBar(fraction: downloads.fraction) }
+            if showsBar { DownloadBar(fraction: downloads.shown) }
 
             SetupFoot(
                 title: primaryTitle,

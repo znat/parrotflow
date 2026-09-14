@@ -331,7 +331,7 @@ struct SetupTourPane: View {
                 elapsed: elapsed,
                 // The downloader's own number, size-weighted across the six
                 // models, and the same one the corner's figure is drawn from.
-                progress: downloads.fraction,
+                progress: downloads.shown,
                 fetching: fetching,
                 seek: { model.seekTour(to: $0) }
             )
