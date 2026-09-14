@@ -14,7 +14,7 @@ enum SoundBenchCommand {
                 print("model: \(error.localizedDescription)")
             }
             let model = await NeuralPhonemes.of(words, language: named)
-            let rules = Phonemes.of(words, voice: language == "fr" ? "fr" : "en-us")
+            let rules = Phonemes.of(words, voice: Phonemes.voice(for: language))
             func pad(_ text: String, _ width: Int) -> String {
                 text.count >= width ? text + "  "
                     : text + String(repeating: " ", count: width - text.count)

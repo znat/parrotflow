@@ -296,6 +296,26 @@ struct Config: Decodable, Equatable {
             /// Write it when the spelling misleads: espeak reads `Preci` as
             /// /pɹɛsaɪ/, "pre-sigh", and no floor rescues that.
             var phonemes: String?
+            /// The dictation language this rendering came out of, or nil for
+            /// one written before the key existed.
+            ///
+            /// **A rendering belongs to a language.** It is what a decoder
+            /// working in that language wrote where the term was said, and the
+            /// sound pass reads it back with that language's voice. `Quen` is
+            /// what the English decoder writes for `Qwen`; read with the French
+            /// voice it is /kɑ̃/, which is `quand`, the commonest word in
+            /// French. Over the 1,421 French dictations in this speaker's
+            /// archive that one rendering was 79 of 100 proposals. `Couenne` is
+            /// the French rendering of the same term — /kwɛn/ under both ears —
+            /// and it is useless in an English dictation.
+            ///
+            /// The term itself carries no language: `Qwen` reads /kwɛn/ in
+            /// either voice. Only renderings are artefacts of one decoder.
+            ///
+            /// Nil reads as `transcription.languages.first`, so for the one
+            /// language most people dictate in every entry already written
+            /// means what it always meant.
+            var lang: String?
             /// How many times it has been seen. Zero means never counted,
             /// which is every entry written before this key existed.
             var seen: Int = 0
@@ -309,19 +329,22 @@ struct Config: Decodable, Equatable {
             var unreadableFrom: String?
 
             init(
-                heard: String, phonemes: String? = nil, seen: Int = 0,
-                from: Source = .legacy,
+                heard: String, phonemes: String? = nil, lang: String? = nil,
+                seen: Int = 0, from: Source = .legacy,
                 note: String? = nil, unreadableFrom: String? = nil
             ) {
                 self.heard = heard
                 self.phonemes = phonemes
+                self.lang = lang
                 self.seen = seen
                 self.from = from
                 self.note = note
                 self.unreadableFrom = unreadableFrom
             }
 
-            enum CodingKeys: String, CodingKey { case heard, phonemes, seen, from, note }
+            enum CodingKeys: String, CodingKey {
+                case heard, phonemes, lang, seen, from, note
+            }
 
             /// Two shapes. The mapping is what the app writes; the bare string
             /// is what a person types when they have nothing else to say:
@@ -349,6 +372,8 @@ struct Config: Decodable, Equatable {
                 self.init(
                     heard: word,
                     phonemes: try c.decodeIfPresent(String.self, forKey: .phonemes),
+                    lang: (try? c.decodeIfPresent(String.self, forKey: .lang))?
+                        .flatMap { $0 }?.lowercased(),
                     seen: (try? c.decodeIfPresent(Int.self, forKey: .seen)).flatMap { $0 } ?? 0,
                     from: read ?? .legacy,
                     note: try c.decodeIfPresent(String.self, forKey: .note),
@@ -775,6 +800,11 @@ struct Config: Decodable, Equatable {
             .sorted { ($0.term, $0.heard) < ($1.term, $1.heard) }
     }
 
+    /// The language a dictation is assumed to be in before anything reads it:
+    /// the first of `transcription.languages`, which is the only one for most
+    /// configs. What an untagged rendering belongs to.
+    var primaryLanguage: String { transcription.languages.first ?? "en" }
+
     /// Every spelling that stands for a term by ear, with its sound where the
     /// file writes one down.
     ///
@@ -789,12 +819,23 @@ struct Config: Decodable, Equatable {
     /// nothing downstream can price otherwise. Nothing here goes near the
     /// spotter, and the terms those rules drop are exactly the ones this
     /// catches: `Claude Code` from "cloth code", `red rock` from "bedrock".
-    var vocabularySounds: [(term: String, form: String, phonemes: String?)] {
-        vocabulary.terms
+    ///
+    /// **Renderings are scoped to the dictation's language and the term is
+    /// not.** See `Pronunciation.lang` for why, and what `Quen` does to a
+    /// French transcript when it is not. A rendering with no `lang:` is read as
+    /// belonging to `primaryLanguage`, which for a one-language config is every
+    /// rendering there is.
+    func vocabularySounds(
+        in language: String
+    ) -> [(term: String, form: String, phonemes: String?)] {
+        let fallback = primaryLanguage
+        return vocabulary.terms
             .filter { !$0.value.never }
             .flatMap { name, entry -> [(term: String, form: String, phonemes: String?)] in
                 [(name, name, nil)]
-                    + entry.pronunciations.map { (name, $0.heard, $0.phonemes) }
+                    + entry.pronunciations
+                        .filter { ($0.lang ?? fallback) == language }
+                        .map { (name, $0.heard, $0.phonemes) }
             }
             .sorted { ($0.term, $0.form) < ($1.term, $1.form) }
     }
@@ -3173,7 +3214,7 @@ struct Config: Decodable, Equatable {
             // the audio search could be built for. Nothing tokenises a term
             // any more, so `Claude Code` and `crawl file` are matched by sound
             // like the rest.
-            let byEar = Set(vocabularySounds.map(\.term)).sorted()
+            let byEar = Set(vocabularySounds(in: primaryLanguage).map(\.term)).sorted()
             said.append("vocabulary: \(vocabulary.terms.count) terms in"
                 + " \(ConfigStore.vocabularyURL.lastPathComponent),"
                 + " \(byEar.count) matched by sound, \(rules) by rule")

@@ -1,0 +1,25 @@
+# A rendering only counts in the language it came out of.
+#
+# `Quen` is what the English decoder writes where `Qwen` was said. Read with
+# the French voice it is /kɑ̃/, which is `quand` — the commonest word in
+# French — so in a French dictation this rendering matches a word said in
+# every other sentence. `Couenne` is the French rendering of the same term,
+# /kwɛn/ under both ears, and it means nothing in an English one.
+#
+# The term itself carries no language. `Qwen` reads /kwɛn/ in either voice,
+# and `quand` scores 0.22 against it, so nothing here comes from the term.
+#
+# **Needs espeak-ng**, like the fixture beside it. See
+# `Config.Vocabulary.Pronunciation.lang`.
+#
+languages: [fr, en]
+vocabulary:
+  terms:
+    Qwen:
+      pronunciations:
+        - heard: Quen
+          lang: en
+        - heard: Couenne
+          lang: fr
+pipeline:
+  - vocabulary

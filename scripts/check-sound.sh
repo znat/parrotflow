@@ -26,10 +26,12 @@ command -v espeak-ng >/dev/null || exit 0
 # it should open, and why.
 FIXTURE="$ROOT/tests/pipelines/vocabulary-sound.yaml"
 failures=0
+cases=0
 check() {
-  local want="$1" name="$2" text="$3"
+  local want="$1" name="$2" text="$3" fixture="${4:-$FIXTURE}"
   local got
-  got="$("$BIN" --pipeline "$FIXTURE" "$text" --app "" --quiet --vars 2>/dev/null \
+  cases=$((cases + 1))
+  got="$("$BIN" --pipeline "$fixture" "$text" --app "" --quiet --vars 2>/dev/null \
     | sed -n 's/.*vocabulary\.slots = //p')"
   if [ "$got" = "$want" ]; then
     printf '✓ %s\n' "$name"
@@ -47,6 +49,17 @@ check 0 "a homophone stays under the floor"  "We should praise the work"
 # Already the term. Not a question.
 check 0 "the term itself is not a question"  "I use Ghostty daily"
 
+# A rendering belongs to the language it came out of. See
+# tests/pipelines/vocabulary-sound-lang.yaml for what `Quen` does to a French
+# sentence when it does not.
+LANG_FIXTURE="$ROOT/tests/pipelines/vocabulary-sound-lang.yaml"
+check 0 "an English rendering is not read in French" \
+  "Je ne sais pas quand il arrive" "$LANG_FIXTURE"
+check 1 "the French rendering is"  \
+  "On a mangé de la couenne hier" "$LANG_FIXTURE"
+check 1 "and the English one, in English" \
+  "I asked Quen about the model" "$LANG_FIXTURE"
+
 echo
-[ "$failures" -eq 0 ] && echo "3/3" || echo "$((3 - failures))/3"
+[ "$failures" -eq 0 ] && echo "$cases/$cases" || echo "$((cases - failures))/$cases"
 exit "$failures"

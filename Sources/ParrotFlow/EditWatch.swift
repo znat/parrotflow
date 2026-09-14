@@ -750,7 +750,7 @@ final class EditWatch {
         let neural = NeuralPhonemes.isDownloaded ? NeuralPhonemes.language(language) : nil
         guard Phonemes.binary != nil || neural != nil else { return 0 }
         let asking = [was, now]
-        let rules = Phonemes.of(asking, voice: language == "fr" ? "fr" : "en-us")
+        let rules = Phonemes.of(asking, voice: Phonemes.voice(for: language))
         let model = neural == nil ? [:] : await NeuralPhonemes.of(asking, language: neural!)
         var best: Float = 0
         for ear in [rules, model] {

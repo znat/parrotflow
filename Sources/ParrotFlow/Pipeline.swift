@@ -1172,24 +1172,31 @@ struct Pipeline: Equatable, Codable {
 
         // The words no spelling reaches. `geler` is 0.60 from `Gelar` by
         // letters and identical to it by sound, and so are `Ghost E`,
-        // `cloth code` and `eye brands`. Off for a French dictation: espeak's
-        // English letter-to-sound answers for French words, and the answer is
-        // noise.
+        // `cloth code` and `eye brands`.
+        //
+        // Both sides are read in the language that was dictated. This used to
+        // run on English only, and the reason given was that espeak's `en-us`
+        // letter-to-sound over French is noise — which was true of the voice
+        // this line passed, not of espeak. It reads French, and what stopped
+        // French working was the renderings rather than the ear: see
+        // `Config.Vocabulary.Pronunciation.lang`.
         //
         // Nothing is written here either. The floor is 0.85 and it was
         // measured over 20891 dictations — see `phonemeParts` for what fires
         // and what it costs.
-        if step.bySound ?? true, Pipeline.language(of: text, config: config) == "en" {
+        if step.bySound ?? true {
+            let spoken = Pipeline.language(of: text, config: config)
+            let sounds = config.vocabularySounds(in: spoken)
             let askedAt = Date()
             let sound = Trace.current?.open("sound", kind: .part)
             let heard = await VocabularyPass.phonemeParts(
-                in: text, sounds: config.vocabularySounds, voice: "en-us",
-                language: "en", floor: config.soundBelow, claimed: parts
+                in: text, sounds: sounds, voice: Phonemes.voice(for: spoken),
+                language: spoken, floor: config.soundBelow, claimed: parts
             )
             soundSeconds = Date().timeIntervalSince(askedAt)
-            sound?.close(config.vocabularySounds.isEmpty
+            sound?.close(sounds.isEmpty
                 ? "no terms with a sound"
-                : "\(heard.count) of \(config.vocabularySounds.count) over the floor")
+                : "\(heard.count) of \(sounds.count) over the floor")
             bySound = heard.count
             parts += heard
         }
