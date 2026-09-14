@@ -29,23 +29,25 @@ enum TourScreen: String, CaseIterable {
     }
 
     /// The screen, at one moment in its own pass.
-    @ViewBuilder func pane(clock: TimeInterval, progress: Double?) -> some View {
+    @ViewBuilder func pane(
+        clock: TimeInterval, progress: Double?, fetching: String? = nil
+    ) -> some View {
         switch self {
         case .downloads:
             TutorialDownloadsPane(
-                elapsed: clock, progress: progress ?? 0
+                elapsed: clock, progress: progress ?? 0, fetching: fetching
             )
         case .names:
             TutorialPane(
-                run: TutorialRun(clock), progress: progress
+                run: TutorialRun(clock), progress: progress, fetching: fetching
             )
         case .slack:
             TutorialSlackPane(
-                run: TutorialSlackRun(clock), progress: progress
+                run: TutorialSlackRun(clock), progress: progress, fetching: fetching
             )
         case .hack:
             TutorialHackPane(
-                elapsed: clock, progress: progress
+                elapsed: clock, progress: progress, fetching: fetching
             )
         case .ready:
             // No bar: there is nothing left to wait for, which is the whole of
@@ -169,39 +171,59 @@ enum TourWalk {
         // this the window opens at the last screen's height and shrinks, which
         // is a move nobody asked for on a window that has just appeared.
         guard elapsed >= resize else { return now }
-        let before = list[(index - 1 + list.count) % list.count].height
+        let was = list[before(index, at: elapsed, in: list)].height
         let u = clock / resize
-        return before + (now - before) * (u * u * (3 - 2 * u))
+        return was + (now - was) * (u * u * (3 - 2 * u))
     }
 
     /// Which page the walk is on at `elapsed`.
+    ///
+    /// Off `at` rather than off the offsets, because the offsets are first-pass
+    /// offsets and a later pass is a screen shorter.
     static func page(
         at elapsed: TimeInterval, in list: [TourScreen] = screens
     ) -> Int {
-        let all = pages(of: list)
-        let loop = total(of: list)
-        guard loop > 0 else { return 0 }
-        var into = elapsed.truncatingRemainder(dividingBy: loop)
-        if into < 0 { into += loop }
-        return all.lastIndex(where: { into >= $0 }) ?? 0
+        guard !list.isEmpty else { return 0 }
+        let (index, clock) = at(elapsed, in: list)
+        let before = list[0..<index].reduce(0) { $0 + $1.pages.count }
+        let own = list[index].pages.lastIndex { clock >= $0 } ?? 0
+        return before + own
     }
 
     /// Which screen is on at `elapsed`, and that screen's own clock.
     ///
     /// The walk loops: it is up for as long as the download takes, and nobody
-    /// knows how long that is.
+    /// knows how long that is. The loop is one screen shorter than the first
+    /// pass — the opening screen says in words what the tour is, and it says
+    /// that once. Coming back to it says the download has started again.
     static func at(
         _ elapsed: TimeInterval, in list: [TourScreen] = screens
     ) -> (index: Int, clock: TimeInterval) {
-        let loop = total(of: list)
-        guard !list.isEmpty, loop > 0 else { return (0, 0) }
-        var into = elapsed.truncatingRemainder(dividingBy: loop)
-        if into < 0 { into += loop }
-        for (index, screen) in list.enumerated() {
-            if into < screen.length { return (index, into) }
-            into -= screen.length
+        let first = total(of: list)
+        guard !list.isEmpty, first > 0 else { return (0, 0) }
+        var into = max(0, elapsed)
+        var from = 0
+        let loop = first - list[0].length
+        if into >= first, list.count > 1, loop > 0 {
+            into = (into - first).truncatingRemainder(dividingBy: loop)
+            from = 1
+        }
+        for index in from..<list.count {
+            if into < list[index].length { return (index, into) }
+            into -= list[index].length
         }
         return (list.count - 1, 0)
+    }
+
+    /// The screen before the one at `elapsed`, for the height it is easing out
+    /// of. On a later pass the screen before the second one is the last, not
+    /// the opener the loop skips.
+    private static func before(
+        _ index: Int, at elapsed: TimeInterval, in list: [TourScreen]
+    ) -> Int {
+        if index == 0 { return list.count - 1 }
+        if index == 1, elapsed >= total(of: list) { return list.count - 1 }
+        return index - 1
     }
 
 }
@@ -216,6 +238,9 @@ struct SetupTour: View {
     /// How far the model downloads have come, for the bar in the corner. See
     /// `TutorialScreen.progress`.
     var progress: Double?
+    /// What is being fetched right now, for the strip's label. See
+    /// `TutorialScreen.fetching`.
+    var fetching: String?
     var screens: [TourScreen] = TourWalk.screens
     /// Play from this offset instead: a dot at the bottom has been clicked.
     /// Nil where there is nobody to click, which is every still render.
@@ -223,7 +248,7 @@ struct SetupTour: View {
 
     var body: some View {
         let (index, clock) = TourWalk.at(elapsed, in: screens)
-        screens[index].pane(clock: clock, progress: progress)
+        screens[index].pane(clock: clock, progress: progress, fetching: fetching)
         // Each screen keeps the height of its own tallest beat. Fixed inside
         // one screen, so no frame of a pass resizes the window; different
         // between them, so none of them ends in a band of nothing, and eased
@@ -307,10 +332,21 @@ struct SetupTourPane: View {
                 // The downloader's own number, size-weighted across the six
                 // models, and the same one the corner's figure is drawn from.
                 progress: downloads.fraction,
+                fetching: fetching,
                 seek: { model.seekTour(to: $0) }
             )
             .onChange(of: height) { _, _ in onHeightChange() }
         }
         .onAppear { model.startTour() }
+    }
+
+    /// The name of the model being fetched, and where it is in the queue.
+    ///
+    /// Nil once they are all in, which leaves the strip saying what the job was
+    /// rather than naming a file nothing is doing.
+    private var fetching: String? {
+        guard let row = downloads.fetching else { return nil }
+        let (of, count) = downloads.arrived
+        return "\(min(of + 1, count)) of \(count) · \(row.name)"
     }
 }

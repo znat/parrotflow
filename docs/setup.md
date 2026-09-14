@@ -151,7 +151,9 @@ it is done while there is still a download to wait on.
 long as the models take: correcting a name and having it remembered, a sentence
 in Slack, and the kinds of transform. It turns its own pages.
 
-Three things say what it is. The first screen says it in words, once. Every
+Three things say what it is. The first screen says it in words, once — and only
+once: the loop that follows leaves it out, because coming back to a screen that
+says the download is starting says the download has started again. Every
 screen carries a small "WHILE YOU WAIT" at the right of the header, because the
 tour loops and somebody who looks away lands in the middle of one. And a row of
 dots at the bottom says they are pages of one walk.
@@ -170,8 +172,13 @@ through is measured on how long it has been on screen, not on the clock a dot
 moves.
 
 The download sits above a divider, so the top of the window is this install and
-the rest of it is the app. It is a bar, a shimmer over the filled part, and the
-percentage at the end. The figure is the downloader's own, weighted by the size
+the rest of it is the app. It is a bar, a shimmer over the filled part, the
+percentage at the end, and on the left the model being fetched — "2 of 6 ·
+Parakeet TDT 0.6B v3". The name is there because the bar is not enough to watch:
+Parakeet is 461 MB of the 1.5 GB and FluidAudio reports it one file at a time
+rather than one byte at a time, so the figure sits at 15% for a minute or two
+and then steps to 31%. A name that changes six times is something happening on
+a bar that looks stopped. The figure is the downloader's own, weighted by the size
 of each model, and it never reads 100%: a hundred is what ends the tour, so a
 screen still up saying it has arrived would be contradicting itself.
 

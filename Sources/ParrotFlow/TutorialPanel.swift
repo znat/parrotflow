@@ -675,6 +675,14 @@ struct TutorialScreen<Stage: View>: View {
     /// they are still coming. Nil for a screen that draws no bar at all, which
     /// is also what takes the kicker off the header.
     var progress: Double?
+    /// What is being fetched right now, for the strip's own label. Nil falls
+    /// back to naming the job rather than the file.
+    ///
+    /// It is there because the bar is not enough to watch: the speech model is
+    /// a third of the download and its progress arrives a file at a time, so
+    /// the number sits still for a minute. A name that changes six times is
+    /// six things happening on a bar that looks stopped.
+    var fetching: String?
     /// The wipe a screen opens with, or nil for a lead that is simply there.
     /// See `LeadIntro`.
     var leadIntro: LeadIntro?
@@ -741,7 +749,7 @@ struct TutorialScreen<Stage: View>: View {
     /// room — and what is left says the same thing in the corner.
     private func bar(_ progress: Double) -> some View {
         HStack(spacing: at(9)) {
-            Text("Downloading models")
+            Text(fetching ?? "Downloading models")
                 .font(.system(size: at(9), weight: .medium, design: .rounded))
                 .foregroundStyle(Color.white.opacity(0.52))
                 .fixedSize()
@@ -803,12 +811,14 @@ struct TutorialPane: View {
     let run: TutorialRun
     /// The downloads, for the bar under the header. See `TutorialScreen`.
     var progress: Double?
+    var fetching: String?
 
     var body: some View {
         TutorialScreen(
             title: "ParrotFlow understands what and who you are talking about",
             lead: "Example: 2 different people whose names sound the same (Mik and Mick)",
-            progress: progress
+            progress: progress,
+            fetching: fetching
         ) {
             // The same room above the composer the Slack screen keeps for its
             // channel: two screens of one walk, and a composer that sat at a
@@ -834,6 +844,7 @@ struct TutorialDownloadsPane: View {
     /// Seconds since the walk began.
     let elapsed: TimeInterval
     let progress: Double
+    var fetching: String?
 
     /// Long enough to have said it and to have moved, and no longer: three
     /// seconds of a bar in the middle of the screen, and then it is out of the
@@ -857,7 +868,8 @@ struct TutorialDownloadsPane: View {
             showsLead: false,
             centresStage: true,
             progressFade: lifted,
-            progress: progress
+            progress: progress,
+            fetching: fetching
         ) {
             // The same bar, rising and fading as the corner's copy arrives. One
             // of them is always whole, so what the eye follows is the bar going

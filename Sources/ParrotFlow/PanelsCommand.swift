@@ -1452,6 +1452,9 @@ private struct TourPreview: View {
                 // what a real one looks like. The app passes the downloader's
                 // own number, and that one arrives.
                 progress: min(0.9, 0.05 + elapsed / 180),
+                // A name the app would have put here, so the strip is the one
+                // the setup window draws rather than its fallback.
+                fetching: "1 of 6 · Parakeet TDT 0.6B v3",
                 screens: screens,
                 seek: { skew = $0 - ran }
             )

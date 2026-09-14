@@ -401,13 +401,15 @@ struct TutorialSlackPane: View {
     let run: TutorialSlackRun
     /// The downloads, for the bar under the header.
     var progress: Double?
+    var fetching: String?
 
     var body: some View {
         TutorialScreen(
             title: TutorialSlack.title,
             lead: "",
             showsLead: false,
-            progress: progress
+            progress: progress,
+            fetching: fetching
         ) {
             stage
         }

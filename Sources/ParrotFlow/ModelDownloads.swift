@@ -232,6 +232,30 @@ final class ModelDownloads: ObservableObject {
         }
     }
 
+    /// The row being fetched right now, and how many are in.
+    ///
+    /// For the strip above the tour. The bar alone is not enough to watch:
+    /// Parakeet is 461 MB of the 1.5 GB and FluidAudio reports it a file at a
+    /// time, not a byte at a time, so the number sits at 15% for a minute or
+    /// two and then steps to 31%. A bar that has not moved says nothing; the
+    /// name of a 461 MB model says what it is waiting for.
+    var fetching: ModelDownload? {
+        rows.first { if case .downloading = $0.state { return true } else { return false } }
+    }
+
+    /// How many of the fetches are over, and how many there are, ignoring the
+    /// ones a setting switched off.
+    var arrived: (of: Int, count: Int) {
+        let counted = rows.filter { if case .off = $0.state { return false } else { return true } }
+        let done = counted.filter {
+            switch $0.state {
+            case .installed, .loading, .failed: return true
+            case .waiting, .downloading, .off: return false
+            }
+        }
+        return (done.count, counted.count)
+    }
+
     /// How far every fetch has got together, 0 to 1, weighted by size.
     ///
     /// One bar rather than six percentages: the last screen asks "is this

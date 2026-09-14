@@ -509,6 +509,7 @@ struct TutorialHackPane: View {
     let elapsed: TimeInterval
     /// The downloads, for the bar under the header.
     var progress: Double?
+    var fetching: String?
 
     private var run: TutorialHackRun { TutorialHackRun(elapsed) }
 
@@ -516,7 +517,8 @@ struct TutorialHackPane: View {
         TutorialScreen(
             title: TutorialHack.title,
             lead: TutorialHack.lead,
-            progress: progress
+            progress: progress,
+            fetching: fetching
         ) {
             stage
         }
