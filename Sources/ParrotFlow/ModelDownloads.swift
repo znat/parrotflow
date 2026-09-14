@@ -157,6 +157,11 @@ final class ModelDownloads: ObservableObject {
         for at in rows.indices where rows[at].state.hasFailed {
             rows[at].state = .waiting
         }
+        // Back to the truth. A failure stops the crawl wherever it had got to,
+        // and a retry starting under a bar left at 99% would be reporting the
+        // download it is about to do as nearly over. The crawl restarts itself
+        // on the first report — see `update`.
+        crept = fraction
     }
 
     func update(_ id: String, to state: ModelDownload.State) {
