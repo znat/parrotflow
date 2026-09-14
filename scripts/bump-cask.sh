@@ -67,9 +67,10 @@ cask "parrotflow" do
   # The app checks GitHub hourly and installs its own updates, so brew should
   # not treat a self-updated copy as outdated. See docs/distribution.md.
   auto_updates true
-  # Read as a minimum. macOS 14 is FluidAudio's floor: the speech models need
-  # CoreML on the ANE.
-  depends_on macos: :sonoma
+  # Read as a minimum, and it has to match `LSMinimumSystemVersion` in
+  # Info.plist: brew installing on a Mac the app refuses to launch on is worse
+  # than brew refusing to install.
+  depends_on macos: :sequoia
   # The ear the vocabulary matches by sound with. It is GPL-3 and stays a
   # separate program invoked over a pipe, so brew installs it beside the app
   # rather than the app bundling it — see Phonemes.swift.
