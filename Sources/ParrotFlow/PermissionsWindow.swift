@@ -82,10 +82,18 @@ enum PermissionStep: CaseIterable {
 }
 
 /// A screen in the walk. The permissions are asked for one at a time, then the
-/// models this launch is fetching are listed, then the walk ends on eSpeak NG.
+/// models this launch is fetching are listed, then eSpeak NG is asked for, then
+/// the tour plays while the models come down, and the walk ends on Ready.
 enum SetupStep: Equatable {
     case permission(PermissionStep)
     case models
+    /// eSpeak NG, the one thing the app cannot fetch. Before the tour, so the
+    /// one job with a person in it is done while there is still a download to
+    /// wait on.
+    case espeak
+    /// The demonstration of what the app does, played while the models
+    /// download. See `TourWalk`.
+    case tour
     case setup
 }
 
@@ -167,13 +175,68 @@ final class PermissionsModel: ObservableObject {
         // Only while installing, and only when there is something to list. It
         // says what is about to be downloaded, which is news once. Opening the
         // window from the menu bar a week later, it is a screen to click past.
-        if context == .installing, !downloads.rows.isEmpty { steps.append(.models) }
+        //
+        // The tour goes with it, on the same condition and for the same reason:
+        // it is what the wait for those downloads is spent on, and there is no
+        // wait on a revisit.
+        if context == .installing, !downloads.rows.isEmpty {
+            steps.append(.models)
+            if espeak != .found { steps.append(.espeak) }
+            steps.append(.tour)
+        }
         steps.append(.setup)
         index = 0
         asked = false
+        tourStartedAt = nil
+        tourSkew = 0
     }
 
     func markAsked() { asked = true }
+
+    // MARK: - The tour's clock
+
+    /// When the tour went up.
+    ///
+    /// Nil until it is on screen: the time somebody spent granting permissions
+    /// is not time the tour has been playing. Held here rather than in the view
+    /// because the poll that ends the tour has to be able to read it.
+    @Published private(set) var tourStartedAt: Date?
+    /// One moment of the tour and no clock at all, for `--tutorial-sheet walk`.
+    /// A start put in the past drifts by however long the sheet spends
+    /// measuring and drawing, which is enough to land on the next screen.
+    @Published private(set) var tourFrozenAt: TimeInterval?
+    /// What the dots at the bottom have moved the clock by. See
+    /// `TourWalk.pages`.
+    @Published private(set) var tourSkew: TimeInterval = 0
+
+    func startTour() {
+        guard tourStartedAt == nil else { return }
+        tourStartedAt = Date()
+    }
+
+    /// Play from `at` seconds into the walk. A dot has been clicked.
+    func seekTour(to at: TimeInterval) {
+        guard let tourStartedAt else { return }
+        tourSkew = at - max(0, Date().timeIntervalSince(tourStartedAt))
+    }
+
+    func tourElapsed(at moment: Date = Date()) -> TimeInterval {
+        if let tourFrozenAt { return tourFrozenAt }
+        guard let tourStartedAt else { return 0 }
+        return max(0, moment.timeIntervalSince(tourStartedAt) + tourSkew)
+    }
+
+    /// How long the tour has been up, whatever the dots did to the clock it is
+    /// drawn from.
+    ///
+    /// What "it has played through once" is measured on. The drawn clock cannot
+    /// answer that: a click on the last dot moves it past the end, and the tour
+    /// would close over a screen somebody had just asked to see.
+    func tourOnScreen(at moment: Date = Date()) -> TimeInterval {
+        guard let tourStartedAt else { return 0 }
+        return max(0, moment.timeIntervalSince(tourStartedAt))
+    }
+
 
     /// Move on one screen: Next on the models screen, and the skip a revisit
     /// offers on a permission screen. It cannot walk past the last one — that
@@ -209,7 +272,21 @@ final class PermissionsModel: ObservableObject {
 
     /// Every screen of a first run, which is what the sheet draws against.
     private static var walk: [SetupStep] {
-        PermissionStep.allCases.map(SetupStep.permission) + [.models, .setup]
+        PermissionStep.allCases.map(SetupStep.permission) + [.models, .espeak, .tour, .setup]
+    }
+
+    /// Parked on the tour, `at` seconds into it, for `--tutorial-sheet walk`.
+    static func showingTour(
+        _ downloads: ModelDownloads, at: TimeInterval
+    ) -> PermissionsModel {
+        let model = PermissionsModel(downloads: downloads)
+        model.micStatus = .granted
+        model.axStatus = .granted
+        model.steps = walk
+        model.index = walk.firstIndex(of: .tour) ?? 0
+        model.tourStartedAt = Date()
+        model.tourFrozenAt = at
+        return model
     }
 
     /// Parked on the setup screen, for `--panel-sheet` and `--panels setup`.
@@ -257,6 +334,11 @@ final class PermissionsWindowController {
     /// Re-runs the fetches, for the button a blocking failure puts in the foot.
     /// Set by `AppDelegate`; the window neither owns nor starts a download.
     var onRetryDownloads: (() -> Void)?
+
+    /// The setup window has closed on the end of an install. Nothing is left
+    /// on screen at that point and there is no dock icon, so this is where the
+    /// app says where it went. See `MenuBarCallout`.
+    var onInstalled: (() -> Void)?
     private var window: NSWindow?
 
     /// Whether the walk is on screen. The launch panel asks, so it does not
@@ -310,11 +392,12 @@ final class PermissionsWindowController {
         window?.styleMask = context == .installing ? [.titled] : [.titled, .closable]
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
-        resizeToContent()
+        stepSettled()
         window?.center()
         centred = true
         fronting = nil
         succeededIndex = model.index
+        installed = false
 
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -326,6 +409,8 @@ final class PermissionsWindowController {
         model.refresh()
         pollEspeak()
         model.advancePastGranted()
+        leaveEspeakIfFound()
+        leaveTourIfDone()
         guard model.current != nil else { fronting = nil; return }
 
         // Once this step has been in front at all, it is done — regardless
@@ -356,6 +441,57 @@ final class PermissionsWindowController {
         }
     }
 
+    /// The eSpeak NG screen asks for one thing. Once it is here there is
+    /// nothing left on it to read, so the walk goes straight on to the tour
+    /// rather than leaving a title and a button nobody needs to press.
+    private func leaveEspeakIfFound() {
+        guard model.current == .espeak, model.espeak == .found else { return }
+        advanceItself()
+    }
+
+    /// The tour loops for as long as the models take, so something has to end
+    /// it.
+    ///
+    /// A failure nobody can wait out ends it at once: the last screen is the
+    /// only one that names the row and offers the retry. Otherwise two things
+    /// have to be true, and then it ends wherever it is — mid-screen included.
+    /// It used to wait for the next cut so no demonstration was cut in half,
+    /// and that is a demonstration held in front of somebody whose app is
+    /// ready.
+    ///
+    /// The first is that it has been watched once through.
+    ///
+    /// The downloads start at launch and the tour starts after the
+    /// permissions, so the wait is mostly spent in System Settings: measured
+    /// here, every model was in 95 seconds after launch, which is about how
+    /// long granting accessibility takes. Without this the tour was reached
+    /// with nothing left to wait for and skipped before it drew a frame, which
+    /// is what it did on two runs of a real install.
+    ///
+    /// The second is that the download is over. Not that the speech model is
+    /// in: that one lands first and about a gigabyte of language models
+    /// follows it.
+
+    private func leaveTourIfDone() {
+        guard model.current == .tour else { return }
+        if model.downloads.blockingFailure != nil { advanceItself(); return }
+        // Time on screen for the pass, the drawn clock for the cut: a click on
+        // a dot moves the second one and must not count as having watched it.
+        guard model.tourOnScreen() >= TourWalk.total(of: TourWalk.screens) else {
+            return
+        }
+        guard model.downloads.everythingIsIn else { return }
+        advanceItself()
+    }
+
+    /// The walk moving on by itself, which is not a step to bring the window
+    /// forward for: nobody pressed anything, and it happens a minute or two
+    /// after they last looked at it. See `succeededIndex`.
+    private func advanceItself() {
+        model.advance()
+        succeededIndex = model.index
+    }
+
     /// No "check again" button. The binary is looked for on the same tick that
     /// looks for a ticked checkbox, so an install in Terminal lands on its own.
     private func pollEspeak() {
@@ -384,12 +520,17 @@ final class PermissionsWindowController {
     private static let terminalGiveUpSeconds: TimeInterval = 300
 
     private func build() {
+        // Measured once, here. Read first from the body of the screen the tour
+        // cuts to, it would lay panes out in the middle of an update.
+        for screen in TourWalk.screens { _ = screen.height }
+
         let view = PermissionsView(
             onAsk: { [weak self] step in self?.ask(step) },
             onDecline: { [weak self] in self?.decline() },
             onClose: { [weak self] in self?.finish() },
             onRetry: { [weak self] in self?.onRetryDownloads?() },
-            onInstallEspeak: { [weak self] in self?.installEspeak() }
+            onInstallEspeak: { [weak self] in self?.installEspeak() },
+            onTourHeight: { [weak self] in self?.resizeToContent() }
         )
         .environmentObject(model)
         .environmentObject(model.downloads)
@@ -413,15 +554,21 @@ final class PermissionsWindowController {
         // height has not changed.
         sizeWatch = Publishers.Merge(model.objectWillChange, model.downloads.objectWillChange)
             .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in self?.resizeToContent() }
+            .sink { [weak self] _ in self?.stepSettled() }
 
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
             queue: .main
         ) { [weak self] _ in
-            self?.timer?.invalidate()
-            self?.timer = nil
+            guard let self else { return }
+            self.timer?.invalidate()
+            self.timer = nil
+            // Only the end of an install. A window opened from the menu bar
+            // was opened by somebody who knows where the menu bar is, and a
+            // cancelled one is closing on its way to quitting.
+            if self.installed { self.onInstalled?() }
+            self.installed = false
         }
     }
 
@@ -445,11 +592,26 @@ final class PermissionsWindowController {
     private func finish() {
         guard let window else { return }
         guard model.espeak == .missing, !model.espeakDeclined else {
-            window.close()
+            closeOnTheEnd(window)
             return
         }
         askAboutEspeak(on: window)
     }
+
+    /// The walk is over, so the window goes.
+    ///
+    /// Flagged, because `willClose` cannot tell this from the other way out.
+    /// *Cancel installation* closes the same window in the same context and
+    /// then quits the app, and the callout under the menu bar icon would have
+    /// appeared over an app on its way out — and spent its once-only default
+    /// doing it.
+    private func closeOnTheEnd(_ window: NSWindow) {
+        installed = model.context == .installing
+        window.close()
+    }
+
+    /// Set by `closeOnTheEnd` and read by `willClose`. See `onInstalled`.
+    private var installed = false
 
     private func askAboutEspeak(on window: NSWindow) {
         let alert = NSAlert()
@@ -470,7 +632,7 @@ final class PermissionsWindowController {
             guard answer == .alertFirstButtonReturn else {
                 self.model.espeakDeclined = true
                 EspeakInstall.declined = true
-                window.close()
+                self.closeOnTheEnd(window)
                 return
             }
             // The window stays open, so the line can show Terminal opening and
@@ -490,6 +652,21 @@ final class PermissionsWindowController {
     /// back afterwards, because `setContentSize` keeps the bottom-left corner
     /// and a window that grows upward moves its own title bar out from under
     /// the pointer.
+    /// The window takes the shape and the shade of whatever screen is on it.
+    private func stepSettled() {
+        // The tour is drawn in whites over dark glass, and it is the one screen
+        // in the walk that is. The others are drawn in whatever the Mac is set
+        // to.
+        //
+        // Only on a change. This runs on every download report, and every
+        // assignment makes the whole tree work out its appearance again.
+        let wanted: NSAppearance.Name? = model.current == .tour ? .darkAqua : nil
+        if window?.appearance?.name != wanted {
+            window?.appearance = wanted.map { NSAppearance(named: $0) } ?? nil
+        }
+        resizeToContent()
+    }
+
     private func resizeToContent() {
         guard let window, let content = window.contentViewController?.view else { return }
         let fitting = content.fittingSize
@@ -546,15 +723,18 @@ enum PermissionMetrics {
     static func width(for step: SetupStep) -> CGFloat {
         switch step {
         case .permission: return width
-        case .models, .setup: return setupWidth
+        // The tour is drawn at the same width, from its own `Pane.width`.
+        case .models, .espeak, .tour, .setup: return setupWidth
         }
     }
 
-    /// The margin around the pane, on the same scale as what it holds.
+    /// The margin around the pane, on the same scale as what it holds. The tour
+    /// carries its own, because it is played on its own as well.
     static func padding(for step: SetupStep) -> CGFloat {
         switch step {
         case .permission: return 28
-        case .models, .setup: return SetupMetrics.at(28)
+        case .tour: return 0
+        case .models, .espeak, .setup: return SetupMetrics.at(28)
         }
     }
     static let height: CGFloat = 328
@@ -569,7 +749,9 @@ enum PermissionMetrics {
     static func height(for step: SetupStep) -> CGFloat? {
         switch step {
         case .permission: return height
-        case .models, .setup: return nil
+        // The tour is measured, like the other two. Every screen in it has its
+        // own height and it says so as it cuts — see `SetupTourPane`.
+        case .models, .espeak, .tour, .setup: return nil
         }
     }
 }
@@ -582,6 +764,8 @@ struct PermissionsView: View {
     var onClose: () -> Void = {}
     var onRetry: () -> Void = {}
     var onInstallEspeak: () -> Void = {}
+    /// The tour wants another height. See `SetupTourPane.onHeightChange`.
+    var onTourHeight: () -> Void = {}
 
     /// The header belongs to whichever screen is under it, so it is drawn on
     /// that screen's scale.
@@ -591,6 +775,17 @@ struct PermissionsView: View {
     }
 
     var body: some View {
+        // The tour draws its own header, its own margin and its own width — it
+        // is played on its own as well, by `--panels tutorial` — so it is not
+        // put inside this screen's chrome.
+        if model.current == .tour {
+            SetupTourPane(onHeightChange: onTourHeight)
+        } else {
+            walk
+        }
+    }
+
+    private var walk: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: header(8)) {
                 PlumageMark(size: header(13))
@@ -619,6 +814,19 @@ struct PermissionsView: View {
                 )
             case .models:
                 ModelsPane(onNext: { model.advance() })
+            case .tour:
+                // Drawn above, outside this chrome.
+                EmptyView()
+            case .espeak:
+                SetupPane(
+                    micStatus: model.micStatus, axStatus: model.axStatus,
+                    hotkeyDisplay: model.hotkeyDisplay,
+                    hotkeyRegistered: model.hotkeyRegistered,
+                    context: model.context, espeak: model.espeak,
+                    onClose: { model.advance() }, onRetry: onRetry,
+                    onInstallEspeak: onInstallEspeak,
+                    asking: true
+                )
             case .setup:
                 SetupPane(
                     micStatus: model.micStatus, axStatus: model.axStatus,
@@ -982,6 +1190,10 @@ private struct SetupPane: View {
     let onClose: () -> Void
     let onRetry: () -> Void
     let onInstallEspeak: () -> Void
+    /// The screen before the tour rather than the one after it: it is about
+    /// eSpeak NG and nothing else, and its button moves the walk on instead of
+    /// closing the window.
+    var asking = false
 
     @EnvironmentObject private var downloads: ModelDownloads
 
@@ -1000,7 +1212,7 @@ private struct SetupPane: View {
 
             Spacer(minLength: at(20))
 
-            if showsBar { DownloadBar(fraction: downloads.fraction) }
+            if showsBar { DownloadBar(fraction: downloads.shown) }
 
             SetupFoot(
                 title: primaryTitle,
@@ -1034,13 +1246,14 @@ private struct SetupPane: View {
         if lostPermission != nil { return .permissionLost }
         if downloads.rows.isEmpty { return .dictationOff }
         if downloads.blockingFailure != nil { return .somethingDidNotArrive }
+        // The screen before the tour is about eSpeak NG whatever else is true.
+        if asking { return .espeak }
         // Opened from the menu bar, eSpeak NG is the reason: the item only
         // appears while something is unfinished, and this is where the command
         // to install it lives. Ready would hide the one thing being asked for.
         if context == .revisiting, espeak != .found { return .espeak }
-        // Setting up, Ready wins. The walk ends the moment the models land,
-        // and this screen reads the same whether eSpeak NG was installed or
-        // not — Done asks about it once, in its own alert.
+        // Setting up, Ready wins. eSpeak NG had its own screen before the
+        // tour, and Done asks once more in its own alert.
         if downloads.speechIsIn { return .ready }
         return espeak == .found ? .almostReady : .espeak
     }
@@ -1065,8 +1278,16 @@ private struct SetupPane: View {
 
     /// The models are still coming and nothing has gone wrong. Both the bar and
     /// the greyed button are that one condition.
+    /// Greyed while a dictation would still fail. That is about Done, which
+    /// closes the window: an app closed over a half-finished fetch is one that
+    /// does not work yet.
+    ///
+    /// Never about Continue. That moves the walk on to the tour, which is what
+    /// the wait is spent watching, so gating it on the download left nothing to
+    /// press on a screen that had already been dealt with.
     private var waiting: Bool {
-        (moment == .espeak || moment == .almostReady) && !downloads.speechIsIn
+        guard !asking else { return false }
+        return (moment == .espeak || moment == .almostReady) && !downloads.speechIsIn
     }
 
     /// The bar waits for eSpeak NG to be settled. While the card is up the
@@ -1085,7 +1306,7 @@ private struct SetupPane: View {
             if let lead {
                 Text(lead)
                     .font(.system(size: at(12)))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(leadColour)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let (before, after) = keySentence, hotkeyRegistered {
@@ -1099,6 +1320,16 @@ private struct SetupPane: View {
             }
         }
         .padding(.bottom, at(4))
+    }
+
+    /// A caption under a title is dimmed. These are not captions: each one is
+    /// the reason the screen is up, and the eSpeak one is a licence and what
+    /// the library is for, which is the whole of what there is to decide.
+    private var leadColour: Color {
+        switch moment {
+        case .espeak, .permissionLost, .somethingDidNotArrive: return .primary
+        case .dictationOff, .almostReady, .ready: return .secondary
+        }
     }
 
     private var lead: String? {
@@ -1150,6 +1381,7 @@ private struct SetupPane: View {
     /// A failure nobody is waiting on stays off this screen. Only a model a
     /// dictation waits for reaches the foot.
     private var primaryTitle: String {
+        if asking { return "Continue" }
         guard moment == .somethingDidNotArrive else { return "Done" }
         return downloads.blockingFailure?.state.failure?.retryTitle ?? "Done"
     }
@@ -1174,6 +1406,11 @@ private struct SetupPane: View {
             case .found:
                 EmptyView()
             }
+        }
+        // Under whatever else is here, and on every moment: a model that did
+        // not arrive is worth saying whether or not there is a screen about it.
+        if !downloads.quietFailures.isEmpty {
+            QuietFailureNote(rows: downloads.quietFailures).padding(.top, at(16))
         }
     }
 }
@@ -1324,6 +1561,47 @@ private struct EspeakCard: View {
     }
 }
 
+/// The models that did not arrive and that nothing waits for.
+///
+/// No button. Each of these is fetched again on the dictation that first needs
+/// it — the fetch clears its own handle when it fails, see
+/// `Transcriber.warmSlotModel` — so the only thing to say is what is missing,
+/// what it costs until then, and that nobody has to do anything.
+///
+/// A blocking failure never reaches here. That one owns the title, the sentence
+/// and the retry, because without it nothing transcribes at all.
+private struct QuietFailureNote: View {
+    let rows: [ModelDownload]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SetupMetrics.at(5)) {
+            Text(rows.count == 1 ? "One model did not arrive" : "\(rows.count) models did not arrive")
+                .font(.system(size: SetupMetrics.at(12), weight: .semibold))
+            ForEach(rows) { row in
+                Text("\(row.name) — \(row.costOfFailure).")
+                    .font(.system(size: SetupMetrics.at(11)))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("ParrotFlow downloads each of them again the first time it needs"
+                + " one. Nothing to do.")
+                .font(.system(size: SetupMetrics.at(11)))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(Parrot.amber)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, SetupMetrics.at(11))
+        .padding(.vertical, SetupMetrics.at(10))
+        .background(
+            Parrot.amber.opacity(0.11),
+            in: RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)
+                .strokeBorder(Parrot.amber.opacity(0.38), lineWidth: SetupMetrics.at(1))
+        }
+    }
+}
+
 /// While Terminal has it.
 ///
 /// Nothing to press. The binary is looked for on the same tick that looks for a
@@ -1349,13 +1627,16 @@ private struct EspeakWaitingCard: View {
                 }
 
             VStack(alignment: .leading, spacing: SetupMetrics.at(4)) {
-                Text("Terminal is installing it now. This screen notices on its own when"
-                    + " it lands.")
                 // Homebrew asks before it does anything, and a window that only
-                // says "installing" reads as one nobody has to answer.
+                // says "installing" reads as one nobody has to answer. So this
+                // is the line that has to be read, and it is set first and
+                // heavier than the one saying what is happening.
                 Text("Terminal will ask you to confirm.")
+                    .font(.system(size: SetupMetrics.at(12), weight: .semibold))
+                Text("It is installing now. This screen notices on its own when"
+                    + " it lands.")
+                    .font(.system(size: SetupMetrics.at(11)))
             }
-            .font(.system(size: SetupMetrics.at(11)))
             .foregroundStyle(Parrot.amber)
             .fixedSize(horizontal: false, vertical: true)
 

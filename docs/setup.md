@@ -134,24 +134,107 @@ grep "launched —" ~/Library/Logs/ParrotFlow.log | tail -1
 Want `accessibility=Granted`. `NotGranted` means the switch is off or they
 ticked a different app.
 
-**The last two screens.** After the permissions the setup window lists the
-models it is fetching — about 1.5 GB, started at launch — with what each one
-costs. *Download* moves on; the fetches started at launch and carry on behind it.
+**After the permissions.** The setup window lists the models it is fetching —
+about 1.5 GB, started at launch — with what each one costs. *Download* moves on;
+the fetches started at launch and carry on behind it.
 
-The last screen is eSpeak NG, the one thing the app cannot fetch for you. It
-helps ParrotFlow understand your own terms — your jargon, your teammates'
-names. It is GPL-3 and a separate library, so the screen shows the Homebrew
-command, and
+**eSpeak NG.** Then the one thing the app cannot fetch for you. It helps
+ParrotFlow understand your own terms — your jargon, your teammates' names. It is
+GPL-3 and a separate library, so the screen shows the Homebrew command, and
 *Install with Terminal* runs it where it can be watched. The screen notices the
-binary landing by itself. Once eSpeak NG is settled the title becomes the state:
-"Almost ready" while a model a dictation waits on is still coming, then "Ready"
-with the key to hold. The bar appears once eSpeak NG is settled: while the card
-is up the screen is asking for one thing.
+binary landing by itself. *Continue* moves on whether or not it is here.
+
+It comes before the tour on purpose: it is the one step with a person in it, so
+it is done while there is still a download to wait on.
+
+**The tour.** Then the window plays a demonstration of what the app does, for as
+long as the models take: correcting a name and having it remembered, a sentence
+in Slack, and the kinds of transform. It turns its own pages.
+
+Three things say what it is. The first screen says it in words, once — and only
+once: the loop that follows leaves it out, because coming back to a screen that
+says the download is starting says the download has started again. Every
+screen carries a small "WHILE YOU WAIT" at the right of the header, because the
+tour loops and somebody who looks away lands in the middle of one. And a row of
+dots at the bottom says they are pages of one walk.
+
+Each screen keeps the height of its own tallest beat, so none of them ends in a
+band of nothing, and the window eases between the two heights over about six
+tenths of a second rather than jumping at the cut. That long because the
+distance is long: the opening screen is 286 points tall and the one after it is
+624.
+
+The dots are the only thing on the tour to press. Clicking one plays from there,
+which is the way back to a page that went past too quickly. They count pages and
+not screens: the last screen is four config examples one after another, so there
+are seven dots. A click cannot end the tour early — how long it has played
+through is measured on how long it has been on screen, not on the clock a dot
+moves.
+
+The download sits above a divider, so the top of the window is this install and
+the rest of it is the app. It is a bar, a shimmer over the filled part, the
+percentage at the end, and on the left the model being fetched — "2 of 6 ·
+Parakeet TDT 0.6B v3". The name is there because the bar was not enough to
+watch: Parakeet is 461 MB of the 1.5 GB and FluidAudio reports it one file at a
+time rather than one byte at a time, so the figure sat at 15% for a minute or
+two and then stepped to 31%. A name that changes six times is something
+happening on a bar that looks stopped.
+
+The figure also fills its own gaps. The bar gains a point every three seconds on
+its own, and the real figure wins whenever it is further on. It is a guess
+between two known points and a slow one — a point every three seconds is 300
+seconds for the whole download, and 1.5 GB has taken about two minutes on every
+install measured here — so the truth is almost always ahead of it. It stops one
+point short of full: a hundred is the download ending, and only the download
+says that.
+
+On the whole bar, not on the rows, which is where it was first. A row stops one
+point short too, and Parakeet is 31% of the download, so a crawl that filled
+Parakeet's row took the bar to 30% and parked it there. The figure is the downloader's own, weighted by the size
+of each model, and it never reads 100%: a hundred is what ends the tour, so a
+screen still up saying it has arrived would be contradicting itself.
+
+It ends by itself once it has played through once **and** every model is in. It
+ends wherever it is, mid-screen included: it used to wait for the next cut so no
+demonstration was cut in half, and that is a demonstration held in front of
+somebody whose app is ready. It also ends at once if a fetch a dictation waits
+on fails. Both
+conditions earn their place. The downloads start at launch and the tour starts
+after the permissions, so most of the wait is spent in System Settings granting
+accessibility: without the first condition the tour is reached with nothing left
+to wait for and skipped before it draws a frame. And the second is every model
+rather than the speech model, because that one lands first with about a gigabyte
+still behind it.
+
+**Ready.** The last screen. The title is the state: "Almost ready" while a model
+a dictation waits on is still coming, then "Ready" with the key to hold, and one
+bar under it for every download together.
+
+**A model that did not arrive.** If one of the four a dictation never waits for
+fails, the last screen says so: the name, what it costs until it is here, and
+that ParrotFlow fetches it again the first time it needs one. No button. Each
+fetch clears its own handle when it fails, so the next dictation that reads the
+model tries again on its own.
+
+The two a dictation does wait on — Parakeet and Silero VAD — are not this. One
+of those failing takes the title, the sentence and the retry, and ends the tour
+at once.
 
 *Done* is greyed until those models are in — it closes the window, and an app
 closed over a half-finished fetch is one that does not work yet. Pressing it
 without eSpeak NG asks once, *Install it* or *Not now*, and remembers the
 answer, so the question is asked once per install and not once per launch.
+
+**Where the app went.** When the window closes on the end of an install, a
+callout appears under the menu bar icon with an arrow pointing at it: the app's
+name, the key to hold, and that its menu is under the bird. Nothing to press —
+it goes on a click or after nine seconds.
+
+Once ever, kept in a default like the eSpeak answer. A window opened later from
+the menu bar was opened by somebody who already knows where the menu bar is, so
+that one says nothing.
+
+`--panels callout` draws it where a status item would be, for editing it.
 
 *Finish Setup…* stays in the menu bar while eSpeak NG is missing, and opening it
 that way shows the command again — it is the only route back to it.

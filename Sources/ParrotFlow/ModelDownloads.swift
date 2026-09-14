@@ -157,6 +157,11 @@ final class ModelDownloads: ObservableObject {
         for at in rows.indices where rows[at].state.hasFailed {
             rows[at].state = .waiting
         }
+        // Back to the truth. A failure stops the crawl wherever it had got to,
+        // and a retry starting under a bar left at 99% would be reporting the
+        // download it is about to do as nearly over. The crawl restarts itself
+        // on the first report — see `update`.
+        crept = fraction
     }
 
     func update(_ id: String, to state: ModelDownload.State) {
@@ -165,7 +170,79 @@ final class ModelDownloads: ObservableObject {
         // reporting on it. If something does, the setting is still the truth.
         if case .off = rows[at].state { return }
         guard rows[at].state != state else { return }
-        rows[at].state = state
+        rows[at].state = kept(state, over: rows[at].state)
+        crawl()
+    }
+
+    /// A percentage never goes backwards.
+    ///
+    /// The crawl below runs ahead of the last report, so the next real one can
+    /// arrive behind where the bar already is. Every other state wins outright:
+    /// installed, failed and off are answers, and a number is not.
+    private func kept(
+        _ state: ModelDownload.State, over was: ModelDownload.State
+    ) -> ModelDownload.State {
+        guard case .downloading(let now) = state,
+              case .downloading(let before) = was,
+              let before, (now ?? 0) < before
+        else { return state }
+        return .downloading(percent: before)
+    }
+
+    // MARK: - The crawl
+
+    /// The bar's own figure: the truth, or the crawl when the truth has
+    /// stopped moving.
+    ///
+    /// Measured on a real install: the bar sat at 15% for a minute or two,
+    /// stepped to 31%, stalled again, then ran smoothly. Nothing was wrong.
+    /// Parakeet is 461 MB of the 1480 and FluidAudio reports it one file at a
+    /// time rather than one byte at a time, so two of its files are 15% of the
+    /// download and there is nothing to say until the next one lands. A bar
+    /// that has not moved for ninety seconds is a bar people cancel.
+    ///
+    /// So the whole bar gains a point every three seconds on its own, and the
+    /// real figure wins whenever it is further on.
+    ///
+    /// Crawled here and not on the rows, which is where it was first: a row
+    /// stops one point short of full, and Parakeet is 31% of the download, so
+    /// a crawl that filled Parakeet's row took the bar to 30% and parked it
+    /// there.
+    ///
+    /// A point every three seconds is 300 seconds for the whole download, and
+    /// 1.5 GB has taken about two minutes on every install measured here, so
+    /// the truth is almost always ahead of this. What it covers is the gap.
+    @Published private(set) var crept: Double = 0
+    private var crawler: Timer?
+    private static let crawlEvery: TimeInterval = 3.0
+    private static let crawlStep = 0.01
+    /// It stops one point short. A hundred is the download ending, and only
+    /// the download says that.
+    private static let crawlCeiling = 0.99
+
+    /// What the bar draws. `fraction` is what is actually known.
+    var shown: Double { max(fraction, crept) }
+
+    /// Start the crawl while anything is still coming, and stop it when
+    /// nothing is. Nothing else has to remember to call this: every report
+    /// goes through `update`.
+    private func crawl() {
+        guard !rows.isEmpty, !everythingIsIn else {
+            crawler?.invalidate()
+            crawler = nil
+            return
+        }
+        guard crawler == nil else { return }
+        crawler = Timer.scheduledTimer(
+            withTimeInterval: ModelDownloads.crawlEvery, repeats: true
+        ) { [weak self] _ in
+            self?.crawled()
+        }
+    }
+
+    private func crawled() {
+        crept = min(ModelDownloads.crawlCeiling, shown + ModelDownloads.crawlStep)
+        crawl()
     }
 
     /// Called from whichever thread the fetch is on.
@@ -185,6 +262,18 @@ final class ModelDownloads: ObservableObject {
     /// detector must not be reported as a failed speech model.
     var blockingFailure: ModelDownload? {
         rows.first { $0.blocking && $0.state.hasFailed }
+    }
+
+    /// The rows that failed and that nothing waits for.
+    ///
+    /// A blocking failure is the title's business — see `blockingFailure`, and
+    /// it ends the tour at once. These are the models a dictation never waits
+    /// for: the stages that read them stand aside, and each is fetched again on
+    /// the dictation that first needs it, because the fetch clears its own
+    /// handle when it fails. So they are a line at the end of the walk rather
+    /// than a screen, and there is nothing to press on it.
+    var quietFailures: [ModelDownload] {
+        rows.filter { !$0.blocking && $0.state.hasFailed }
     }
 
     /// The rows whose bytes are on disk and will not load. Their repair is to
@@ -208,6 +297,52 @@ final class ModelDownloads: ObservableObject {
             case .waiting, .downloading, .loading, .failed: return false
             }
         }
+    }
+
+    /// True when no fetch is still moving, whether or not a dictation waited
+    /// on it.
+    ///
+    /// `speechIsIn` answers "can this person dictate", which is what Ready
+    /// means. This answers "is the download over", which is what the tour
+    /// fills, and the two are minutes apart: the speech model lands first and
+    /// about a gigabyte of language models follows it.
+    ///
+    /// A row that failed is counted as in. Nothing more is coming for it, and
+    /// a blocking failure has already ended the tour by another route.
+    /// `loading` counts as in for the same reason the bar counts it whole: its
+    /// bytes are down.
+    var everythingIsIn: Bool {
+        guard !rows.isEmpty else { return false }
+        return rows.allSatisfy {
+            switch $0.state {
+            case .installed, .off, .failed, .loading: return true
+            case .waiting, .downloading: return false
+            }
+        }
+    }
+
+    /// The row being fetched right now, and how many are in.
+    ///
+    /// For the strip above the tour. The bar alone is not enough to watch:
+    /// Parakeet is 461 MB of the 1.5 GB and FluidAudio reports it a file at a
+    /// time, not a byte at a time, so the number sits at 15% for a minute or
+    /// two and then steps to 31%. A bar that has not moved says nothing; the
+    /// name of a 461 MB model says what it is waiting for.
+    var fetching: ModelDownload? {
+        rows.first { if case .downloading = $0.state { return true } else { return false } }
+    }
+
+    /// How many of the fetches are over, and how many there are, ignoring the
+    /// ones a setting switched off.
+    var arrived: (of: Int, count: Int) {
+        let counted = rows.filter { if case .off = $0.state { return false } else { return true } }
+        let done = counted.filter {
+            switch $0.state {
+            case .installed, .loading, .failed: return true
+            case .waiting, .downloading, .off: return false
+            }
+        }
+        return (done.count, counted.count)
     }
 
     /// How far every fetch has got together, 0 to 1, weighted by size.

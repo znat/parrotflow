@@ -1,0 +1,360 @@
+import AppKit
+import SwiftUI
+
+/// One screen of the tour.
+///
+/// The raw values are the names `--panels` and `--tutorial-sheet` take, so
+/// there is one spelling of each screen rather than a switch per entry point.
+/// `names` is the vocabulary screen: it cannot be called `vocabulary`, which is
+/// the correction panel.
+enum TourScreen: String, CaseIterable {
+    case downloads
+    case names
+    case slack
+    case hack
+    /// Not part of what the setup window plays. The walk's own last screen
+    /// already says Ready, and it owns Done, eSpeak NG and the retry a failed
+    /// download needs. Kept for `--panels ready`. See `TourWalk.screens`.
+    case ready
+
+    /// How long this screen is up for.
+    var length: TimeInterval {
+        switch self {
+        case .downloads: return TutorialDownloadsPane.length
+        case .names: return Tutorial.total
+        case .slack: return TutorialSlack.total
+        case .hack: return TutorialHack.total
+        case .ready: return TutorialReadyPane.length
+        }
+    }
+
+    /// The screen, at one moment in its own pass.
+    @ViewBuilder func pane(
+        clock: TimeInterval, progress: Double?, fetching: String? = nil
+    ) -> some View {
+        switch self {
+        case .downloads:
+            TutorialDownloadsPane(
+                elapsed: clock, progress: progress ?? 0, fetching: fetching
+            )
+        case .names:
+            TutorialPane(
+                run: TutorialRun(clock), progress: progress, fetching: fetching
+            )
+        case .slack:
+            TutorialSlackPane(
+                run: TutorialSlackRun(clock), progress: progress, fetching: fetching
+            )
+        case .hack:
+            TutorialHackPane(
+                elapsed: clock, progress: progress, fetching: fetching
+            )
+        case .ready:
+            // No bar: there is nothing left to wait for, which is the whole of
+            // what this screen says.
+            TutorialReadyPane()
+        }
+    }
+
+    /// The height the window keeps for this screen, which is its tallest beat.
+    ///
+    /// Measured rather than declared: the screens are drawn from the pill's own
+    /// metrics and a number written here would go stale the first time one of
+    /// them changed. A window sized to anything less resizes itself in the
+    /// middle of a pass, under somebody who is reading it.
+    var height: CGFloat { TourScreen.heights[self] ?? 0 }
+
+    /// Where this screen turns its own pages, as offsets into its own pass.
+    ///
+    /// One page a dot, and the last screen is four config examples one after
+    /// another: a reader who wants the third of them has nothing to aim at if
+    /// the whole screen is one dot.
+    var pages: [TimeInterval] {
+        switch self {
+        case .hack: return TutorialHack.Kind.allCases.map(TutorialHack.startOf)
+        default: return [0]
+        }
+    }
+
+    /// The beats each screen is at its tallest on.
+    private var tallest: [TimeInterval] {
+        switch self {
+        case .downloads, .ready:
+            return [0]
+        case .names:
+            // The last dictation, which is spoken into a field that already
+            // holds one sentence, the first offer, whose chips are the widest
+            // surface, and the finished field, which holds both.
+            return [
+                Tutorial.fourthAt + Tutorial.leadIn + 0.5,
+                Tutorial.firstLands + Tutorial.Beat.offering.rawValue,
+                Tutorial.fourthLands + 0.8,
+            ]
+        case .slack:
+            return [TutorialSlack.landsAt + TutorialSlack.Beat.posted.rawValue]
+        case .hack:
+            // The panel, up under the scripts card, on each of the two things
+            // that card ends on.
+            return [
+                TutorialHack.arrives(.scripts) + TutorialHack.step + 0.3,
+                TutorialHack.arrives(.scripts) + TutorialHack.step
+                    + TutorialHack.saying + 0.3,
+            ]
+        }
+    }
+
+    private static let heights: [TourScreen: CGFloat] = {
+        var out: [TourScreen: CGFloat] = [:]
+        for screen in TourScreen.allCases {
+            out[screen] = screen.tallest.map { beat in
+                NSHostingView(
+                    rootView: screen.pane(clock: beat, progress: 0.5)
+                ).fittingSize.height
+            }.max() ?? 0
+        }
+        return out
+    }()
+}
+
+/// The order the tour plays its screens in, and where one moment of the walk's
+/// clock falls.
+///
+/// The walk is one clock and the screens are functions of it, so skipping is
+/// moving the clock rather than a state of its own. That is what keeps a
+/// dropped frame from leaving a screen a beat behind for the rest of its pass.
+enum TourWalk {
+    /// What the setup window plays while the models come down.
+    static let screens: [TourScreen] = [.downloads, .names, .slack, .hack]
+
+    static func total(of list: [TourScreen]) -> TimeInterval {
+        list.reduce(0) { $0 + $1.length }
+    }
+
+    /// Every page of the walk, as offsets into the walk's own clock.
+    ///
+    /// A page is what one dot stands for and what one click lands on. Most
+    /// screens are one page; the last one is one a config example.
+    static func pages(of list: [TourScreen] = screens) -> [TimeInterval] {
+        var out: [TimeInterval] = []
+        var before: TimeInterval = 0
+        for screen in list {
+            out.append(contentsOf: screen.pages.map { before + $0 })
+            before += screen.length
+        }
+        return out
+    }
+
+    /// How long the window takes to change height at a cut.
+    ///
+    /// Long, because the distance is long: the opening screen is 286 points
+    /// tall and the one after it is 624, and 338 points in a third of a second
+    /// reads as a jump rather than a move. The screens cut hard — they were
+    /// crossfaded once and it stopped the window drawing new frames, see
+    /// `docs/cli.md` — so this is the only thing saying the two screens are one
+    /// window.
+    static let resize: TimeInterval = 0.62
+
+    /// The height the window keeps at `elapsed`.
+    ///
+    /// The screen's own height, eased out of the one before it across the cut.
+    /// Off the walk's clock and not a SwiftUI animation: the screens are
+    /// redrawn sixty times a second from that clock, and a height animated
+    /// beside it is a second clock to keep in step. This one cannot drift,
+    /// and a still render of a beat is still one height.
+    static func height(
+        at elapsed: TimeInterval, in list: [TourScreen] = screens
+    ) -> CGFloat {
+        let (index, clock) = at(elapsed, in: list)
+        let now = list[index].height
+        guard clock < resize, list.count > 1 else { return now }
+        // The first screen of the first pass has nothing before it. Without
+        // this the window opens at the last screen's height and shrinks, which
+        // is a move nobody asked for on a window that has just appeared.
+        guard elapsed >= resize else { return now }
+        let was = list[before(index, at: elapsed, in: list)].height
+        let u = clock / resize
+        return was + (now - was) * (u * u * (3 - 2 * u))
+    }
+
+    /// Which page the walk is on at `elapsed`.
+    ///
+    /// Off `at` rather than off the offsets, because the offsets are first-pass
+    /// offsets and a later pass is a screen shorter.
+    static func page(
+        at elapsed: TimeInterval, in list: [TourScreen] = screens
+    ) -> Int {
+        guard !list.isEmpty else { return 0 }
+        let (index, clock) = at(elapsed, in: list)
+        let before = list[0..<index].reduce(0) { $0 + $1.pages.count }
+        let own = list[index].pages.lastIndex { clock >= $0 } ?? 0
+        return before + own
+    }
+
+    /// Which screen is on at `elapsed`, and that screen's own clock.
+    ///
+    /// The walk loops: it is up for as long as the download takes, and nobody
+    /// knows how long that is. The loop is one screen shorter than the first
+    /// pass — the opening screen says in words what the tour is, and it says
+    /// that once. Coming back to it says the download has started again.
+    static func at(
+        _ elapsed: TimeInterval, in list: [TourScreen] = screens
+    ) -> (index: Int, clock: TimeInterval) {
+        let first = total(of: list)
+        guard !list.isEmpty, first > 0 else { return (0, 0) }
+        var into = max(0, elapsed)
+        var from = 0
+        let loop = first - list[0].length
+        if into >= first, list.count > 1, loop > 0 {
+            into = (into - first).truncatingRemainder(dividingBy: loop)
+            from = 1
+        }
+        for index in from..<list.count {
+            if into < list[index].length { return (index, into) }
+            into -= list[index].length
+        }
+        return (list.count - 1, 0)
+    }
+
+    /// The screen before the one at `elapsed`, for the height it is easing out
+    /// of. On a later pass the screen before the second one is the last, not
+    /// the opener the loop skips.
+    private static func before(
+        _ index: Int, at elapsed: TimeInterval, in list: [TourScreen]
+    ) -> Int {
+        if index == 0 { return list.count - 1 }
+        if index == 1, elapsed >= total(of: list) { return list.count - 1 }
+        return index - 1
+    }
+
+}
+
+/// The tour at one moment: whichever screen its clock is inside.
+///
+/// A function of `elapsed` and nothing else, like the screens it draws. There
+/// is nothing to press: the tour turns its own pages and the window decides
+/// when it is over.
+struct SetupTour: View {
+    let elapsed: TimeInterval
+    /// How far the model downloads have come, for the bar in the corner. See
+    /// `TutorialScreen.progress`.
+    var progress: Double?
+    /// What is being fetched right now, for the strip's label. See
+    /// `TutorialScreen.fetching`.
+    var fetching: String?
+    var screens: [TourScreen] = TourWalk.screens
+    /// Play from this offset instead: a dot at the bottom has been clicked.
+    /// Nil where there is nobody to click, which is every still render.
+    var seek: ((TimeInterval) -> Void)?
+
+    var body: some View {
+        let (index, clock) = TourWalk.at(elapsed, in: screens)
+        screens[index].pane(clock: clock, progress: progress, fetching: fetching)
+        // Each screen keeps the height of its own tallest beat. Fixed inside
+        // one screen, so no frame of a pass resizes the window; different
+        // between them, so none of them ends in a band of nothing, and eased
+        // across the cut so the window is not seen to jump.
+        //
+        // Top-aligned, so a screen taller than the frame it is arriving in is
+        // revealed from the top down by the window growing under it.
+        .frame(height: TourWalk.height(at: elapsed, in: screens), alignment: .top)
+        // On the frame and not inside the screen: the dots belong at the bottom
+        // of the window, and a screen at a beat shorter than its tallest one
+        // would carry them up the page with it.
+        .overlay(alignment: .bottom) { dots }
+        // The screens are drawn in whites over dark glass. A light window makes
+        // them unreadable, and the window they play in is whatever the Mac is
+        // set to.
+        .environment(\.colorScheme, .dark)
+    }
+
+    /// One circle a page, the one playing lit, and clicking one plays from
+    /// there.
+    ///
+    /// This is the only thing on the tour to press. It says the screens are
+    /// pages of one walk rather than unrelated windows, how many there are, and
+    /// it is the way back to the one that went past too quickly.
+    @ViewBuilder private var dots: some View {
+        let pages = TourWalk.pages(of: screens)
+        if pages.count > 1 {
+            let on = TourWalk.page(at: elapsed, in: screens)
+            HStack(spacing: 0) {
+                ForEach(Array(pages.enumerated()), id: \.offset) { at, page in
+                    // A button and not a tap gesture: these are the only thing
+                    // on the tour anybody can press, so they are the only thing
+                    // a keyboard or VoiceOver has to be able to reach.
+                    Button { seek?(page) } label: {
+                        Circle()
+                            .fill(
+                                at == on
+                                    ? Parrot.action.opacity(0.9)
+                                    : Color.white.opacity(0.18)
+                            )
+                            .frame(width: 6, height: 6)
+                            // A 6pt circle is not something anybody can hit.
+                            // The box around it is, and the gap between the
+                            // dots is its padding rather than a spacing of its
+                            // own.
+                            .frame(width: 17, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Page \(at + 1) of \(pages.count)")
+                    .accessibilityAddTraits(at == on ? [.isSelected] : [])
+                }
+            }
+            .padding(.bottom, 14)
+        }
+    }
+}
+
+/// The tour as the setup window plays it.
+///
+/// The clock is the window's, not this view's: the poll that ends the tour has
+/// to be able to read it, and a clock kept in a view that is rebuilt sixty
+/// times a second is not one anything else can ask.
+struct SetupTourPane: View {
+    /// The pane wants a different height. Called from here rather than left to
+    /// the poll: a window that catches up a second later shows one screen in
+    /// the last one's frame.
+    ///
+    /// Once a frame while a cut is easing, which is about twenty calls in a
+    /// third of a second. The window's own resize is the guard against the
+    /// ones that would change nothing.
+    var onHeightChange: () -> Void = {}
+
+    @EnvironmentObject private var model: PermissionsModel
+    @EnvironmentObject private var downloads: ModelDownloads
+
+    var body: some View {
+        // `.periodic` and not `.animation`. Both hand the view a date, and the
+        // tour is a function of that date either way. What depends on which is
+        // whether the frames arrive: `.animation` is the display link, and the
+        // display link stops when the window is not being drawn — behind
+        // another window, on another space, with the app in the background —
+        // which is a tour frozen at whatever frame it was on.
+        TimelineView(.periodic(from: model.tourStartedAt ?? Date(), by: 1.0 / 60)) { context in
+            let elapsed = model.tourElapsed(at: context.date)
+            let height = TourWalk.height(at: elapsed)
+            SetupTour(
+                elapsed: elapsed,
+                // The downloader's own number, size-weighted across the six
+                // models, and the same one the corner's figure is drawn from.
+                progress: downloads.shown,
+                fetching: fetching,
+                seek: { model.seekTour(to: $0) }
+            )
+            .onChange(of: height) { _, _ in onHeightChange() }
+        }
+        .onAppear { model.startTour() }
+    }
+
+    /// The name of the model being fetched, and where it is in the queue.
+    ///
+    /// Nil once they are all in, which leaves the strip saying what the job was
+    /// rather than naming a file nothing is doing.
+    private var fetching: String? {
+        guard let row = downloads.fetching else { return nil }
+        let (of, count) = downloads.arrived
+        return "\(min(of + 1, count)) of \(count) · \(row.name)"
+    }
+}
