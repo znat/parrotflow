@@ -70,6 +70,10 @@ cask "parrotflow" do
   # Read as a minimum. macOS 14 is FluidAudio's floor: the speech models need
   # CoreML on the ANE.
   depends_on macos: :sonoma
+  # The ear the vocabulary matches by sound with. It is GPL-3 and stays a
+  # separate program invoked over a pipe, so brew installs it beside the app
+  # rather than the app bundling it — see Phonemes.swift.
+  depends_on formula: "espeak-ng"
 
   app "ParrotFlow.app"
 

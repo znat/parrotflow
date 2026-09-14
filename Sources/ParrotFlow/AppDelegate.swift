@@ -5470,6 +5470,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // and a name written with none says less than the tagger knew.
                 try ConfigWriter.addVocabularyPronunciation(
                     term: rule.corrected, heard: rule.heard,
+                    // What this rendering was produced in, because it is only
+                    // ever read back with that language's voice. See
+                    // `Config.Vocabulary.Pronunciation.lang`.
+                    lang: Pipeline.language(of: corrected, config: config),
                     kind: CorrectionRecording.learns(
                         wrote: rule.heard, put: rule.corrected, in: config.vocabulary.terms
                     )?.kind
@@ -6425,7 +6429,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for rule in rules {
                 do {
                     try ConfigWriter.addVocabularyPronunciation(
-                        term: rule.corrected, heard: rule.heard
+                        term: rule.corrected, heard: rule.heard,
+                        lang: Pipeline.language(of: correctedText, config: self.config)
                     )
                     Log.write("learned pronunciation: \(rule.heard) -> \(rule.corrected)")
                     Trace.correction(

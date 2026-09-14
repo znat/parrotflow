@@ -138,11 +138,13 @@ enum ConfigWriter {
     /// mangled is a pronunciation, not a pattern, and belongs beside the
     /// pronunciations the acoustic pass already found on its own.
     static func addVocabularyPronunciation(
-        term: String, heard: String, kind: WordKind? = nil
+        term: String, heard: String, lang: String? = nil, kind: WordKind? = nil
     ) throws {
         let url = ConfigStore.vocabularyURL
         let original = (try? String(contentsOf: url, encoding: .utf8)) ?? "terms: {}\n"
-        var updated = try insertVocabulary(term: term, heard: heard, into: original)
+        var updated = try insertVocabulary(
+            term: term, heard: heard, lang: lang, into: original
+        )
         if let kind { updated = setting(kind: kind, of: term, in: updated) }
         try updated.write(to: url, atomically: true, encoding: .utf8)
     }
@@ -246,9 +248,18 @@ enum ConfigWriter {
     /// `from: correction` is what tells this rendering apart from one
     /// `scripts/mine-pronunciations.py` found on its own — see
     /// `Config.Vocabulary.Pronunciation.Source`.
-    static func insertVocabulary(term: String, heard: String, into yaml: String) throws -> String {
+    ///
+    /// `lang:` is the language of the dictation the correction was made in. A
+    /// rendering is what one decoder wrote, and it is only read back with that
+    /// decoder's voice — see `Config.Vocabulary.Pronunciation.lang`. Nil writes
+    /// no key, which reads as the config's first language.
+    static func insertVocabulary(
+        term: String, heard: String, lang: String? = nil, into yaml: String
+    ) throws -> String {
         var lines = yaml.components(separatedBy: "\n")
-        let entry = ["      - heard: \(quoted(heard))", "        from: correction"]
+        let entry = ["      - heard: \(quoted(heard))"]
+            + (lang.map { ["        lang: \($0)"] } ?? [])
+            + ["        from: correction"]
 
         guard let termsIndex = lines.firstIndex(where: { $0.hasPrefix("terms:") }) else {
             var out = lines

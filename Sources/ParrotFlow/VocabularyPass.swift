@@ -775,14 +775,28 @@ enum VocabularyPass {
     /// settles keeps the word that was heard; the floor is what pays for the
     /// gate calls.
     ///
-    /// English only, by the caller. espeak's `en-us` letter-to-sound over a
-    /// French transcript answers, and the answer is noise.
+    /// Both sides are read in the language that was dictated, and `voice` and
+    /// `language` are the caller's answer for that one dictation.
     ///
-    /// - Parameter sounds: `Config.vocabularySounds` — every term and every
-    ///   rendering, with the IPA the file writes down for it. A rendering with
-    ///   no `phonemes:` is sounded out from its spelling, which is right
-    ///   whenever the spelling is a word: espeak reads `Preci` as /pɹɛsaɪ/ and
-    ///   that entry needs its sound written down or it reaches nothing.
+    /// - Parameter sounds: `Config.vocabularySounds(in:)` — every term, and
+    ///   the renderings belonging to this language, with the IPA the file
+    ///   writes down for each. A rendering with no `phonemes:` is sounded out
+    ///   from its spelling, which is right whenever the spelling is a word:
+    ///   espeak reads `Preci` as /pɹɛsaɪ/ and that entry needs its sound
+    ///   written down or it reaches nothing.
+    /// Whether two sounds could clear `floor`, cheapest test first.
+    ///
+    /// The length ratio caps the score on its own, so a pair that cannot reach
+    /// the floor even aligned perfectly is refused before the distance is
+    /// computed. The scoring loop below does the same two steps in the same
+    /// order, and so does the band that decides who the model is asked about.
+    static func reachable(_ heard: String, _ form: String, over floor: Float) -> Bool {
+        guard !heard.isEmpty, !form.isEmpty else { return false }
+        let ratio = Float(min(heard.count, form.count)) / Float(max(heard.count, form.count))
+        guard sqrt(ratio) >= floor else { return false }
+        return Phonemes.similarity(heard, form) >= floor
+    }
+
     static func phonemeParts(
         in text: String,
         sounds: [(term: String, form: String, phonemes: String?)],
@@ -820,9 +834,8 @@ enum VocabularyPass {
         // so a window's reading may only be compared with a form's reading
         // from the same ear. The best of the two scores wins; the average of
         // two incomparable numbers would not mean anything.
-        let asking = windows.map(\.text) + sounds.map(\.form)
-        let rules = Phonemes.of(asking, voice: voice)
-        let model = neural == nil ? [:] : await NeuralPhonemes.of(asking, language: neural!)
+        let formList = sounds.map(\.form)
+        let rules = Phonemes.of(windows.map(\.text) + formList, voice: voice)
         // A pronunciation somebody wrote down is compared with whatever each
         // ear heard. It is one person's IPA, not either inventory, and taking
         // the better of the two comparisons is the same rule as everywhere
@@ -831,6 +844,48 @@ enum VocabularyPass {
         for entry in sounds where entry.phonemes != nil {
             written[entry.form] = entry.phonemes
         }
+
+        // **The model is asked about the windows espeak already put near a
+        // term, and not the rest.** It is the expensive ear by three orders of
+        // magnitude: espeak reads every window of a dictation in one process
+        // call, and the model costs one CoreML decode each — 15 ms, about 130
+        // windows on a 65-word dictation, two seconds, on a stage that finds
+        // something in 5% of them.
+        //
+        // The band is what the second ear can still be right about. Replayed
+        // over this speaker's 8,444 live English dictations, 24 windows reach
+        // a term by model and not by espeak — `Gosti`/Ghostty, four spellings
+        // of `Darzalex`, `Pirateflow`, `Vibrevent`/Rybrevant. espeak scores 23
+        // of those 24 at 0.40 or better; it is only ever wrong about them by a
+        // margin, never blind to them. So at 0.40 the model is asked about
+        // 14.3% of windows and keeps 23 of its 24 catches. The one below is
+        // `Praethi`/Praisy at 0.33.
+        //
+        // **A band needs a first ear, and silence from espeak is not one.** No
+        // reading for a window is not espeak saying the window is far from
+        // every term — it is espeak saying nothing, and the whole call comes
+        // back empty when the process failed or answered the wrong number of
+        // lines (see `Phonemes.run`). Read as a refusal, an espeak that starts
+        // and then fails would switch the stage off on a machine that has a
+        // working model. So a window espeak did not read is asked about, and
+        // with nothing to compare against at all there is no band.
+        let formSounds = sounds
+            .flatMap { [rules[$0.form], written[$0.form]] }
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+        let near: [String]
+        if Phonemes.binary == nil || formSounds.isEmpty {
+            near = windows.map(\.text)
+        } else {
+            near = windows.map(\.text).filter { window in
+                guard let heard = rules[window], !heard.isEmpty else { return true }
+                return formSounds.contains {
+                    reachable(heard, $0, over: Phonemes.secondEarBand)
+                }
+            }
+        }
+        let model = neural == nil
+            ? [:] : await NeuralPhonemes.of(near + formList, language: neural!)
         // Widest first, so `parrot flow` claims its span before `flow` can.
         // The overlap check below is what stops the narrower one afterwards.
         var found: [Part] = []

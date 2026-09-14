@@ -657,7 +657,7 @@ actor Transcriber {
             // letters or with a space in it, so a vocabulary of `Claude Code`
             // and `crawl file` alone would never fetch the model that is the
             // only thing able to match them.
-            if !config.vocabularySounds.isEmpty { warmSoundModel() }
+            if !config.vocabularySounds(in: config.primaryLanguage).isEmpty { warmSoundModel() }
         }
 
         // After the vocabulary pass rather than before it, though the words

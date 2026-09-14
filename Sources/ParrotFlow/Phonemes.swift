@@ -46,6 +46,23 @@ enum Phonemes {
 
     private static let firstLook: String? = locate()
 
+    /// How close espeak has to put a window to a term before the model is
+    /// asked about it too. See `VocabularyPass.phonemeParts` for the band and
+    /// what each side of it costs.
+    ///
+    /// Well under any floor a match is decided on: this is not "espeak thinks
+    /// so", it is "espeak is not blind to it". Of the 24 windows the model
+    /// reaches and espeak does not, over 8,444 live English dictations, espeak
+    /// still scores 23 at 0.40 or better.
+    static let secondEarBand: Float = 0.40
+
+    /// The voice for a dictation language. `en-us` for a language this has no
+    /// voice for, which is what every caller passed before there was one of
+    /// these.
+    static func voice(for language: String) -> String {
+        language == "fr" ? "fr" : "en-us"
+    }
+
     /// `PARROTFLOW_ESPEAK` first, so a test can point at a stub, then the
     /// two places Homebrew puts it, then the system path.
     static func locate() -> String? {
