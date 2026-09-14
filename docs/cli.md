@@ -863,6 +863,7 @@ $PF --tutorial-sheet n.png names     # one screen's beats
 $PF --tutorial-sheet s.png slack
 $PF --tutorial-sheet h.png hack
 $PF --tutorial-sheet w.png walk      # every screen as the setup window frames it
+$PF --tour-film out names,slack 15 2 # the tour as numbered PNGs, for a film
 ```
 
 `--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`, `offer`,
@@ -938,6 +939,36 @@ left off those frames: `ImageRenderer` cannot draw a button. `--tutorial-sheet
 <png> walk` answers the other question — every screen inside the setup window's
 own frame, with the buttons on. It is drawn the other way round, so the pill
 comes back in a black box on the beats that have one.
+
+`--tour-film <dir> <screens> [fps] [speed]` writes every frame of a film of the
+tour as a numbered PNG, for ffmpeg to make a video or an animated image out of.
+Nothing is recorded and no window opens: the screens are functions of elapsed
+time, so the film is a walk up the clock, and it comes out the same every run.
+
+`speed` multiplies the step — `2` asks the clock for twice the time per frame,
+so the film plays at twice the pace. The stretches a screen dims over are held
+at 1x whatever `speed` says: a screen dims over the thing it is about, so those
+are the beats worth watching, and a keystroke or an answered offer at 2x goes by
+in under a second.
+
+The download bar, the "WHILE YOU WAIT" kicker and the dots are all off — this is
+the app, not an install. One canvas holds the whole film, because a video cannot
+change size partway: it is as tall as the tallest screen, measured on every
+frame, and the screens are top-aligned in it. Assemble with two passes for a
+GIF, one for anything else:
+
+```sh
+$PF --tour-film frames names,slack 15 2
+ffmpeg -framerate 15 -i frames/frame-%04d.png -c:v libx264 -preset slow \
+  -tune stillimage -pix_fmt yuv420p -crf 14 tour.mp4
+ffmpeg -framerate 15 -i frames/frame-%04d.png -vf scale=760:-1:flags=lanczos \
+  -c:v libwebp_anim -q:v 92 -loop 0 -an -r 15 tour.webp
+```
+
+`yuv420p` halves the chroma plane and refuses an odd side, so the canvas is
+rounded up to an even width and height. A GIF wants `palettegen`/`paletteuse`
+with `dither=none` — this is flat colour on a flat ground, and the Bayer dither
+puts visible noise on the words.
 
 `confidence` is the same offer with `feedback.confidence` on: the sentence
 above the chips, each word coloured by how sure the decoder was of it, and the
