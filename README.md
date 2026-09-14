@@ -4,7 +4,7 @@
 
 # ParrotFlow
 
-### Local and extensible dictation you can shape around your work
+## Local and extensible dictation you can shape around your work
 
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
@@ -22,8 +22,6 @@ Slack message: PR 478 arrives as a link, and Siobhan becomes @Sio.">
 <div align="center">
 
 <pre>brew install znat/tap/parrotflow</pre>
-
-macOS 15+ &nbsp;·&nbsp; Apple silicon &nbsp;·&nbsp; 3 GB &nbsp;·&nbsp; <a href="#install">other ways to install</a>
 
 </div>
 
@@ -276,8 +274,6 @@ Questions that are not bugs go to
 
 [GPL-3.0](LICENSE). Use it, change it, share it. If you ship something built on
 this code, that has to be under the GPL too.
-
-Releases up to and including 0.11.0 were Apache 2.0, and stay Apache 2.0.
 
 The parrot is by Md Moniruzzaman, from the [Noun
 Project](https://thenounproject.com), used under CC BY. The outline is his; the
