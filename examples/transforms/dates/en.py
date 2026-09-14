@@ -55,7 +55,8 @@ STOP_AFTER = {
     "year-olds", "percent", "people", "person", "kids", "men", "women",
     "hundred", "thousand", "million", "billion", "dollars", "euros", "pounds",
     "degrees", "miles", "kilometres", "kilometers", "pages", "times",
-    "options", "option", "o'clock", "oclock",
+    "options", "option", "o'clock", "oclock", "millisecond", "milliseconds",
+    "ms", "characters", "chars", "words", "lines", "pixels", "px",
 }
 
 # A range, not a clock. "from ten to twelve", "between two and three".
@@ -103,6 +104,31 @@ def hour_minute(m, text):
         return None
     return ((lead + " " if lead else "") + f"{hour}:{minute:02d}"
             + (" " + mer if mer else ""))
+
+
+def glued_clock(m, text):
+    """"at 1030" -> "at 10:30". The decoder wrote the digits already joined.
+
+    Parakeet normalises some spoken times itself, so `hour_minute` never sees
+    the words: "are you available at ten thirty" arrives as a single token
+    `1030`. One trace of 294 dictations has it once, and the four other 3-4
+    digit runs in that trace carry no clock cue.
+    """
+    lead, mer, digits = m.group("lead"), m.group("mer"), m.group("hm")
+    hour, minute = int(digits[:-2]), int(digits[-2:])
+    if not 1 <= hour <= 12 or not 0 <= minute <= 59:
+        return None
+    # On the hour the digits are almost always a quantity — "at 300
+    # milliseconds", "at 1000 of them". Nobody says "ten hundred" for a time,
+    # so a meridiem is the only thing that makes this shape a clock.
+    if minute == 0 and not mer:
+        return None
+    following = engine.word_after(text, m.end())
+    if following in STOP_AFTER or read_number(following) is not None:
+        return None
+    if RANGE_BEFORE.search(text[:m.start()]):
+        return None
+    return lead + " " + f"{hour}:{minute:02d}" + (" " + mer if mer else "")
 
 
 def oclock(m, _text):
@@ -237,6 +263,10 @@ RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler i
      rf"(?:\b(?P<lead>{'|'.join(LEAD)})\s+)?(?<![:\dh])\b(?P<h>{NUM})[\s-]+"
      rf"(?P<m>{MIN})(?:\s+(?P<mer>{MERIDIEM}))?",
      hour_minute),
+    ("glued hour and minutes",
+     rf"\b(?P<lead>{'|'.join(LEAD)})\s+(?<![:\dh])(?P<hm>\d{{3,4}})\b"
+     rf"(?![\d:%])(?:\s*(?P<mer>{MERIDIEM}))?",
+     glued_clock),
     ("o'clock",
      rf"(?<![:\dh])\b(?P<h>{NUM})\s+(?P<oc>o\s?['’]?\s?clock)\b",
      oclock),

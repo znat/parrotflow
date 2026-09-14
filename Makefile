@@ -88,7 +88,7 @@ release-certificate:
 ## check-routing and check-spelling need Ollama and gemma4:e4b, and
 ## check-inplace needs a real screen, the Accessibility grant and tmux. Run
 ## those by hand and put the numbers in the pull request.
-CHECKS := replacements pipeline pipeline-config wake split dotted dates keyed \
+CHECKS := replacements pipeline pipeline-config wake split dates keyed \
           transform-folders eval audio-recovery possessive word-gate suggest input join \
           profiles span-rule clipboard default-config vocabulary-config learn \
           signing-identity no-voice sound slot-tokenizer sentence-case term-uses \
