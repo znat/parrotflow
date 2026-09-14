@@ -124,7 +124,7 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 ### Extensible with rules, prompts and scripts
 
 What makes ParrotFlow truly unique is that you can fully customize it with regular expressions, prompts or scripts.
-All you have to do is to is pointing your coding agent to your config.yaml file and ask what you need.
+All you have to do is point your coding agent to your config.yaml file and ask what you need.
 
 **Example: add PR links to your dictations**
 
