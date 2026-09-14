@@ -85,7 +85,7 @@ enum TutorialSlack {
     /// One line, and it fills 96% of the composer. The second sentence was cut
     /// to keep it that way: two lines gave the callouts more room to be about
     /// than the message needed.
-    static let title = "Links, mentions, anything"
+    static let title = "Dictations are shaped around your work"
 
     /// The two callouts, which take turns pointing at the words they are about.
     ///
@@ -139,7 +139,7 @@ enum TutorialSlack {
     /// for a place, and `slack_handles` is the one the screen goes on to use.
     static let chips = [
         OfferedCommand(title: "Fix Grammar", key: "G"),
-        OfferedCommand(title: "Slack handles", key: "S"),
+        OfferedCommand(title: "Slack mentions", key: "S"),
     ]
 
     /// The chip the pointer goes down on. One, and not zero: the screen is about

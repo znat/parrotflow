@@ -891,7 +891,8 @@ The opening is `downloads`: the words "Downloading models" and a bar, in the
 middle of the screen, which then lift into the corner and stay there for every
 screen after it.
 
-The first demonstration is **Two names, one sound**, told in four dictations. Two of them are
+The first demonstration is **ParrotFlow understands what and who you are
+talking about**, told in four dictations. Two of them are
 corrected by hand and the app offers to keep each correction: `My teammate Mick
 is a software engineer.` becomes `Mik`, and then the field is emptied and `my
 friend Mick plays the guitar.` comes back as `my friend Mik plays the guitar.` —
@@ -902,20 +903,24 @@ the first of them and need nothing done to them: `Mik is writing code.` is said,
 and then `Mick is a musician.` goes in at the end of the same line, where the
 caret was left.
 
-The second is **Links, mentions, anything**: a sentence in the Slack composer, a PR number
-that arrives as a link, the options panel on the hotkey, `add slack handle`
-turning a name into a mention, and the message going out with its preview.
+The second is **Dictations are shaped around your work**: a sentence in the
+Slack composer, a PR number that arrives as a link, the options panel on the
+hotkey, `add slack mention` turning a name into a mention, and the message going
+out with its preview.
 
-The third is **Hackable output**: the three kinds of transform — a `replace:`
-table, a `prompt:` and a `command:` — each shown as the config file writes it and
-as it changes a dictation, ending on the panel those transforms put on the pill,
-with the key each was given drawn on its chip.
+The third is **Extensible**: four config examples — a `replace:` table, a
+`command:`, a `prompt:` and the agent that writes them for you — each shown as
+the config file writes it and as it changes a dictation. The `command:` one ends
+on the panel those transforms put on the pill: first the key each was given, on
+its chip, and then the words that reach the same transform without one.
 
 The first two are dictated into the same composer — one surface, drawn once —
 with their own line in it. `tutorial` plays the four screens the setup window
 plays, on one clock, cutting from each into the next — `ready` is not one of
-them, so the dots count four. `names`, `slack` and `hack` play one on its own,
-which is what you want while editing one. They were cross-faded for a while and are
+them. The dots at the bottom count pages rather than screens, so there are
+seven: the last screen is four config examples, and each has a dot of its own
+you can click. `names`, `slack` and `hack` play one on its own, which is what
+you want while editing one. They were cross-faded for a while and are
 not any more: an `opacity` over a whole screen is one SwiftUI draws into a layer
 of its own, and the window stopped drawing new frames from the hand-off onwards.
 Each screen is a function of how long it has been running rather than a list of

@@ -149,13 +149,19 @@ it is done while there is still a download to wait on.
 
 **The tour.** Then the window plays a demonstration of what the app does, for as
 long as the models take: correcting a name and having it remembered, a sentence
-in Slack, and the three kinds of transform. There is nothing to press: it turns
-its own pages.
+in Slack, and the kinds of transform. It turns its own pages.
 
 Three things say what it is. The first screen says it in words, once. Every
 screen carries a small "WHILE YOU WAIT" at the right of the header, because the
 tour loops and somebody who looks away lands in the middle of one. And a row of
-dots at the bottom, one a screen, says they are pages of one walk.
+dots at the bottom says they are pages of one walk.
+
+The dots are the only thing on the tour to press. Clicking one plays from there,
+which is the way back to a page that went past too quickly. They count pages and
+not screens: the last screen is four config examples one after another, so there
+are seven dots. A click cannot end the tour early — how long it has played
+through is measured on how long it has been on screen, not on the clock a dot
+moves.
 
 The download sits above a divider, so the top of the window is this install and
 the rest of it is the app. It is a bar, a shimmer over the filled part, and the

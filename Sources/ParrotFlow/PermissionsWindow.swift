@@ -188,6 +188,7 @@ final class PermissionsModel: ObservableObject {
         index = 0
         asked = false
         tourStartedAt = nil
+        tourSkew = 0
     }
 
     func markAsked() { asked = true }
@@ -204,14 +205,34 @@ final class PermissionsModel: ObservableObject {
     /// A start put in the past drifts by however long the sheet spends
     /// measuring and drawing, which is enough to land on the next screen.
     @Published private(set) var tourFrozenAt: TimeInterval?
+    /// What the dots at the bottom have moved the clock by. See
+    /// `TourWalk.pages`.
+    @Published private(set) var tourSkew: TimeInterval = 0
 
     func startTour() {
         guard tourStartedAt == nil else { return }
         tourStartedAt = Date()
     }
 
+    /// Play from `at` seconds into the walk. A dot has been clicked.
+    func seekTour(to at: TimeInterval) {
+        guard let tourStartedAt else { return }
+        tourSkew = at - max(0, Date().timeIntervalSince(tourStartedAt))
+    }
+
     func tourElapsed(at moment: Date = Date()) -> TimeInterval {
         if let tourFrozenAt { return tourFrozenAt }
+        guard let tourStartedAt else { return 0 }
+        return max(0, moment.timeIntervalSince(tourStartedAt) + tourSkew)
+    }
+
+    /// How long the tour has been up, whatever the dots did to the clock it is
+    /// drawn from.
+    ///
+    /// What "it has played through once" is measured on. The drawn clock cannot
+    /// answer that: a click on the last dot moves it past the end, and the tour
+    /// would close over a screen somebody had just asked to see.
+    func tourOnScreen(at moment: Date = Date()) -> TimeInterval {
         guard let tourStartedAt else { return 0 }
         return max(0, moment.timeIntervalSince(tourStartedAt))
     }
@@ -435,8 +456,6 @@ final class PermissionsWindowController {
     /// in: that one lands first and about a gigabyte of language models
     /// follows it.
     ///
-    /// Nobody is held by either. Next leaves as soon as a dictation would
-    /// work, which is sooner than both. See `SetupTour.onFinish`.
     /// The eSpeak NG screen asks for one thing. Once it is here there is
     /// nothing left on it to read, so the walk goes straight on to the tour
     /// rather than leaving a title and a button nobody needs to press.
@@ -448,10 +467,13 @@ final class PermissionsWindowController {
     private func leaveTourIfDone() {
         guard model.current == .tour else { return }
         if model.downloads.blockingFailure != nil { advanceItself(); return }
-        let at = model.tourElapsed()
-        guard at >= TourWalk.total(of: TourWalk.screens) else { return }
+        // Time on screen for the pass, the drawn clock for the cut: a click on
+        // a dot moves the second one and must not count as having watched it.
+        guard model.tourOnScreen() >= TourWalk.total(of: TourWalk.screens) else {
+            return
+        }
         guard model.downloads.everythingIsIn else { return }
-        guard TourWalk.at(at).clock < 1.2 else { return }
+        guard TourWalk.at(model.tourElapsed()).clock < 1.2 else { return }
         advanceItself()
     }
 

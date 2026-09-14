@@ -11,7 +11,7 @@ import SwiftUI
 /// common.
 enum TutorialHack {
 
-    static let title = "Hackable output"
+    static let title = "Extensible"
     static let lead = "Transform your dictations with replacements, prompts and scripts."
 
     /// The three, in the order the screen shows them.
@@ -53,19 +53,29 @@ enum TutorialHack {
     /// How long that takes, end to end.
     static var typingTime: TimeInterval { Double(prompt.count) / typing }
 
+    /// Which of the two ways to reach a transform a line is about.
+    ///
+    /// The scripts card ends on both, one after the other: a key to press, then
+    /// a thing to say. The lines for one are lit while that one is being made.
+    enum Lit: Equatable {
+        case key
+        case say
+    }
+
     /// One line of a config file, and whether it is one of the lines that does
-    /// the work. The line that does is drawn in the accent colour; the rest is
+    /// the work. The line that does is drawn bright and breathing; the rest is
     /// there so the line has somewhere to sit.
     struct Line: Equatable {
         let text: String
-        /// Drawn bright and breathing: the setting whose value is also on the
-        /// chip. `key: s` and the `S` on *Slack handles* are the same key, and
-        /// the card says so by lighting all of one line and the keycap.
-        var bright = false
+        /// The beat this line is lit on, or nil for a line that is only ever
+        /// read as part of the file. `key: s` and the `S` on the chip are the
+        /// same key, and the card says so by lighting all of one line and the
+        /// keycap together.
+        var lit: Lit?
 
-        init(_ text: String, bright: Bool = false) {
+        init(_ text: String, lit: Lit? = nil) {
             self.text = text
-            self.bright = bright
+            self.lit = lit
         }
     }
 
@@ -115,9 +125,9 @@ enum TutorialHack {
     /// right is which of them is a setting, which is a value, and which is the
     /// comment at the top — a tour that carried a real YAML parser would be
     /// showing the parser rather than the config.
-    static func spans(_ line: Line) -> [Span] {
+    static func spans(_ line: Line, lit: Lit?) -> [Span] {
         let out = syntax(line.text)
-        guard line.bright else { return out }
+        guard let want = line.lit, want == lit else { return out }
         // The line whose value is also on the chip is one colour, all of it:
         // picking the key out letter by letter made the reader find the letter
         // before they could see the line.
@@ -204,13 +214,13 @@ enum TutorialHack {
         case .scripts:
             return [
                 Line("# config.yaml"),
-                Line("- name: slack_handles"),
-                Line("  description: names as slack handles"),
-                Line("  display: Slack handles", bright: true),
-                Line("  say: [slack handles]"),
+                Line("- name: slack_mentions"),
+                Line("  description: names as slack mentions"),
+                Line("  display: Slack mentions", lit: .key),
                 Line("  offer: true"),
-                Line("  key: s", bright: true),
-                Line("  command: slack_handles.py"),
+                Line("  key: s", lit: .key),
+                Line("  say: [add slack mention]", lit: .say),
+                Line("  command: slack_mentions.py"),
             ]
         }
     }
@@ -251,7 +261,7 @@ enum TutorialHack {
     /// the panel is the thing being shown rather than the sentence above it.
     static let chips = [
         OfferedCommand(title: "Fix grammar", key: "G"),
-        OfferedCommand(title: "Slack handles", key: "S"),
+        OfferedCommand(title: "Slack mentions", key: "S"),
     ]
 
     /// The chip the pointer takes, which is the one the config gave a key to.
@@ -278,26 +288,38 @@ enum TutorialHack {
     static var answer: TimeInterval { typingTime + 0.45 }
     static let answerFade: TimeInterval = 0.5
 
-    /// After the last card has settled: how long before it steps back and the
-    /// panel arrives in the room it made, and how long the finished card is
-    /// held before the pass ends.
+    /// After the scripts card has settled: how long before it steps back and
+    /// the panel arrives in the room it made, how long the key is the only
+    /// thing lit, and how long the finished card is held before the pass ends.
     ///
     /// The wait is long on purpose. What the card says next is that the key in
     /// the file is the key on the chip, and that is only read once the file has
     /// been read.
     static let step: TimeInterval = 3.5
+    static let saying: TimeInterval = 3.4
     static let hold: TimeInterval = 3.0
 
-    /// The last line of the config the card is about, which is not in the file
-    /// yet: the two transforms that asked for a chip are the two this one has,
-    /// and the third is the reader's to write. Out of `lines` because it is
-    /// hidden until the card steps back, and a line that is not shown does not
-    /// belong to the file being shown.
-    static let invitation = "# Add a custom command"
-
-    static func arrives(_ kind: Kind) -> TimeInterval {
-        first + Double(kind.rawValue) * between
+    /// What the card says above the panel, on each of its two endings.
+    static func ending(_ lit: Lit) -> String {
+        switch lit {
+        case .key: return "Add a custom key command"
+        case .say: return "Or a vocal command"
+        }
     }
+
+    /// How long a card is up for. The scripts one gets longer than the rest: it
+    /// ends on two things instead of one, and the second needs reading too.
+    static func length(_ kind: Kind) -> TimeInterval {
+        kind == .scripts ? between + saying + 1.0 : between
+    }
+
+    /// Where a card's own page begins, which is where the one before it ends.
+    /// `arrives` is `first` later: the gap is the beat the card arrives on.
+    static func startOf(_ kind: Kind) -> TimeInterval {
+        Kind.allCases.prefix { $0 != kind }.reduce(0) { $0 + length($1) }
+    }
+
+    static func arrives(_ kind: Kind) -> TimeInterval { first + startOf(kind) }
 
     static var last: Kind { .agent }
 
@@ -373,10 +395,16 @@ struct TutorialHackRun: Equatable {
     }
 
     /// How far the rest of the card has stepped back: 0 while it is being read,
-    /// 1 once the key is the only thing left to look at. The invitation under
-    /// the panel arrives with it.
+    /// 1 once the lit line is the only thing left to look at.
     var spotlight: Double {
         min(1, max(0, (t - taken) / 0.4))
+    }
+
+    /// Which of the card's two endings is up, or nil while the file is still
+    /// being read whole.
+    var lit: TutorialHack.Lit? {
+        guard t >= taken else { return nil }
+        return t >= taken + TutorialHack.saying ? .say : .key
     }
 
     /// Which card is on the screen, or nil before the first one arrives.
@@ -400,39 +428,21 @@ struct TutorialHackRun: Equatable {
     }
 }
 
-/// The screen the three are drawn on.
+/// The screen the four config examples are drawn on.
 ///
-/// The only screen of the three that can be interrupted. It is a config file,
-/// and a config file is read at the reader's pace: the pointer stops the pass
-/// where it is, and a dot takes it to any of the three and keeps it there. The
-/// clock itself is never stopped — a tour that pauses by not running is a tour
-/// that has to be restarted — so a pause is time taken off the clock instead.
+/// It is a config file, and a config file is read at the reader's pace. The
+/// pointer used to stop the pass wherever it was; the dots at the bottom of the
+/// window do that job now, one a card, and they are the only thing on the tour
+/// anybody can press. A hover that stopped the clock also stopped the dots
+/// agreeing with the card, and it could hold a window with no buttons in it
+/// open for as long as the pointer sat there.
 struct TutorialHackPane: View {
     /// Seconds since this screen's demonstration started.
     let elapsed: TimeInterval
     /// The downloads, for the bar under the header.
     var progress: Double?
 
-    /// How much of the pass has been held back by every pause so far.
-    @State private var held: TimeInterval = 0
-    /// When the pause that is happening now began.
-    @State private var since: Date?
-    /// The pointer is on the screen.
-    @State private var hovering = false
-
-    private var paused: Bool { hovering }
-
-    /// The moment this screen is showing.
-    ///
-    /// The clock, less everything a pause has taken off it — which while a pause
-    /// is happening is a constant — and then folded into one card when a dot has
-    /// been clicked. Folding rather than stopping: a card frozen at the moment
-    /// it was clicked is a card frozen at the frame before it arrived, and the
-    /// carousel looked broken because there was nothing on the screen to see.
-    private var run: TutorialHackRun {
-        let pause = since.map { Date().timeIntervalSince($0) } ?? 0
-        return TutorialHackRun(elapsed - held - pause)
-    }
+    private var run: TutorialHackRun { TutorialHackRun(elapsed) }
 
     var body: some View {
         // No lead line: the title says what the screen is, and the three cards
@@ -444,10 +454,7 @@ struct TutorialHackPane: View {
             showsLead: false,
             progress: progress
         ) {
-            stage.onHover { inside in
-                hovering = inside
-                settle()
-            }
+            stage
         }
     }
 
@@ -463,21 +470,11 @@ struct TutorialHackPane: View {
                 replied: kind == .agent ? run.replied : 0,
                 typed: kind == .agent ? run.typed : 0,
                 panel: kind == .scripts ? run.panel : 0,
-                clicked: kind == .scripts ? run.clicked : nil
+                clicked: kind == .scripts ? run.clicked : nil,
+                lit: kind == .scripts ? run.lit : nil
             )
         }
     }
-
-    /// Start or stop the clock, so that `held` and `since` between them always
-    /// say how much of the pass has been held back.
-    private func settle() {
-        if paused, since == nil { since = Date() }
-        if !paused, let began = since {
-            held += Date().timeIntervalSince(began)
-            since = nil
-        }
-    }
-
 }
 
 /// One kind of transform: what the config says on the left, and what the words
@@ -496,6 +493,8 @@ private struct TransformCard: View {
     /// How far the panel under it has arrived, for the one card that has one.
     var panel: Double = 0
     var clicked: Int?
+    /// Which of the card's two endings is up, for the one card that has them.
+    var lit: TutorialHack.Lit?
 
     var body: some View {
         // Stacked and not side by side: the config lines are the long thing on
@@ -510,7 +509,10 @@ private struct TransformCard: View {
                 .foregroundStyle(Color.white.opacity(0.45 * faded))
             outcome.opacity(faded)
             if kind == .agent { terminal } else { block.padding(.top, 7) }
-            if kind == .scripts { pill }
+            if kind == .scripts {
+                ending
+                pill
+            }
         }
         // The card arrives from the left and settles. Nothing else on the screen
         // moves, so the three can be read while the next is arriving.
@@ -540,19 +542,20 @@ private struct TransformCard: View {
                 self.line(line)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            // In the block, at the end, and in the same face as the rest of it:
-            // it is a line of this file, and the one it has yet to have. Always
-            // in the layout and only sometimes drawn, so that the panel under
-            // the block does not move on the frame it arrives.
-            if kind == .scripts {
-                Text(TutorialHack.invitation)
-                    .font(.system(size: TutorialHack.face, design: .monospaced))
-                    .foregroundColor(.white)
-                    .shadow(color: Color.white.opacity(0.35), radius: 3)
-                    .opacity(spotlight)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
+    }
+
+    /// What the lit line does, said above the panel it does it to.
+    ///
+    /// Always in the layout and only sometimes drawn, so the panel under it does
+    /// not move on the frame this arrives.
+    private var ending: some View {
+        Text(TutorialHack.ending(lit ?? .key))
+            .font(.system(size: TutorialHack.labelSize, weight: .medium))
+            .foregroundStyle(Color(white: 0.88))
+            .opacity(spotlight)
+            .padding(.top, 3)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     /// How much of the card's own ink is left. The line whose letter is on the
@@ -567,7 +570,7 @@ private struct TransformCard: View {
     /// one `Text` would have put them.
     private func line(_ line: TutorialHack.Line) -> some View {
         HStack(spacing: 0) {
-            ForEach(Array(TutorialHack.spans(line).enumerated()), id: \.offset) { _, span in
+            ForEach(Array(TutorialHack.spans(line, lit: lit).enumerated()), id: \.offset) { _, span in
                 piece(span)
             }
         }

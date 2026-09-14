@@ -62,6 +62,18 @@ enum TourScreen: String, CaseIterable {
     /// middle of a pass, under somebody who is reading it.
     var height: CGFloat { TourScreen.heights[self] ?? 0 }
 
+    /// Where this screen turns its own pages, as offsets into its own pass.
+    ///
+    /// One page a dot, and the last screen is four config examples one after
+    /// another: a reader who wants the third of them has nothing to aim at if
+    /// the whole screen is one dot.
+    var pages: [TimeInterval] {
+        switch self {
+        case .hack: return TutorialHack.Kind.allCases.map(TutorialHack.startOf)
+        default: return [0]
+        }
+    }
+
     /// The beats each screen is at its tallest on.
     private var tallest: [TimeInterval] {
         switch self {
@@ -79,8 +91,13 @@ enum TourScreen: String, CaseIterable {
         case .slack:
             return [TutorialSlack.landsAt + TutorialSlack.Beat.posted.rawValue]
         case .hack:
-            // The panel, up under the third card.
-            return [TutorialHack.arrives(.scripts) + TutorialHack.step + 0.3]
+            // The panel, up under the scripts card, on each of the two things
+            // that card ends on.
+            return [
+                TutorialHack.arrives(.scripts) + TutorialHack.step + 0.3,
+                TutorialHack.arrives(.scripts) + TutorialHack.step
+                    + TutorialHack.saying + 0.3,
+            ]
         }
     }
 
@@ -109,6 +126,32 @@ enum TourWalk {
 
     static func total(of list: [TourScreen]) -> TimeInterval {
         list.reduce(0) { $0 + $1.length }
+    }
+
+    /// Every page of the walk, as offsets into the walk's own clock.
+    ///
+    /// A page is what one dot stands for and what one click lands on. Most
+    /// screens are one page; the last one is one a config example.
+    static func pages(of list: [TourScreen] = screens) -> [TimeInterval] {
+        var out: [TimeInterval] = []
+        var before: TimeInterval = 0
+        for screen in list {
+            out.append(contentsOf: screen.pages.map { before + $0 })
+            before += screen.length
+        }
+        return out
+    }
+
+    /// Which page the walk is on at `elapsed`.
+    static func page(
+        at elapsed: TimeInterval, in list: [TourScreen] = screens
+    ) -> Int {
+        let all = pages(of: list)
+        let loop = total(of: list)
+        guard loop > 0 else { return 0 }
+        var into = elapsed.truncatingRemainder(dividingBy: loop)
+        if into < 0 { into += loop }
+        return all.lastIndex(where: { into >= $0 }) ?? 0
     }
 
     /// Which screen is on at `elapsed`, and that screen's own clock.
@@ -142,6 +185,9 @@ struct SetupTour: View {
     /// `TutorialScreen.progress`.
     var progress: Double?
     var screens: [TourScreen] = TourWalk.screens
+    /// Play from this offset instead: a dot at the bottom has been clicked.
+    /// Nil where there is nobody to click, which is every still render.
+    var seek: ((TimeInterval) -> Void)?
 
     var body: some View {
         let (index, clock) = TourWalk.at(elapsed, in: screens)
@@ -153,32 +199,41 @@ struct SetupTour: View {
         // On the frame and not inside the screen: the dots belong at the bottom
         // of the window, and a screen at a beat shorter than its tallest one
         // would carry them up the page with it.
-        .overlay(alignment: .bottom) { dots(index) }
+        .overlay(alignment: .bottom) { dots }
         // The screens are drawn in whites over dark glass. A light window makes
         // them unreadable, and the window they play in is whatever the Mac is
         // set to.
         .environment(\.colorScheme, .dark)
     }
 
-    /// One circle a screen, the one playing lit.
+    /// One circle a page, the one playing lit, and clicking one plays from
+    /// there.
     ///
-    /// The tour has nothing to press, so this is what says the screens are
-    /// pages of one walk rather than four unrelated windows, and how many of
-    /// them there are.
-    @ViewBuilder private func dots(_ index: Int) -> some View {
-        if screens.count > 1 {
-            HStack(spacing: 7) {
-                ForEach(Array(screens.enumerated()), id: \.offset) { at, _ in
+    /// This is the only thing on the tour to press. It says the screens are
+    /// pages of one walk rather than unrelated windows, how many there are, and
+    /// it is the way back to the one that went past too quickly.
+    @ViewBuilder private var dots: some View {
+        let pages = TourWalk.pages(of: screens)
+        if pages.count > 1 {
+            let on = TourWalk.page(at: elapsed, in: screens)
+            HStack(spacing: 0) {
+                ForEach(Array(pages.enumerated()), id: \.offset) { at, page in
                     Circle()
                         .fill(
-                            at == index
+                            at == on
                                 ? Parrot.action.opacity(0.9)
                                 : Color.white.opacity(0.18)
                         )
                         .frame(width: 6, height: 6)
+                        // A 6pt circle is not something anybody can hit. The
+                        // box around it is, and the gap between the dots is its
+                        // padding rather than a spacing of its own.
+                        .frame(width: 17, height: 20)
+                        .contentShape(Rectangle())
+                        .onTapGesture { seek?(page) }
                 }
             }
-            .padding(.bottom, 22)
+            .padding(.bottom, 14)
         }
     }
 }
@@ -212,6 +267,7 @@ struct SetupTourPane: View {
                 // The downloader's own number, size-weighted across the six
                 // models, and the same one the corner's figure is drawn from.
                 progress: downloads.fraction,
+                seek: { model.seekTour(to: $0) }
             )
             .onChange(of: index) { _, _ in onScreenChange() }
         }

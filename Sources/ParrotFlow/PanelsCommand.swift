@@ -272,7 +272,7 @@ enum PanelsCommand {
         ("posted", TutorialSlack.landsAt + TutorialSlack.Beat.posted.rawValue + 0.4),
     ]
 
-    /// The beats of the Hackable output screen: each card arriving, and the
+    /// The beats of the Extensible screen: each card arriving, and the
     /// panel on the last one.
     static let hackBeats: [(name: String, at: TimeInterval)] = [
         ("replacements", TutorialHack.arrives(.replacements) + 0.5),
@@ -282,6 +282,11 @@ enum PanelsCommand {
         ),
         ("scripts", TutorialHack.arrives(.scripts) + 0.5),
         ("panel", TutorialHack.arrives(.scripts) + TutorialHack.step + 0.3),
+        (
+            "said",
+            TutorialHack.arrives(.scripts) + TutorialHack.step
+                + TutorialHack.saying + 0.3
+        ),
         ("prompts", TutorialHack.arrives(.prompts) + 0.5),
         (
             "its mark",
@@ -1418,14 +1423,14 @@ private final class TourWindowSizer {
 
 /// The tour, on its own clock, for `--panels`.
 ///
-/// Next and Back move the clock, the way they do in the setup window.
+/// A dot at the bottom moves the clock, the way it does in the setup window.
 private struct TourPreview: View {
     let screens: [TourScreen]
     /// The tour has cut to a screen of another height.
     var onScreen: (TourScreen) -> Void = { _ in }
 
     @State private var started = Date()
-    /// What Next and Back have moved the clock by.
+    /// What a dot has moved the clock by.
     @State private var skew: TimeInterval = 0
 
     var body: some View {
@@ -1441,6 +1446,7 @@ private struct TourPreview: View {
                 // own number, and that one arrives.
                 progress: min(0.9, 0.05 + elapsed / 180),
                 screens: screens,
+                seek: { skew = $0 - ran }
             )
             .onChange(of: index) { _, _ in onScreen(screens[index]) }
         }
