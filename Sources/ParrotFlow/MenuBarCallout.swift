@@ -110,6 +110,11 @@ final class MenuBarCallout {
 
 enum CalloutMetrics {
     static let width: CGFloat = 288
+
+    /// The ground. ParrotFlow's own blue, taken down until white sits on it at
+    /// about 6:1 — the sky colour itself is 3.7:1 against white, which is under
+    /// what a sentence needs.
+    static let ground = Color(red: 0.235, green: 0.373, blue: 0.510)
     static let radius: CGFloat = 12
     /// Half the arrow's width, which is also how far its tip can get from a
     /// corner before the corner has to give way to it.
@@ -170,9 +175,13 @@ private struct CalloutView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 7) {
-                PlumageMark(size: 13)
+                // The drawing, not the menu bar bird: that one is a single
+                // colour and would be an orange shape on blue. `PlumageBird`
+                // is cut from `parrot.svg` and wears the plumage.
+                PlumageBird(size: 17)
                 Text("\(AppVariant.displayName) lives here")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
             }
             if let hotkey {
                 HStack(spacing: 5) {
@@ -181,25 +190,26 @@ private struct CalloutView: View {
                     Text("and start talking.")
                 }
                 .font(.system(size: 12))
-                .foregroundStyle(Color(white: 0.82))
+                .foregroundStyle(.white)
             }
             Text("Its menu is under the bird.")
                 .font(.system(size: 12))
-                .foregroundStyle(Color(white: 0.55))
+                .foregroundStyle(Color.white.opacity(0.72))
         }
         .padding(.horizontal, 15)
         .padding(.top, CalloutMetrics.arrow + 13)
         .padding(.bottom, 14)
         .frame(width: CalloutMetrics.width, alignment: .topLeading)
         .background {
-            // Drawn rather than glass: the glass helper is a rounded rectangle
-            // and the arrow is the whole point of this surface. The ground is
-            // the one the floating surfaces take, which is near-black whatever
-            // the Mac is set to.
+            // Drawn rather than glass: the glass helper is a rounded
+            // rectangle and the arrow is the whole point of this surface. Blue
+            // and not the near-black the other floating surfaces take — this
+            // one is the app introducing itself, and it is the only surface
+            // that is.
             let shape = CalloutShape(point: pointingAt)
             shape
-                .fill(Color(white: 0.11))
-                .overlay { shape.stroke(Color.white.opacity(0.16), lineWidth: 1) }
+                .fill(CalloutMetrics.ground)
+                .overlay { shape.stroke(Color.white.opacity(0.22), lineWidth: 1) }
                 .shadow(color: .black.opacity(0.45), radius: 12, y: 4)
         }
         .environment(\.colorScheme, .dark)
@@ -216,12 +226,12 @@ private struct CalloutView: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(
-                Color.white.opacity(0.10),
+                Color.white.opacity(0.16),
                 in: RoundedRectangle(cornerRadius: 5, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .strokeBorder(Parrot.action.opacity(0.5), lineWidth: 1)
+                    .strokeBorder(Color.white.opacity(0.55), lineWidth: 1)
             }
     }
 }
