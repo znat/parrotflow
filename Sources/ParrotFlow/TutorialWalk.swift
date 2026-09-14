@@ -146,10 +146,40 @@ struct SetupTour: View {
     var body: some View {
         let (index, clock) = TourWalk.at(elapsed, in: screens)
         screens[index].pane(clock: clock, progress: progress)
+        // Each screen keeps the height of its own tallest beat. Fixed inside
+        // one screen, so no frame of a pass resizes the window; different
+        // between them, so none of them ends in a band of nothing.
+        .frame(height: screens[index].height, alignment: .top)
+        // On the frame and not inside the screen: the dots belong at the bottom
+        // of the window, and a screen at a beat shorter than its tallest one
+        // would carry them up the page with it.
+        .overlay(alignment: .bottom) { dots(index) }
         // The screens are drawn in whites over dark glass. A light window makes
         // them unreadable, and the window they play in is whatever the Mac is
         // set to.
         .environment(\.colorScheme, .dark)
+    }
+
+    /// One circle a screen, the one playing lit.
+    ///
+    /// The tour has nothing to press, so this is what says the screens are
+    /// pages of one walk rather than four unrelated windows, and how many of
+    /// them there are.
+    @ViewBuilder private func dots(_ index: Int) -> some View {
+        if screens.count > 1 {
+            HStack(spacing: 7) {
+                ForEach(Array(screens.enumerated()), id: \.offset) { at, _ in
+                    Circle()
+                        .fill(
+                            at == index
+                                ? Parrot.action.opacity(0.9)
+                                : Color.white.opacity(0.18)
+                        )
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .padding(.bottom, 22)
+        }
     }
 }
 
@@ -179,16 +209,10 @@ struct SetupTourPane: View {
             let index = TourWalk.at(elapsed).index
             SetupTour(
                 elapsed: elapsed,
-                // The downloader's own number, the same one the last screen's
-                // bar is drawn from. Never read out: a figure is a claim about
-                // the network that goes wrong the moment the connection does.
+                // The downloader's own number, size-weighted across the six
+                // models, and the same one the corner's figure is drawn from.
                 progress: downloads.fraction,
             )
-            // Each screen keeps the height of its own tallest beat. Fixed
-            // inside one screen, so no frame of a pass resizes the window;
-            // different between them, so none of them ends in a band of
-            // nothing above the foot.
-            .frame(height: TourWalk.screens[index].height, alignment: .top)
             .onChange(of: index) { _, _ in onScreenChange() }
         }
         .onAppear { model.startTour() }

@@ -149,9 +149,18 @@ it is done while there is still a download to wait on.
 
 **The tour.** Then the window plays a demonstration of what the app does, for as
 long as the models take: correcting a name and having it remembered, a sentence
-in Slack, and the three kinds of transform. A thin bar in the corner says the
-download is moving, without a figure on it. There is nothing to press: it turns
+in Slack, and the three kinds of transform. There is nothing to press: it turns
 its own pages.
+
+Three things say what it is. The first screen says it in words, once. Every
+screen carries a small "WHILE YOU WAIT" at the right of the header, because the
+tour loops and somebody who looks away lands in the middle of one. And a row of
+dots at the bottom, one a screen, says they are pages of one walk.
+
+The download sits above a divider, so the top of the window is this install and
+the rest of it is the app. It is a bar, a shimmer over the filled part, and the
+percentage at the end. The figure is the downloader's own, weighted by the size
+of each model.
 
 It ends by itself once it has played through once **and** every model is in, at
 the next screen, and at once if a fetch a dictation waits on fails. Both

@@ -574,21 +574,65 @@ struct TutorialRun: Equatable {
     }
 }
 
-/// The downloads bar: thin, dim, and it fills.
+/// The shimmer's own clock, one for the app.
+///
+/// The first screen draws this bar twice while it lifts into the corner, and a
+/// clock per copy would put the highlight in a different place in each. A fixed
+/// date and not `Date()`: a global set on first draw is set at whatever moment
+/// the first bar appeared, so every still render caught the sweep at nought.
+private let trackStarted = Date(timeIntervalSinceReferenceDate: 0)
+
+/// How long the highlight takes to cross, and how wide it is.
+private let trackSweep: TimeInterval = 2.4
+private let trackBand: CGFloat = 110
+
+/// The downloads bar: dim, and it fills.
 ///
 /// The number is the registry's own, so the bar arrives when the models do. It
 /// used to stop at nine tenths, from when the number was a fiction and arriving
 /// would have been a lie. `--panels` still feeds it one and caps that itself.
+///
+/// It shimmers on its own clock and not the tour's. The tour's screens are
+/// functions of one clock so that a dropped frame cannot leave them out of step
+/// with each other; a highlight travelling over a bar has nothing to be in step
+/// with.
 private func progressTrack(_ progress: Double) -> some View {
-    GeometryReader { proxy in
-        ZStack(alignment: .leading) {
-            Capsule().fill(Color.white.opacity(0.10))
-            Capsule()
-                .fill(Parrot.action.opacity(0.8))
-                .frame(width: proxy.size.width * min(1, max(0, progress)))
+    let filled = min(1, max(0, progress))
+    return GeometryReader { proxy in
+        TimelineView(.periodic(from: trackStarted, by: 1.0 / 30)) { context in
+            let phase = context.date.timeIntervalSince(trackStarted)
+                .truncatingRemainder(dividingBy: trackSweep) / trackSweep
+            let width = proxy.size.width * filled
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.10))
+                Capsule()
+                    .fill(Parrot.action.opacity(0.8))
+                    .frame(width: width)
+                    .overlay(alignment: .leading) {
+                        LinearGradient(
+                            colors: [
+                                .clear, Color.white.opacity(0.45), .clear,
+                            ],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                        .frame(width: trackBand)
+                        .offset(x: -trackBand + (width + trackBand) * phase)
+                    }
+                    .clipShape(Capsule())
+            }
         }
     }
-    .frame(height: 3)
+    .frame(height: 5)
+}
+
+/// How far along, in words rather than in the length of a bar.
+///
+/// Rounded down and never to a hundred while anything is still moving: a bar
+/// that says 100% with a screen still to go reads as a stall.
+private func progressPercent(_ progress: Double) -> String {
+    let done = min(1, max(0, progress))
+    let whole = Int(done * 100)
+    return "\(done >= 1 ? 100 : min(99, whole))%"
 }
 
 /// The pane's own geometry, in the points the screens scale from.
@@ -629,11 +673,8 @@ struct TutorialScreen<Stage: View>: View {
     /// the bar in the middle of itself; 1 from the next screen on.
     var progressFade: Double = 1
     /// How far the model downloads have come, for a screen that plays while
-    /// they are still coming. Nil for a screen that draws no bar at all.
-    ///
-    /// Drawn and never read out. A figure is a claim about the network that goes
-    /// wrong the moment the connection does; a bar that is moving says what
-    /// these screens have to say, which is that the wait is being spent.
+    /// they are still coming. Nil for a screen that draws no bar at all, which
+    /// is also what takes the kicker off the header.
     var progress: Double?
     /// The wipe a screen opens with, or nil for a lead that is simply there.
     /// See `LeadIntro`.
@@ -645,7 +686,10 @@ struct TutorialScreen<Stage: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            if let progress { bar(progress).opacity(progressFade) }
+            if let progress {
+                bar(progress).opacity(progressFade)
+                rule.opacity(progressFade)
+            }
 
             // Nothing telling anyone how to hold the key — that instruction
             // belongs on the screen that asks them to do it — and nothing
@@ -680,24 +724,46 @@ struct TutorialScreen<Stage: View>: View {
             Text(AppVariant.displayName.uppercased())
                 .foregroundStyle(Parrot.action)
             Spacer(minLength: 0)
+            // Only while something is downloading, which is the only time these
+            // screens are played. They loop for as long as the fetch takes, so
+            // somebody who looks away and back lands in the middle of one: the
+            // label is on every frame rather than said once at the start.
+            if progress != nil {
+                Text("WHILE YOU WAIT")
+                    .foregroundStyle(Color.white.opacity(0.34))
+            }
         }
         .font(.system(size: at(9), weight: .semibold, design: .rounded))
         .kerning(at(0.9))
         .padding(.bottom, at(11))
     }
 
-    /// The downloads, under the header: a small label and a thin track. The
+    /// The downloads, under the header: a label, a track and the figure. The
     /// strip the first screen gives them is gone by here — the screens need the
     /// room — and what is left says the same thing in the corner.
     private func bar(_ progress: Double) -> some View {
         HStack(spacing: at(9)) {
             Text("Downloading models")
-                .font(.system(size: at(7.6), weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.42))
+                .font(.system(size: at(9), weight: .medium, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.52))
                 .fixedSize()
             track(progress)
+            Text(progressPercent(progress))
+                .font(.system(size: at(9), weight: .medium, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.52))
+                .monospacedDigit()
+                .fixedSize()
         }
-        .padding(.bottom, at(14))
+        .padding(.bottom, at(10))
+    }
+
+    /// The line between the download and the tour. What is above it is this
+    /// install; what is below it is the app.
+    private var rule: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.08))
+            .frame(height: 1)
+            .padding(.bottom, at(14))
     }
 
     private func track(_ progress: Double) -> some View { progressTrack(progress) }
@@ -799,11 +865,24 @@ struct TutorialDownloadsPane: View {
             // of them is always whole, so what the eye follows is the bar going
             // up rather than two bars swapping places.
             VStack(spacing: 16) {
-                Text("Downloading models")
-                    .font(.system(size: 21 - 6 * lifted, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color(white: 0.92).opacity(1 - lifted))
+                HStack(spacing: 10) {
+                    Text("Downloading models")
+                    Text(progressPercent(progress))
+                        .monospacedDigit()
+                        .foregroundStyle(Parrot.action.opacity(1 - lifted))
+                }
+                .font(.system(size: 21 - 6 * lifted, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color(white: 0.92).opacity(1 - lifted))
                 progressTrack(progress)
                     .frame(width: 300 - 60 * lifted)
+                // The one place the walk says what it is. Said here because
+                // this screen is the start of it, and because the screens after
+                // it are the demonstration and a line explaining a
+                // demonstration is a line nobody reads.
+                Text("This takes a few minutes. Here is what ParrotFlow does.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.secondary)
+                    .opacity(1 - lifted)
             }
             .frame(maxWidth: .infinity)
             .offset(y: -26 * lifted)
