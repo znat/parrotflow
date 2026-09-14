@@ -142,6 +142,27 @@ enum TourWalk {
         return out
     }
 
+    /// How long the window takes to change height at a cut.
+    static let resize: TimeInterval = 0.34
+
+    /// The height the window keeps at `elapsed`.
+    ///
+    /// The screen's own height, eased out of the one before it across the cut.
+    /// Off the walk's clock and not a SwiftUI animation: the screens are
+    /// redrawn sixty times a second from that clock, and a height animated
+    /// beside it is a second clock to keep in step. This one cannot drift,
+    /// and a still render of a beat is still one height.
+    static func height(
+        at elapsed: TimeInterval, in list: [TourScreen] = screens
+    ) -> CGFloat {
+        let (index, clock) = at(elapsed, in: list)
+        let now = list[index].height
+        guard clock < resize, list.count > 1 else { return now }
+        let before = list[(index - 1 + list.count) % list.count].height
+        let u = clock / resize
+        return before + (now - before) * (u * u * (3 - 2 * u))
+    }
+
     /// Which page the walk is on at `elapsed`.
     static func page(
         at elapsed: TimeInterval, in list: [TourScreen] = screens
@@ -194,8 +215,12 @@ struct SetupTour: View {
         screens[index].pane(clock: clock, progress: progress)
         // Each screen keeps the height of its own tallest beat. Fixed inside
         // one screen, so no frame of a pass resizes the window; different
-        // between them, so none of them ends in a band of nothing.
-        .frame(height: screens[index].height, alignment: .top)
+        // between them, so none of them ends in a band of nothing, and eased
+        // across the cut so the window is not seen to jump.
+        //
+        // Top-aligned, so a screen taller than the frame it is arriving in is
+        // revealed from the top down by the window growing under it.
+        .frame(height: TourWalk.height(at: elapsed, in: screens), alignment: .top)
         // On the frame and not inside the screen: the dots belong at the bottom
         // of the window, and a screen at a beat shorter than its tallest one
         // would carry them up the page with it.
@@ -244,10 +269,14 @@ struct SetupTour: View {
 /// to be able to read it, and a clock kept in a view that is rebuilt sixty
 /// times a second is not one anything else can ask.
 struct SetupTourPane: View {
-    /// The screen has changed, so the window is a different height now. Called
-    /// from the cut rather than left to the poll: a window that catches up a
-    /// second later shows one screen in the last one's frame.
-    var onScreenChange: () -> Void = {}
+    /// The pane wants a different height. Called from here rather than left to
+    /// the poll: a window that catches up a second later shows one screen in
+    /// the last one's frame.
+    ///
+    /// Once a frame while a cut is easing, which is about twenty calls in a
+    /// third of a second. The window's own resize is the guard against the
+    /// ones that would change nothing.
+    var onHeightChange: () -> Void = {}
 
     @EnvironmentObject private var model: PermissionsModel
     @EnvironmentObject private var downloads: ModelDownloads
@@ -261,7 +290,7 @@ struct SetupTourPane: View {
         // which is a tour frozen at whatever frame it was on.
         TimelineView(.periodic(from: model.tourStartedAt ?? Date(), by: 1.0 / 60)) { context in
             let elapsed = model.tourElapsed(at: context.date)
-            let index = TourWalk.at(elapsed).index
+            let height = TourWalk.height(at: elapsed)
             SetupTour(
                 elapsed: elapsed,
                 // The downloader's own number, size-weighted across the six
@@ -269,7 +298,7 @@ struct SetupTourPane: View {
                 progress: downloads.fraction,
                 seek: { model.seekTour(to: $0) }
             )
-            .onChange(of: index) { _, _ in onScreenChange() }
+            .onChange(of: height) { _, _ in onHeightChange() }
         }
         .onAppear { model.startTour() }
     }

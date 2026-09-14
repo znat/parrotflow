@@ -523,7 +523,7 @@ final class PermissionsWindowController {
             onClose: { [weak self] in self?.finish() },
             onRetry: { [weak self] in self?.onRetryDownloads?() },
             onInstallEspeak: { [weak self] in self?.installEspeak() },
-            onTourScreen: { [weak self] in self?.stepSettled() }
+            onTourHeight: { [weak self] in self?.resizeToContent() }
         )
         .environmentObject(model)
         .environmentObject(model.downloads)
@@ -736,9 +736,8 @@ struct PermissionsView: View {
     var onClose: () -> Void = {}
     var onRetry: () -> Void = {}
     var onInstallEspeak: () -> Void = {}
-    /// The tour has cut to a screen of another height. See
-    /// `SetupTourPane.onScreenChange`.
-    var onTourScreen: () -> Void = {}
+    /// The tour wants another height. See `SetupTourPane.onHeightChange`.
+    var onTourHeight: () -> Void = {}
 
     /// The header belongs to whichever screen is under it, so it is drawn on
     /// that screen's scale.
@@ -752,7 +751,7 @@ struct PermissionsView: View {
         // is played on its own as well, by `--panels tutorial` — so it is not
         // put inside this screen's chrome.
         if model.current == .tour {
-            SetupTourPane(onScreenChange: onTourScreen)
+            SetupTourPane(onHeightChange: onTourHeight)
         } else {
             walk
         }

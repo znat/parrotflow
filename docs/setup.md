@@ -156,6 +156,10 @@ screen carries a small "WHILE YOU WAIT" at the right of the header, because the
 tour loops and somebody who looks away lands in the middle of one. And a row of
 dots at the bottom says they are pages of one walk.
 
+Each screen keeps the height of its own tallest beat, so none of them ends in a
+band of nothing, and the window eases between the two heights over a third of a
+second rather than jumping at the cut.
+
 The dots are the only thing on the tour to press. Clicking one plays from there,
 which is the way back to a page that went past too quickly. They count pages and
 not screens: the last screen is four config examples one after another, so there

@@ -1379,7 +1379,7 @@ enum PanelsCommand {
             let sizer = TourWindowSizer()
             let preview = window(
                 for: AnyView(
-                    TourPreview(screens: screens, onScreen: sizer.fit)
+                    TourPreview(screens: screens, onHeight: sizer.fit)
                 ),
                 size: NSSize(
                     width: PermissionMetrics.setupWidth,
@@ -1416,11 +1416,11 @@ private final class TourWindowSizer {
     /// The top edge is put back afterwards: `setContentSize` keeps the
     /// bottom-left corner, and a window that grows upward moves its own title
     /// bar out from under the pointer. Same as `resizeToContent`.
-    func fit(_ screen: TourScreen) {
+    func fit(_ height: CGFloat) {
         guard let window else { return }
         let top = window.frame.maxY
         window.setContentSize(
-            NSSize(width: PermissionMetrics.setupWidth, height: screen.height)
+            NSSize(width: PermissionMetrics.setupWidth, height: height)
         )
         var frame = window.frame
         frame.origin.y = top - frame.height
@@ -1433,8 +1433,8 @@ private final class TourWindowSizer {
 /// A dot at the bottom moves the clock, the way it does in the setup window.
 private struct TourPreview: View {
     let screens: [TourScreen]
-    /// The tour has cut to a screen of another height.
-    var onScreen: (TourScreen) -> Void = { _ in }
+    /// The tour wants another height, once a frame while a cut is easing.
+    var onHeight: (CGFloat) -> Void = { _ in }
 
     @State private var started = Date()
     /// What a dot has moved the clock by.
@@ -1444,7 +1444,7 @@ private struct TourPreview: View {
         TimelineView(.periodic(from: started, by: 1.0 / 60)) { context in
             let ran = context.date.timeIntervalSince(started)
             let elapsed = ran + skew
-            let index = TourWalk.at(elapsed, in: screens).index
+            let height = TourWalk.height(at: elapsed, in: screens)
             SetupTour(
                 elapsed: elapsed,
                 // Nothing here downloads anything, so the bar is the clock: a
@@ -1455,7 +1455,7 @@ private struct TourPreview: View {
                 screens: screens,
                 seek: { skew = $0 - ran }
             )
-            .onChange(of: index) { _, _ in onScreen(screens[index]) }
+            .onChange(of: height) { _, _ in onHeight(height) }
         }
     }
 }

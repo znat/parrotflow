@@ -758,15 +758,15 @@ private struct TransformCard: View {
     /// What the card ends on: the panel for the key, and then the mic for the
     /// words.
     ///
-    /// Stacked and crossfaded rather than swapped. Both are in the layout the
-    /// whole time, so the card is one height from the moment the panel arrives
-    /// and nothing under it moves when the pill takes over.
+    /// Crossfaded rather than swapped, and the panel is what the card is sized
+    /// to: the listening pill's own box is 40 points taller on every side, for
+    /// a bloom that is mostly transparent, and reserving that put an empty band
+    /// under the card on the beat before.
     @ViewBuilder private var pill: some View {
         if panel > 0 {
-            ZStack(alignment: .topLeading) {
-                offerPanel.opacity(1 - spoken)
-                saying.opacity(spoken)
-            }
+            offerPanel
+                .opacity(1 - spoken)
+                .overlay(alignment: .topLeading) { saying.opacity(spoken) }
         }
     }
 
@@ -801,10 +801,14 @@ private struct TransformCard: View {
             )
             words.padding(.leading, 14 - bleed)
         }
-        // And the row itself back by the difference between the two margins, so
-        // the drawn pill starts where the drawn panel did. Without it the
-        // surface steps 40 points to the right in the middle of the crossfade.
-        .offset(x: -(bleed - PillMetrics.dockBleed))
+        // And the row itself back by the difference between the two margins, in
+        // both directions, so the drawn pill starts exactly where the drawn
+        // panel did. Without it the surface steps 40 points down and to the
+        // right in the middle of the crossfade.
+        .offset(
+            x: -(bleed - PillMetrics.dockBleed),
+            y: -(bleed - PillMetrics.dockBleed)
+        )
     }
 
     /// The command, a word at a time.
