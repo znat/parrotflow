@@ -32,16 +32,54 @@ final class MenuBarCallout {
     /// naming a key that does nothing, the same rule the last screen follows.
     func showOnce(under button: NSStatusBarButton?, hotkey: String?) {
         guard !MenuBarCallout.shown else { return }
-        guard let button, let host = button.window else { return }
-        MenuBarCallout.shown = true
-        show(
-            pointingAt: host.convertToScreen(button.convert(button.bounds, to: nil)),
-            hotkey: hotkey
-        )
+        place(button, hotkey: hotkey, once: true)
     }
 
-    /// The same, at a rect somebody else measured, and without the once-only
-    /// rule. `--panels callout` has no status item to hang off.
+    /// The same without the once-only rule, for `--panels callout`.
+    func show(under button: NSStatusBarButton?, hotkey: String?) {
+        place(button, hotkey: hotkey, once: false)
+    }
+
+    /// Waits for the menu bar to put the icon somewhere, then points at it.
+    ///
+    /// Asked once and taken at its word, this pointed at nothing: a status
+    /// item's window is 16x0 at the screen origin until the menu bar has laid
+    /// it out, so the callout went to y = -114 and nobody saw it. One turn of
+    /// the run loop is not enough either — the placing is its own work.
+    ///
+    /// It can also never arrive. macOS hides items a full menu bar has no room
+    /// for, and then this says nothing at all: an arrow pointing at an icon
+    /// nobody can see is worse than no arrow. The once-only flag is spent when
+    /// the panel goes up, not before, so giving up here costs nothing.
+    private func place(
+        _ button: NSStatusBarButton?, hotkey: String?, once: Bool, tries: Int = 14
+    ) {
+        guard let button else { return }
+        if let icon = placed(button) {
+            if once { MenuBarCallout.shown = true }
+            show(pointingAt: icon, hotkey: hotkey)
+            return
+        }
+        guard tries > 0 else {
+            Log.write("callout: the menu bar never placed the icon; saying nothing")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.place(button, hotkey: hotkey, once: once, tries: tries - 1)
+        }
+    }
+
+    /// The item's own window is the icon's rect, in screen coordinates
+    /// already. Nil while it is the 16x0 box a new item starts as, or while it
+    /// is nowhere any screen can show it.
+    private func placed(_ button: NSStatusBarButton) -> NSRect? {
+        guard let frame = button.window?.frame, frame.height > 1 else { return nil }
+        guard NSScreen.screens.contains(where: { $0.frame.intersects(frame) }) else {
+            return nil
+        }
+        return frame
+    }
+
     func show(pointingAt icon: NSRect, hotkey: String?) {
         build(hotkey: hotkey, pointingAt: icon)
         panel?.riseIntoView(makeKey: false)
@@ -114,7 +152,10 @@ enum CalloutMetrics {
     /// The ground. ParrotFlow's own blue, taken down until white sits on it at
     /// about 6:1 — the sky colour itself is 3.7:1 against white, which is under
     /// what a sentence needs.
-    static let ground = Color(red: 0.235, green: 0.373, blue: 0.510)
+    /// Brighter than it was, and this is as bright as it goes: 4.6:1 against
+    /// white, where 4.5 is what a 12pt sentence needs. The sky colour itself
+    /// is 3.7:1, which is why the ground is not simply `Parrot.sky`.
+    static let ground = Color(red: 0.270, green: 0.470, blue: 0.700)
     static let radius: CGFloat = 12
     /// Half the arrow's width, which is also how far its tip can get from a
     /// corner before the corner has to give way to it.

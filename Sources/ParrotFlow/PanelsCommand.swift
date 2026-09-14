@@ -1081,6 +1081,7 @@ enum PanelsCommand {
         var setupWindow: NSWindow?
         var launchPanel: LaunchPanel?
         var calloutPanel: MenuBarCallout?
+        var calloutItem: NSStatusItem?
 
         switch surface {
         case "notice":
@@ -1241,17 +1242,26 @@ enum PanelsCommand {
             )
         // The screen that lists what is about to be fetched. A still, like the
         // screen itself: nothing on it has started.
-        // The callout the install leaves under the menu bar icon. There is no
-        // status item in this process, so it points at where one would be.
+        // The callout the install leaves under the menu bar icon.
+        //
+        // With a real status item, not a guess at where one would be. It was a
+        // guess — `maxX - 140` — and that is where the clock is, so the preview
+        // put the callout under the clock and the one thing it exists to show
+        // was the one thing it got wrong.
         case "callout":
-            let screen = NSScreen.main?.frame ?? .zero
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            item.button?.image = NSImage(named: "MenuBarParrotTemplate")
+            item.button?.image?.isTemplate = true
+            calloutItem = item
             calloutPanel = MenuBarCallout()
-            calloutPanel?.show(
-                pointingAt: NSRect(
-                    x: screen.maxX - 140, y: screen.maxY - 24, width: 24, height: 24
-                ),
-                hotkey: Tutorial.hotkey
-            )
+            // After the menu bar has laid the item out. Asked on this turn of
+            // the run loop, the button has no window yet and no frame to point
+            // at.
+            DispatchQueue.main.async { [calloutPanel] in
+                calloutPanel?.show(
+                    under: item.button, hotkey: Tutorial.hotkey
+                )
+            }
         case "models":
             let listing = sampleDownloads(speech: .waiting)
             let pane = AnyView(
