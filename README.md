@@ -12,9 +12,10 @@
 
 **[Install](#install)** · [Documentation](docs/README.md)
 
-<img src="Resources/hero.gif" width="760" alt="Three dictations. Versal becomes
-Vercel in Slack; in a terminal, P one becomes P1 and max retries becomes
-max_retries; in Mail, pressing S drops a spoken correction.">
+<img src="Resources/hero.webp" width="760" alt="Four dictations into one field.
+Mick is corrected to Mik and the app offers to remember it, then Mik to Mick;
+the last two sentences name both people and both are written right. Then one
+Slack message: PR 478 arrives as a link, and Siobhan becomes @Sio.">
 
 </div>
 
