@@ -945,6 +945,12 @@ tour as a numbered PNG, for ffmpeg to make a video or an animated image out of.
 Nothing is recorded and no window opens: the screens are functions of elapsed
 time, so the film is a walk up the clock, and it comes out the same every run.
 
+With one exception. The highlight that sweeps the download bar runs on a clock
+of its own, on purpose — a light crossing a bar has nothing to be in step with
+— so `downloads` is the one screen whose frames differ from run to run. The
+others draw the bar only while something is downloading, and a film has
+nothing downloading.
+
 `speed` multiplies the step — `2` asks the clock for twice the time per frame,
 so the film plays at twice the pace. The stretches a screen dims over are held
 at 1x whatever `speed` says: a screen dims over the thing it is about, so those

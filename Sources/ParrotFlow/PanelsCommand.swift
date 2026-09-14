@@ -408,12 +408,21 @@ enum PanelsCommand {
     /// The two corrections on the vocabulary screen are held at 1x whatever
     /// `speed` says — see `pace`.
     ///
+    /// One thing on the walk is not a function of that clock: the highlight
+    /// sweeping the download bar runs on a clock of its own, deliberately, so
+    /// `downloads` is the one screen whose frames differ between runs. Every
+    /// other screen draws the bar only when there is a download, and a film has
+    /// none.
+    ///
     /// One canvas for the whole film, as tall as the tallest screen, because a
     /// video cannot change size partway. The panes are top-aligned in it.
     static func tourFilm(
         to dir: String, screens: [TourScreen], fps: Double, speed: Double
     ) -> Int32 {
-        guard !screens.isEmpty, fps > 0, speed > 0 else { return 2 }
+        // `isFinite` and not just `> 0`: an infinite rate makes the step zero
+        // and the loop below never ends.
+        guard !screens.isEmpty, fps.isFinite, speed.isFinite, fps > 0, speed > 0
+        else { return 2 }
 
         // Every moment the film will draw, worked out before anything is drawn:
         // the canvas has to hold the tallest of them, and a screen grows while
@@ -455,6 +464,15 @@ enum PanelsCommand {
             try FileManager.default.createDirectory(
                 atPath: dir, withIntermediateDirectories: true
             )
+            // A shorter film into a directory that held a longer one leaves the
+            // tail of the old one behind, and ffmpeg reads `frame-%04d.png` to
+            // the end of the run: the film would finish with somebody else's
+            // frames.
+            let old = try FileManager.default.contentsOfDirectory(atPath: dir)
+                .filter { $0.hasPrefix("frame-") && $0.hasSuffix(".png") }
+            for name in old {
+                try FileManager.default.removeItem(atPath: "\(dir)/\(name)")
+            }
         } catch {
             print("✗ \(error.localizedDescription)")
             return 1
