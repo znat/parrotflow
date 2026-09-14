@@ -397,6 +397,7 @@ final class PermissionsWindowController {
         centred = true
         fronting = nil
         succeededIndex = model.index
+        installed = false
 
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -563,9 +564,11 @@ final class PermissionsWindowController {
             guard let self else { return }
             self.timer?.invalidate()
             self.timer = nil
-            // Only an install. A window opened from the menu bar was opened by
-            // somebody who knows where the menu bar is.
-            if self.model.context == .installing { self.onInstalled?() }
+            // Only the end of an install. A window opened from the menu bar
+            // was opened by somebody who knows where the menu bar is, and a
+            // cancelled one is closing on its way to quitting.
+            if self.installed { self.onInstalled?() }
+            self.installed = false
         }
     }
 
@@ -589,11 +592,26 @@ final class PermissionsWindowController {
     private func finish() {
         guard let window else { return }
         guard model.espeak == .missing, !model.espeakDeclined else {
-            window.close()
+            closeOnTheEnd(window)
             return
         }
         askAboutEspeak(on: window)
     }
+
+    /// The walk is over, so the window goes.
+    ///
+    /// Flagged, because `willClose` cannot tell this from the other way out.
+    /// *Cancel installation* closes the same window in the same context and
+    /// then quits the app, and the callout under the menu bar icon would have
+    /// appeared over an app on its way out — and spent its once-only default
+    /// doing it.
+    private func closeOnTheEnd(_ window: NSWindow) {
+        installed = model.context == .installing
+        window.close()
+    }
+
+    /// Set by `closeOnTheEnd` and read by `willClose`. See `onInstalled`.
+    private var installed = false
 
     private func askAboutEspeak(on window: NSWindow) {
         let alert = NSAlert()
@@ -614,7 +632,7 @@ final class PermissionsWindowController {
             guard answer == .alertFirstButtonReturn else {
                 self.model.espeakDeclined = true
                 EspeakInstall.declined = true
-                window.close()
+                self.closeOnTheEnd(window)
                 return
             }
             // The window stays open, so the line can show Terminal opening and
