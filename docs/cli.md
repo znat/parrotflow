@@ -912,9 +912,10 @@ as it changes a dictation, ending on the panel those transforms put on the pill,
 with the key each was given drawn on its chip.
 
 The first two are dictated into the same composer — one surface, drawn once —
-with their own line in it. `tutorial` plays every screen on one clock, cutting
-from each into the next; `names`, `slack` and `hack` play one on its own, which
-is what you want while editing one. They were cross-faded for a while and are
+with their own line in it. `tutorial` plays the four screens the setup window
+plays, on one clock, cutting from each into the next — `ready` is not one of
+them, so the dots count four. `names`, `slack` and `hack` play one on its own,
+which is what you want while editing one. They were cross-faded for a while and are
 not any more: an `opacity` over a whole screen is one SwiftUI draws into a layer
 of its own, and the window stopped drawing new frames from the hand-off onwards.
 Each screen is a function of how long it has been running rather than a list of

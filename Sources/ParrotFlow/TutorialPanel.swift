@@ -625,14 +625,10 @@ private func progressTrack(_ progress: Double) -> some View {
     .frame(height: 5)
 }
 
-/// How far along, in words rather than in the length of a bar.
-///
-/// Rounded down and never to a hundred while anything is still moving: a bar
-/// that says 100% with a screen still to go reads as a stall.
+/// How far along, in words rather than in the length of a bar. Rounded down, so
+/// it says 100% only once everything is in.
 private func progressPercent(_ progress: Double) -> String {
-    let done = min(1, max(0, progress))
-    let whole = Int(done * 100)
-    return "\(done >= 1 ? 100 : min(99, whole))%"
+    "\(Int(min(1, max(0, progress)) * 100))%"
 }
 
 /// The pane's own geometry, in the points the screens scale from.
@@ -724,10 +720,9 @@ struct TutorialScreen<Stage: View>: View {
             Text(AppVariant.displayName.uppercased())
                 .foregroundStyle(Parrot.action)
             Spacer(minLength: 0)
-            // Only while something is downloading, which is the only time these
-            // screens are played. They loop for as long as the fetch takes, so
-            // somebody who looks away and back lands in the middle of one: the
-            // label is on every frame rather than said once at the start.
+            // On every frame rather than said once at the start: the tour loops
+            // for as long as the fetch takes, so somebody who looks away and
+            // back lands in the middle of a screen.
             if progress != nil {
                 Text("WHILE YOU WAIT")
                     .foregroundStyle(Color.white.opacity(0.34))
@@ -875,10 +870,7 @@ struct TutorialDownloadsPane: View {
                 .foregroundStyle(Color(white: 0.92).opacity(1 - lifted))
                 progressTrack(progress)
                     .frame(width: 300 - 60 * lifted)
-                // The one place the walk says what it is. Said here because
-                // this screen is the start of it, and because the screens after
-                // it are the demonstration and a line explaining a
-                // demonstration is a line nobody reads.
+                // The one place the walk says in words what it is.
                 Text("This takes a few minutes. Here is what ParrotFlow does.")
                     .font(.system(size: 13))
                     .foregroundStyle(Color.secondary)

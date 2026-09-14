@@ -1355,8 +1355,11 @@ enum PanelsCommand {
         // every screen of it one after the other; a name plays one on its own,
         // which is what you want while editing one.
         case "tutorial", "names", "slack", "hack", "downloads", "ready":
+            // `TourWalk.screens` and not every case: the dots count what is
+            // playing, so a list with `ready` in it — which the setup window
+            // never plays — shows five dots for a four-screen walk.
             let screens: [TourScreen] = surface == "tutorial"
-                ? TourScreen.allCases
+                ? TourWalk.screens
                 : TourScreen.allCases.filter { $0.rawValue == surface }
             // The window follows the screen, which is what the setup window
             // does: each screen keeps the height of its own tallest beat, so
