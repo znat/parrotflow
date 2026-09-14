@@ -219,7 +219,7 @@ enum TutorialHack {
                 Line("  display: Slack mentions", lit: .key),
                 Line("  offer: true"),
                 Line("  key: s", lit: .key),
-                Line("  say: [add slack mention]", lit: .say),
+                Line("  say: [\(spoken)]", lit: .say),
                 Line("  command: slack_mentions.py"),
             ]
         }
@@ -302,13 +302,35 @@ enum TutorialHack {
     static let saying: TimeInterval = 3.4
     static let hold: TimeInterval = 3.0
 
-    /// What the card says above the panel, on each of its two endings.
+    /// What the card says above the surface, on each of its two endings.
     static func ending(_ lit: Lit) -> String {
         switch lit {
         case .key: return "Add a custom key command"
         case .say: return "Or a vocal command"
         }
     }
+
+    /// The command as it is said, which is also the `say:` value in the file.
+    /// One spelling, so the words somebody hears cannot drift from the words
+    /// the config matches.
+    static let spoken = "add slack mention"
+    static var spokenWords: [String] { spoken.split(separator: " ").map(String.init) }
+
+    /// The say ending: how long the panel takes to give way to the pill, how
+    /// long after that the first word lands, and how long a word takes.
+    ///
+    /// A key command can be shown by naming the key. A spoken one cannot: what
+    /// there is to see is somebody holding the key and talking, so the panel
+    /// goes and the pill that is up while the mic is open takes its place, with
+    /// the words arriving beside it.
+    static let handover: TimeInterval = 0.45
+    static let beforeSpeaking: TimeInterval = 0.35
+    static let perWord: TimeInterval = 0.5
+
+    /// What the pill says it is listening about, which is what the app puts
+    /// there: the words that are about to change, not a word for the gesture.
+    /// See `AppDelegate.recordingLabel`.
+    static var listening: String { outcome(.scripts).before }
 
     /// How long a card is up for. The scripts one gets longer than the rest: it
     /// ends on two things instead of one, and the second needs reading too.
@@ -336,6 +358,13 @@ enum TutorialHack {
     /// shows the panel once, already open.
     static let reserved: NSSize = PillMetrics.panelSize(
         for: .offer(chips, nil, Confidence.Reading(), open: true),
+        hasIcon: true, hotkey: Tutorial.hotkey, dock: .below
+    )
+
+    /// And the box the listening pill is laid out in, which is its own size:
+    /// the words sit beside it, so there is no slack to centre it in.
+    static let listeningBox: NSSize = PillMetrics.panelSize(
+        for: .recording(listening),
         hasIcon: true, hotkey: Tutorial.hotkey, dock: .below
     )
 }
@@ -407,7 +436,37 @@ struct TutorialHackRun: Equatable {
     /// being read whole.
     var lit: TutorialHack.Lit? {
         guard t >= taken else { return nil }
-        return t >= taken + TutorialHack.saying ? .say : .key
+        return t >= said ? .say : .key
+    }
+
+    /// The moment the key ending gives way to the spoken one.
+    private var said: TimeInterval { taken + TutorialHack.saying }
+
+    /// How far the panel has given way to the listening pill: 0 on the key
+    /// ending, 1 on the spoken one.
+    var spoken: Double {
+        min(1, max(0, (t - said) / TutorialHack.handover))
+    }
+
+    /// How many words of the command have been said.
+    var spokenWords: Int {
+        let into = t - said - TutorialHack.beforeSpeaking
+        guard into > 0 else { return 0 }
+        return min(
+            TutorialHack.spokenWords.count,
+            Int(into / TutorialHack.perWord) + 1
+        )
+    }
+
+    /// What the meter is showing while the command is said.
+    ///
+    /// Two waves rather than one: a single sine reads as a metronome, and
+    /// nothing anybody says moves a meter like that.
+    var speechLevel: Double {
+        let into = t - said
+        guard into > 0 else { return 0 }
+        return 0.18 + 0.34 * (0.5 + 0.5 * sin(into * 7.5))
+            + 0.18 * (0.5 + 0.5 * sin(into * 3.1))
     }
 
     /// Which card is on the screen, or nil before the first one arrives.
@@ -470,7 +529,10 @@ struct TutorialHackPane: View {
                 typed: kind == .agent ? run.typed : 0,
                 panel: kind == .scripts ? run.panel : 0,
                 clicked: kind == .scripts ? run.clicked : nil,
-                lit: kind == .scripts ? run.lit : nil
+                lit: kind == .scripts ? run.lit : nil,
+                spoken: kind == .scripts ? run.spoken : 0,
+                spokenWords: kind == .scripts ? run.spokenWords : 0,
+                speechLevel: kind == .scripts ? run.speechLevel : 0
             )
         }
     }
@@ -494,6 +556,11 @@ private struct TransformCard: View {
     var clicked: Int?
     /// Which of the card's two endings is up, for the one card that has them.
     var lit: TutorialHack.Lit?
+    /// How far the panel has given way to the listening pill, how many words of
+    /// the command have been said, and what the meter is showing.
+    var spoken: Double = 0
+    var spokenWords: Int = 0
+    var speechLevel: Double = 0
 
     var body: some View {
         // Stacked and not side by side: the config lines are the long thing on
@@ -688,17 +755,83 @@ private struct TransformCard: View {
         }
     }
 
-    /// The post-dictation panel: the two transforms that asked for a chip, and
-    /// the key each one was given in the config beside it.
+    /// What the card ends on: the panel for the key, and then the mic for the
+    /// words.
+    ///
+    /// Stacked and crossfaded rather than swapped. Both are in the layout the
+    /// whole time, so the card is one height from the moment the panel arrives
+    /// and nothing under it moves when the pill takes over.
     @ViewBuilder private var pill: some View {
         if panel > 0 {
-            TourPill(
-                state: .offer(
-                    TutorialHack.chips, nil, Confidence.Reading(), open: true
-                ),
-                level: 0.18, clicked: clicked, landing: panel,
-                reserved: TutorialHack.reserved
-            )
+            ZStack(alignment: .topLeading) {
+                offerPanel.opacity(1 - spoken)
+                saying.opacity(spoken)
+            }
         }
+    }
+
+    /// The post-dictation panel: the two transforms that asked for a chip, and
+    /// the key each one was given in the config beside it.
+    private var offerPanel: some View {
+        TourPill(
+            state: .offer(
+                TutorialHack.chips, nil, Confidence.Reading(), open: true
+            ),
+            level: 0.18, clicked: clicked, landing: panel,
+            reserved: TutorialHack.reserved
+        )
+    }
+
+    /// The same command reached by saying it: the pill that is up while the mic
+    /// is open, and the words arriving beside it one at a time.
+    private var saying: some View {
+        // The words about to change, which is what the app writes on a pill
+        // that is routing rather than dictating.
+        let state = PillState.recording(TutorialHack.listening)
+        // A listening pill carries 52 points of transparent margin for its
+        // bloom to fade out in, on every side. Centred against the box is
+        // therefore centred against the pill, and the words are pulled back
+        // across the margin to sit beside the pill rather than beside the
+        // bloom.
+        let bleed = PillMetrics.bleed(for: state)
+        return HStack(alignment: .center, spacing: 0) {
+            TourPill(
+                state: state, level: speechLevel, clicked: nil,
+                reserved: TutorialHack.listeningBox
+            )
+            words.padding(.leading, 14 - bleed)
+        }
+        // And the row itself back by the difference between the two margins, so
+        // the drawn pill starts where the drawn panel did. Without it the
+        // surface steps 40 points to the right in the middle of the crossfade.
+        .offset(x: -(bleed - PillMetrics.dockBleed))
+    }
+
+    /// The command, a word at a time.
+    ///
+    /// Every word is in the layout from the start and only its ink arrives, so
+    /// the line does not grow to the right while it is being read. The closing
+    /// quote waits for the last word: an empty gap before one reads as a line
+    /// that failed rather than one still being said.
+    private var words: some View {
+        HStack(spacing: 0) {
+            quote("“", showing: spokenWords > 0)
+            ForEach(
+                Array(TutorialHack.spokenWords.enumerated()), id: \.offset
+            ) { at, word in
+                Text(at == 0 ? word : " " + word)
+                    .foregroundStyle(.white)
+                    .opacity(at < spokenWords ? 1 : 0)
+            }
+            quote("”", showing: spokenWords == TutorialHack.spokenWords.count)
+        }
+        .font(.system(size: TutorialHack.outcomeSize, weight: .medium))
+        .fixedSize()
+    }
+
+    private func quote(_ mark: String, showing: Bool) -> some View {
+        Text(mark)
+            .foregroundStyle(Color.white.opacity(0.45))
+            .opacity(showing ? 1 : 0)
     }
 }

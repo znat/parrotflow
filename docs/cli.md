@@ -911,8 +911,10 @@ out with its preview.
 The third is **Extensible**: four config examples — a `replace:` table, a
 `command:`, a `prompt:` and the agent that writes them for you — each shown as
 the config file writes it and as it changes a dictation. The `command:` one ends
-on the panel those transforms put on the pill: first the key each was given, on
-its chip, and then the words that reach the same transform without one.
+on two ways to reach the same transform. First the panel those transforms put on
+the pill, with the key each was given on its chip. Then the panel gives way to
+the pill that is up while the mic is open, labelled with the words about to
+change, and the spoken command arrives beside it a word at a time.
 
 The first two are dictated into the same composer — one surface, drawn once —
 with their own line in it. `tutorial` plays the four screens the setup window

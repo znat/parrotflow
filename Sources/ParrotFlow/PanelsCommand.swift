@@ -283,9 +283,16 @@ enum PanelsCommand {
         ("scripts", TutorialHack.arrives(.scripts) + 0.5),
         ("panel", TutorialHack.arrives(.scripts) + TutorialHack.step + 0.3),
         (
+            "listening",
+            TutorialHack.arrives(.scripts) + TutorialHack.step
+                + TutorialHack.saying + TutorialHack.handover + 0.1
+        ),
+        (
             "said",
             TutorialHack.arrives(.scripts) + TutorialHack.step
-                + TutorialHack.saying + 0.3
+                + TutorialHack.saying + TutorialHack.beforeSpeaking
+                + TutorialHack.perWord
+                * Double(TutorialHack.spokenWords.count) + 0.2
         ),
         ("prompts", TutorialHack.arrives(.prompts) + 0.5),
         (
