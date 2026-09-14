@@ -376,11 +376,15 @@ enum PanelsCommand {
         }
     }
 
-    /// How fast the clock runs at one moment: `speed` everywhere, except where
-    /// a screen dims round something, which runs at 1x.
+    /// How fast the clock runs at one moment: `speed`, except where the screen
+    /// is asking to be read rather than watched, which runs at 1x.
     ///
-    /// A screen dims over the thing it is about, which is the same as saying
-    /// those are the beats worth watching. The rest is a sentence arriving.
+    /// Two of those. A screen dims over the thing it is about, which is the
+    /// same as saying those are the beats worth watching; the rest of a chat
+    /// screen is a sentence arriving. And the config screen is a config file —
+    /// eight seconds of it at 3x is under three seconds to read six lines of
+    /// YAML, which is not reading, it is a glimpse.
+    ///
     /// Playing all of it at one rate either makes the film long or takes a
     /// keystroke and an answered offer past in under a second.
     private static func pace(
@@ -393,6 +397,8 @@ enum PanelsCommand {
         case .slack:
             return TutorialSlackRun.lighting.contains { t >= $0.from && t < $0.to }
                 ? 1 : top
+        case .hack:
+            return 1
         default:
             return top
         }
