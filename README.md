@@ -12,18 +12,16 @@
 
 **[Install](#install)** · [Documentation](docs/README.md)
 
-<img src="Resources/hero.webp" width="760" alt="Four dictations into one field.
+<img src="Resources/hero.webp" width="680" alt="Four dictations into one field.
 Mick is corrected to Mik and the app offers to remember it, then Mik to Mick;
 the last two sentences name both people and both are written right. Then one
 Slack message: PR 478 arrives as a link, and Siobhan becomes @Sio.">
 
 </div>
 
-```sh
-brew install znat/tap/parrotflow
-```
-
 <div align="center">
+
+<pre>brew install znat/tap/parrotflow</pre>
 
 macOS 15+ &nbsp;·&nbsp; Apple silicon &nbsp;·&nbsp; 3 GB &nbsp;·&nbsp; <a href="#install">other ways to install</a>
 
@@ -100,22 +98,24 @@ easy to hack with your coding agent.
 ## Install
 
 ParrotFlow needs Apple silicon and macOS 15+. It uses about 3 GB of disk
-and 1 GB of memory. A language model is optional and much
-larger: `gemma4:e4b-mlx` through Ollama will require around 10 GB of memory on its own, bu
-
-Both routes install the same app.
-
-**Homebrew**
+and 1 GB of memory.
 
 ```sh
 brew install znat/tap/parrotflow
 ```
 
-**Script**
+<details>
+<summary>Not using <a href="https://brew.sh">Homebrew</a>?</summary>
+
+<br>
+
+The script installs the same app, in the same place.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
 ```
+
+</details>
 
 
 ---
@@ -123,7 +123,8 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 
 ### Extensible with rules, prompts and scripts
 
-Use regexes, scripts or prompts to customize your dictations.
+What makes ParrotFlow truly unique is that you can fully customize it with regular expressions, prompts or scripts.
+All you have to do is to is pointing your coding agent to your config.yaml file and ask what you need.
 
 **Example: add PR links to your dictations**
 
@@ -144,9 +145,6 @@ The rule writes a Markdown link and the paste turns it into a real one — see
 spoken digits are already `123` by then: the shipped `numbers_en` transform turned
 "one two three" into it first.
 
-![Dictating "merged P R one two three, ready to ship" and the github_refs rule
-turning PR123 into a clickable #123 that points at
-github.com/znat/parrotflow/pull/123](Resources/refs.gif)
 
 **Example: Automatically add Slack handles.**
 
@@ -173,8 +171,6 @@ for name, handle in roster.items():
 
 sys.stdout.write(text)
 ```
-![Dictating "Ada and Mark are both on it", and the slack_handles script turning
-the names into "@ada.lovelace and @mark.reyes"](Resources/handles.gif)
 
 **Combine transforms in a pipeline**
 
@@ -185,10 +181,6 @@ transcription:
     - transform: github_refs
     - transform: slack_handles
 ```
-
-![Dictating "merged P R one two three, Ada can you take a look", and the
-github_refs and slack_handles rules turning it into "merged #123,
-@ada.lovelace can you take a look"](Resources/rules.gif)
 
 <br>
 
@@ -219,16 +211,11 @@ transforms:
     model: gemma       # stays on your Mac
     offer: true        # put a chip on the pill after every dictation
     key: g             # press G to run it
+    say: [Fix grammar] # Hold the hotkey, say "Fix grammar"
     prompt: Fix grammar and punctuation...
 ```
 
-Say *"hey parrot, fix the grammar"*, or press `G` on the pill after any
-dictation.
-
-![Dictating into Slack: the pill shows the Slack icon, the grammar step runs,
-and "the panel dont show up sometimes" becomes "The panel doesn't show up
-sometimes."](Resources/grammar.gif)
-
+> See [examples/transforms/grammar](examples/transforms/grammar) for a more elaborate version.
 
 Or you can run the grammar fix in chat and mail apps (but not in coding agents, for instance) for all dictations:
 
@@ -239,31 +226,9 @@ transcription:
       app: /slack|outlook/    # Grammar only checked in Slack and Outlook
 ```
 
-> See [examples/transforms/grammar](examples/transforms/grammar) for a more elaborate version.
-
-**A remote model** for harder jobs. A spoken correction
-needs judgment a fixed rule or a too small local model does not have.
-
-```yaml
-transforms:
-  - name: self_correction
-    description: correct me — drop what I said by mistake and keep what I meant
-    model: gemma       # Gemma can be installed with Ollama
-    offer: true        # put a chip on the pill
-    key: g             # press G to run it
-    say: [Fix grammar] # Select the text, hold hotkey and say "Fix grammar"           
-    prompt: |
-      The speaker corrected themselves out loud. Keep only what they meant
-      to say. Return only the corrected text.
-```
-
-Say *"hey parrot, correct me"*, or press `S` on the pill after any
-dictation.
-
-![Dictating "let's ship Friday, no wait, Thursday", then pressing S on the pill
-to get "let's ship Thursday"](Resources/self-correct.gif)
-
-<br>
+You can define very granular conditions for pipeline stages — on the text so
+far, on the app being dictated into, or on your own variables. See
+[Conditions](docs/pipelines.md#conditions) and [Apps](docs/pipelines.md#apps).
 
 ### More examples
 
