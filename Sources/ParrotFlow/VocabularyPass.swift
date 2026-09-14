@@ -861,14 +861,27 @@ enum VocabularyPass {
         // 14.3% of windows and keeps 23 of its 24 catches. The one below is
         // `Praethi`/Praisy at 0.33.
         //
-        // With no espeak there is no band and no first ear: the model is asked
-        // about everything, which is what it was doing for both.
-        let near = Phonemes.binary == nil ? windows.map(\.text) : windows.map(\.text).filter {
-            guard let heard = rules[$0], !heard.isEmpty else { return false }
-            return sounds.contains { entry in
-                [rules[entry.form], written[entry.form]]
-                    .compactMap { $0 }
-                    .contains { reachable(heard, $0, over: Phonemes.secondEarBand) }
+        // **A band needs a first ear, and silence from espeak is not one.** No
+        // reading for a window is not espeak saying the window is far from
+        // every term — it is espeak saying nothing, and the whole call comes
+        // back empty when the process failed or answered the wrong number of
+        // lines (see `Phonemes.run`). Read as a refusal, an espeak that starts
+        // and then fails would switch the stage off on a machine that has a
+        // working model. So a window espeak did not read is asked about, and
+        // with nothing to compare against at all there is no band.
+        let formSounds = sounds
+            .flatMap { [rules[$0.form], written[$0.form]] }
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+        let near: [String]
+        if Phonemes.binary == nil || formSounds.isEmpty {
+            near = windows.map(\.text)
+        } else {
+            near = windows.map(\.text).filter { window in
+                guard let heard = rules[window], !heard.isEmpty else { return true }
+                return formSounds.contains {
+                    reachable(heard, $0, over: Phonemes.secondEarBand)
+                }
             }
         }
         let model = neural == nil
