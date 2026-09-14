@@ -85,7 +85,7 @@ enum TutorialSlack {
     /// One line, and it fills 96% of the composer. The second sentence was cut
     /// to keep it that way: two lines gave the callouts more room to be about
     /// than the message needed.
-    static let title = "Dictations are shaped around your work"
+    static let title = "Dictations shaped around your work"
 
     /// The two callouts, which take turns pointing at the words they are about.
     ///

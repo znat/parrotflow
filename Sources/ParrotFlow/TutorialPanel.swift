@@ -657,7 +657,7 @@ struct TutorialScreen<Stage: View>: View {
     /// The lead's own size and weight of colour. A caption under a title is
     /// set small and dimmed; a sentence that opens a screen is the thing being
     /// read, and is set a step larger and in the text colour.
-    var leadSize: CGFloat = 12
+    var leadSize: CGFloat = 13
     var leadDim = true
     /// Off for a screen that says what it has to say somewhere else — a callout
     /// over the words it is about, rather than a line under the title.
@@ -804,7 +804,7 @@ struct TutorialPane: View {
     var body: some View {
         TutorialScreen(
             title: "ParrotFlow understands what and who you are talking about",
-            lead: "Example: two people whose names sound the same",
+            lead: "Example: 2 different people whose names sound the same (Mik and Mick)",
             progress: progress
         ) {
             // The same room above the composer the Slack screen keeps for its

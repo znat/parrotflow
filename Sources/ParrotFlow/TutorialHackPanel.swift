@@ -12,7 +12,7 @@ import SwiftUI
 enum TutorialHack {
 
     static let title = "Extensible"
-    static let lead = "Transform your dictations with replacements, prompts and scripts."
+    static let lead = "Customize dictation output with rules, prompts and scripts."
 
     /// The three, in the order the screen shows them.
     enum Kind: Int, CaseIterable {
@@ -245,7 +245,10 @@ enum TutorialHack {
         case .scripts:
             return ("Hey, Siobhan", "Hey @Sio", "", nil)
         case .agent:
-            return ("", "Your coding agent does it for you", "", nil)
+            return (
+                "", "All you have to do is point your coding agent to the config.yaml",
+                "", nil
+            )
         }
     }
 
@@ -445,13 +448,9 @@ struct TutorialHackPane: View {
     private var run: TutorialHackRun { TutorialHackRun(elapsed) }
 
     var body: some View {
-        // No lead line: the title says what the screen is, and the three cards
-        // are what it is about. A sentence over them was a fourth thing to read
-        // first.
         TutorialScreen(
             title: TutorialHack.title,
-            lead: "",
-            showsLead: false,
+            lead: TutorialHack.lead,
             progress: progress
         ) {
             stage
@@ -623,7 +622,10 @@ private struct TransformCard: View {
                     .foregroundStyle(Color.white.opacity(0.4))
             }
         }
-        .fixedSize()
+        // The others are short enough to hold one line, and holding it is what
+        // keeps the mark behind them the width of the words. The agent's line is
+        // a sentence and has to be allowed to wrap.
+        .fixedSize(horizontal: kind != .agent, vertical: true)
     }
 
     /// The terminal, for the card that has one: what was asked of the agent,
