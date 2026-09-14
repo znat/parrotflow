@@ -4,10 +4,10 @@
 
 # ParrotFlow
 
-### A fast and programmable dictation app you can shape around your work
+### Local and extensible dictation you can shape around your work
 
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
-![macOS 14+](https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
+![macOS 15+](https://img.shields.io/badge/macOS-15%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
 ![License Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-0c8c7c)
 
 **[Install](#install)** · [Documentation](docs/README.md)
@@ -18,20 +18,91 @@ max_retries; in Mail, pressing S drops a spoken correction.">
 
 </div>
 
+```sh
+brew install znat/tap/parrotflow
+```
+
+<div align="center">
+
+macOS 15+ &nbsp;·&nbsp; Apple silicon &nbsp;·&nbsp; 3 GB &nbsp;·&nbsp; <a href="#install">other ways to install</a>
+
+</div>
+
 ---
-<table>
-<tr><td><strong>Dictate anywhere</strong></td><td>Click where you'd normally type, hold <code>⌘ Right</code>, speak, release. The text lands almost instantly.</td></tr>
-<tr><td><strong>Local-first</strong></td><td>Ships with Parakeet for speech and a small Gemma model for rewrites. Both run on your Mac.</td></tr>
-<tr><td><strong>Learns your vocabulary</strong></td><td>Teammates, internal jargon, products, vendor names. Correct one out loud, once, and it stays fixed.</td></tr>
-<tr><td><strong>Fast</strong></td><td>Text lands at your cursor in under half a second for most dictations, up to about two seconds for harder ones.</td></tr>
-<tr><td><strong>Programmable and promptable</strong></td><td>Build transforms out of substitutions, prompts, or scripts, and arrange them into your own pipeline.</td></tr>
+
+<div align="center">
+
+Most *local* dictation apps simply wrap Parakeet or Whisper (ASRs) in a prompt<br>that sends your text to the cloud to repair the ASR output.
+
+**ParrotFlow uses the language properties of very small models**, such as mmBERT,<br>the Qwen3 0.6B family and spaCy, to apply your custom vocabulary terms<br>in context, correct hesitations and repair raw ASR output.
+
+</div>
+
+<br>
+
+<div align="center">
+
+<table align="center">
+<thead>
+<tr><th></th><th>ParrotFlow</th><th>Local<sup>1</sup></th><th>Cloud<sup>2</sup></th></tr>
+</thead>
+<tbody>
+<tr><td>🔒 Truly local</td><td align="center">✅</td><td align="center">✅</td><td align="center">❌</td></tr>
+<tr><td>✍️ Keeps your wording<sup>3</sup> (doesn't rewrite with an LLM)</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
+<tr><td>📖 Understands how to use your vocabulary in context</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
+<tr><td>🧩 Extensible with your own rules and scripts</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
+<tr><td>🔑 No cloud key for any built-in step</td><td align="center">✅</td><td align="center">❌<sup>4</sup></td><td align="center">❌</td></tr>
+</tbody>
 </table>
+
+<sub><sup>1</sup> Handy, VoiceInk, MacWhisper, FluidVoice. &nbsp;<sup>2</sup> Wispr Flow, Aqua, Willow. &nbsp;<sup>3</sup> Built-in steps never rewrite. A prompt step that does is yours to add. &nbsp;<sup>4</sup> FluidVoice bundles a local rewrite model.</sub>
+
+</div>
+
+<br>
+
+<div align="center">
+
+### Built in
+
+Every dictation runs these steps. They are lines in `config.yaml`.<br>Turn one off, reorder the pipeline, or test a step against its own case file.
+
+<table align="center">
+<tr>
+<td align="center">📖</td><td><b>Vocabulary</b></td>
+<td>Your terms, applied in context.<br><i>"Marc reviewed the PR"</i> writes <b>Marc</b> &nbsp;·&nbsp; <i>"mark it as done"</i> is left alone</td>
+</tr>
+<tr>
+<td align="center">🔇</td><td><b>Hesitations, repeats<br>and false starts</b></td>
+<td><code>um</code> and <code>uh</code>, a word said twice, a phrase begun again.<br><i>"so uh in the ter in the terminal run the the tests"</i><br>→ <i>"so in the terminal run the tests"</i></td>
+</tr>
+<tr>
+<td align="center">🔢</td><td><b>Numbers, dates<br>and times</b></td>
+<td>Written as digits, English and French.<br><i>"March third at quarter past nine"</i> → <i>"March 3 at 9:15"</i><br><i>"two hundred forty three tests, ninety seven percent"</i> → <i>"243 tests, 97%"</i></td>
+</tr>
+<tr>
+<td align="center">✂️</td><td><b>Sentence repair</b></td>
+<td>A pause makes the recogniser end the sentence early.<br>This reads the boundary and removes the mark.<br><i>"I ran the tests on. Both branches"</i> → <i>"I ran the tests on both branches"</i></td>
+</tr>
+</table>
+
+</div>
+
+Everything lives in one config folder — a `config.yaml` and your own scripts,
+easy to hack with your coding agent.
+
+> To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
+
+---
+
 
 ## Install
 
-ParrotFlow requires Apple silicon and macOS 14 or later. Both routes install the
-same app. Take Homebrew if you already use it — upgrading and removing go
-through `brew`. Otherwise run the script.
+ParrotFlow needs Apple silicon and macOS 15+. It uses about 3 GB of disk
+and 1 GB of memory. A language model is optional and much
+larger: `gemma4:e4b-mlx` through Ollama will require around 10 GB of memory on its own, bu
+
+Both routes install the same app.
 
 **Homebrew**
 
@@ -45,28 +116,13 @@ brew install znat/tap/parrotflow
 curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
 ```
 
-Neither one downloads the speech model. ParrotFlow fetches Parakeet itself the
-first time it launches, about 470 MB, and says how far along it is.
-
-Spoken commands and the transforms that are prompts need a language model as well, and that part is optional. Your vocabulary does not: that stage reads the sentence itself and calls nothing. Run a model on your own Mac with [Ollama](https://ollama.com/download) (e.g. [Gemma4](https://ollama.com/library/gemma4:e4b-mlx)), or use a hosted one (e.g. OpenAI).
 
 ---
 
-## Not everything you say needs a remote AI provider
 
-[Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), NVIDIA's speech model, runs locally and fast. Most dictations land in under half a second.
-
-Everything else — the hotkey, the pipeline, every transform — lives in one
-plain YAML file, `config.yaml` you can edit it by hand or with your coding agent.
-> To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
-
-<br>
-
-### Transcriptions follow your rules
+### Extensible with rules, prompts and scripts
 
 Use regexes, scripts or prompts to customize your dictations.
-
-
 
 **Example: add PR links to your dictations**
 
@@ -137,7 +193,8 @@ github_refs and slack_handles rules turning it into "merged #123,
 
 ### Use language models only when they're needed
 
-Add models to your config:
+Nothing ships with a model wired in. `models:` is empty on a new install, so no
+dictation calls one until you add it yourself.
 
 ```yaml
 models:
@@ -150,8 +207,9 @@ models:
     model: gpt-5.6-luna
 ```
 
-**A small local model**, like Gemma, does quick, solid rewrites on your Mac:
-grammar, tone, structure.
+**A small local model** does quick, solid rewrites on your Mac: grammar, tone,
+structure. Gemma through [Ollama](https://ollama.com/download) is the one this
+example names.
 
 ```yaml
 transforms:
@@ -189,9 +247,10 @@ needs judgment a fixed rule or a too small local model does not have.
 transforms:
   - name: self_correction
     description: correct me — drop what I said by mistake and keep what I meant
-    model: gpt
-    offer: true       # put a chip on the pill
-    key: s            # press S to run it
+    model: gemma       # Gemma can be installed with Ollama
+    offer: true        # put a chip on the pill
+    key: g             # press G to run it
+    say: [Fix grammar] # Select the text, hold hotkey and say "Fix grammar"           
     prompt: |
       The speaker corrected themselves out loud. Keep only what they meant
       to say. Return only the corrected text.
@@ -205,36 +264,11 @@ to get "let's ship Thursday"](Resources/self-correct.gif)
 
 <br>
 
-### Vocabulary
-
-Colleagues' names, internal jargon, acronyms, vendor names — the words a
-general speech model has never heard. Correct it a few times and it stays fixed.
-
-Press `V` on the pill after any dictation and say what the word should be.
-
-![Teaching the app that Versailles means Vercel, then dictating a sentence
-with Versailles twice: one becomes Vercel, the castle is left
-alone](Resources/vocabulary.gif)
-
-
-The stage reads the sentence before it writes a name: there is no Vercel
-Castle, and Versailles won't deploy your apps. It does that without a model —
-two word lists, the part of speech the slot wants, and two tests that compare
-the sentence with the ones the term was confirmed in.
-
-```yaml
-transcription:
-  pipeline:
-    - vocabulary
-    - transform: dates_en
-    - transform: numbers_en
-```
-
 ### More examples
 
 Each with its own test cases, in [examples/transforms](examples/transforms).
-`numbers`, `dates` and `disfluency` are in the pipeline a new install gets; the
-rest ship with no step — see [What ships
+`fillers`, `dates`, `numbers` and `disfluency` are in the pipeline a new install
+gets; the rest ship with no step — see [What ships
 unwired](docs/pipelines.md#what-ships-unwired).
 
 - [numbers](examples/transforms/numbers) — spoken numbers as digits, one

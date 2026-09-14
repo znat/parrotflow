@@ -3,8 +3,9 @@ import PackageDescription
 
 let package = Package(
     name: "ParrotFlow",
-    // macOS 14 is FluidAudio's floor (CoreML + ANE requirements).
-    platforms: [.macOS(.v14)],
+    // The slot gate reads fp16 logits, and Float16 conforms to
+    // MLShapedArrayScalar only from macOS 15. See SlotProbe.swift.
+    platforms: [.macOS("15.0")],
     dependencies: [
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.1.0"),
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.7"),

@@ -41,8 +41,8 @@ say() { printf '==> %s\n' "$1"; }
 [ "$(uname -s)" = "Darwin" ] || die "ParrotFlow is macOS only."
 
 MACOS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
-[ "$MACOS_MAJOR" -ge 14 ] 2>/dev/null \
-    || die "ParrotFlow needs macOS 14 or later; this is $(sw_vers -productVersion)."
+[ "$MACOS_MAJOR" -ge 15 ] 2>/dev/null \
+    || die "ParrotFlow needs macOS 15 or later; this is $(sw_vers -productVersion)."
 
 # Parakeet runs on the Neural Engine through CoreML, which Intel Macs do not have.
 [ "$(uname -m)" = "arm64" ] \
