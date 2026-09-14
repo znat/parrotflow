@@ -157,8 +157,10 @@ tour loops and somebody who looks away lands in the middle of one. And a row of
 dots at the bottom says they are pages of one walk.
 
 Each screen keeps the height of its own tallest beat, so none of them ends in a
-band of nothing, and the window eases between the two heights over a third of a
-second rather than jumping at the cut.
+band of nothing, and the window eases between the two heights over about six
+tenths of a second rather than jumping at the cut. That long because the
+distance is long: the opening screen is 286 points tall and the one after it is
+624.
 
 The dots are the only thing on the tour to press. Clicking one plays from there,
 which is the way back to a page that went past too quickly. They count pages and
@@ -170,10 +172,14 @@ moves.
 The download sits above a divider, so the top of the window is this install and
 the rest of it is the app. It is a bar, a shimmer over the filled part, and the
 percentage at the end. The figure is the downloader's own, weighted by the size
-of each model.
+of each model, and it never reads 100%: a hundred is what ends the tour, so a
+screen still up saying it has arrived would be contradicting itself.
 
-It ends by itself once it has played through once **and** every model is in, at
-the next screen, and at once if a fetch a dictation waits on fails. Both
+It ends by itself once it has played through once **and** every model is in. It
+ends wherever it is, mid-screen included: it used to wait for the next cut so no
+demonstration was cut in half, and that is a demonstration held in front of
+somebody whose app is ready. It also ends at once if a fetch a dictation waits
+on fails. Both
 conditions earn their place. The downloads start at launch and the tour starts
 after the permissions, so most of the wait is spent in System Settings granting
 accessibility: without the first condition the tour is reached with nothing left

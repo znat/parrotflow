@@ -435,15 +435,25 @@ final class PermissionsWindowController {
         }
     }
 
+    /// The eSpeak NG screen asks for one thing. Once it is here there is
+    /// nothing left on it to read, so the walk goes straight on to the tour
+    /// rather than leaving a title and a button nobody needs to press.
+    private func leaveEspeakIfFound() {
+        guard model.current == .espeak, model.espeak == .found else { return }
+        advanceItself()
+    }
+
     /// The tour loops for as long as the models take, so something has to end
     /// it.
     ///
-    /// Two things do. A failure nobody can wait out ends it at once: the last
-    /// screen is the only one that names the row and offers the retry.
-    /// Otherwise it ends the moment there is nothing left to wait for, on the
-    /// next cut, so no demonstration is cut in half.
+    /// A failure nobody can wait out ends it at once: the last screen is the
+    /// only one that names the row and offers the retry. Otherwise two things
+    /// have to be true, and then it ends wherever it is — mid-screen included.
+    /// It used to wait for the next cut so no demonstration was cut in half,
+    /// and that is a demonstration held in front of somebody whose app is
+    /// ready.
     ///
-    /// Two conditions, and the first is that it has been watched once through.
+    /// The first is that it has been watched once through.
     ///
     /// The downloads start at launch and the tour starts after the
     /// permissions, so the wait is mostly spent in System Settings: measured
@@ -455,14 +465,6 @@ final class PermissionsWindowController {
     /// The second is that the download is over. Not that the speech model is
     /// in: that one lands first and about a gigabyte of language models
     /// follows it.
-    ///
-    /// The eSpeak NG screen asks for one thing. Once it is here there is
-    /// nothing left on it to read, so the walk goes straight on to the tour
-    /// rather than leaving a title and a button nobody needs to press.
-    private func leaveEspeakIfFound() {
-        guard model.current == .espeak, model.espeak == .found else { return }
-        advanceItself()
-    }
 
     private func leaveTourIfDone() {
         guard model.current == .tour else { return }
@@ -473,7 +475,6 @@ final class PermissionsWindowController {
             return
         }
         guard model.downloads.everythingIsIn else { return }
-        guard TourWalk.at(model.tourElapsed()).clock < 1.2 else { return }
         advanceItself()
     }
 
@@ -1278,7 +1279,7 @@ private struct SetupPane: View {
             if let lead {
                 Text(lead)
                     .font(.system(size: at(12)))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(leadColour)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let (before, after) = keySentence, hotkeyRegistered {
@@ -1292,6 +1293,16 @@ private struct SetupPane: View {
             }
         }
         .padding(.bottom, at(4))
+    }
+
+    /// A caption under a title is dimmed. These are not captions: each one is
+    /// the reason the screen is up, and the eSpeak one is a licence and what
+    /// the library is for, which is the whole of what there is to decide.
+    private var leadColour: Color {
+        switch moment {
+        case .espeak, .permissionLost, .somethingDidNotArrive: return .primary
+        case .dictationOff, .almostReady, .ready: return .secondary
+        }
     }
 
     private var lead: String? {
@@ -1543,13 +1554,16 @@ private struct EspeakWaitingCard: View {
                 }
 
             VStack(alignment: .leading, spacing: SetupMetrics.at(4)) {
-                Text("Terminal is installing it now. This screen notices on its own when"
-                    + " it lands.")
                 // Homebrew asks before it does anything, and a window that only
-                // says "installing" reads as one nobody has to answer.
+                // says "installing" reads as one nobody has to answer. So this
+                // is the line that has to be read, and it is set first and
+                // heavier than the one saying what is happening.
                 Text("Terminal will ask you to confirm.")
+                    .font(.system(size: SetupMetrics.at(12), weight: .semibold))
+                Text("It is installing now. This screen notices on its own when"
+                    + " it lands.")
+                    .font(.system(size: SetupMetrics.at(11)))
             }
-            .font(.system(size: SetupMetrics.at(11)))
             .foregroundStyle(Parrot.amber)
             .fixedSize(horizontal: false, vertical: true)
 

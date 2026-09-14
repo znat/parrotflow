@@ -72,10 +72,16 @@ enum TutorialHack {
         /// same key, and the card says so by lighting all of one line and the
         /// keycap together.
         var lit: Lit?
+        /// The line the card is about: the rule, the prompt, the script. It
+        /// keeps its ink whatever else the card is stepping back from — it is
+        /// the answer to what this kind of transform is, and a card that dims
+        /// it to show a key off is dimming the thing it came to say.
+        var works = false
 
-        init(_ text: String, lit: Lit? = nil) {
+        init(_ text: String, lit: Lit? = nil, works: Bool = false) {
             self.text = text
             self.lit = lit
+            self.works = works
         }
     }
 
@@ -193,9 +199,9 @@ enum TutorialHack {
                 Line("# config.yaml"),
                 Line("- name: github_refs"),
                 Line("  description: PR numbers as links"),
-                Line("  replace:"),
-                Line("    '[#$1](…/pull/$1)':"),
-                Line("      ['/\\bPR\\s*#?(\\d+)\\b/']"),
+                Line("  replace:", works: true),
+                Line("    '[#$1](…/pull/$1)':", works: true),
+                Line("      ['/\\bPR\\s*#?(\\d+)\\b/']", works: true),
             ]
         case .prompts:
             return [
@@ -205,8 +211,8 @@ enum TutorialHack {
                 Line("  display: Fix grammar"),
                 Line("  offer: true"),
                 Line("  key: g"),
-                Line("  prompt: |"),
-                Line("    Correct grammar and punctuation."),
+                Line("  prompt: |", works: true),
+                Line("    Correct grammar and punctuation.", works: true),
             ]
         case .agent:
             // No config of its own: what this card shows is the asking.
@@ -220,7 +226,7 @@ enum TutorialHack {
                 Line("  offer: true"),
                 Line("  key: s", lit: .key),
                 Line("  say: [\(spoken)]", lit: .say),
-                Line("  command: slack_mentions.py"),
+                Line("  command: slack_mentions.py", works: true),
             ]
         }
     }
@@ -569,10 +575,13 @@ private struct TransformCard: View {
         // rather than inside it: it is what came out, not another line of the
         // file that produced it.
         VStack(alignment: .leading, spacing: 9) {
+            // Full strength, and not faded with the rest: it says which of the
+            // four this card is, which is the one thing on it that has to be
+            // readable from across the room.
             Text(kind.label.uppercased())
                 .font(.system(size: TutorialHack.labelSize, weight: .semibold, design: .rounded))
                 .kerning(1.25)
-                .foregroundStyle(Color.white.opacity(0.45 * faded))
+                .foregroundStyle(Color.white.opacity(0.68))
             outcome.opacity(faded)
             if kind == .agent { terminal } else { block.padding(.top, 7) }
             if kind == .scripts {
@@ -636,8 +645,10 @@ private struct TransformCard: View {
     /// one `Text` would have put them.
     private func line(_ line: TutorialHack.Line) -> some View {
         HStack(spacing: 0) {
-            ForEach(Array(TutorialHack.spans(line, lit: lit).enumerated()), id: \.offset) { _, span in
-                piece(span)
+            ForEach(
+                Array(TutorialHack.spans(line, lit: lit).enumerated()), id: \.offset
+            ) { _, span in
+                piece(span, works: line.works)
             }
         }
         .font(.system(size: TutorialHack.face, design: .monospaced))
@@ -645,13 +656,16 @@ private struct TransformCard: View {
 
     /// One piece of one line. Broken out of the line because the colours and the
     /// glow together are more than the type checker will take in one expression.
-    private func piece(_ span: TutorialHack.Span) -> some View {
+    private func piece(_ span: TutorialHack.Span, works: Bool) -> some View {
         let keyed = span.tone == .keyed
         return Text(span.text)
             // The lines the panel is built from are the ones the card steps
             // back from, so they keep all of their ink: fading them with
-            // everything else is what took the brightness out of them.
-            .foregroundColor(keyed ? .white : span.tone.colour.opacity(faded))
+            // everything else is what took the brightness out of them. The line
+            // that does the work keeps its own colours, at full strength.
+            .foregroundColor(
+                keyed ? .white : span.tone.colour.opacity(works ? 1 : faded)
+            )
             .shadow(color: keyed ? Color.white.opacity(0.35) : .clear, radius: 3)
     }
 

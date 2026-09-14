@@ -625,10 +625,13 @@ private func progressTrack(_ progress: Double) -> some View {
     .frame(height: 5)
 }
 
-/// How far along, in words rather than in the length of a bar. Rounded down, so
-/// it says 100% only once everything is in.
+/// How far along, in words rather than in the length of a bar.
+///
+/// Never a hundred. A hundred is what ends the tour, so a screen still up
+/// saying it has arrived is a screen contradicting itself. Rounded down, and
+/// then held one short.
 private func progressPercent(_ progress: Double) -> String {
-    "\(Int(min(1, max(0, progress)) * 100))%"
+    "\(min(99, Int(min(1, max(0, progress)) * 100)))%"
 }
 
 /// The pane's own geometry, in the points the screens scale from.
