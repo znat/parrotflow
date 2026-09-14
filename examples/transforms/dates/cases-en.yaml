@@ -260,7 +260,7 @@ cases:
     input: "the abbey was built in 1030"
   - probe: not_a_time_en
     lang: en
-    input: "the metronome sits at 160 bpm"
+    input: "the metronome sits at 1030 bpm"
   - probe: not_a_time_en
     lang: en
     input: "the div shows 127 additions while you mention 1984"

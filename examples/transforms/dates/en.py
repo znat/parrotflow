@@ -57,6 +57,7 @@ STOP_AFTER = {
     "degrees", "miles", "kilometres", "kilometers", "pages", "times",
     "options", "option", "o'clock", "oclock", "millisecond", "milliseconds",
     "ms", "characters", "chars", "words", "lines", "pixels", "px",
+    "bpm", "rpm",
 }
 
 # A range, not a clock. "from ten to twelve", "between two and three".
