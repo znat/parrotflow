@@ -67,14 +67,14 @@ if let index = arguments.firstIndex(of: "--tutorial-sheet") {
 }
 
 if let index = arguments.firstIndex(of: "--tour-film") {
-    let usage = "usage: ParrotFlow --tour-film <dir> <names,slack,hack,downloads>"
+    let usage = "usage: ParrotFlow --tour-film <dir> <names,slack,hack[:pages],downloads>"
         + " [fps] [speed]"
     guard arguments.indices.contains(index + 2) else {
         print(usage)
         exit(2)
     }
     let names = arguments[index + 2].split(separator: ",").map(String.init)
-    let screens = names.compactMap(TourScreen.init(rawValue:))
+    let screens = names.compactMap(PanelsCommand.Reel.init)
     guard screens.count == names.count, !screens.isEmpty else {
         print(usage)
         exit(2)

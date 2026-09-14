@@ -398,6 +398,43 @@ enum PanelsCommand {
         }
     }
 
+    /// One screen of a film, and how much of it to play.
+    ///
+    /// A screen turns its own pages — the last one is four config examples one
+    /// after another — and a film does not always want all of them. `hack:2`
+    /// plays the first two and cuts to the next screen where the third would
+    /// have started.
+    struct Reel {
+        let screen: TourScreen
+        /// How many of the screen's pages to play, or nil for all of them.
+        let pages: Int?
+
+        /// `names`, or `hack:2`.
+        init?(_ spec: String) {
+            let parts = spec.split(separator: ":", maxSplits: 1)
+            guard let screen = TourScreen(rawValue: String(parts[0])) else {
+                return nil
+            }
+            self.screen = screen
+            guard parts.count == 2 else { pages = nil; return }
+            guard let count = Int(parts[1]), count > 0 else { return nil }
+            pages = count >= screen.pages.count ? nil : count
+        }
+
+        /// Where this reel stops, on the screen's own clock.
+        var end: TimeInterval {
+            guard let pages, screen.pages.indices.contains(pages) else {
+                return screen.length
+            }
+            return screen.pages[pages]
+        }
+
+        var name: String {
+            guard let pages else { return screen.rawValue }
+            return "\(screen.rawValue) (\(pages) of \(screen.pages.count) pages)"
+        }
+    }
+
     /// `--tour-film <dir> <screens> [fps] [speed]` — every frame of a tour
     /// screen as a numbered PNG, for ffmpeg to make a film out of.
     ///
@@ -417,7 +454,7 @@ enum PanelsCommand {
     /// One canvas for the whole film, as tall as the tallest screen, because a
     /// video cannot change size partway. The panes are top-aligned in it.
     static func tourFilm(
-        to dir: String, screens: [TourScreen], fps: Double, speed: Double
+        to dir: String, screens: [Reel], fps: Double, speed: Double
     ) -> Int32 {
         // `isFinite` and not just `> 0`: an infinite rate makes the step zero
         // and the loop below never ends.
@@ -426,14 +463,14 @@ enum PanelsCommand {
 
         // Every moment the film will draw, worked out before anything is drawn:
         // the canvas has to hold the tallest of them, and a screen grows while
-        // it plays. Strictly under the length — a run wraps with a remainder at
-        // its total, so the frame at exactly the length is frame 0 again.
+        // it plays. Strictly under the end — a run wraps with a remainder at its
+        // total, so the frame at exactly the length is frame 0 again.
         var moments: [(screen: TourScreen, at: TimeInterval)] = []
-        for screen in screens {
+        for reel in screens {
             var t: TimeInterval = 0
-            while t < screen.length {
-                moments.append((screen, t))
-                t += pace(screen, at: t, top: speed) / fps
+            while t < reel.end {
+                moments.append((reel.screen, t))
+                t += pace(reel.screen, at: t, top: speed) / fps
             }
         }
 
@@ -449,7 +486,7 @@ enum PanelsCommand {
         let tall = ceil(
             max(
                 sizes.map(\.height).max() ?? 0,
-                screens.map(\.height).max() ?? 0
+                screens.map(\.screen.height).max() ?? 0
             )
         )
         guard width > 0, tall > 0 else { return 1 }
@@ -488,11 +525,11 @@ enum PanelsCommand {
             guard ok else { return 1 }
         }
 
-        for screen in screens {
-            let count = moments.filter { $0.screen == screen }.count
+        for reel in screens {
+            let count = moments.filter { $0.screen == reel.screen }.count
             print(
-                "\(screen.rawValue): \(count) frames"
-                    + " · \(String(format: "%.1f", screen.length))s of tour"
+                "\(reel.name): \(count) frames"
+                    + " · \(String(format: "%.1f", reel.end))s of tour"
                     + " in \(String(format: "%.1f", Double(count) / fps))s of film"
             )
         }

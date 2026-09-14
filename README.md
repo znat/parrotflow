@@ -15,7 +15,8 @@
 <img src="Resources/hero.webp" width="680" alt="Four dictations into one field.
 Mick is corrected to Mik and the app offers to remember it, then Mik to Mick;
 the last two sentences name both people and both are written right. Then one
-Slack message: PR 478 arrives as a link, and Siobhan becomes @Sio.">
+Slack message: PR 478 arrives as a link, and Siobhan becomes @Sio. Then the
+two config.yaml rules that did it.">
 
 </div>
 

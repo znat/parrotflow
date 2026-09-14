@@ -863,7 +863,7 @@ $PF --tutorial-sheet n.png names     # one screen's beats
 $PF --tutorial-sheet s.png slack
 $PF --tutorial-sheet h.png hack
 $PF --tutorial-sheet w.png walk      # every screen as the setup window frames it
-$PF --tour-film out names,slack 15 2 # the tour as numbered PNGs, for a film
+$PF --tour-film out names,slack,hack:2 15 3  # the tour as numbered PNGs, for a film
 ```
 
 `--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`, `offer`,
@@ -950,6 +950,10 @@ of its own, on purpose — a light crossing a bar has nothing to be in step with
 — so `downloads` is the one screen whose frames differ from run to run. The
 others draw the bar only while something is downloading, and a film has
 nothing downloading.
+
+A screen may be cut short: `hack:2` plays the first two of that screen's four
+config examples and moves on where the third would have started. A screen with
+no number plays whole.
 
 `speed` multiplies the step — `2` asks the clock for twice the time per frame,
 so the film plays at twice the pace. The stretches a screen dims over are held
