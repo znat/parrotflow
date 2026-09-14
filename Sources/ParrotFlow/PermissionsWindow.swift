@@ -334,6 +334,11 @@ final class PermissionsWindowController {
     /// Re-runs the fetches, for the button a blocking failure puts in the foot.
     /// Set by `AppDelegate`; the window neither owns nor starts a download.
     var onRetryDownloads: (() -> Void)?
+
+    /// The setup window has closed on the end of an install. Nothing is left
+    /// on screen at that point and there is no dock icon, so this is where the
+    /// app says where it went. See `MenuBarCallout`.
+    var onInstalled: (() -> Void)?
     private var window: NSWindow?
 
     /// Whether the walk is on screen. The launch panel asks, so it does not
@@ -555,8 +560,12 @@ final class PermissionsWindowController {
             object: window,
             queue: .main
         ) { [weak self] _ in
-            self?.timer?.invalidate()
-            self?.timer = nil
+            guard let self else { return }
+            self.timer?.invalidate()
+            self.timer = nil
+            // Only an install. A window opened from the menu bar was opened by
+            // somebody who knows where the menu bar is.
+            if self.model.context == .installing { self.onInstalled?() }
         }
     }
 

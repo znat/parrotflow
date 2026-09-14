@@ -853,6 +853,7 @@ real character and neither end of the replacement is whitespace.
 $PF --panels preview 20       # put one surface on screen and leave it there
 $PF --panels sequence 40      # run a whole dictation's worth of states, on a loop
 $PF --panels tutorial 60      # every tour screen, on a loop, in one window
+$PF --panels callout 12       # the callout the install leaves under the icon
 $PF --panels names 40         # just the vocabulary screen
 $PF --panels slack 30         # just the Slack screen
 $PF --panels hack 20          # just the transforms screen

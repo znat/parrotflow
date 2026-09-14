@@ -23,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The panel that says what this launch is fetching. See `LaunchPanel`.
     private let launch = LaunchPanel()
     private let bugReport = BugReportWindow()
+    /// Points at the menu bar icon when the install's window closes. See
+    /// `MenuBarCallout`.
+    private let callout = MenuBarCallout()
 
     private var statusItem: NSStatusItem!
     private var statusInfoItem: NSMenuItem!
@@ -627,6 +630,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The one button the setup screen offers for a download that did not
         // arrive. The window reports the fetches; it does not own them.
         permissions.onRetryDownloads = { [weak self] in self?.retryDownloads() }
+        // The install has just closed its window. Nothing is left on screen and
+        // there is no dock icon, so the app says where it went. Once ever.
+        permissions.onInstalled = { [weak self] in
+            guard let self else { return }
+            self.callout.showOnce(
+                under: self.statusItem?.button,
+                hotkey: self.hotKeys.binding?.displayName
+            )
+        }
         warmModels()
 
         // eSpeak NG on this Mac means Homebrew installed it, and the Homebrew

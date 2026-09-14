@@ -225,6 +225,17 @@ closed over a half-finished fetch is one that does not work yet. Pressing it
 without eSpeak NG asks once, *Install it* or *Not now*, and remembers the
 answer, so the question is asked once per install and not once per launch.
 
+**Where the app went.** When the window closes on the end of an install, a
+callout appears under the menu bar icon with an arrow pointing at it: the app's
+name, the key to hold, and that its menu is under the bird. Nothing to press —
+it goes on a click or after nine seconds.
+
+Once ever, kept in a default like the eSpeak answer. A window opened later from
+the menu bar was opened by somebody who already knows where the menu bar is, so
+that one says nothing.
+
+`--panels callout` draws it where a status item would be, for editing it.
+
 *Finish Setup…* stays in the menu bar while eSpeak NG is missing, and opening it
 that way shows the command again — it is the only route back to it.
 

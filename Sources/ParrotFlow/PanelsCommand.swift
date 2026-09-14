@@ -1080,6 +1080,7 @@ enum PanelsCommand {
         var ticker: Timer?
         var setupWindow: NSWindow?
         var launchPanel: LaunchPanel?
+        var calloutPanel: MenuBarCallout?
 
         switch surface {
         case "notice":
@@ -1240,6 +1241,17 @@ enum PanelsCommand {
             )
         // The screen that lists what is about to be fetched. A still, like the
         // screen itself: nothing on it has started.
+        // The callout the install leaves under the menu bar icon. There is no
+        // status item in this process, so it points at where one would be.
+        case "callout":
+            let screen = NSScreen.main?.frame ?? .zero
+            calloutPanel = MenuBarCallout()
+            calloutPanel?.show(
+                pointingAt: NSRect(
+                    x: screen.maxX - 140, y: screen.maxY - 24, width: 24, height: 24
+                ),
+                hotkey: Tutorial.hotkey
+            )
         case "models":
             let listing = sampleDownloads(speech: .waiting)
             let pane = AnyView(
@@ -1393,7 +1405,7 @@ enum PanelsCommand {
                 + "|confidence|vocabulary|punctuation|rule|dictation|preview|microphone"
                 + "|keyboard|pill|learn|learn-long|selector|selector-long|selector-two"
                 + "|update|models|setup|launch|sequence|tutorial|names|slack|hack"
-                + "|downloads|ready> [seconds]")
+                + "|downloads|ready|callout> [seconds]")
             return 2
         }
 
