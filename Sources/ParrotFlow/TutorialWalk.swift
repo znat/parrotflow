@@ -143,7 +143,14 @@ enum TourWalk {
     }
 
     /// How long the window takes to change height at a cut.
-    static let resize: TimeInterval = 0.34
+    ///
+    /// Long, because the distance is long: the opening screen is 286 points
+    /// tall and the one after it is 624, and 338 points in a third of a second
+    /// reads as a jump rather than a move. The screens cut hard — they were
+    /// crossfaded once and it stopped the window drawing new frames, see
+    /// `docs/cli.md` — so this is the only thing saying the two screens are one
+    /// window.
+    static let resize: TimeInterval = 0.62
 
     /// The height the window keeps at `elapsed`.
     ///
@@ -158,6 +165,10 @@ enum TourWalk {
         let (index, clock) = at(elapsed, in: list)
         let now = list[index].height
         guard clock < resize, list.count > 1 else { return now }
+        // The first screen of the first pass has nothing before it. Without
+        // this the window opens at the last screen's height and shrinks, which
+        // is a move nobody asked for on a window that has just appeared.
+        guard elapsed >= resize else { return now }
         let before = list[(index - 1 + list.count) % list.count].height
         let u = clock / resize
         return before + (now - before) * (u * u * (3 - 2 * u))
