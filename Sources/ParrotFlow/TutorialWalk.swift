@@ -279,19 +279,27 @@ struct SetupTour: View {
             let on = TourWalk.page(at: elapsed, in: screens)
             HStack(spacing: 0) {
                 ForEach(Array(pages.enumerated()), id: \.offset) { at, page in
-                    Circle()
-                        .fill(
-                            at == on
-                                ? Parrot.action.opacity(0.9)
-                                : Color.white.opacity(0.18)
-                        )
-                        .frame(width: 6, height: 6)
-                        // A 6pt circle is not something anybody can hit. The
-                        // box around it is, and the gap between the dots is its
-                        // padding rather than a spacing of its own.
-                        .frame(width: 17, height: 20)
-                        .contentShape(Rectangle())
-                        .onTapGesture { seek?(page) }
+                    // A button and not a tap gesture: these are the only thing
+                    // on the tour anybody can press, so they are the only thing
+                    // a keyboard or VoiceOver has to be able to reach.
+                    Button { seek?(page) } label: {
+                        Circle()
+                            .fill(
+                                at == on
+                                    ? Parrot.action.opacity(0.9)
+                                    : Color.white.opacity(0.18)
+                            )
+                            .frame(width: 6, height: 6)
+                            // A 6pt circle is not something anybody can hit.
+                            // The box around it is, and the gap between the
+                            // dots is its padding rather than a spacing of its
+                            // own.
+                            .frame(width: 17, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Page \(at + 1) of \(pages.count)")
+                    .accessibilityAddTraits(at == on ? [.isSelected] : [])
                 }
             }
             .padding(.bottom, 14)
