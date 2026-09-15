@@ -15,7 +15,7 @@
 
 
 
-<img src="Resources/hero.webp" width="640" alt="Four dictations into one field.
+<img src="Resources/hero.webp" width="500" alt="Four dictations into one field.
 Mick is corrected to Mik and the app offers to remember it, then Mik to Mick;
 the last two sentences name both people and both are written right. Then one
 Slack message: PR 478 arrives as a link, and Siobhan becomes @Sio. Then the
@@ -23,11 +23,11 @@ two config.yaml rules that did it.">
 
 </div>
 
-> [!NOTE]
-> PR links and Slack mentions are not features, they are extensions configured
-> in `yaml`! You can hack them or add more in minutes with your coding agents!
+> [!TIP]
+> PR links and Slack mentions are NOT features, they are extensions configured in `yaml`!
+> You can hack them and add more in minutes with your coding agent!
 
-Those are built-in:
+Some built-in extensions you can use and play with:
 
 🔇 **Hesitations, repeats and false starts** — `um` and `uh`, a word said twice, a phrase begun again.
 *"so uh in the ter in the terminal run the the tests"* → *"so in the terminal run the tests"*
@@ -39,19 +39,12 @@ Those are built-in:
 
 ---
 
-## Truly local, truly extensible
+## Truly local and extensible
 
 **ParrotFlow uses very small models**, such as mmBERT, the Qwen3 0.6B family and spaCy, to understand what you mean, use your vocabulary in context, correct hesitations and repair raw ASR output without relying on a powerful LLM to rewrite what you said:
 
-📖 **Vocabulary** — your terms, applied in context.
-*"Marc reviewed the PR"* writes **Marc** &nbsp;·&nbsp; *"mark it as done"* is left alone
 
-✂️ **Sentence repair** — a pause makes the recogniser (Parakeet) end the sentence early. This reads the boundary and removes the mark.
-*"I ran the tests on. Both branches"* → *"I ran the tests on both branches"*
-
-<div align="center">
-
-<table align="center">
+<table>
 <thead>
 <tr><th></th><th>ParrotFlow</th><th>Local<sup>1</sup></th><th>Cloud<sup>2</sup></th></tr>
 </thead>
@@ -66,9 +59,6 @@ Those are built-in:
 
 <sub><sup>1</sup> Handy, VoiceInk, MacWhisper, FluidVoice. &nbsp;<sup>2</sup> Wispr Flow, Aqua, Willow. &nbsp;<sup>3</sup> Built-in steps never rewrite. A prompt step that does is yours to add. &nbsp;<sup>4</sup> FluidVoice bundles a local rewrite model.</sub>
 
-</div>
-
----
 
 
 ## Install
@@ -96,7 +86,7 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 ---
 
 
-### Extensible with rules, prompts and scripts
+### Extend with rules, prompts and scripts
 
 What makes ParrotFlow truly unique is that you can fully customize it with regular expressions, prompts or scripts.
 All you have to do is point your coding agent to your `config.yaml` file and ask what you need.
