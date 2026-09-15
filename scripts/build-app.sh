@@ -30,6 +30,14 @@ APP="$ROOT/.build/$APP_NAME.app"
 # engine it is asked about, and the two engines write to different directories.
 SWIFT_BUILD=(swift build --package-path "$ROOT" -c "$CONFIGURATION" --build-system swiftbuild)
 
+# swiftbuild builds every architecture the SDK calls standard, and on the
+# macOS 26 SDK that is arm64 and x86_64. The app is arm64: MLX and Parakeet
+# need Apple Silicon, and `Float(Float16)` in SlotProbe.swift does not compile
+# for x86_64 at all. Newer SDKs drop x86_64 from the standard set, so this is
+# only ever wrong on an older one.
+export ARCHS=arm64
+export ONLY_ACTIVE_ARCH=YES
+
 echo "==> Building $DISPLAY_NAME ($CONFIGURATION)"
 "${SWIFT_BUILD[@]}"
 

@@ -87,6 +87,13 @@ jobs:
       # default is swiftbuild on Swift 6.4 and the classic engine on 6.3, and
       # only swiftbuild builds the Metal shaders. This runner is on 6.3.3.
       - name: Build
+        env:
+          # See scripts/build-app.sh. The macOS 26 SDK calls arm64 and x86_64
+          # standard, swiftbuild builds both, and the x86_64 slice fails in
+          # SlotProbe.swift on a `Float16` conversion Swift does not have on
+          # Intel. The app is arm64.
+          ARCHS: arm64
+          ONLY_ACTIVE_ARCH: "YES"
         run: swift build -c release --build-system swiftbuild
 
       # v0.12.0 built clean and packaged into an app that would have died at the
