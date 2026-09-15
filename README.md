@@ -23,12 +23,15 @@ two config.yaml rules that did it.">
 
 </div>
 
-> [!HINT] PR links and Slack mentions are not features, they are exensions configured in `yaml`!
-You can hack them or add more in minutes with your coding agents! Those are built-in:
-\
+> [!NOTE]
+> PR links and Slack mentions are not features, they are extensions configured
+> in `yaml`! You can hack them or add more in minutes with your coding agents!
+
+Those are built-in:
+
 🔇 **Hesitations, repeats and false starts** — `um` and `uh`, a word said twice, a phrase begun again.
 *"so uh in the ter in the terminal run the the tests"* → *"so in the terminal run the tests"*
-\
+
 🔢 **Numbers, dates and times** — written as digits, English and French.
 *"March third at quarter past nine"* → *"March 3 at 9:15"* &nbsp;·&nbsp; *"two hundred forty three tests, ninety seven percent"* → *"243 tests, 97%"*
 
@@ -45,10 +48,6 @@ You can hack them or add more in minutes with your coding agents! Those are buil
 
 ✂️ **Sentence repair** — a pause makes the recogniser (Parakeet) end the sentence early. This reads the boundary and removes the mark.
 *"I ran the tests on. Both branches"* → *"I ran the tests on both branches"*
-
-</div>
-
-
 
 <div align="center">
 
