@@ -113,8 +113,15 @@ transforms:
 transforms:
   - name: slack_mentions
     description: turn people's names into Slack mentions
+    offer: true                      # a chip on the pill after each dictation
+    key: s                           # press S to run it
+    say: [slack mentions, mentions]  # hold the hotkey and say either one
     command: slack_mentions.py
 ```
+
+`offer`, `key` and `say` are three ways to run a transform on demand: a chip
+on the pill, a letter, or your voice. A transform that should run on every
+dictation goes in the pipeline instead.
 
 Where `slack_mentions.py` is:
 
