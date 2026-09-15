@@ -469,41 +469,42 @@ loud.
 A transform of their own goes in `transforms:` and needs a `description` —
 `--check-config` reports one without it as an error.
 
-**Slack handles, if they use Slack.** Skip this unless they use Slack.
+**Slack mentions, if they use Slack.** Skip this unless they use Slack.
 
-The config ships a `slack_mentions` transform with three example names to
-replace.
+The config ships a `slack_mentions` transform. Its roster is empty, and the
+**S** chip says "open slack_mentions.py to set up Slack mentions" until it is
+filled, and opens its folder in the Finder.
 
 > Do you use Slack? I can teach it your colleagues' handles — then "hey parrot,
 > use Slack mentions" turns "tell Marie the deadline moved" into "tell
 > @marie.dupont the deadline moved".
 >
-> I need names and handles, and I cannot read your workspace. If your Slack has
-> an assistant, ask it for the members of your team channel, or the people you
-> have messaged in the last month. Paste the answer here in any format.
+> I need names and handles, and I cannot read your workspace. Ask the assistant
+> in your Slack: "List the names and Slack handles of all the people I
+> interacted with in the last 90 days." Paste the answer here in any format.
 
 They can also just name the handful of people they message most. Either way the
 source is them: **never invent or guess a handle.** A wrong one pings the wrong
 person and nobody notices.
 
-Put what they paste into the list inside that transform's prompt, one per line,
-keeping the shape and dropping the examples:
+Put what they paste into `ROSTER` in
+`~/.config/parrotflow/transforms/slack_mentions/slack_mentions.py`, one per
+line. The file is theirs: the app wrote it once and never touches it again.
 
-```yaml
-transforms:
-  - name: slack_mentions
-    prompt: |
-      ...
-        Marie   -> @marie.dupont
-        Thomas  -> @tleroy
+```python
+ROSTER = {
+    "Marie": "@marie.dupont",
+    "Thomas": "@tleroy",
+}
 ```
 
 Then `--check-config`, and say what it does and does not do:
 
-> It only runs when you ask — a message that names someone is not always a
-> message that should ping them. With text selected you see the result first.
-> And it never sends anything: you get text in your Slack box, and the last look
-> is yours.
+> It only runs when you ask — the **S** chip after a dictation, or "hey parrot,
+> use Slack mentions". A message that names someone is not always a message
+> that should ping them. With text selected you see the result first. And it
+> never sends anything: you get text in your Slack box, and the last look is
+> yours.
 
 Check one thing with them: ask them to paste a handle into a message **without
 sending** and say whether it turns blue. If it stays plain, it looks like a

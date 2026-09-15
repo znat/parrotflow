@@ -508,32 +508,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// decide, and `offerSeconds` was over first. It folds rather than goes.
     static let learnSeconds: TimeInterval = 30
 
-    /// What the offer offers: Correct, then every transform that asked for a
-    /// place on it with `offer: true`.
-    ///
-    /// Vocabulary is first and is not a transform. It is the one command that
-    /// is about the words rather than about rewriting them, it needs no model,
-    /// and it cannot fail.
+    /// What the offer offers: every transform that asked for a place on it
+    /// with `offer: true`. The vocabulary panel is reached by voice, not by a
+    /// chip.
     ///
     /// Read fresh each time rather than stored, so a config reloaded between
     /// two dictations changes what the next offer says.
-    /// `teaching` puts `Vocabulary` in front, and it is left out for words
-    /// nothing here dictated.
-    ///
-    /// The panel behind that chip maps what was HEARD to what it should be, and
-    /// over a selection in somebody else's email there is no hearing — nothing
-    /// listened to it. A rule taught from a typo somebody else typed would fire
-    /// on *your* future dictations, correcting a mistake the decoder never made.
-    ///
-    /// Before the hotkey could summon an offer over an arbitrary selection this
-    /// could not arise: the panel only ever opened over a dictation. Leaving the
-    /// chip off is the whole of the fix, and it is what the `add a word` panel
-    /// mode was going to be for.
-    private func offerCommands(teaching: Bool) -> [OfferedCommand] {
-        (teaching ? [OfferedCommand(title: "Vocabulary", key: "V")] : [])
-            + config.transforms.filter(\.offer).map {
-                OfferedCommand(title: $0.name, key: $0.offerKey)
-            }
+    private func offerCommands() -> [OfferedCommand] {
+        config.transforms.filter(\.offer).map {
+            OfferedCommand(title: $0.name, key: $0.offerKey)
+        }
     }
 
     /// The last substitution made in somebody else's window, and enough to put
@@ -2795,29 +2779,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Nil is every way a program can fail, and in a pipeline it means
             // keep the text — a stage that fails must not cost you a sentence.
             //
-            // Asked for by name it means something else. You said "use slack
-            // handles", the script did not run, and returning the text
+            // Asked for by name it means something else. You said "use Slack
+            // mentions", the script did not run, and returning the text
             // unchanged makes that indistinguishable from a script that ran
             // and found nothing to do: the selection path then says "nothing
             // to change" and the inline path says nothing at all. Both are
             // describing a transform that worked. So this throws, and the
             // failure paths both callers already have get to do their job.
-            guard let result = CommandRunner.run(
-                command, on: text, in: transform.folder, seconds: transform.timeout
-            ) else { throw CommandDidNotRun(name: transform.name) }
-            return result
+            switch CommandRunner.attempt(
+                command, on: text, in: transform.folder, seconds: transform.timeout,
+                structured: false, context: nil
+            ) {
+            case .success(let output):
+                guard let result = output.text else {
+                    throw CommandDidNotRun(name: transform.name, said: "")
+                }
+                return result
+            case .failure(let failure):
+                throw CommandDidNotRun(name: transform.name, said: failure.complaint)
+            }
         }
     }
 
     /// A `command:` transform that produced no rewrite, asked for by name.
     ///
-    /// The log already carries which of the ways it went wrong — could not
-    /// start, exited non-zero, took too long, said nothing — and that is more
-    /// than fits on screen. What belongs on screen is that it did not run.
+    /// What the program wrote on stderr is the message when it wrote one. The
+    /// log has the rest.
     private struct CommandDidNotRun: LocalizedError {
         let name: String
+        let said: String
         var errorDescription: String? {
-            "\(name) did not run — the log says what it said"
+            said.isEmpty ? "\(name) did not run — the log says what it said" : said
         }
     }
 
@@ -3003,7 +2995,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             selection: selection, on: target, confirm: confirm
                         )
                     }
-                    if !asked { self.flash(error.localizedDescription, tone: .failure) }
+                    if !asked {
+                        if transform.failed.isEmpty {
+                            self.flash(error.localizedDescription, tone: .failure)
+                        } else {
+                            self.alert(transform.failed)
+                        }
+                    }
                 }
             }
         }
@@ -3603,8 +3601,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Frozen with the offer rather than asked again when a chip is pressed.
         // `lastDictated` is one slot and push-to-talk does not wait, so the same
         // question a few seconds later can be about a different sentence.
-        let teaching = target.dictation != nil
-        let commands = offerCommands(teaching: teaching)
+        let commands = offerCommands()
         offerHeadline = headline
         offerReading = reading
         let hold = config.feedback.lowConfidence.holdReturn
@@ -3648,13 +3645,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
                 return
             }
-            // Index 0 is Vocabulary *when it is there* — it is not a transform
-            // and cannot be one, so a config free to name a transform
-            // "Vocabulary" must not be able to take that slot over. Matched by
-            // position rather than by title for exactly that reason, which means
-            // an offer without it has to say so or the first transform would be
-            // run as the panel.
-            self.runOfferedCommand(teaching && index == 0 ? nil : commands[index].title)
+            self.runOfferedCommand(commands[index].title)
         }
         // The highlight is the pointer's mark and does not outlive it. Leaving
         // the pill gives it up, so a chip is never lit for a command that is
@@ -3761,6 +3752,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// How long a notice stands before the tab takes the surface back. The
     /// pill's own default for a message with a duration.
     static let noticeSeconds: TimeInterval = 3.5
+
+    /// How long a `failed:` alert stands. Longer than a notice: it is several
+    /// lines, and a command in it is meant to be copied.
+    static let alertSeconds: TimeInterval = 30
 
     /// The offer asked for rather than offered: the hotkey tapped, not held.
     ///
@@ -4974,7 +4969,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         transform, over: target, clipboardWhenChosen: clipboardWhenChosen
                     )
                 }
-                if !asked { self.flash(error.localizedDescription, tone: .failure) }
+                if !asked {
+                    if transform.failed.isEmpty {
+                        self.flash(error.localizedDescription, tone: .failure)
+                    } else {
+                        self.alert(transform.failed)
+                    }
+                }
             }
         }
     }
@@ -5646,6 +5647,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setLabel(message, clearAfter: 4)
     }
 
+    /// The long form. The menu bar takes the first line: it has room for a
+    /// sentence, not for a paragraph.
+    private func alert(_ markdown: String, tone: NoticeTone = .failure) {
+        pill.alert(markdown, tone: tone, for: Self.alertSeconds)
+        let first = markdown.split(separator: "\n", omittingEmptySubsequences: false).first
+        setLabel(String(first ?? ""), clearAfter: Self.alertSeconds)
+    }
+
     /// Who the message on the pill belongs to. Bumped for every message put
     /// up, so only the last one handed out is live.
     ///
@@ -6185,10 +6194,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ///
         /// `progress` is the message this path still has up, if any: the
         /// router's "Thinking…", or the transform's own label.
-        func giveUp(_ why: String, tone: NoticeTone = .caution, progress token: Int?) {
+        ///
+        /// `failed` is the transform's own words for not having run, and it
+        /// wins over the error's.
+        func giveUp(
+            _ why: String, tone: NoticeTone = .caution, progress token: Int?,
+            failed: String = ""
+        ) {
             endProgress(token: token)
             Log.write("inline: \(why); wrote the text as dictated")
             insertDictation(text, to: destination, for: press)
+            guard failed.isEmpty else {
+                self.alert(failed, tone: tone)
+                return
+            }
             pill.notice(why, tone: tone, duration: 7)
             setLabel(why, clearAfter: 7)
         }
@@ -6221,7 +6240,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 } catch {
                     await MainActor.run {
-                        giveUp(error.localizedDescription, tone: .failure, progress: token)
+                        giveUp(
+                            error.localizedDescription, tone: .failure, progress: token,
+                            failed: transform.failed
+                        )
                     }
                 }
             }

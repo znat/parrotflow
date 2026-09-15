@@ -53,6 +53,9 @@ enum PillState: Equatable {
     case working(String)
     /// A sentence, for a few seconds.
     case notice(String, NoticeTone)
+    /// Why something could not run, as markdown, with a bar draining over it.
+    /// The one message state that takes the mouse.
+    case alert(String, NoticeTone)
     /// What you can do about what just happened. One entry per command; which
     /// one the pointer is on lives in the model, not here, so moving the
     /// highlight is not a state change and does not crossfade the whole pill.
@@ -83,7 +86,7 @@ enum PillState: Equatable {
     var isListening: Bool {
         switch self {
         case .recording, .working: return true
-        case .notice, .offer: return false
+        case .notice, .alert, .offer: return false
         }
     }
 }
@@ -454,6 +457,14 @@ final class PillModel: ObservableObject {
     /// it asks the next question, if there is one.
     var onPick: ((Int) -> Void)?
     var onHover: ((Bool) -> Void)?
+    /// The pointer on an alert, and its close cross. Their own hooks, so an
+    /// alert and an offer cannot take each other's closure.
+    var onAlertHover: ((Bool) -> Void)?
+    var onAlertClose: (() -> Void)?
+
+    /// How much of the alert's clock is left, 1 down to 0. Published, because
+    /// a `withAnimation` over 15s does not give the value back.
+    @Published var alertRemaining: CGFloat = 1
     /// The open panel folded back to the tab on its own.
     ///
     /// The offer is still on screen and still live afterwards, so whoever armed
@@ -510,6 +521,12 @@ final class PillHUD {
     private var decayRun = 0
     /// The offer's fade, waiting out the hold. See `decay(over:)`.
     private var pendingDecayFade: DispatchWorkItem?
+    /// The alert's countdown: the clock, the whole of it, when it runs out,
+    /// and what is left while the pointer holds it.
+    private var alertClock: Timer?
+    private var alertTotal: TimeInterval = 0
+    private var alertEndsAt: Date?
+    private var alertLeft: TimeInterval = 0
 
     /// The margin this surface wants, which is not the same in every state.
     /// See `PillMetrics.bleed(for:)`.
@@ -591,6 +608,79 @@ final class PillHUD {
     /// A `duration` of nil leaves the message up until `hide()`.
     func notice(_ message: String, tone: NoticeTone = .plain, duration: TimeInterval? = 3.5) {
         set(.notice(message, tone), for: duration)
+    }
+
+    /// Several lines about something that could not run, as markdown. A
+    /// `duration` of nil leaves it up until `hide()`, with no bar.
+    func alert(_ markdown: String, tone: NoticeTone = .failure, for duration: TimeInterval?) {
+        model.alertRemaining = 1
+        set(.alert(markdown, tone), for: duration)
+        guard let duration, duration > 0 else { return }
+        alertTotal = duration
+        startAlertClock(from: duration)
+    }
+
+    /// Hold the alert, or let it run out again. Pause, not reset: the
+    /// dismissal is rearmed with what was left.
+    private func alertHovering(_ inside: Bool) {
+        guard let panel, panel.isVisible, case .alert = model.state, alertTotal > 0 else { return }
+        if inside {
+            guard let ends = alertEndsAt else { return }
+            alertClock?.invalidate(); alertClock = nil
+            pendingDismiss?.cancel(); pendingDismiss = nil
+            alertLeft = max(0, ends.timeIntervalSinceNow)
+            alertEndsAt = nil
+            // SwiftUI's onHover can miss the exit. Ask the pointer instead.
+            alertClock = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) {
+                [weak self] timer in
+                guard let self, self.alertEndsAt == nil, case .alert = self.model.state
+                else { timer.invalidate(); return }
+                if !self.pointerIsOver { self.alertHovering(false) }
+            }
+        } else {
+            guard alertEndsAt == nil else { return }
+            startAlertClock(from: alertLeft)
+        }
+    }
+
+    /// Run the bar down over `seconds`, and take the pill away at the end.
+    private func startAlertClock(from seconds: TimeInterval) {
+        alertLeft = seconds
+        alertEndsAt = Date().addingTimeInterval(seconds)
+        model.alertRemaining = CGFloat(min(1, seconds / max(alertTotal, 0.001)))
+
+        let work = DispatchWorkItem { [weak self] in self?.fadeOut() }
+        pendingDismiss?.cancel()
+        pendingDismiss = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+
+        alertClock?.invalidate()
+        alertClock = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) {
+            [weak self] timer in
+            guard let self, let ends = self.alertEndsAt, self.alertTotal > 0 else {
+                timer.invalidate()
+                return
+            }
+            self.model.alertRemaining =
+                CGFloat(max(0, ends.timeIntervalSinceNow) / self.alertTotal)
+        }
+    }
+
+    /// The close cross: take it away now rather than at the end of the clock.
+    private func closeAlert() {
+        guard case .alert = model.state else { return }
+        Log.write("alert: closed by the cross")
+        pendingDismiss?.cancel(); pendingDismiss = nil
+        stopAlertClock()
+        fadeOut()
+    }
+
+    /// Nothing is counting any more.
+    private func stopAlertClock() {
+        alertClock?.invalidate(); alertClock = nil
+        alertEndsAt = nil
+        alertTotal = 0
+        alertLeft = 0
     }
 
     /// What you can do about the text that just landed, and for how long.
@@ -907,6 +997,7 @@ final class PillHUD {
     func set(_ state: PillState, for duration: TimeInterval? = nil) {
         pendingHide?.cancel(); pendingHide = nil
         pendingDismiss?.cancel(); pendingDismiss = nil
+        stopAlertClock()
 
         if panel == nil { build() }
         guard let panel else { return }
@@ -964,6 +1055,13 @@ final class PillHUD {
             // is opened by the pointer resting on it, and a window that ignores
             // the mouse is never rested on.
             panel.ignoresMouseEvents = false
+        } else if case .alert = state {
+            // The pointer holds the clock and a click copies a code block.
+            panel.ignoresMouseEvents = false
+            offerFor = nil
+            pointerHolds = false
+            openedByPointer = false
+            pendingOpen?.cancel(); pendingOpen = nil
         } else {
             panel.ignoresMouseEvents = true
             // No offer, nothing for the pointer to hold: `hovering` reads these
@@ -1056,6 +1154,7 @@ final class PillHUD {
     private func fadeOut() {
         pendingHide = nil
         pendingDismiss = nil
+        stopAlertClock()
         pointerHolds = false
         openedByPointer = false
         pendingOpen?.cancel(); pendingOpen = nil
@@ -1195,6 +1294,8 @@ final class PillHUD {
         // without marking it as the pointer's — so the pointer wandering off
         // does not fold up something you asked for.
         model.onTab = { [weak self] in self?.open(true) }
+        model.onAlertHover = { [weak self] inside in self?.alertHovering(inside) }
+        model.onAlertClose = { [weak self] in self?.closeAlert() }
 
         let hosting = NSHostingView(rootView: PillView().environmentObject(model))
         hosting.frame = NSRect(origin: .zero,
@@ -1749,6 +1850,16 @@ enum PillMetrics {
     /// is no longer pointing at anything.
     static let sentenceWidth: CGFloat = 640
 
+    /// How wide an alert is, whatever it says. Not `sentenceWidth`: at 640 a
+    /// three-line message comes out one line long, which reads as a banner.
+    static let alertWidth: CGFloat = 420
+
+    /// The air above and below an alert's blocks, the gap between them, and
+    /// the countdown bar along the top edge.
+    static let alertPad: CGFloat = 12
+    static let alertGap: CGFloat = 8
+    static let alertBar: CGFloat = 3
+
     /// Three lines holds about 240 characters, which is the 99th percentile of
     /// the dictations in this machine's archive. Past that it truncates: the
     /// pill is on screen for seconds and a paragraph of it would cover the
@@ -1774,6 +1885,11 @@ enum PillMetrics {
         for state: PillState, width: CGFloat, hotkey: String = "", dock: Dock? = nil
     ) -> CGFloat {
         guard case .offer(let commands, let headline, let reading, let open) = state else {
+            // The one state with no fixed height: it takes what its blocks
+            // ask for at this width.
+            if case .alert(let markdown, let tone) = state {
+                return AlertContent.height(markdown: markdown, tone: tone, width: width)
+            }
             // Docked, the recording and the transcribing are the bird's own tab
             // — see `RecordingContent`. A notice is not: it is a sentence, and a
             // sentence needs the height it has always had whether it is hanging
@@ -1900,6 +2016,7 @@ enum PillMetrics {
             // to hang from.
             return dock == nil ? text(message) : tabWidth(label: nil, icon: icon)
         case .notice(let message, _): return text(message)
+        case .alert: return alertWidth
         case .offer(let commands, let headline, let reading, let open):
             guard open else { return tabWidth(hotkey: hotkey) }
             return offer(commands, headline: headline, reading: reading, hotkey: hotkey)
@@ -2292,6 +2409,12 @@ struct PillView: View {
                 case .notice(let message, let tone):
                     MessageContent(message: message, tone: tone)
                         .transition(.opacity)
+                case .alert(let markdown, let tone):
+                    AlertContent(
+                        markdown: markdown, tone: tone, fraction: model.alertRemaining,
+                        onClose: model.onAlertClose
+                    )
+                    .transition(.opacity)
                 case .offer(let commands, let headline, let reading, let open):
                     if open {
                         OfferContent(commands: commands, headline: headline, reading: reading)
@@ -2308,7 +2431,14 @@ struct PillView: View {
         // The whole surface, not each chip: moving from one chip to the next
         // must not read as leaving the pill. What leaving costs is decided by
         // whoever raised the offer — see `PillModel.onHover`.
-        .onHover { inside in model.onHover?(inside) }
+        .onHover { inside in
+            // `onHover` belongs to whoever raised the offer.
+            if case .alert = model.state {
+                model.onAlertHover?(inside)
+            } else {
+                model.onHover?(inside)
+            }
+        }
         // Amber right through when the words may not be the words that were
         // said. The line says it, but the line is on a pill you have already
         // learned to ignore: the surface changing colour is what gets looked
@@ -2381,7 +2511,7 @@ struct PillView: View {
         case .offer(_, _, _, let open):
             return open ? PillMetrics.dockRadius : PillMetrics.tabRadius
         case .recording, .working: return PillMetrics.tabRadius
-        case .notice: return PillMetrics.dockRadius
+        case .notice, .alert: return PillMetrics.dockRadius
         }
     }
 
@@ -2631,6 +2761,183 @@ private struct MessageContent: View {
         }
         .padding(.horizontal, PillMetrics.padding)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// An alert's markdown, in the two shapes the pill draws.
+///
+/// Its own splitter rather than `Markup` or `ReleaseNotes`: both hand back one
+/// rendered thing, and this needs the code block apart, as a click target.
+enum AlertBlock: Equatable {
+    case text(String)
+    case code(String)
+
+    static func split(_ markdown: String) -> [AlertBlock] {
+        var blocks: [AlertBlock] = []
+        var paragraph: [String] = []
+        var code: [String] = []
+        var fenced = false
+
+        func endParagraph() {
+            let joined = paragraph.joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            paragraph = []
+            if !joined.isEmpty { blocks.append(.text(joined)) }
+        }
+
+        for line in markdown.components(separatedBy: "\n") {
+            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                if fenced {
+                    blocks.append(.code(code.joined(separator: "\n")))
+                    code = []
+                } else {
+                    endParagraph()
+                }
+                fenced.toggle()
+                continue
+            }
+            if fenced {
+                code.append(line)
+            } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                endParagraph()
+            } else {
+                paragraph.append(line)
+            }
+        }
+        if fenced, !code.isEmpty { blocks.append(.code(code.joined(separator: "\n"))) }
+        endParagraph()
+        return blocks
+    }
+
+    /// Inline-only: the block parser takes a paragraph's own newlines out.
+    static func inline(_ source: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace
+        )
+        guard var parsed = try? AttributedString(markdown: source, options: options) else {
+            return AttributedString(source)
+        }
+        let spans = parsed.runs.filter {
+            $0.inlinePresentationIntent?.contains(.code) == true
+        }.map(\.range)
+        for span in spans {
+            parsed[span].font = .system(size: 11, design: .monospaced)
+        }
+        return parsed
+    }
+}
+
+/// Why something could not run, at length.
+private struct AlertContent: View {
+    let markdown: String
+    let tone: NoticeTone
+    /// A value, not the model: `height` hosts this with no environment object.
+    var fraction: CGFloat = 1
+    var onClose: (() -> Void)?
+
+    private var blocks: [AlertBlock] { AlertBlock.split(markdown) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            bar
+
+            HStack(alignment: .top, spacing: PillMetrics.gap) {
+                ToneDot(tone: tone)
+                    .padding(.top, 3)
+                VStack(alignment: .leading, spacing: PillMetrics.alertGap) {
+                    ForEach(blocks.indices, id: \.self) { index in
+                        switch blocks[index] {
+                        case .text(let source): paragraph(source)
+                        case .code(let code): AlertCode(code: code)
+                        }
+                    }
+                }
+                AlertClose { onClose?() }
+            }
+            .padding(.horizontal, PillMetrics.padding)
+            .padding(.vertical, PillMetrics.alertPad)
+        }
+    }
+
+    private func paragraph(_ source: String) -> some View {
+        Text(AlertBlock.inline(source))
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var bar: some View {
+        GeometryReader { geo in
+            Rectangle()
+                .fill(tone.color.opacity(0.75))
+                .frame(width: max(0, geo.size.width * fraction))
+                // The empty part grows from the left edge. Flip this to
+                // `.leading` for the usual direction.
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .frame(height: PillMetrics.alertBar)
+        .background(Color.white.opacity(0.08))
+    }
+
+    /// What this surface asks for at `width`. Laid out rather than added up
+    /// from font metrics, so the panel is sized with what the content takes.
+    static func height(markdown: String, tone: NoticeTone, width: CGFloat) -> CGFloat {
+        // No `onClose`: nothing is clicked while this is being measured.
+        let view = AlertContent(markdown: markdown, tone: tone).frame(width: width)
+        let fitting = NSHostingView(rootView: view).fittingSize.height
+        return max(PillMetrics.height, ceil(fitting))
+    }
+}
+
+/// The way out before the clock runs out.
+private struct AlertClose: View {
+    let close: () -> Void
+
+    @State private var hot = false
+
+    var body: some View {
+        Image(systemName: "xmark")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(hot ? Color(white: 0.95) : Color(white: 0.45))
+            .frame(width: 20, height: 20)
+            .contentShape(Rectangle())
+            .onHover { hot = $0 }
+            .onTapGesture(perform: close)
+    }
+}
+
+/// A fenced code block. One click copies it.
+private struct AlertCode: View {
+    let code: String
+
+    @State private var copied = false
+
+    private static let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+
+    var body: some View {
+        HStack(alignment: .top, spacing: PillMetrics.gap) {
+            Text(code)
+                .font(.system(size: 11, design: .monospaced))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Text(copied ? "Copied" : "Copy")
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(copied ? Parrot.leaf : Color(white: 0.6))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Self.shape.fill(Color.white.opacity(0.09)))
+        .contentShape(Self.shape)
+        .onTapGesture { copy() }
+    }
+
+    private func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(code, forType: .string)
+        Log.write("alert: copied a code block")
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
     }
 }
 

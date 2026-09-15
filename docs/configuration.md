@@ -101,10 +101,9 @@ inside, so it can be written, scored and handed to someone else as one thing:
       join/
         join.py
         cases.yaml
-    slack_mentions/          # yours
-      slack_mentions.py
-      cases.yaml
-      roster.json            # data the transform owns
+    slack_mentions/          # yours; slack_mentions.py is written once
+      slack_mentions.py      # on first launch and never touched again;
+      cases.yaml             # the roster of names and handles is inside it
 ```
 
 That folder is both where the transform's files are looked for **and the
@@ -232,7 +231,7 @@ Step 1 is not an optimisation, it is what keeps the rest of your catalogue
 reachable. The catch-all is a prompt. A `command:` script and a `replace:`
 table are not, so nothing can stand in for them — "flag this" sent to the
 catch-all does not file your text, it rewords it. `say:` is how a tool named
-`slack_handles` gets reached by someone saying "use our slack handles".
+`slack_mentions` gets reached by someone saying "use our slack mentions".
 
 `scripts/check-keyed.sh` scores this against `tests/keyed-cases.yaml`, with no
 model and in about a second.
@@ -260,7 +259,7 @@ screen against the chance that you want it — you ask for it again.
 the field, with the chips under them and one line under those:
 
     Edit  ▏things that turned out not to matter▕
-       V Vocabulary    F Fix grammar    S Terse
+       F Fix grammar    S Terse
         or hold ⌥ and say what to change
 
 Shown rather than described. The doubt is never whether there is a selection —
@@ -1024,6 +1023,12 @@ where you are already looking, with the pill sitting under it — so a notice
 would be describing what you just watched happen. A chime plays and the log
 records it. Every way of *not* landing still speaks: nothing to change, the app
 refused the edit, the words went to the clipboard instead.
+
+A transform that could not run at all says so on the pill for a few seconds. One
+with a `failed:` of its own says that instead, as a taller pill with a bar
+draining over it: Markdown, 30 seconds, a click copies a code block, and the
+pointer on it stops the clock. See
+[pipelines.md](pipelines.md#failed-or-saying-what-to-do-about-it).
 
 `correct_offer` is what the pill does after a dictation. It stays where it
 is and names what can be done to the words, one chip per command:

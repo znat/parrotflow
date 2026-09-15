@@ -107,32 +107,34 @@ transforms:
 
 <br>
 
-**Example: Automatically add Slack handles.**
+**Example: Automatically add Slack mentions.**
 
 ```yaml
 transforms:
-  - name: slack_handles
-    description: use Slack handles for the people named
-    command: slack_handles.py
+  - name: slack_mentions
+    description: turn people's names into Slack mentions
+    command: slack_mentions.py
 ```
 
-Where `slack_handles.py` is:
+Where `slack_mentions.py` is:
 
 ```python
 #!/usr/bin/env python3
-# roster.json sits beside this file: {"Ada": "@ada.lovelace", ...}
-import json, pathlib, re, sys
+import re, sys
 
-roster = json.loads((pathlib.Path(__file__).parent / "roster.json").read_text())
+ROSTER = {"Ada": "@ada.lovelace"}
 text = sys.stdin.read()
 
-for name, handle in roster.items():
-    # Skip a name already written as a handle, and a name used as an
-    # ordinary word — "mark it as done" is a verb.
-    text = re.sub(rf"(?<![@\w.]){re.escape(name)}\b", handle, text, flags=re.I)
+for name, handle in ROSTER.items():
+    # Skip a name already written as a handle. Case-sensitive, so
+    # "mark it as done" is not Mark.
+    text = re.sub(rf"(?<![@\w.]){re.escape(name)}\b", handle, text)
 
 sys.stdout.write(text)
 ```
+
+This one ships. Open `transforms/slack_mentions/slack_mentions.py` beside your
+config and fill the roster.
 
 <br>
 
@@ -143,7 +145,7 @@ transcription:
   pipeline:
     - transform: numbers_en   # "one two three" -> 123, so github_refs has digits
     - transform: github_refs
-    - transform: slack_handles
+    - transform: slack_mentions
 ```
 
 <br>

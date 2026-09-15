@@ -39,7 +39,7 @@ enum TutorialSlack {
         case shimmering = 4.66
         /// The tab is the panel.
         case opening = 6.06
-        /// The pointer goes down on *Slack handles*, and stays there. Long
+        /// The pointer goes down on *Slack mentions*, and stays there. Long
         /// enough to read both chips and to see which one is being taken,
         /// because that choice is the lesson.
         case clicking = 6.86
@@ -136,7 +136,7 @@ enum TutorialSlack {
     /// What the offer says can be done about the sentence just dictated.
     ///
     /// Two, and both are real: `grammar` is the one shipped transform that asks
-    /// for a place, and `slack_handles` is the one the screen goes on to use.
+    /// for a place, and `slack_mentions` is the one the screen goes on to use.
     static let chips = [
         OfferedCommand(title: "Fix Grammar", key: "G"),
         OfferedCommand(title: "Slack mentions", key: "S"),

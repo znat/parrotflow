@@ -556,13 +556,37 @@ entry costs the others room, so a transform joins it only by asking. Put a
 chip on what you reach for without thinking. Leave it off anything you would
 only ever ask for out loud — that is what the wake phrase is for.
 
+### `failed:`, or: saying what to do about it
+
+A transform that could not run puts the error on the pill. `failed:` is what it
+says instead — its own words, for the one failure it can predict:
+
+````yaml
+  - name: grammar
+    failed: |
+      Requires a language model.
+
+      ```sh
+      brew install ollama
+      ollama run gemma4:e4b-mlx
+      ```
+````
+
+It is Markdown, and it is drawn as a taller pill: paragraphs wrap, and a fenced
+code block sits in a box of its own that copies to the clipboard when you click
+it. It stands for 30 seconds. Put the pointer on it and the clock stops; take it
+off and the rest of the time runs. The raw error still goes to the log.
+
+Leave it out and nothing changes: the error's own text goes on the pill, the way
+it always did.
+
 ### `say` — what to call it out loud
 
 ```yaml
-  - name: slack_handles
-    description: turn names into slack handles
-    say: [slack handles, handles]
-    command: slack_handles.py
+  - name: slack_mentions
+    description: turn names into slack mentions
+    say: [slack mentions, mentions]
+    command: slack_mentions.py
 ```
 
 A name is written for a config file. Nobody says an underscore, and nobody
@@ -885,26 +909,22 @@ see *An instruction inside a dictation* below.
 What both produce is text in your composer. ParrotFlow never sends a message,
 so the last look before anyone is notified is yours.
 
-**The mapping lives in the prompt**, which is the opposite of the rule
-everywhere else here, and it was tried the other way round. The tables are
-worth reading about because of what they cost, not because they failed:
+**The mapping lives in the script.** `transforms/slack_mentions/slack_mentions.py`
+holds a `ROSTER` of names to handles, written once on first launch and yours
+after that. With an empty roster the S chip opens the folder and the pill says
+`open slack_mentions.py to set up Slack mentions`. A name is matched whole and
+case-sensitive, so "mark it as done" is not Mark, and a name already written as
+a handle is left alone. Nothing runs but a lookup, so it cannot invent a handle.
 
-```yaml
-- name: slack_handles
-  replace:
-    '@marie.dupont': ['/\bmention(?:ne)? marie\b/']
-```
+It was a prompt before that, and a `replace:` table before the prompt. The
+prompt's first draft answered "the config file is here, Sofia already looked at
+it" with "…@priya already looked at it" — a handle made up for a name it had
+never been given, which in Slack is a message sent to the wrong person. The
+lookup reached **7/7** on the same cases, for free, with nothing running.
 
-A table cannot invent. This prompt's first draft answered "the config file is
-here, Sofia already looked at it" with "…@priya already looked at it" — a handle
-made up for a name it had never been given, which in Slack is a message sent to
-the wrong person — and it took four rewrites and three load-bearing sentences to
-reach 6/6. The tables reached **7/7** on the same cases, for free, with nothing
-running. On the mapping alone the table wins outright.
-
-**What it lost on was the trigger.** A table has to fire from inside the
-sentence, and the only natural word for it is one English already uses as a
-verb:
+**Why the table lost was the trigger.** A `replace:` rule has to fire from
+inside the sentence, and the only natural word for it is one English already
+uses as a verb:
 
 ```
 "I should mention here that the deadline changed"
@@ -914,15 +934,11 @@ verb:
 ```
 
 Anchoring the marker to the start of an utterance or to a `.` `!` `?` `;` or
-comma fixed those — **11/11**, five prose sentences that must not ping and six
-deliberate forms that must — at the price of "can you mention marie about the
-invoice" doing nothing at all. But a pipeline stage has **no preview**: it runs
-on a transcript nobody has seen yet, so `confirm` does not reach it and a false
-positive is a message that has already gone.
-
-Asking out loud has no such failure. It fires when you ask and never otherwise,
-which is worth a second and a prompt that had to be taught not to guess. The
-table is the better mapping; the voice command is the better trigger, and the
+comma fixed those — **11/11** — at the price of "can you mention marie about the
+invoice" doing nothing at all. And a pipeline stage has **no preview**: it runs
+on a transcript nobody has seen yet, so a false positive is a message that has
+already gone. Asking out loud, or pressing the chip, fires when you ask and
+never otherwise. The lookup is the mapping; the ask is the trigger, and the
 trigger is where the expensive mistakes live.
 
 **One thing is still open, and it decides whether any of this is worth having.**
@@ -952,7 +968,7 @@ It was prompts only until it became a real bug. The catalogue was built from
 `config.prompts`, which drops every `command:` body, so a transform that became
 a script left the list silently — and a router shown nine of your ten tools
 does not report the tenth missing, it picks the nearest of the nine. Measured:
-"use slack handles" reached `slack`, the chat-tidying prompt, which tidied the
+"use slack mentions" reached `slack`, the chat-tidying prompt, which tidied the
 sentence and left the name alone. `--check-config` now prints what each
 capability is made of, so a program answering your voice is visible rather than
 implied.
