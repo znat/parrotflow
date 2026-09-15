@@ -22,10 +22,39 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIGURATION="${CONFIGURATION:-release}"
 APP="$ROOT/.build/$APP_NAME.app"
 
-echo "==> Building $DISPLAY_NAME ($CONFIGURATION)"
-swift build --package-path "$ROOT" -c "$CONFIGURATION"
+# Named rather than left to the default, because the default moved: Swift 6.4
+# picks swiftbuild, 6.3 picks the classic engine, and only swiftbuild compiles
+# the 49 `.metal` files in mlx-swift into the metallib the app needs. The
+# classic one drops them without a word, which is how v0.12.0 was packaged
+# without its shaders. Both lines need it — `--show-bin-path` answers for the
+# engine it is asked about, and the two engines write to different directories.
+#
+# swiftbuild builds every architecture the SDK calls standard, and on the
+# macOS 26 SDK that is arm64 and x86_64. The app is arm64: MLX and Parakeet
+# need Apple Silicon, and `Float(Float16)` in SlotProbe.swift does not compile
+# for x86_64 at all. Newer SDKs drop x86_64 from the standard set, so a
+# developer Mac never sees this and CI did.
+#
+# An xcconfig and not a flag. `ARCHS=arm64`, `ONLY_ACTIVE_ARCH=YES` and
+# `--triple arm64-apple-macosx` were each measured on a CI run and each was
+# ignored; there is no `--arch` option. XCODE_XCCONFIG_FILE is the one override
+# the build system reads from the environment, and it applies above the
+# defaults rather than beside them.
+if [ -z "${XCODE_XCCONFIG_FILE:-}" ]; then
+    mkdir -p "$ROOT/.build"
+    printf 'ARCHS = arm64\nARCHS_STANDARD = arm64\nONLY_ACTIVE_ARCH = YES\n' \
+        > "$ROOT/.build/arch.xcconfig"
+    export XCODE_XCCONFIG_FILE="$ROOT/.build/arch.xcconfig"
+fi
 
-BIN_DIR="$(swift build --package-path "$ROOT" -c "$CONFIGURATION" --show-bin-path)"
+SWIFT_BUILD=(
+    swift build --package-path "$ROOT" -c "$CONFIGURATION" --build-system swiftbuild
+)
+
+echo "==> Building $DISPLAY_NAME ($CONFIGURATION)"
+"${SWIFT_BUILD[@]}"
+
+BIN_DIR="$("${SWIFT_BUILD[@]}" --show-bin-path)"
 BIN="$BIN_DIR/$EXECUTABLE_NAME"
 [ -x "$BIN" ] || { echo "error: $BIN not found"; exit 1; }
 
@@ -82,9 +111,21 @@ done
 
 # Named, because losing this one is silent until a dictation dies. MLX tears the
 # process down from inside the library when its shaders are missing, so there is
-# nothing in the app's own log to read afterwards.
-if [ ! -d "$APP/Contents/Resources/mlx-swift_Cmlx.bundle" ]; then
-    echo "error: mlx-swift_Cmlx.bundle is not in the app — MLX will abort at the first call"
+# nothing in the app's own log to read afterwards. This is the guard that caught
+# v0.12.0.
+# The metallib and not the directory around it. An empty bundle copies without
+# complaint, signs, notarizes and ships, and the app then dies at the first MLX
+# call — the same silence this whole guard exists to break.
+METALLIB="$APP/Contents/Resources/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib"
+if [ ! -f "$METALLIB" ]; then
+    echo "error: $METALLIB is not in the app — MLX will abort at the first call"
+    exit 1
+fi
+
+# An x86_64 slice cannot run MLX or Parakeet, and paying for one is the sign
+# the arch pin above stopped working.
+if lipo -info "$BIN" | grep -q x86_64; then
+    echo "error: $EXECUTABLE_NAME has an x86_64 slice — the arch pin did not hold"
     exit 1
 fi
 

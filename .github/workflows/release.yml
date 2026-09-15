@@ -36,7 +36,10 @@ jobs:
   build:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
-    runs-on: macos-latest
+    # The image checks.yml builds on, and never `macos-latest`, which moves when
+    # GitHub repoints it. v0.12.0 failed because the release built somewhere the
+    # checks did not, so the two are named together from here.
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -45,6 +48,16 @@ jobs:
 
       - name: Show toolchain
         run: swift --version
+
+      # swiftbuild compiles mlx-swift's `.metal` files, and Xcode ships the
+      # Metal compiler as a separate component a fresh runner does not have.
+      # `xcrun --find metal` is here so a download that fails, or a component
+      # that gets renamed, fails on this line instead of 12 minutes later.
+      # build-app.sh picks the engine; this step only provides the compiler.
+      - name: Download the Metal toolchain
+        run: |
+          xcodebuild -downloadComponent MetalToolchain
+          xcrun --find metal
 
       # The Developer ID does two jobs. Gatekeeper accepts it, which is what
       # notarization and the Homebrew cask need. And TCC keys Microphone and
