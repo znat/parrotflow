@@ -247,7 +247,7 @@ enum PanelsCommand {
         ("listening 2", Tutorial.fourthAt + Tutorial.leadIn + 0.5),
         ("transcribing 2",
          Tutorial.fourthAt + Tutorial.dictated(4) - Tutorial.settling + 0.25),
-        ("written 2", Tutorial.fourthLands + Tutorial.sheenDelay + 0.25),
+        ("written 2", Tutorial.fourthLands + Tutorial.beforeNames + 0.25),
     ]
 
     /// The beats of the slack tour. *clicking* is taken while the chip is lit,
@@ -359,6 +359,254 @@ enum PanelsCommand {
                 )
                 .environmentObject(downloads)
         )
+    }
+
+    /// One screen of the tour at one moment, with no download chrome on it.
+    ///
+    /// `progress: nil` is what takes the bar, the rule and the kicker off:
+    /// outside the setup window there is nothing downloading, and a screen that
+    /// says WHILE YOU WAIT in a README is waiting for nothing.
+    private static func filmFrame(_ screen: TourScreen, at t: TimeInterval) -> AnyView {
+        switch screen {
+        case .names: return AnyView(TutorialPane(run: TutorialRun(t)))
+        case .slack: return AnyView(TutorialSlackPane(run: TutorialSlackRun(t)))
+        case .hack: return AnyView(TutorialHackPane(elapsed: t))
+        case .downloads: return AnyView(TutorialDownloadsPane(elapsed: t, progress: 0.42))
+        case .ready: return AnyView(TutorialReadyPane())
+        }
+    }
+
+    /// How fast the clock runs at one moment: `speed`, except where the screen
+    /// is asking to be read rather than watched, which runs at 1x.
+    ///
+    /// Two of those. A screen dims over the thing it is about, which is the
+    /// same as saying those are the beats worth watching; the rest of a chat
+    /// screen is a sentence arriving. And the config screen is a config file —
+    /// eight seconds of it at 3x is under three seconds to read six lines of
+    /// YAML, which is not reading, it is a glimpse.
+    ///
+    /// Playing all of it at one rate either makes the film long or takes a
+    /// keystroke and an answered offer past in under a second.
+    private static func pace(
+        _ screen: TourScreen, at t: TimeInterval, top: Double
+    ) -> Double {
+        switch screen {
+        case .names:
+            return TutorialRun.lighting.contains { t >= $0.from && t < $0.to }
+                ? 1 : top
+        case .slack:
+            return TutorialSlackRun.lighting.contains { t >= $0.from && t < $0.to }
+                ? 1 : top
+        case .hack:
+            return 1
+        default:
+            return top
+        }
+    }
+
+    /// One screen of a film, and how much of it to play.
+    ///
+    /// A screen turns its own pages — the last one is four config examples one
+    /// after another — and a film does not always want all of them. `hack:2`
+    /// plays the first two and cuts to the next screen where the third would
+    /// have started.
+    struct Reel {
+        let screen: TourScreen
+        /// How many of the screen's pages to play, or nil for all of them.
+        let pages: Int?
+
+        /// `names`, or `hack:2`.
+        init?(_ spec: String) {
+            let parts = spec.split(separator: ":", maxSplits: 1)
+            guard let screen = TourScreen(rawValue: String(parts[0])) else {
+                return nil
+            }
+            self.screen = screen
+            guard parts.count == 2 else { pages = nil; return }
+            guard let count = Int(parts[1]), count > 0 else { return nil }
+            pages = count >= screen.pages.count ? nil : count
+        }
+
+        /// Where this reel stops, on the screen's own clock.
+        var end: TimeInterval {
+            guard let pages, screen.pages.indices.contains(pages) else {
+                return screen.length
+            }
+            return screen.pages[pages]
+        }
+
+        var name: String {
+            guard let pages else { return screen.rawValue }
+            return "\(screen.rawValue) (\(pages) of \(screen.pages.count) pages)"
+        }
+    }
+
+    /// `--tour-film <dir> <screens> [fps] [speed]` — every frame of a tour
+    /// screen as a numbered PNG, for ffmpeg to make a film out of.
+    ///
+    /// The screens are pure functions of elapsed time, so a film of one is a
+    /// walk up its clock: no recording, no screen, no timing to get right, and
+    /// the same frames every run. `speed` multiplies the step, so 2 asks the
+    /// clock for twice the time per frame and the film plays at twice the pace.
+    /// The two corrections on the vocabulary screen are held at 1x whatever
+    /// `speed` says — see `pace`.
+    ///
+    /// One thing on the walk is not a function of that clock: the highlight
+    /// sweeping the download bar runs on a clock of its own, deliberately, so
+    /// `downloads` is the one screen whose frames differ between runs. Every
+    /// other screen draws the bar only when there is a download, and a film has
+    /// none.
+    ///
+    /// One canvas for the whole film, as tall as the tallest screen, because a
+    /// video cannot change size partway. The panes are top-aligned in it.
+    static func tourFilm(
+        to dir: String, screens: [Reel], fps: Double, speed: Double
+    ) -> Int32 {
+        // `isFinite` and not just `> 0`: an infinite rate makes the step zero
+        // and the loop below never ends.
+        guard !screens.isEmpty, fps.isFinite, speed.isFinite, fps > 0, speed > 0
+        else { return 2 }
+
+        // Every moment the film will draw, worked out before anything is drawn:
+        // the canvas has to hold the tallest of them, and a screen grows while
+        // it plays. Strictly under the end — a run wraps with a remainder at its
+        // total, so the frame at exactly the length is frame 0 again.
+        var moments: [(reel: Int, screen: TourScreen, at: TimeInterval)] = []
+        for (index, reel) in screens.enumerated() {
+            var t: TimeInterval = 0
+            while t < reel.end {
+                // A step that cannot move the clock, which `isFinite` does not
+                // catch: `1e-100 / 1e308` is exactly zero, and the loop then
+                // fills memory with one moment over and over.
+                let next = t + pace(reel.screen, at: t, top: speed) / fps
+                guard next > t else { return 2 }
+                moments.append((index, reel.screen, t))
+                t = next
+            }
+        }
+
+        // Measured on every frame and not on a sample of them: the tallest beat
+        // of a screen is the one with the pill up, which lasts about a second,
+        // and a canvas that misses it clips the pill's bloom.
+        let sizes = moments.map { natural($0.screen, at: $0.at) }
+        let width = ceil(sizes.map(\.width).max() ?? 0)
+        // Never under the height the setup window keeps for a screen. A pane
+        // given less lays itself out differently: the Slack stage gives up the
+        // room it holds above its composer, and the composer then moves down
+        // the frame as the channel fills.
+        let tall = ceil(
+            max(
+                sizes.map(\.height).max() ?? 0,
+                screens.map(\.screen.height).max() ?? 0
+            )
+        )
+        guard width > 0, tall > 0 else { return 1 }
+        // Even, both axes: H.264 in yuv420p halves the chroma plane and refuses
+        // an odd side.
+        let canvas = NSSize(
+            width: width + width.truncatingRemainder(dividingBy: 2),
+            height: tall + tall.truncatingRemainder(dividingBy: 2)
+        )
+
+        do {
+            try FileManager.default.createDirectory(
+                atPath: dir, withIntermediateDirectories: true
+            )
+            // A shorter film into a directory that held a longer one leaves the
+            // tail of the old one behind, and ffmpeg reads `frame-%04d.png` to
+            // the end of the run: the film would finish with somebody else's
+            // frames.
+            let old = try FileManager.default.contentsOfDirectory(atPath: dir)
+                .filter { $0.hasPrefix("frame-") && $0.hasSuffix(".png") }
+            for name in old {
+                try FileManager.default.removeItem(atPath: "\(dir)/\(name)")
+            }
+        } catch {
+            print("✗ \(error.localizedDescription)")
+            return 1
+        }
+
+        for (frame, moment) in moments.enumerated() {
+            let ok = autoreleasepool { () -> Bool in
+                write(
+                    filmFrame(moment.screen, at: moment.at), on: canvas,
+                    to: "\(dir)/frame-\(String(format: "%04d", frame)).png"
+                )
+            }
+            guard ok else { return 1 }
+        }
+
+        // Counted by reel and not by screen: `names,names` is two reels of one
+        // screen, and counting the screen gives each line the other's frames
+        // as well.
+        for (index, reel) in screens.enumerated() {
+            let count = moments.filter { $0.reel == index }.count
+            print(
+                "\(reel.name): \(count) frames"
+                    + " · \(String(format: "%.1f", reel.end))s of tour"
+                    + " in \(String(format: "%.1f", Double(count) / fps))s of film"
+            )
+        }
+        print(
+            "\(moments.count) frames of \(Int(canvas.width))x\(Int(canvas.height))"
+                + " in \(dir), \(String(format: "%.0f", fps))fps"
+        )
+        return 0
+    }
+
+    /// The size a screen's own content wants at one moment.
+    ///
+    /// `NSHostingView.fittingSize` is not that size: it measures the title on
+    /// one line, comes back about 30pt short, and a pane forced into it answers
+    /// by truncating the title. This asks the renderer instead, with the height
+    /// proposal refused.
+    private static func natural(_ screen: TourScreen, at t: TimeInterval) -> NSSize {
+        MainActor.assumeIsolated {
+            let renderer = ImageRenderer(
+                content: filmFrame(screen, at: t)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .environment(\.colorScheme, .dark)
+            )
+            renderer.scale = 1
+            return renderer.nsImage?.size ?? .zero
+        }
+    }
+
+    /// One frame, top-aligned on the canvas.
+    ///
+    /// The ground is the pane's own window colour, put behind the whole canvas
+    /// rather than filled in AppKit first: a dynamic `NSColor` resolves through
+    /// SwiftUI's colour scheme, so the band under a short screen is the same
+    /// grey as the screen instead of a number written here that nearly matches.
+    private static func write(
+        _ view: AnyView, on canvas: NSSize, to path: String
+    ) -> Bool {
+        // Every screen given the same height, and not each its own: a pane's
+        // last spacer takes what is left over, so the parts that are laid out
+        // from the bottom — a Slack channel filling upward to its composer —
+        // sit where they were designed to instead of collapsing onto their
+        // own content and moving between screens.
+        let rendered = MainActor.assumeIsolated { () -> CGImage? in
+            let renderer = ImageRenderer(
+                content: view
+                    .frame(width: canvas.width, height: canvas.height, alignment: .top)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .environment(\.colorScheme, .dark)
+            )
+            renderer.scale = 2
+            renderer.isOpaque = true
+            return renderer.cgImage
+        }
+        guard let rendered else { return false }
+        guard let png = NSBitmapImageRep(cgImage: rendered)
+            .representation(using: .png, properties: [:]) else { return false }
+        do {
+            try png.write(to: URL(fileURLWithPath: path))
+            return true
+        } catch {
+            print("✗ \(error.localizedDescription)")
+            return false
+        }
     }
 
     /// `--tutorial-sheet <out.png> [slack]` — one screen of the tour, one frame

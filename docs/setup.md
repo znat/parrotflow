@@ -162,7 +162,31 @@ Each screen keeps the height of its own tallest beat, so none of them ends in a
 band of nothing, and the window eases between the two heights over about six
 tenths of a second rather than jumping at the cut. That long because the
 distance is long: the opening screen is 286 points tall and the one after it is
-624.
+578.
+
+Both chat screens dim round what they are about. A whole sentence at full
+brightness reads before the one word in it that changed does, and that word is
+the screen. The rest goes down to a third for as long as it takes.
+
+The vocabulary screen does it three times. Over each correction, the name in the
+field and the surface asking whether to keep the change are lit. At the end,
+where the line holds both names and nobody was asked about either, they are the
+two lit things.
+
+The Slack screen does it twice, once for each thing it teaches. First the link,
+with the callout that says what happened to it — a sentence about the link is no
+use dimmed. Then the mention, from the drag over the name to the send: the name,
+and the surface offering to rewrite it.
+
+A word gets a soft edge and a surface a hard one, on its own rim. A rectangle
+round one word of a sentence reads as a box someone drew on the words; soft, it
+reads as light. A surface already has a drawn edge, and blurring the dim only
+smears it. The callout is soft too, because its box is the bubble plus the tail
+under it, and a hard edge there draws a rectangle a little below a triangle.
+
+The lit boxes are the views' own, reported up by the words, the pill and the
+callout rather than written down here. They were numbers measured off a render
+once, and taking one line off a screen moved every one of them.
 
 The dots are the only thing on the tour to press. Clicking one plays from there,
 which is the way back to a page that went past too quickly. They count pages and

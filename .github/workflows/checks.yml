@@ -39,7 +39,7 @@ jobs:
     # `#available(macOS 26, *)` is a *runtime* check — it decides whether the
     # branch runs, not whether the symbol has to be there to compile — so an
     # older image fails with "cannot find NSGlassEffectView in scope" however
-    # the branch is guarded. The app still deploys to macOS 14; this is the SDK
+    # the branch is guarded. The app deploys to macOS 15; this is the SDK
     # it is built against, which is a different number.
     #
     # Not 14 either, for the reason it never was: FluidAudio 0.15.5 declares

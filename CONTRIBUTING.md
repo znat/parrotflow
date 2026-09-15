@@ -3,6 +3,9 @@
 Thanks for being here. This page is short on purpose: it says where to start,
 how to check your change, and what a commit has to carry.
 
+ParrotFlow is [GPL-3.0](LICENSE). A change you send goes in under the same
+terms — that is what signing off certifies.
+
 ## Where to start
 
 | You want to | Read |
@@ -26,7 +29,7 @@ make install            # builds and installs ParrotFlow Dev, a separate app
 make test               # every check that needs no model, mic or screen
 ```
 
-Needs Apple silicon, macOS 14 or later, and the Xcode command line tools.
+Needs Apple silicon, macOS 15 or later, and the Xcode command line tools.
 
 `make test` runs the same scripts CI runs. It does not run the sets that need
 Ollama (`check-grammar`, `check-routing`, `check-spelling`) or a real screen

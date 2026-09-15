@@ -4,69 +4,93 @@
 
 # ParrotFlow
 
-### A fast and programmable dictation app you can shape around your work
+## Local and extensible dictation for macOS
 
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
-![macOS 14+](https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
-![License Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-0c8c7c)
+![macOS 15+](https://img.shields.io/badge/macOS-15%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
+![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-0c8c7c)
 
 **[Install](#install)** · [Documentation](docs/README.md)
 
-<img src="Resources/hero.gif" width="760" alt="Three dictations. Versal becomes
-Vercel in Slack; in a terminal, P one becomes P1 and max retries becomes
-max_retries; in Mail, pressing S drops a spoken correction.">
+
+<img src="Resources/hero.webp" width="500" alt="Four dictations into one field.
+Mick is corrected to Mik and the app offers to remember it, then Mik to Mick;
+the last two sentences name both people and both are written right. Then one
+Slack message: PR 478 arrives as a link, and Siobhan becomes @Sio. Then the
+two config.yaml rules that did it.">
 
 </div>
 
----
+> [!TIP]
+>   PR links and Slack mentions are NOT features — they are extensions configured in `yaml`!
+>   You can hack them and add more in minutes with your coding agent!
+>
+>   Some built-in extensions you can use and play with:
+>
+>   🔇 **Hesitations, repeats and false starts** — `um` and `uh`, a word said twice, a phrase begun again.
+>   *"so uh in the ter in the terminal run the the tests"* → *"so in the terminal run the tests"*
+>
+>   🔢 **Numbers, dates and times** — written as digits, English and French.
+>   *"March third at quarter past nine"* → *"March 3 at 9:15"* &nbsp;·&nbsp; *"two hundred forty three tests, ninety seven percent"* → *"243 tests, 97%"*
+
+
+
+<br>
+
+## Truly local and extensible
+
+**ParrotFlow uses very small models**, such as mmBERT, the Qwen3 0.6B family and spaCy, to understand what you mean, use your vocabulary in context, correct hesitations and repair raw ASR output without relying on a powerful LLM to rewrite what you said.
+
+
 <table>
-<tr><td><strong>Dictate anywhere</strong></td><td>Click where you'd normally type, hold <code>⌘ Right</code>, speak, release. The text lands almost instantly.</td></tr>
-<tr><td><strong>Local-first</strong></td><td>Ships with Parakeet for speech and a small Gemma model for rewrites. Both run on your Mac.</td></tr>
-<tr><td><strong>Learns your vocabulary</strong></td><td>Teammates, internal jargon, products, vendor names. Correct one out loud, once, and it stays fixed.</td></tr>
-<tr><td><strong>Fast</strong></td><td>Text lands at your cursor in under half a second for most dictations, up to about two seconds for harder ones.</td></tr>
-<tr><td><strong>Programmable and promptable</strong></td><td>Build transforms out of substitutions, prompts, or scripts, and arrange them into your own pipeline.</td></tr>
+<thead>
+<tr><th></th><th>ParrotFlow</th><th>Local<sup>1</sup></th><th>Cloud<sup>2</sup></th></tr>
+</thead>
+<tbody>
+<tr><td>🔒 <b>Truly local</b></td><td align="center">✅</td><td align="center">✅</td><td align="center">❌</td></tr>
+<tr><td>✍️ <b>Keeps your wording</b><sup>3</sup> — no LLM rewrites it</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
+<tr><td>📖 <b>Knows your vocabulary</b> — and where it belongs</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
+<tr><td>🧩 <b>Extensible</b> — your own rules, prompts and scripts</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
+<tr><td>🔑 <b>No cloud key</b> — for any built-in step</td><td align="center">✅</td><td align="center">❌<sup>4</sup></td><td align="center">❌</td></tr>
+</tbody>
 </table>
+
+<sub><sup>1</sup> Handy, VoiceInk, MacWhisper, FluidVoice. &nbsp;<sup>2</sup> Wispr Flow, Aqua, Willow. &nbsp;<sup>3</sup> Built-in steps never rewrite. A prompt step that does is yours to add. &nbsp;<sup>4</sup> FluidVoice bundles a local rewrite model.</sub>
+
+<br>
 
 ## Install
 
-ParrotFlow requires Apple silicon and macOS 14 or later. Both routes install the
-same app. Take Homebrew if you already use it — upgrading and removing go
-through `brew`. Otherwise run the script.
-
-**Homebrew**
+ParrotFlow needs Apple silicon and macOS 15+. It uses about 3 GB of disk and 1 GB of memory.
 
 ```sh
 brew install znat/tap/parrotflow
 ```
 
-**Script**
+<details>
+<summary>Not using <a href="https://brew.sh">Homebrew</a>?</summary>
+
+<br>
+
+The script installs the same app, in the same place.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
 ```
 
-Neither one downloads the speech model. ParrotFlow fetches Parakeet itself the
-first time it launches, about 470 MB, and says how far along it is.
-
-Spoken commands and the transforms that are prompts need a language model as well, and that part is optional. Your vocabulary does not: that stage reads the sentence itself and calls nothing. Run a model on your own Mac with [Ollama](https://ollama.com/download) (e.g. [Gemma4](https://ollama.com/library/gemma4:e4b-mlx)), or use a hosted one (e.g. OpenAI).
-
----
-
-## Not everything you say needs a remote AI provider
-
-[Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), NVIDIA's speech model, runs locally and fast. Most dictations land in under half a second.
-
-Everything else — the hotkey, the pipeline, every transform — lives in one
-plain YAML file, `config.yaml` you can edit it by hand or with your coding agent.
-> To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
+</details>
 
 <br>
 
-### Transcriptions follow your rules
+## Extend with rules, prompts and scripts
 
-Use regexes, scripts or prompts to customize your dictations.
+> [!TIP]
+> These examples show how the demo features are made.
 
+What makes ParrotFlow truly unique is that you can fully customize it with regular expressions, prompts or scripts.
+All you have to do is point your coding agent to your `config.yaml` file and ask what you need.
 
+<br>
 
 **Example: add PR links to your dictations**
 
@@ -79,17 +103,9 @@ transforms:
         ['/\b(?:pull request|PR)\s*(?:(?:number|nr|no|hash)\s+)?#?(\d+)\b/']
 ```
 
-*"merged P R one two three, ready to ship"* → *"merged **#123**, ready to
-ship"*, where #123 links straight to the pull request.
+> *"merged P R one two three, ready to ship"* → *"merged **#123**, ready to ship"*, where #123 links straight to the pull request.
 
-The rule writes a Markdown link and the paste turns it into a real one — see
-[bullets, bold and links](docs/configuration.md#bullets-bold-and-links). The
-spoken digits are already `123` by then: the shipped `numbers_en` transform turned
-"one two three" into it first.
-
-![Dictating "merged P R one two three, ready to ship" and the github_refs rule
-turning PR123 into a clickable #123 that points at
-github.com/znat/parrotflow/pull/123](Resources/refs.gif)
+<br>
 
 **Example: Automatically add Slack handles.**
 
@@ -99,6 +115,7 @@ transforms:
     description: use Slack handles for the people named
     command: slack_handles.py
 ```
+
 Where `slack_handles.py` is:
 
 ```python
@@ -116,8 +133,8 @@ for name, handle in roster.items():
 
 sys.stdout.write(text)
 ```
-![Dictating "Ada and Mark are both on it", and the slack_handles script turning
-the names into "@ada.lovelace and @mark.reyes"](Resources/handles.gif)
+
+<br>
 
 **Combine transforms in a pipeline**
 
@@ -129,15 +146,12 @@ transcription:
     - transform: slack_handles
 ```
 
-![Dictating "merged P R one two three, Ada can you take a look", and the
-github_refs and slack_handles rules turning it into "merged #123,
-@ada.lovelace can you take a look"](Resources/rules.gif)
-
 <br>
 
-### Use language models only when they're needed
+## Use language models only when they're needed
 
-Add models to your config:
+You can use LLMs for prompt transforms, for example fixing grammar, formatting your dictation as an email, bulletizing an enumeration, anything.
+> Note: An LLM is not required to benefit from all the features above.
 
 ```yaml
 models:
@@ -150,8 +164,11 @@ models:
     model: gpt-5.6-luna
 ```
 
-**A small local model**, like Gemma, does quick, solid rewrites on your Mac:
-grammar, tone, structure.
+<br>
+
+**A small local model** does quick, solid rewrites on your Mac: grammar, tone,
+structure. Gemma through [Ollama](https://ollama.com/download) is the one this
+example names.
 
 ```yaml
 transforms:
@@ -160,17 +177,12 @@ transforms:
     model: gemma       # stays on your Mac
     offer: true        # put a chip on the pill after every dictation
     key: g             # press G to run it
+    say: [Fix grammar] # Hold the hotkey, say "Fix grammar"
     prompt: Fix grammar and punctuation...
 ```
 
-Say *"hey parrot, fix the grammar"*, or press `G` on the pill after any
-dictation.
-
-![Dictating into Slack: the pill shows the Slack icon, the grammar step runs,
-and "the panel dont show up sometimes" becomes "The panel doesn't show up
-sometimes."](Resources/grammar.gif)
-
-
+> See [examples/transforms/grammar](examples/transforms/grammar) for a more elaborate version.
+<br>
 Or you can run the grammar fix in chat and mail apps (but not in coding agents, for instance) for all dictations:
 
 ```yaml
@@ -180,61 +192,15 @@ transcription:
       app: /slack|outlook/    # Grammar only checked in Slack and Outlook
 ```
 
-> See [examples/transforms/grammar](examples/transforms/grammar) for a more elaborate version.
-
-**A remote model** for harder jobs. A spoken correction
-needs judgment a fixed rule or a too small local model does not have.
-
-```yaml
-transforms:
-  - name: self_correction
-    description: correct me — drop what I said by mistake and keep what I meant
-    model: gpt
-    offer: true       # put a chip on the pill
-    key: s            # press S to run it
-    prompt: |
-      The speaker corrected themselves out loud. Keep only what they meant
-      to say. Return only the corrected text.
-```
-
-Say *"hey parrot, correct me"*, or press `S` on the pill after any
-dictation.
-
-![Dictating "let's ship Friday, no wait, Thursday", then pressing S on the pill
-to get "let's ship Thursday"](Resources/self-correct.gif)
-
-<br>
-
-### Vocabulary
-
-Colleagues' names, internal jargon, acronyms, vendor names — the words a
-general speech model has never heard. Correct it a few times and it stays fixed.
-
-Press `V` on the pill after any dictation and say what the word should be.
-
-![Teaching the app that Versailles means Vercel, then dictating a sentence
-with Versailles twice: one becomes Vercel, the castle is left
-alone](Resources/vocabulary.gif)
-
-
-The stage reads the sentence before it writes a name: there is no Vercel
-Castle, and Versailles won't deploy your apps. It does that without a model —
-two word lists, the part of speech the slot wants, and two tests that compare
-the sentence with the ones the term was confirmed in.
-
-```yaml
-transcription:
-  pipeline:
-    - vocabulary
-    - transform: dates_en
-    - transform: numbers_en
-```
+You can define very granular conditions for pipeline stages — on the text so
+far, on the app being dictated into, or on your own variables. See
+[Conditions](docs/pipelines.md#conditions) and [Apps](docs/pipelines.md#apps).
 
 ### More examples
 
 Each with its own test cases, in [examples/transforms](examples/transforms).
-`numbers`, `dates` and `disfluency` are in the pipeline a new install gets; the
-rest ship with no step — see [What ships
+`fillers`, `dates`, `numbers` and `disfluency` are in the pipeline a new install
+gets; the rest ship with no step — see [What ships
 unwired](docs/pipelines.md#what-ships-unwired).
 
 - [numbers](examples/transforms/numbers) — spoken numbers as digits, one
@@ -253,7 +219,7 @@ unwired](docs/pipelines.md#what-ships-unwired).
 [Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md) ·
 [Where the time goes](docs/architecture.md#where-the-time-goes)
 
----
+<br>
 
 ## Documentation
 
@@ -274,7 +240,8 @@ Questions that are not bugs go to
 
 ## License
 
-[Apache 2.0](LICENSE).
+[GPL-3.0](LICENSE). Use it, change it, share it. If you ship something built on
+this code, that has to be under the GPL too.
 
 The parrot is by Md Moniruzzaman, from the [Noun
 Project](https://thenounproject.com), used under CC BY. The outline is his; the

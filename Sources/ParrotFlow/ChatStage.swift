@@ -299,6 +299,10 @@ struct ChatComposer: View {
     var caret: (line: Int, run: Int)?
     /// The pointer is down on *Send*.
     var sending = false
+    /// Which runs of the line say where they are, so a screen can dim round
+    /// them. Indexes into the first line, which is the only line either tour
+    /// dictates into. See `TourSpot`.
+    var lit: Set<Int> = []
 
     var body: some View {
         ChatComposerFrame(sending: sending) { text }
@@ -312,6 +316,10 @@ struct ChatComposer: View {
                     ForEach(Array(runs.enumerated()), id: \.offset) { index, run in
                         if caret?.line == number, caret?.run == index { caretMark }
                         piece(run)
+                            .anchorPreference(key: TourSpot.self, value: .bounds) {
+                                number == 0 && lit.contains(index)
+                                    ? [.init(box: $0, soft: true)] : []
+                            }
                     }
                     if caret?.line == number, caret?.run == runs.count { caretMark }
                     Spacer(minLength: 0)
@@ -445,6 +453,11 @@ struct ChatStage<Channel: View>: View {
     var room: CGFloat = Chat.tabHeight + Chat.tabGap
     /// The callout that is up, if any.
     var anchor: ChatAnchor?
+    /// What says where it is, so a screen can dim round it: runs of the line,
+    /// the surface, the callout. See `TourSpot`.
+    var lit: Set<Int> = []
+    var litSurface = false
+    var litCallout = false
     @ViewBuilder var channel: Channel
 
     var body: some View {
@@ -452,7 +465,7 @@ struct ChatStage<Channel: View>: View {
             channel
                 .frame(height: channelHeight, alignment: .bottom)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            ChatComposer(lines: lines, caret: caret, sending: sending)
+            ChatComposer(lines: lines, caret: caret, sending: sending, lit: lit)
             pillRoom
         }
         .overlay { GeometryReader { proxy in bubble(in: proxy.size) } }
@@ -533,6 +546,12 @@ struct ChatStage<Channel: View>: View {
                 }
             }
             .frame(width: width, height: Chat.calloutHeight)
+            // Soft, unlike the surface: this box is the bubble plus its tail
+            // and the few points under it, so a hard edge on it would draw a
+            // rectangle a little below a triangle.
+            .anchorPreference(key: TourSpot.self, value: .bounds) {
+                litCallout ? [.init(box: $0, soft: true)] : []
+            }
             .position(
                 x: centre,
                 y: under
@@ -602,7 +621,7 @@ struct ChatStage<Channel: View>: View {
             if let state = pill {
                 TourPill(
                     state: state, level: level, clicked: clicked,
-                    reserved: reserved, sheen: shimmer
+                    reserved: reserved, sheen: shimmer, lit: litSurface
                 )
                 // Every state hangs from the same corner: the surface's own
                 // margin, not the widest one's. The offer is drawn with the

@@ -159,6 +159,11 @@ enum AppVariant {
             credits.append(entry)
         }
 
+        // The app's own terms first. This panel names what everything else is
+        // under, and left ParrotFlow itself off.
+        line("GPL-3.0", size: 10, dim: true)
+        credits.append(NSAttributedString(string: "\n"))
+
         line("BUILT WITH", size: 9, bold: true, dim: true)
         item("Parakeet TDT 0.6B v3", "speech recognition · CC BY 4.0")
         item("Silero VAD", "finds where speech is · MIT")

@@ -218,3 +218,49 @@ cases:
   - probe: not_a_time_en
     lang: en
     input: "I am at 10am every day this week"
+  # --- time_en_glued ---
+  # The decoder normalises some spoken times itself: "are you available at ten
+  # thirty" arrives as the single token `1030`, so the spoken rules never see
+  # the words. Cue plus non-zero minutes is what separates a clock from a count.
+  - probe: time_en_glued
+    lang: en
+    input: "are you available at 1030?"
+    expect: "are you available at 10:30?"
+  - probe: time_en_glued
+    lang: en
+    input: "let's meet at 945"
+    expect: "let's meet at 9:45"
+  - probe: time_en_glued
+    lang: en
+    input: "standup by 815 am"
+    expect: "standup by 8:15 am"
+  - probe: time_en_glued
+    lang: en
+    input: "the retro is around 1145"
+    expect: "the retro is around 11:45"
+  - probe: time_en_glued
+    lang: en
+    input: "the call is at 1000 am"
+    expect: "the call is at 10:00 am"
+  # --- not_a_time_en ---
+  - probe: not_a_time_en
+    lang: en
+    input: "the animation should take 300 milliseconds"
+  - probe: not_a_time_en
+    lang: en
+    input: "it lands at 1030 dollars"
+  - probe: not_a_time_en
+    lang: en
+    input: "the bar is at 100% and stops"
+  - probe: not_a_time_en
+    lang: en
+    input: "about 1000 of them answered"
+  - probe: not_a_time_en
+    lang: en
+    input: "the abbey was built in 1030"
+  - probe: not_a_time_en
+    lang: en
+    input: "the metronome sits at 1030 bpm"
+  - probe: not_a_time_en
+    lang: en
+    input: "the div shows 127 additions while you mention 1984"

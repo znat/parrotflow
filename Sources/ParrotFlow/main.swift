@@ -38,6 +38,58 @@ if arguments.contains("--seed-config") {
     exit(SeedConfigCommand.run())
 }
 
+// Above the config, and not only because they do not read it: these three draw
+// surfaces into PNGs and nothing else. The release build's config directory is
+// the one somebody works in, and `load` creates what is missing — a command
+// that only wants a picture must not seed it, refresh it, or take a shipped
+// example out of it.
+if let index = arguments.firstIndex(of: "--panel-sheet") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --panel-sheet <out.png>")
+        exit(2)
+    }
+    exit(PanelsCommand.sheet(to: arguments[index + 1]))
+}
+
+if let index = arguments.firstIndex(of: "--tutorial-sheet") {
+    let usage = "usage: ParrotFlow --tutorial-sheet <out.png>"
+        + " [names|slack|hack|downloads|ready|walk]"
+    guard arguments.indices.contains(index + 1) else {
+        print(usage)
+        exit(2)
+    }
+    let stage = arguments.indices.contains(index + 2) ? arguments[index + 2] : "names"
+    guard stage == "walk" || TourScreen(rawValue: stage) != nil else {
+        print(usage)
+        exit(2)
+    }
+    exit(PanelsCommand.tutorialSheet(to: arguments[index + 1], stage: stage))
+}
+
+if let index = arguments.firstIndex(of: "--tour-film") {
+    let usage = "usage: ParrotFlow --tour-film <dir> <names,slack,hack[:pages],downloads>"
+        + " [fps] [speed]"
+    guard arguments.indices.contains(index + 2) else {
+        print(usage)
+        exit(2)
+    }
+    let names = arguments[index + 2].split(separator: ",").map(String.init)
+    let screens = names.compactMap(PanelsCommand.Reel.init)
+    guard screens.count == names.count, !screens.isEmpty else {
+        print(usage)
+        exit(2)
+    }
+    let fps = arguments.indices.contains(index + 3)
+        ? Double(arguments[index + 3]) ?? 15 : 15
+    let speed = arguments.indices.contains(index + 4)
+        ? Double(arguments[index + 4]) ?? 1 : 1
+    exit(
+        PanelsCommand.tourFilm(
+            to: arguments[index + 1], screens: screens, fps: fps, speed: speed
+        )
+    )
+}
+
 // Where `trace.jsonl` goes, for every command below that writes one. The app
 // sets this again from `applyConfig`, which is the copy that follows a live
 // edit of `output_dir`; this is only so a terminal command has somewhere to
@@ -833,29 +885,6 @@ if let index = arguments.firstIndex(of: "--phonemes") {
     let language = languageList(arguments)?.first ?? "en"
     let code = await SoundBenchCommand.run(words, language: language)
     exit(code)
-}
-
-if let index = arguments.firstIndex(of: "--panel-sheet") {
-    guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --panel-sheet <out.png>")
-        exit(2)
-    }
-    exit(PanelsCommand.sheet(to: arguments[index + 1]))
-}
-
-if let index = arguments.firstIndex(of: "--tutorial-sheet") {
-    let usage = "usage: ParrotFlow --tutorial-sheet <out.png>"
-        + " [names|slack|hack|downloads|ready|walk]"
-    guard arguments.indices.contains(index + 1) else {
-        print(usage)
-        exit(2)
-    }
-    let stage = arguments.indices.contains(index + 2) ? arguments[index + 2] : "names"
-    guard stage == "walk" || TourScreen(rawValue: stage) != nil else {
-        print(usage)
-        exit(2)
-    }
-    exit(PanelsCommand.tutorialSheet(to: arguments[index + 1], stage: stage))
 }
 
 if let index = arguments.firstIndex(of: "--panels") {
