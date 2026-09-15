@@ -10,7 +10,10 @@
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
 ![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-0c8c7c)
 
-**[Install](#install)** · [Documentation](docs/README.md)
+
+<pre>brew install znat/tap/parrotflow</pre>
+
+
 
 <img src="Resources/hero.webp" width="640" alt="Four dictations into one field.
 Mick is corrected to Mik and the app offers to remember it, then Mik to Mick;
@@ -20,23 +23,32 @@ two config.yaml rules that did it.">
 
 </div>
 
-<div align="center">
+> [!HINT] PR links and Slack mentions are not features, they are exensions configured in `yaml`!
+You can hack them or add more in minutes with your coding agents! Those are built-in:
+\
+🔇 **Hesitations, repeats and false starts** — `um` and `uh`, a word said twice, a phrase begun again.
+*"so uh in the ter in the terminal run the the tests"* → *"so in the terminal run the tests"*
+\
+🔢 **Numbers, dates and times** — written as digits, English and French.
+*"March third at quarter past nine"* → *"March 3 at 9:15"* &nbsp;·&nbsp; *"two hundred forty three tests, ninety seven percent"* → *"243 tests, 97%"*
 
-<pre>brew install znat/tap/parrotflow</pre>
 
-</div>
 
 ---
 
-<div align="center">
+## Truly local, truly extensible
 
-Most *local* dictation apps simply wrap Parakeet or Whisper (ASRs) in a prompt<br>that sends your text to the cloud to repair the ASR output.
+**ParrotFlow uses very small models**, such as mmBERT, the Qwen3 0.6B family and spaCy, to understand what you mean, use your vocabulary in context, correct hesitations and repair raw ASR output without relying on a powerful LLM to rewrite what you said:
 
-**ParrotFlow uses the language properties of very small models**, such as mmBERT,<br>the Qwen3 0.6B family and spaCy, to apply your custom vocabulary terms<br>in context, correct hesitations and repair raw ASR output.
+📖 **Vocabulary** — your terms, applied in context.
+*"Marc reviewed the PR"* writes **Marc** &nbsp;·&nbsp; *"mark it as done"* is left alone
+
+✂️ **Sentence repair** — a pause makes the recogniser (Parakeet) end the sentence early. This reads the boundary and removes the mark.
+*"I ran the tests on. Both branches"* → *"I ran the tests on both branches"*
 
 </div>
 
-<br>
+
 
 <div align="center">
 
@@ -57,40 +69,12 @@ Most *local* dictation apps simply wrap Parakeet or Whisper (ASRs) in a prompt<b
 
 </div>
 
-<br>
-
-<div align="center">
-
-### Built in
-
-Every dictation runs these steps. They are lines in `config.yaml`.<br>Turn one off, reorder the pipeline, or test a step against its own case file.
-
-</div>
-
-📖 **Vocabulary** — your terms, applied in context.
-*"Marc reviewed the PR"* writes **Marc** &nbsp;·&nbsp; *"mark it as done"* is left alone
-
-🔇 **Hesitations, repeats and false starts** — `um` and `uh`, a word said twice, a phrase begun again.
-*"so uh in the ter in the terminal run the the tests"* → *"so in the terminal run the tests"*
-
-🔢 **Numbers, dates and times** — written as digits, English and French.
-*"March third at quarter past nine"* → *"March 3 at 9:15"* &nbsp;·&nbsp; *"two hundred forty three tests, ninety seven percent"* → *"243 tests, 97%"*
-
-✂️ **Sentence repair** — a pause makes the recogniser end the sentence early. This reads the boundary and removes the mark.
-*"I ran the tests on. Both branches"* → *"I ran the tests on both branches"*
-
-Everything lives in one config folder — a `config.yaml` and your own scripts,
-easy to hack with your coding agent.
-
-> To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
-
 ---
 
 
 ## Install
 
-ParrotFlow needs Apple silicon and macOS 15+. It uses about 3 GB of disk
-and 1 GB of memory.
+ParrotFlow needs Apple silicon and macOS 15+. It uses about 3 GB of disk and 1 GB of memory.
 
 ```sh
 brew install znat/tap/parrotflow
