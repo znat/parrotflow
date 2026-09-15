@@ -102,9 +102,8 @@ inside, so it can be written, scored and handed to someone else as one thing:
         join.py
         cases.yaml
     slack_mentions/          # yours; slack_mentions.py is written once
-      slack_mentions.py      # on first launch and never touched again
-      cases.yaml
-      roster.json            # data the transform owns
+      slack_mentions.py      # on first launch and never touched again;
+      cases.yaml             # the roster of names and handles is inside it
 ```
 
 That folder is both where the transform's files are looked for **and the
@@ -260,7 +259,7 @@ screen against the chance that you want it — you ask for it again.
 the field, with the chips under them and one line under those:
 
     Edit  ▏things that turned out not to matter▕
-       V Vocabulary    F Fix grammar    S Terse
+       F Fix grammar    S Terse
         or hold ⌥ and say what to change
 
 Shown rather than described. The doubt is never whether there is a selection —

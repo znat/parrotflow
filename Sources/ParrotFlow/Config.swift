@@ -3568,11 +3568,18 @@ enum ConfigStore {
         for seeded in seededTransformFiles {
             let destination = directory.appendingPathComponent(seeded.relative)
             guard !fm.fileExists(atPath: destination.path) else { continue }
-            try fm.createDirectory(
-                at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fm.copyItem(at: seeded.source, to: destination)
-            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination.path)
-            Log.write("config: wrote \(seeded.relative)")
+            do {
+                try fm.createDirectory(
+                    at: destination.deletingLastPathComponent(),
+                    withIntermediateDirectories: true)
+                try fm.copyItem(at: seeded.source, to: destination)
+                try fm.setAttributes(
+                    [.posixPermissions: 0o755], ofItemAtPath: destination.path)
+                Log.write("config: wrote \(seeded.relative)")
+            } catch {
+                Log.write("config: could not write \(seeded.relative):"
+                    + " \(error.localizedDescription)")
+            }
         }
 
         guard !fm.fileExists(atPath: fileURL.path) else { return }

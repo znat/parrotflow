@@ -508,18 +508,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// decide, and `offerSeconds` was over first. It folds rather than goes.
     static let learnSeconds: TimeInterval = 30
 
-    /// What the offer offers: Correct, then every transform that asked for a
-    /// place on it with `offer: true`.
-    ///
-    /// Vocabulary is first and is not a transform. It is the one command that
-    /// is about the words rather than about rewriting them, it needs no model,
-    /// and it cannot fail.
+    /// What the offer offers: every transform that asked for a place on it
+    /// with `offer: true`. The vocabulary panel is reached by voice, not by a
+    /// chip.
     ///
     /// Read fresh each time rather than stored, so a config reloaded between
     /// two dictations changes what the next offer says.
-    ///
-    /// Only transforms. The vocabulary panel is reached by voice, not by a
-    /// chip.
     private func offerCommands() -> [OfferedCommand] {
         config.transforms.filter(\.offer).map {
             OfferedCommand(title: $0.name, key: $0.offerKey)

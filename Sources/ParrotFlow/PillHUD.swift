@@ -630,6 +630,13 @@ final class PillHUD {
             pendingDismiss?.cancel(); pendingDismiss = nil
             alertLeft = max(0, ends.timeIntervalSinceNow)
             alertEndsAt = nil
+            // SwiftUI's onHover can miss the exit. Ask the pointer instead.
+            alertClock = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) {
+                [weak self] timer in
+                guard let self, self.alertEndsAt == nil, case .alert = self.model.state
+                else { timer.invalidate(); return }
+                if !self.pointerIsOver { self.alertHovering(false) }
+            }
         } else {
             guard alertEndsAt == nil else { return }
             startAlertClock(from: alertLeft)

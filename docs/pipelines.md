@@ -909,26 +909,22 @@ see *An instruction inside a dictation* below.
 What both produce is text in your composer. ParrotFlow never sends a message,
 so the last look before anyone is notified is yours.
 
-**The mapping lives in the prompt**, which is the opposite of the rule
-everywhere else here, and it was tried the other way round. The tables are
-worth reading about because of what they cost, not because they failed:
+**The mapping lives in the script.** `transforms/slack_mentions/slack_mentions.py`
+holds a `ROSTER` of names to handles, written once on first launch and yours
+after that. With an empty roster the S chip opens the folder and the pill says
+`open slack_mentions.py to set up Slack mentions`. A name is matched whole and
+case-sensitive, so "mark it as done" is not Mark, and a name already written as
+a handle is left alone. Nothing runs but a lookup, so it cannot invent a handle.
 
-```yaml
-- name: slack_mentions
-  replace:
-    '@marie.dupont': ['/\bmention(?:ne)? marie\b/']
-```
+It was a prompt before that, and a `replace:` table before the prompt. The
+prompt's first draft answered "the config file is here, Sofia already looked at
+it" with "…@priya already looked at it" — a handle made up for a name it had
+never been given, which in Slack is a message sent to the wrong person. The
+lookup reached **7/7** on the same cases, for free, with nothing running.
 
-A table cannot invent. This prompt's first draft answered "the config file is
-here, Sofia already looked at it" with "…@priya already looked at it" — a handle
-made up for a name it had never been given, which in Slack is a message sent to
-the wrong person — and it took four rewrites and three load-bearing sentences to
-reach 6/6. The tables reached **7/7** on the same cases, for free, with nothing
-running. On the mapping alone the table wins outright.
-
-**What it lost on was the trigger.** A table has to fire from inside the
-sentence, and the only natural word for it is one English already uses as a
-verb:
+**Why the table lost was the trigger.** A `replace:` rule has to fire from
+inside the sentence, and the only natural word for it is one English already
+uses as a verb:
 
 ```
 "I should mention here that the deadline changed"
@@ -938,15 +934,11 @@ verb:
 ```
 
 Anchoring the marker to the start of an utterance or to a `.` `!` `?` `;` or
-comma fixed those — **11/11**, five prose sentences that must not ping and six
-deliberate forms that must — at the price of "can you mention marie about the
-invoice" doing nothing at all. But a pipeline stage has **no preview**: it runs
-on a transcript nobody has seen yet, so `confirm` does not reach it and a false
-positive is a message that has already gone.
-
-Asking out loud has no such failure. It fires when you ask and never otherwise,
-which is worth a second and a prompt that had to be taught not to guess. The
-table is the better mapping; the voice command is the better trigger, and the
+comma fixed those — **11/11** — at the price of "can you mention marie about the
+invoice" doing nothing at all. And a pipeline stage has **no preview**: it runs
+on a transcript nobody has seen yet, so a false positive is a message that has
+already gone. Asking out loud, or pressing the chip, fires when you ask and
+never otherwise. The lookup is the mapping; the ask is the trigger, and the
 trigger is where the expensive mistakes live.
 
 **One thing is still open, and it decides whether any of this is worth having.**
