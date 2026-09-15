@@ -10,9 +10,7 @@
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
 ![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-0c8c7c)
 
-
-<pre>brew install znat/tap/parrotflow</pre>
-
+**[Install](#install)** · [Documentation](docs/README.md)
 
 
 <img src="Resources/hero.webp" width="500" alt="Four dictations into one field.
@@ -26,14 +24,14 @@ two config.yaml rules that did it.">
 > [!TIP]
 > PR links and Slack mentions are NOT features, they are extensions configured in `yaml`!
 > You can hack them and add more in minutes with your coding agent!
-
-Some built-in extensions you can use and play with:
-
-🔇 **Hesitations, repeats and false starts** — `um` and `uh`, a word said twice, a phrase begun again.
-*"so uh in the ter in the terminal run the the tests"* → *"so in the terminal run the tests"*
-
-🔢 **Numbers, dates and times** — written as digits, English and French.
-*"March third at quarter past nine"* → *"March 3 at 9:15"* &nbsp;·&nbsp; *"two hundred forty three tests, ninety seven percent"* → *"243 tests, 97%"*
+>
+> Some built-in extensions you can use and play with:
+>
+> 🔇 **Hesitations, repeats and false starts** — `um` and `uh`, a word said twice, a phrase begun again.
+> *"so uh in the ter in the terminal run the the tests"* → *"so in the terminal run the tests"*
+>
+> 🔢 **Numbers, dates and times** — written as digits, English and French.
+> *"March third at quarter past nine"* → *"March 3 at 9:15"* &nbsp;·&nbsp; *"two hundred forty three tests, ninety seven percent"* → *"243 tests, 97%"*
 
 
 
@@ -41,7 +39,7 @@ Some built-in extensions you can use and play with:
 
 ## Truly local and extensible
 
-**ParrotFlow uses very small models**, such as mmBERT, the Qwen3 0.6B family and spaCy, to understand what you mean, use your vocabulary in context, correct hesitations and repair raw ASR output without relying on a powerful LLM to rewrite what you said:
+**ParrotFlow uses very small models**, such as mmBERT, the Qwen3 0.6B family and spaCy, to understand what you mean, use your vocabulary in context, correct hesitations and repair raw ASR output without relying on a powerful LLM to rewrite what you said.
 
 
 <table>
