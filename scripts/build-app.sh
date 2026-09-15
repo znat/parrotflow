@@ -28,15 +28,20 @@ APP="$ROOT/.build/$APP_NAME.app"
 # classic one drops them without a word, which is how v0.12.0 was packaged
 # without its shaders. Both lines need it — `--show-bin-path` answers for the
 # engine it is asked about, and the two engines write to different directories.
-SWIFT_BUILD=(swift build --package-path "$ROOT" -c "$CONFIGURATION" --build-system swiftbuild)
-
+#
 # swiftbuild builds every architecture the SDK calls standard, and on the
 # macOS 26 SDK that is arm64 and x86_64. The app is arm64: MLX and Parakeet
 # need Apple Silicon, and `Float(Float16)` in SlotProbe.swift does not compile
-# for x86_64 at all. Newer SDKs drop x86_64 from the standard set, so this is
-# only ever wrong on an older one.
-export ARCHS=arm64
-export ONLY_ACTIVE_ARCH=YES
+# for x86_64 at all. Newer SDKs drop x86_64 from the standard set, so a
+# developer Mac never sees this and CI did.
+#
+# `--triple` and not `ARCHS`: both that and `ONLY_ACTIVE_ARCH` were set as
+# environment variables on a CI run and ignored, because SwiftPM writes its own
+# and wins. There is no `--arch` option.
+SWIFT_BUILD=(
+    swift build --package-path "$ROOT" -c "$CONFIGURATION"
+    --build-system swiftbuild --triple arm64-apple-macosx
+)
 
 echo "==> Building $DISPLAY_NAME ($CONFIGURATION)"
 "${SWIFT_BUILD[@]}"
