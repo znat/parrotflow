@@ -471,12 +471,17 @@ enum PanelsCommand {
         // the canvas has to hold the tallest of them, and a screen grows while
         // it plays. Strictly under the end — a run wraps with a remainder at its
         // total, so the frame at exactly the length is frame 0 again.
-        var moments: [(screen: TourScreen, at: TimeInterval)] = []
-        for reel in screens {
+        var moments: [(reel: Int, screen: TourScreen, at: TimeInterval)] = []
+        for (index, reel) in screens.enumerated() {
             var t: TimeInterval = 0
             while t < reel.end {
-                moments.append((reel.screen, t))
-                t += pace(reel.screen, at: t, top: speed) / fps
+                // A step that cannot move the clock, which `isFinite` does not
+                // catch: `1e-100 / 1e308` is exactly zero, and the loop then
+                // fills memory with one moment over and over.
+                let next = t + pace(reel.screen, at: t, top: speed) / fps
+                guard next > t else { return 2 }
+                moments.append((index, reel.screen, t))
+                t = next
             }
         }
 
@@ -531,8 +536,11 @@ enum PanelsCommand {
             guard ok else { return 1 }
         }
 
-        for reel in screens {
-            let count = moments.filter { $0.screen == reel.screen }.count
+        // Counted by reel and not by screen: `names,names` is two reels of one
+        // screen, and counting the screen gives each line the other's frames
+        // as well.
+        for (index, reel) in screens.enumerated() {
+            let count = moments.filter { $0.reel == index }.count
             print(
                 "\(reel.name): \(count) frames"
                     + " · \(String(format: "%.1f", reel.end))s of tour"
