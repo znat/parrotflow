@@ -4,7 +4,7 @@
 
 # ParrotFlow
 
-## Local and extensible dictation you can shape around your work
+## Local and extensible dictation for MacOS you can shape with rules, code and prompts
 
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
@@ -12,7 +12,7 @@
 
 **[Install](#install)** · [Documentation](docs/README.md)
 
-<img src="Resources/hero.webp" width="680" alt="Four dictations into one field.
+<img src="Resources/hero.webp" width="640" alt="Four dictations into one field.
 Mick is corrected to Mik and the app offers to remember it, then Mik to Mick;
 the last two sentences name both people and both are written right. Then one
 Slack message: PR 478 arrives as a link, and Siobhan becomes @Sio. Then the
@@ -45,11 +45,11 @@ Most *local* dictation apps simply wrap Parakeet or Whisper (ASRs) in a prompt<b
 <tr><th></th><th>ParrotFlow</th><th>Local<sup>1</sup></th><th>Cloud<sup>2</sup></th></tr>
 </thead>
 <tbody>
-<tr><td>🔒 Truly local</td><td align="center">✅</td><td align="center">✅</td><td align="center">❌</td></tr>
-<tr><td>✍️ Keeps your wording<sup>3</sup> (doesn't rewrite with an LLM)</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
-<tr><td>📖 Understands how to use your vocabulary in context</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
-<tr><td>🧩 Extensible with your own rules and scripts</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
-<tr><td>🔑 No cloud key for any built-in step</td><td align="center">✅</td><td align="center">❌<sup>4</sup></td><td align="center">❌</td></tr>
+<tr><td>🔒 <b>Truly local</b></td><td align="center">✅</td><td align="center">✅</td><td align="center">❌</td></tr>
+<tr><td>✍️ <b>Keeps your wording</b><sup>3</sup> — no LLM rewrites it</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
+<tr><td>📖 <b>Knows your vocabulary</b> — and where it belongs</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
+<tr><td>🧩 <b>Extensible</b> — your own rules, prompts and scripts</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
+<tr><td>🔑 <b>No cloud key</b> — for any built-in step</td><td align="center">✅</td><td align="center">❌<sup>4</sup></td><td align="center">❌</td></tr>
 </tbody>
 </table>
 
@@ -65,26 +65,19 @@ Most *local* dictation apps simply wrap Parakeet or Whisper (ASRs) in a prompt<b
 
 Every dictation runs these steps. They are lines in `config.yaml`.<br>Turn one off, reorder the pipeline, or test a step against its own case file.
 
-<table align="center">
-<tr>
-<td align="center">📖</td><td><b>Vocabulary</b></td>
-<td>Your terms, applied in context.<br><i>"Marc reviewed the PR"</i> writes <b>Marc</b> &nbsp;·&nbsp; <i>"mark it as done"</i> is left alone</td>
-</tr>
-<tr>
-<td align="center">🔇</td><td><b>Hesitations, repeats<br>and false starts</b></td>
-<td><code>um</code> and <code>uh</code>, a word said twice, a phrase begun again.<br><i>"so uh in the ter in the terminal run the the tests"</i><br>→ <i>"so in the terminal run the tests"</i></td>
-</tr>
-<tr>
-<td align="center">🔢</td><td><b>Numbers, dates<br>and times</b></td>
-<td>Written as digits, English and French.<br><i>"March third at quarter past nine"</i> → <i>"March 3 at 9:15"</i><br><i>"two hundred forty three tests, ninety seven percent"</i> → <i>"243 tests, 97%"</i></td>
-</tr>
-<tr>
-<td align="center">✂️</td><td><b>Sentence repair</b></td>
-<td>A pause makes the recogniser end the sentence early.<br>This reads the boundary and removes the mark.<br><i>"I ran the tests on. Both branches"</i> → <i>"I ran the tests on both branches"</i></td>
-</tr>
-</table>
-
 </div>
+
+📖 **Vocabulary** — your terms, applied in context.
+*"Marc reviewed the PR"* writes **Marc** &nbsp;·&nbsp; *"mark it as done"* is left alone
+
+🔇 **Hesitations, repeats and false starts** — `um` and `uh`, a word said twice, a phrase begun again.
+*"so uh in the ter in the terminal run the the tests"* → *"so in the terminal run the tests"*
+
+🔢 **Numbers, dates and times** — written as digits, English and French.
+*"March third at quarter past nine"* → *"March 3 at 9:15"* &nbsp;·&nbsp; *"two hundred forty three tests, ninety seven percent"* → *"243 tests, 97%"*
+
+✂️ **Sentence repair** — a pause makes the recogniser end the sentence early. This reads the boundary and removes the mark.
+*"I ran the tests on. Both branches"* → *"I ran the tests on both branches"*
 
 Everything lives in one config folder — a `config.yaml` and your own scripts,
 easy to hack with your coding agent.
