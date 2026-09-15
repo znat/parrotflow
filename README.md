@@ -22,20 +22,20 @@ two config.yaml rules that did it.">
 </div>
 
 > [!TIP]
-> PR links and Slack mentions are NOT features — they are extensions configured in `yaml`!
-> You can hack them and add more in minutes with your coding agent!
+>   PR links and Slack mentions are NOT features — they are extensions configured in `yaml`!
+>   You can hack them and add more in minutes with your coding agent!
 >
-> Some built-in extensions you can use and play with:
+>   Some built-in extensions you can use and play with:
 >
-> 🔇 **Hesitations, repeats and false starts** — `um` and `uh`, a word said twice, a phrase begun again.
-> *"so uh in the ter in the terminal run the the tests"* → *"so in the terminal run the tests"*
+>   🔇 **Hesitations, repeats and false starts** — `um` and `uh`, a word said twice, a phrase begun again.
+>   *"so uh in the ter in the terminal run the the tests"* → *"so in the terminal run the tests"*
 >
-> 🔢 **Numbers, dates and times** — written as digits, English and French.
-> *"March third at quarter past nine"* → *"March 3 at 9:15"* &nbsp;·&nbsp; *"two hundred forty three tests, ninety seven percent"* → *"243 tests, 97%"*
+>   🔢 **Numbers, dates and times** — written as digits, English and French.
+>   *"March third at quarter past nine"* → *"March 3 at 9:15"* &nbsp;·&nbsp; *"two hundred forty three tests, ninety seven percent"* → *"243 tests, 97%"*
 
 
 
----
+<br>
 
 ## Truly local and extensible
 
@@ -57,7 +57,7 @@ two config.yaml rules that did it.">
 
 <sub><sup>1</sup> Handy, VoiceInk, MacWhisper, FluidVoice. &nbsp;<sup>2</sup> Wispr Flow, Aqua, Willow. &nbsp;<sup>3</sup> Built-in steps never rewrite. A prompt step that does is yours to add. &nbsp;<sup>4</sup> FluidVoice bundles a local rewrite model.</sub>
 
-
+<br>
 
 ## Install
 
@@ -80,17 +80,17 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 
 </details>
 
+<br>
 
----
-
-
-### Extend with rules, prompts and scripts
+## Extend with rules, prompts and scripts
 
 > [!TIP]
 > These examples show how the demo features are made.
 
 What makes ParrotFlow truly unique is that you can fully customize it with regular expressions, prompts or scripts.
 All you have to do is point your coding agent to your `config.yaml` file and ask what you need.
+
+<br>
 
 **Example: add PR links to your dictations**
 
@@ -103,14 +103,9 @@ transforms:
         ['/\b(?:pull request|PR)\s*(?:(?:number|nr|no|hash)\s+)?#?(\d+)\b/']
 ```
 
-*"merged P R one two three, ready to ship"* → *"merged **#123**, ready to
-ship"*, where #123 links straight to the pull request.
+> *"merged P R one two three, ready to ship"* → *"merged **#123**, ready to ship"*, where #123 links straight to the pull request.
 
-The rule writes a Markdown link and the paste turns it into a real one — see
-[bullets, bold and links](docs/configuration.md#bullets-bold-and-links). The
-spoken digits are already `123` by then: the shipped `numbers_en` transform turned
-"one two three" into it first.
-
+<br>
 
 **Example: Automatically add Slack handles.**
 
@@ -120,6 +115,7 @@ transforms:
     description: use Slack handles for the people named
     command: slack_handles.py
 ```
+
 Where `slack_handles.py` is:
 
 ```python
@@ -138,6 +134,8 @@ for name, handle in roster.items():
 sys.stdout.write(text)
 ```
 
+<br>
+
 **Combine transforms in a pipeline**
 
 ```yaml
@@ -150,7 +148,7 @@ transcription:
 
 <br>
 
-### Use language models only when they're needed
+## Use language models only when they're needed
 
 You can use LLMs for prompt transforms, for example fixing grammar, formatting your dictation as an email, bulletizing an enumeration, anything.
 > Note: An LLM is not required to benefit from all the features above.
@@ -165,6 +163,8 @@ models:
     api: openai
     model: gpt-5.6-luna
 ```
+
+<br>
 
 **A small local model** does quick, solid rewrites on your Mac: grammar, tone,
 structure. Gemma through [Ollama](https://ollama.com/download) is the one this
@@ -182,7 +182,7 @@ transforms:
 ```
 
 > See [examples/transforms/grammar](examples/transforms/grammar) for a more elaborate version.
-
+<br>
 Or you can run the grammar fix in chat and mail apps (but not in coding agents, for instance) for all dictations:
 
 ```yaml
@@ -219,7 +219,7 @@ unwired](docs/pipelines.md#what-ships-unwired).
 [Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md) ·
 [Where the time goes](docs/architecture.md#where-the-time-goes)
 
----
+<br>
 
 ## Documentation
 
