@@ -224,7 +224,7 @@ transforms:
   # pipeline: a message that names someone is not always one that pings them.
   - name: slack_mentions
     description: turn people's names into Slack mentions
-    display: Adding mentions
+    display: Slack Mentions
     offer: true
     key: s
     say: [slack mentions, mentions]

@@ -113,6 +113,7 @@ transforms:
 transforms:
   - name: slack_mentions
     description: turn people's names into Slack mentions
+    display: Slack Mentions          # what the menu bar says while it runs
     offer: true                      # a chip on the pill after each dictation
     key: s                           # press S to run it
     say: [slack mentions, mentions]  # hold the hotkey and say either one
