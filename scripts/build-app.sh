@@ -35,12 +35,20 @@ APP="$ROOT/.build/$APP_NAME.app"
 # for x86_64 at all. Newer SDKs drop x86_64 from the standard set, so a
 # developer Mac never sees this and CI did.
 #
-# `--triple` and not `ARCHS`: both that and `ONLY_ACTIVE_ARCH` were set as
-# environment variables on a CI run and ignored, because SwiftPM writes its own
-# and wins. There is no `--arch` option.
+# An xcconfig and not a flag. `ARCHS=arm64`, `ONLY_ACTIVE_ARCH=YES` and
+# `--triple arm64-apple-macosx` were each measured on a CI run and each was
+# ignored; there is no `--arch` option. XCODE_XCCONFIG_FILE is the one override
+# the build system reads from the environment, and it applies above the
+# defaults rather than beside them.
+if [ -z "${XCODE_XCCONFIG_FILE:-}" ]; then
+    mkdir -p "$ROOT/.build"
+    printf 'ARCHS = arm64\nARCHS_STANDARD = arm64\nONLY_ACTIVE_ARCH = YES\n' \
+        > "$ROOT/.build/arch.xcconfig"
+    export XCODE_XCCONFIG_FILE="$ROOT/.build/arch.xcconfig"
+fi
+
 SWIFT_BUILD=(
-    swift build --package-path "$ROOT" -c "$CONFIGURATION"
-    --build-system swiftbuild --triple arm64-apple-macosx
+    swift build --package-path "$ROOT" -c "$CONFIGURATION" --build-system swiftbuild
 )
 
 echo "==> Building $DISPLAY_NAME ($CONFIGURATION)"
@@ -107,6 +115,13 @@ done
 # v0.12.0.
 if [ ! -d "$APP/Contents/Resources/mlx-swift_Cmlx.bundle" ]; then
     echo "error: mlx-swift_Cmlx.bundle is not in the app — MLX will abort at the first call"
+    exit 1
+fi
+
+# An x86_64 slice cannot run MLX or Parakeet, and paying for one is the sign
+# the arch pin above stopped working.
+if lipo -info "$BIN" | grep -q x86_64; then
+    echo "error: $EXECUTABLE_NAME has an x86_64 slice — the arch pin did not hold"
     exit 1
 fi
 

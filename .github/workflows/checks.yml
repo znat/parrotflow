@@ -47,7 +47,12 @@ jobs:
     # resolution fails before a line is compiled. Our own Package.swift still
     # says 5.10 — that is the floor this package needs, not the toolchain a
     # dependency needs to be read.
-    runs-on: macos-26
+    # `xcode-27`, not `macos-26`: Xcode 27 carries the macOS 27 SDK, the one a
+    # developer Mac has, and it drops x86_64 from the standard architectures.
+    # On the macOS 26 SDK swiftbuild builds an x86_64 slice nobody asked for,
+    # and that slice does not compile — see scripts/build-app.sh. The label is
+    # in beta; the arm64 check below is what says it still does its job.
+    runs-on: xcode-27
     timeout-minutes: 20
 
     steps:
@@ -63,11 +68,11 @@ jobs:
           # Keyed on the dependencies alone. Adding the source hash would
           # invalidate on every push, which is every run — a cache that never
           # hits, paid for twice in upload and download.
-          # `build2-` because every cache under `build-` was written by the
-          # classic engine, whose tree is laid out differently and holds no
-          # metallib.
-          key: build2-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
-          restore-keys: build2-${{ runner.os }}-
+          # Keyed on the image as well as the dependencies. A cache from the
+          # macOS 26 SDK holds an x86_64 slice and a tree the classic engine
+          # laid out, and neither belongs in a build on this one.
+          key: xcode27-${{ hashFiles('Package.resolved') }}
+          restore-keys: xcode27-
 
       # The Metal toolchain mounts at a path with a random suffix, and
       # swiftbuild writes that path into its build description. A restored
@@ -77,32 +82,33 @@ jobs:
         run: rm -rf .build/out/Intermediates.noindex/XCBuildData
 
       # See the same step in release.yml. swiftbuild compiles the shaders and a
-      # fresh Xcode 26 runner has no Metal compiler to do it with.
+      # fresh runner has no Metal compiler to do it with.
       - name: Download the Metal toolchain
         run: |
           xcodebuild -downloadComponent MetalToolchain
           xcrun --find metal
 
-      # `--build-system` is named here for the reason build-app.sh names it: the
-      # default is swiftbuild on Swift 6.4 and the classic engine on 6.3, and
-      # only swiftbuild builds the Metal shaders. This runner is on 6.3.3.
-      # `--triple` for the reason build-app.sh gives: the macOS 26 SDK calls
-      # arm64 and x86_64 standard, swiftbuild builds both, and the x86_64 slice
-      # fails in SlotProbe.swift on a `Float16` conversion Swift does not have
-      # on Intel. The app is arm64.
+      # Named, not left to the default, for the reason build-app.sh names it:
+      # the default is swiftbuild on Swift 6.4 and the classic engine on 6.3,
+      # and only swiftbuild builds the Metal shaders.
       - name: Build
-        run: swift build -c release --build-system swiftbuild --triple arm64-apple-macosx
+        run: swift build -c release --build-system swiftbuild
 
       # v0.12.0 built clean and packaged into an app that would have died at the
       # first MLX call. `swift build` says nothing when the shaders are missing,
       # so this is the only place short of assembling the bundle that can tell.
-      - name: The MLX shaders are in the build
+      - name: The MLX shaders are in the build, and nothing was built for Intel
         run: |
-          BIN="$(swift build -c release --build-system swiftbuild --triple arm64-apple-macosx --show-bin-path)"
+          BIN="$(swift build -c release --build-system swiftbuild --show-bin-path)"
           test -f "$BIN/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib" || {
             echo "::error::mlx-swift_Cmlx.bundle has no default.metallib — MLX would abort at the first call."
             exit 1
           }
+          lipo -info "$BIN/ParrotFlow" | grep -q x86_64 && {
+            echo "::error::ParrotFlow has an x86_64 slice — the arch pin did not hold."
+            exit 1
+          }
+          lipo -info "$BIN/ParrotFlow"
 
       # The runners for the YAML the case files are written in.
       - name: Install pyyaml
