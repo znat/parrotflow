@@ -113,8 +113,12 @@ done
 # process down from inside the library when its shaders are missing, so there is
 # nothing in the app's own log to read afterwards. This is the guard that caught
 # v0.12.0.
-if [ ! -d "$APP/Contents/Resources/mlx-swift_Cmlx.bundle" ]; then
-    echo "error: mlx-swift_Cmlx.bundle is not in the app — MLX will abort at the first call"
+# The metallib and not the directory around it. An empty bundle copies without
+# complaint, signs, notarizes and ships, and the app then dies at the first MLX
+# call — the same silence this whole guard exists to break.
+METALLIB="$APP/Contents/Resources/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib"
+if [ ! -f "$METALLIB" ]; then
+    echo "error: $METALLIB is not in the app — MLX will abort at the first call"
     exit 1
 fi
 
