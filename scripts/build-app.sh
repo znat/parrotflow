@@ -22,10 +22,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIGURATION="${CONFIGURATION:-release}"
 APP="$ROOT/.build/$APP_NAME.app"
 
-echo "==> Building $DISPLAY_NAME ($CONFIGURATION)"
-swift build --package-path "$ROOT" -c "$CONFIGURATION"
+# Named rather than left to the default, because the default moved: Swift 6.4
+# picks swiftbuild, 6.3 picks the classic engine, and only swiftbuild compiles
+# the 49 `.metal` files in mlx-swift into the metallib the app needs. The
+# classic one drops them without a word, which is how v0.12.0 was packaged
+# without its shaders. Both lines need it — `--show-bin-path` answers for the
+# engine it is asked about, and the two engines write to different directories.
+SWIFT_BUILD=(swift build --package-path "$ROOT" -c "$CONFIGURATION" --build-system swiftbuild)
 
-BIN_DIR="$(swift build --package-path "$ROOT" -c "$CONFIGURATION" --show-bin-path)"
+echo "==> Building $DISPLAY_NAME ($CONFIGURATION)"
+"${SWIFT_BUILD[@]}"
+
+BIN_DIR="$("${SWIFT_BUILD[@]}" --show-bin-path)"
 BIN="$BIN_DIR/$EXECUTABLE_NAME"
 [ -x "$BIN" ] || { echo "error: $BIN not found"; exit 1; }
 
@@ -82,7 +90,8 @@ done
 
 # Named, because losing this one is silent until a dictation dies. MLX tears the
 # process down from inside the library when its shaders are missing, so there is
-# nothing in the app's own log to read afterwards.
+# nothing in the app's own log to read afterwards. This is the guard that caught
+# v0.12.0.
 if [ ! -d "$APP/Contents/Resources/mlx-swift_Cmlx.bundle" ]; then
     echo "error: mlx-swift_Cmlx.bundle is not in the app — MLX will abort at the first call"
     exit 1

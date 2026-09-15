@@ -63,11 +63,42 @@ jobs:
           # Keyed on the dependencies alone. Adding the source hash would
           # invalidate on every push, which is every run — a cache that never
           # hits, paid for twice in upload and download.
-          key: build-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
-          restore-keys: build-${{ runner.os }}-
+          # `build2-` because every cache under `build-` was written by the
+          # classic engine, whose tree is laid out differently and holds no
+          # metallib.
+          key: build2-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: build2-${{ runner.os }}-
 
+      # The Metal toolchain mounts at a path with a random suffix, and
+      # swiftbuild writes that path into its build description. A restored
+      # description names the previous runner's mount, which is gone. Dropping
+      # it costs a re-plan, not a rebuild: the object files are elsewhere.
+      - name: Drop the stale build description
+        run: rm -rf .build/out/Intermediates.noindex/XCBuildData
+
+      # See the same step in release.yml. swiftbuild compiles the shaders and a
+      # fresh Xcode 26 runner has no Metal compiler to do it with.
+      - name: Download the Metal toolchain
+        run: |
+          xcodebuild -downloadComponent MetalToolchain
+          xcrun --find metal
+
+      # `--build-system` is named here for the reason build-app.sh names it: the
+      # default is swiftbuild on Swift 6.4 and the classic engine on 6.3, and
+      # only swiftbuild builds the Metal shaders. This runner is on 6.3.3.
       - name: Build
-        run: swift build -c release
+        run: swift build -c release --build-system swiftbuild
+
+      # v0.12.0 built clean and packaged into an app that would have died at the
+      # first MLX call. `swift build` says nothing when the shaders are missing,
+      # so this is the only place short of assembling the bundle that can tell.
+      - name: The MLX shaders are in the build
+        run: |
+          BIN="$(swift build -c release --build-system swiftbuild --show-bin-path)"
+          test -f "$BIN/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib" || {
+            echo "::error::mlx-swift_Cmlx.bundle has no default.metallib — MLX would abort at the first call."
+            exit 1
+          }
 
       # The runners for the YAML the case files are written in.
       - name: Install pyyaml
