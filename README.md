@@ -4,7 +4,7 @@
 
 # ParrotFlow
 
-## Local and extensible dictation for MacOS you can shape with rules, code and prompts
+## Local and extensible dictation for macOS you can shape with rules, code and prompts
 
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
@@ -22,7 +22,7 @@ two config.yaml rules that did it.">
 </div>
 
 > [!TIP]
-> PR links and Slack mentions are NOT features, they are extensions configured in `yaml`!
+> PR links and Slack mentions are NOT features — they are extensions configured in `yaml`!
 > You can hack them and add more in minutes with your coding agent!
 >
 > Some built-in extensions you can use and play with:
@@ -85,6 +85,9 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 
 
 ### Extend with rules, prompts and scripts
+
+> [!TIP]
+> These examples show how the demo features are made.
 
 What makes ParrotFlow truly unique is that you can fully customize it with regular expressions, prompts or scripts.
 All you have to do is point your coding agent to your `config.yaml` file and ask what you need.
