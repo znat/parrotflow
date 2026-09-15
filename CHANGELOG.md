@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/znat/parrotflow/compare/v0.12.0...v0.12.1) (2026-09-15)
+
+
+### Fixes
+
+* the release carries MLX's Metal shaders, so 0.12 can be installed ([#315](https://github.com/znat/parrotflow/issues/315)) ([acef6f9](https://github.com/znat/parrotflow/commit/acef6f9438d0fa667e15e9dd34fc4fe3e342f21a))
+
 ## [0.12.0](https://github.com/znat/parrotflow/compare/v0.11.0...v0.12.0) (2026-09-15)
 
 
