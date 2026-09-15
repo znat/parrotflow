@@ -178,11 +178,30 @@ enum CommandRunner {
         _ command: String, on text: String, in folder: TransformFolder?,
         seconds: TimeInterval?, structured: Bool, context: Context?
     ) -> Output? {
+        try? attempt(
+            command, on: text, in: folder, seconds: seconds, structured: structured,
+            context: context
+        ).get()
+    }
+
+    /// Why a command produced nothing.
+    ///
+    /// `complaint` is what the program wrote on stderr when it exited
+    /// non-zero, trimmed. Empty for every other way of failing.
+    struct Failure: Error {
+        let complaint: String
+    }
+
+    /// The same run, and the failure when there is one instead of nil.
+    static func attempt(
+        _ command: String, on text: String, in folder: TransformFolder?,
+        seconds: TimeInterval?, structured: Bool, context: Context?
+    ) -> Result<Output, Failure> {
         let timeout = seconds ?? Self.timeout
         let folder = folder ?? TransformFolder(configDirectory: ConfigStore.directory, name: "")
         if let complaint = complaint(about: command, in: folder) {
             Log.write("command: \(complaint); kept the transcript")
-            return nil
+            return .failure(Failure(complaint: ""))
         }
 
         let process = Process()
@@ -246,7 +265,7 @@ enum CommandRunner {
         } catch {
             Log.write("command: could not run \"\(command)\": \(error.localizedDescription)")
             output.fileHandleForReading.readabilityHandler = nil
-            return nil
+            return .failure(Failure(complaint: ""))
         }
 
         // The transcript on its own, or the transcript wrapped in what the
@@ -296,7 +315,7 @@ enum CommandRunner {
             output.fileHandleForReading.readabilityHandler = nil
             Log.write("command: \"\(command)\" took longer than"
                 + " \(Int(timeout))s; kept the transcript")
-            return nil
+            return .failure(Failure(complaint: ""))
         }
         output.fileHandleForReading.readabilityHandler = nil
 
@@ -308,7 +327,7 @@ enum CommandRunner {
                 "command: \"\(command)\" exited \(process.terminationStatus)"
                 + (complaint.isEmpty ? "" : ": \(complaint.prefix(200))")
             )
-            return nil
+            return .failure(Failure(complaint: String(complaint.prefix(200))))
         }
 
         // Whatever the handler had not been given yet. EOF and exit are not the
@@ -320,9 +339,9 @@ enum CommandRunner {
         // is not this app's business, and `print` adds exactly one newline.
         var result = String(data: collected.value, encoding: .utf8) ?? ""
         if result.hasSuffix("\n") { result.removeLast() }
-        guard !result.isEmpty else { return nil }
+        guard !result.isEmpty else { return .failure(Failure(complaint: "")) }
 
-        guard structured else { return Output(text: result) }
+        guard structured else { return .success(Output(text: result)) }
 
         guard let reply = try? JSONDecoder().decode(Reply.self, from: Data(result.utf8)) else {
             // Loud, and then harmless. A transform that declared `returns: json`
@@ -335,9 +354,9 @@ enum CommandRunner {
                 "command: \"\(command)\" declares returns: json but printed"
                 + " \(result.prefix(120)); kept the transcript"
             )
-            return nil
+            return .failure(Failure(complaint: ""))
         }
-        return Output(text: reply.text, vars: reply.vars)
+        return .success(Output(text: reply.text, vars: reply.vars))
     }
 
     /// SIGTERM, then SIGKILL if that was not enough.

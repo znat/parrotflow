@@ -279,7 +279,8 @@ seeded="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
 # spelled out here, so a folder gaining a file — or the tree gaining a
 # folder — does not make this check stale.
 expected_examples="$(cd "$ROOT/examples/transforms" && find . -type f | sed 's|^\./|transforms/examples/|')"
-expected="$(printf 'config.yaml\nvocabulary.yaml\n%s\n' "$expected_examples" | sort | tr '\n' ' ')"
+# Plus the one script written once into the person's own folder.
+expected="$(printf 'config.yaml\nvocabulary.yaml\ntransforms/slack_mentions/slack_mentions.py\n%s\n' "$expected_examples" | sort | tr '\n' ' ')"
 
 check "a first launch copies the whole examples/ tree" \
   "$(cd "$FRESH" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' ')" \

@@ -26,6 +26,10 @@ enum SeedConfigCommand {
         let stale = installedBefore.subtracting(relatives).sorted()
         let configExisted = fm.fileExists(atPath: ConfigStore.fileURL.path)
         let vocabularyExisted = fm.fileExists(atPath: ConfigStore.vocabularyURL.path)
+        let seeded = ConfigStore.seededTransformFiles.map(\.relative)
+        let seededExisted = Set(seeded.filter {
+            fm.fileExists(atPath: directory.appendingPathComponent($0).path)
+        })
 
         do {
             try ConfigStore.createIfMissing()
@@ -43,6 +47,13 @@ enum SeedConfigCommand {
             print("  · vocabulary.yaml — already there, left alone")
         } else {
             print("  ✓ vocabulary.yaml — written")
+        }
+        for relative in seeded {
+            if seededExisted.contains(relative) {
+                print("  · \(relative) — already there, left alone")
+            } else {
+                print("  ✓ \(relative) — written")
+            }
         }
 
         var written = 0
@@ -79,6 +90,7 @@ enum SeedConfigCommand {
             + (kept.isEmpty ? "." : ", \(kept.count) left behind."))
         print("  transforms/examples/ is the app's; edits there do not survive the next launch.")
         print("  transforms/<name>/ is yours — copy a file out of examples/ before editing it.")
+        print("  transforms/slack_mentions/slack_mentions.py is yours too, written once.")
         return 0
     }
 }

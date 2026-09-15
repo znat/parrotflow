@@ -20,7 +20,7 @@
 #
 #   bullets      prompt   — the one the catch-all could stand in for
 #   terse        prompt
-#   slack_handles command  say: [slack handles, handles]
+#   slack_mentions command  say: [slack mentions, mentions]
 #   flag         command  say: [flag this, save this for later]
 #   punctuation  command
 #   disfluency   command
@@ -44,8 +44,8 @@ cases:
   # --- a name in the middle, which is what `anywhere` adds ----------------
   # The anchored match was written for "hey parrot", where the words around a
   # name might not be a command at all. Held down on a key they always are.
-  - instruction: use our slack handles
-    expect: slack_handles
+  - instruction: use our slack mentions
+    expect: slack_mentions
   - instruction: clean up the repetitions
     expect: disfluency
   - instruction: fix the punctuation
@@ -54,12 +54,12 @@ cases:
     expect: bullets
 
   # --- an underscore is how a config spells a space -----------------------
-  - instruction: slack handles please
-    expect: slack_handles
+  - instruction: slack mentions please
+    expect: slack_mentions
 
   # --- `say:`, for a tool whose name is not what you would call it --------
-  - instruction: handles
-    expect: slack_handles
+  - instruction: mentions
+    expect: slack_mentions
   - instruction: save this for later
     expect: flag
   - instruction: flag this

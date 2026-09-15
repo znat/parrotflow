@@ -889,7 +889,7 @@ if let index = arguments.firstIndex(of: "--phonemes") {
 
 if let index = arguments.firstIndex(of: "--panels") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|confidence|learn|learn-long|selector|selector-long|selector-two|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|update|models|setup|launch|sequence|tutorial|names|slack|hack|downloads|ready> [seconds]")
+        print("usage: ParrotFlow --panels <notice|caution|failure|alert|thinking|offer|confidence|learn|learn-long|selector|selector-long|selector-two|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|update|models|setup|launch|sequence|tutorial|names|slack|hack|downloads|ready> [seconds]")
         exit(2)
     }
     let seconds = arguments.indices.contains(index + 2) ? Double(arguments[index + 2]) : nil

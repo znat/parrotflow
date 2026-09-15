@@ -135,12 +135,12 @@ enum PanelsCommand {
         return nil
     }
 
-    /// What the offer is drawn with here: Correct and one offered transform,
-    /// which is what the shipped config puts on the pill. A row of chips is the
-    /// shape worth looking at, not one chip on its own.
+    /// What the offer is drawn with here: the two transforms the shipped
+    /// config puts on the pill. A row of chips is the shape worth looking at,
+    /// not one chip on its own.
     private static let offerChips = [
-        OfferedCommand(title: "Vocabulary", key: "V"),
-        OfferedCommand(title: "grammar", key: "G")
+        OfferedCommand(title: "grammar", key: "G"),
+        OfferedCommand(title: "slack_mentions", key: "S")
     ]
 
     /// Enough transforms to wrap, which two are not.
@@ -149,7 +149,6 @@ enum PanelsCommand {
     /// row count off by one hangs the last chip over the end of the panel. Two
     /// chips can never show that; six can, and six is an ordinary config.
     private static let offerManyChips = offerChips + [
-        OfferedCommand(title: "slack handles", key: "S"),
         OfferedCommand(title: "punctuation", key: "P"),
         OfferedCommand(title: "disfluency", key: "D"),
         OfferedCommand(title: "bullets", key: "B")
@@ -1326,6 +1325,9 @@ enum PanelsCommand {
         let keyboardNotice = KeyboardNotice()
         let updatePanel = UpdatePanel()
         var ticker: Timer?
+        // How long the process stays up. A surface that outlasts the argument
+        // says so here.
+        var hold = seconds
         var setupWindow: NSWindow?
         var launchPanel: LaunchPanel?
         var calloutPanel: MenuBarCallout?
@@ -1338,6 +1340,20 @@ enum PanelsCommand {
             pill.notice("Grammar copied — this app won't let me edit it", tone: .caution, duration: nil)
         case "failure":
             pill.notice("Ollama is not running on localhost:11434", tone: .failure, duration: nil)
+        case "alert":
+            hold = max(seconds, AppDelegate.alertSeconds)
+            // The grammar transform's shipped `failed:`, word for word.
+            pill.alert(
+                """
+                Requires a language model.
+
+                ```sh
+                brew install ollama
+                ollama run gemma4:e4b-mlx
+                ```
+                """,
+                tone: .failure, for: hold
+            )
         case "thinking":
             pill.working("Thinking…")
         case "learn":
@@ -1659,7 +1675,7 @@ enum PanelsCommand {
             sizer.window = preview
             setupWindow = preview
         default:
-            print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
+            print("usage: ParrotFlow --panels <notice|caution|failure|alert|thinking|offer"
                 + "|confidence|vocabulary|punctuation|rule|dictation|preview|microphone"
                 + "|keyboard|pill|learn|learn-long|selector|selector-long|selector-two"
                 + "|update|models|setup|launch|sequence|tutorial|names|slack|hack"
@@ -1667,7 +1683,7 @@ enum PanelsCommand {
             return 2
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold) {
             ticker?.invalidate()
             setupWindow?.close()
             launchPanel?.dismiss()

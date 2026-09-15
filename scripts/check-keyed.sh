@@ -42,9 +42,9 @@ transforms:
   - name: terse
     description: make the text shorter
     prompt: "Shorten."
-  - name: slack_handles
-    description: turn names into slack handles
-    say: [slack handles, handles]
+  - name: slack_mentions
+    description: turn names into slack mentions
+    say: [slack mentions, mentions]
     command: 'true'
   - name: flag
     description: save this dictation to look at later

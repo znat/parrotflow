@@ -556,13 +556,37 @@ entry costs the others room, so a transform joins it only by asking. Put a
 chip on what you reach for without thinking. Leave it off anything you would
 only ever ask for out loud — that is what the wake phrase is for.
 
+### `failed:`, or: saying what to do about it
+
+A transform that could not run puts the error on the pill. `failed:` is what it
+says instead — its own words, for the one failure it can predict:
+
+````yaml
+  - name: grammar
+    failed: |
+      Requires a language model.
+
+      ```sh
+      brew install ollama
+      ollama run gemma4:e4b-mlx
+      ```
+````
+
+It is Markdown, and it is drawn as a taller pill: paragraphs wrap, and a fenced
+code block sits in a box of its own that copies to the clipboard when you click
+it. It stands for 30 seconds. Put the pointer on it and the clock stops; take it
+off and the rest of the time runs. The raw error still goes to the log.
+
+Leave it out and nothing changes: the error's own text goes on the pill, the way
+it always did.
+
 ### `say` — what to call it out loud
 
 ```yaml
-  - name: slack_handles
-    description: turn names into slack handles
-    say: [slack handles, handles]
-    command: slack_handles.py
+  - name: slack_mentions
+    description: turn names into slack mentions
+    say: [slack mentions, mentions]
+    command: slack_mentions.py
 ```
 
 A name is written for a config file. Nobody says an underscore, and nobody
@@ -890,7 +914,7 @@ everywhere else here, and it was tried the other way round. The tables are
 worth reading about because of what they cost, not because they failed:
 
 ```yaml
-- name: slack_handles
+- name: slack_mentions
   replace:
     '@marie.dupont': ['/\bmention(?:ne)? marie\b/']
 ```
@@ -952,7 +976,7 @@ It was prompts only until it became a real bug. The catalogue was built from
 `config.prompts`, which drops every `command:` body, so a transform that became
 a script left the list silently — and a router shown nine of your ten tools
 does not report the tenth missing, it picks the nearest of the nine. Measured:
-"use slack handles" reached `slack`, the chat-tidying prompt, which tidied the
+"use slack mentions" reached `slack`, the chat-tidying prompt, which tidied the
 sentence and left the name alone. `--check-config` now prints what each
 capability is made of, so a program answering your voice is visible rather than
 implied.

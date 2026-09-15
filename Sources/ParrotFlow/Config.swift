@@ -873,14 +873,17 @@ struct Config: Decodable, Equatable {
         /// trace leaves the sentence alone by design, and the pill's honest
         /// "nothing to change" then reads as a failure.
         var done = ""
-        /// `say: [slack handles, handles]` — what to call it out loud.
+        /// `failed: |` — what the pill says when this transform could not run.
+        /// Markdown, several lines.
+        var failed = ""
+        /// `say: [slack mentions, mentions]` — what to call it out loud.
         var say: [String] = []
         /// `model: gpt`, or `model: { use: gpt, reasoning: low }`.
         var model: ModelRef?
 
         enum CodingKeys: String, CodingKey {
             case name, description, display, confirm, prompt, content, replace, command
-            case tests, returns, offer, model, say, done
+            case tests, returns, offer, model, say, done, failed
             case offerKey = "key"
             case timeout = "timeout_seconds"
         }
@@ -958,6 +961,8 @@ struct Config: Decodable, Equatable {
             // the config wrote it as.
             offerKey = String(try trimmed(.offerKey).prefix(1)).uppercased()
             done = try trimmed(.done)
+            // Ends only: the inner newlines are the paragraphs and the fence.
+            failed = try trimmed(.failed)
             // One string or a list, because most transforms want one alias and
             // writing `say: bullets` should not be an error.
             //
@@ -1148,6 +1153,7 @@ struct Config: Decodable, Equatable {
                 folder: entry.folder, timeout: entry.timeout,
                 confirm: entry.confirm, returnsJSON: entry.returnsJSON,
                 offer: entry.offer, offerKey: entry.offerKey, done: entry.done,
+                failed: entry.failed,
                 say: entry.say,
                 body: body, source: entry.source,
                 tests: entry.tests, model: entry.model
@@ -1236,9 +1242,12 @@ struct Config: Decodable, Equatable {
         /// alone on purpose. Empty for one that rewrites, which is all of them
         /// but the ones that act.
         var done: String = ""
+        /// `failed:` — what the pill says when this transform could not run at
+        /// all, as markdown. Empty for one with nothing to add to the error.
+        var failed: String = ""
         /// What to call this out loud, besides its name.
         ///
-        /// A name is written for a config file — `slack_handles`, `code_identifiers` — and nobody says an underscore. An alias is what you would actually
+        /// A name is written for a config file — `slack_mentions`, `code_identifiers` — and nobody says an underscore. An alias is what you would actually
         /// ask for, and it is the difference between a script the keyed path
         /// can reach without a model and one it cannot reach at all.
         ///
@@ -3556,9 +3565,44 @@ enum ConfigStore {
             Log.write("config: wrote vocabulary.yaml")
         }
 
+        for seeded in seededTransformFiles {
+            let destination = directory.appendingPathComponent(seeded.relative)
+            guard !fm.fileExists(atPath: destination.path) else { continue }
+            try fm.createDirectory(
+                at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.copyItem(at: seeded.source, to: destination)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination.path)
+            Log.write("config: wrote \(seeded.relative)")
+        }
+
         guard !fm.fileExists(atPath: fileURL.path) else { return }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         try defaultYAML.write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
+    /// Scripts written once into `transforms/<name>/` and never touched
+    /// again. They are yours to edit, unlike `transforms/examples/`.
+    ///
+    /// `slack_mentions.py` holds the roster of names and handles, so the
+    /// shipped copy cannot be the running one.
+    static var seededTransformFiles: [(relative: String, source: URL)] {
+        [("transforms/slack_mentions/slack_mentions.py",
+          examplesDirectory.appendingPathComponent("slack_mentions/slack_mentions.py"))]
+    }
+
+    /// `examples/` in the bundle, or in the source tree when run from the
+    /// build directory. Same rule as `exampleTransformsDirectory`.
+    static var examplesDirectory: URL {
+        if !Permissions.isRunningFromBuildDirectory,
+           let bundled = Bundle.main.resourceURL?.appendingPathComponent("examples"),
+           FileManager.default.fileExists(atPath: bundled.path) {
+            return bundled
+        }
+        return URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // Config.swift -> Sources/ParrotFlow/
+            .deletingLastPathComponent()  // -> Sources/
+            .deletingLastPathComponent()  // -> repo root
+            .appendingPathComponent("examples", isDirectory: true)
     }
 
     /// What `vocabulary.yaml` says before anything has been learnt.

@@ -42,7 +42,7 @@ enum Router {
     /// `anywhere` lifts the anchor, for a command declared by a key. There the
     /// whole utterance is the instruction — you held the key down to say it —
     /// so a name in the middle of it is still a name, and "use our slack
-    /// handles" has to reach `slack_handles` or it reaches a model that cannot
+    /// mentions" has to reach `slack_mentions` or it reaches a model that cannot
     /// run a script. The risk the anchor was guarding against does not exist on
     /// that path: there is no sentence for a name to be buried in by accident.
     static func local(
@@ -57,7 +57,7 @@ enum Router {
         for capability in catalogue.capabilities {
             for spoken in capability.spokenNames {
                 // Underscores are how a config spells a space. Nobody says one,
-                // so `slack_handles` is compared as "slack handles".
+                // so `slack_mentions` is compared as "slack mentions".
                 let target = spoken.lowercased()
                     .components(separatedBy: CharacterSet.alphanumerics.inverted)
                     .filter { !$0.isEmpty }

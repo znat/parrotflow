@@ -175,6 +175,8 @@ lists:
 #   replace:      a substitution table, costs nothing
 #   command:      a program of yours — transcript in on stdin, rewrite out on stdout
 #   confirm       shows the result first; set to false to skip that
+#   done          what the pill says when this leaves the text alone on purpose
+#   failed        what the pill says when this could not run — markdown
 #   path          a body too long for here — transforms/X/, e.g. prompt: { path: slack.md }
 # More of them ship unwired in examples/transforms/ — spoken punctuation,
 # dotted paths, code identifiers. See docs/pipelines.md.
@@ -185,6 +187,14 @@ transforms:
     # Puts this on the pill after a dictation. `key:` is the chip's letter.
     offer: true
     key: g
+    # What the pill says when this could not run.
+    failed: |
+      Requires a language model.
+
+      ```sh
+      brew install ollama
+      ollama run gemma4:e4b-mlx
+      ```
     prompt: |
       Correct grammar, spelling and punctuation. Make the smallest change
       that makes the text correct — and make it. Every error is fixed.
@@ -206,6 +216,19 @@ transforms:
       please or thanks does not.
 
       Return only the text.
+
+  # "tell Marie the deadline moved" -> "tell @marie.dupont the deadline
+  # moved". The roster of names and handles is in the script, which is yours:
+  # transforms/slack_mentions/slack_mentions.py, written once on first launch.
+  # Until you fill it, the chip says so and changes nothing. Not in the
+  # pipeline: a message that names someone is not always one that pings them.
+  - name: slack_mentions
+    description: turn people's names into Slack mentions
+    display: Adding mentions
+    offer: true
+    key: s
+    say: [slack mentions, mentions]
+    command: slack_mentions.py
 
   # "PR one two three is ready" -> a clickable #123. Defined, not in the
   # pipeline: the repository is yours, not this file's. Put your own in both
