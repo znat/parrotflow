@@ -99,6 +99,28 @@ struct Config: Decodable, Equatable {
     /// not collide.
     var lists: [String: [String]] = [:]
 
+    /// Words that end in a full stop without ending a sentence.
+    ///
+    /// `SentenceJoin` reads a full stop in front of a lowercase word, so
+    /// "approx. ten euros" is a boundary it can vote to join. The readings do
+    /// not know what an abbreviation is: over twelve written by hand it joined
+    /// five, `approx. ten`, `vs. the`, `no. four`, `cf. the` and `env. dix`.
+    /// The words the decoder puts a stop after are a short list, so the list is
+    /// the guard.
+    ///
+    /// `lists: abbreviations:` replaces this one. Not per language, like every
+    /// other list here — the English and the French words do not collide.
+    static let defaultAbbreviations = [
+        "etc", "vs", "approx", "cf", "no", "inc", "ltd", "fig", "st", "ave",
+        "dr", "mr", "mrs", "ms", "prof", "sr", "jr", "vol", "pp",
+        "env", "art", "réf", "ex", "mme", "fig", "p",
+    ]
+
+    /// The abbreviations, lowercased, as `SentenceJoin` asks for them.
+    var abbreviations: Set<String> {
+        Set((lists["abbreviations"] ?? Self.defaultAbbreviations).map { $0.lowercased() })
+    }
+
     enum CodingKeys: String, CodingKey {
         case hotkey, audio, feedback, transcription, llm, models, commands
         case transforms, prompts, updates, logging

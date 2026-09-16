@@ -31,7 +31,9 @@ enum SentenceJoinCommand {
             let terms = Array(config.vocabulary.terms.keys)
             let scan = SentenceJoin.scanned(config.transcription.marks(for: "en"))
             let found = (
-                SentenceJoin.boundaries(in: text, scanning: scan)
+                SentenceJoin.boundaries(
+                    in: text, scanning: scan, refusing: config.abbreviations
+                )
                 + SentenceJoin.bareBoundaries(in: text)
             ).sorted { $0.next.lowerBound < $1.next.lowerBound }
             for boundary in found {

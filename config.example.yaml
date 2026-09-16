@@ -153,6 +153,16 @@ lists:
   # What may sit between "PR" and its number. `github_refs` only.
   ref_words: ["number", "nr", "no", "num", "hash", "numéro"]
 
+  # Words that end in a full stop without ending a sentence. `sentence_repair`
+  # reads a full stop in front of a lowercase word — "approx. ten euros" — and
+  # the readings do not know what an abbreviation is: of twelve tried by hand
+  # it joined five. Writing this replaces the built-in list, which is the one
+  # below. No dots, and case does not matter.
+  #
+  # abbreviations: ["etc", "vs", "approx", "cf", "no", "inc", "ltd", "fig",
+  #                 "st", "ave", "dr", "mr", "mrs", "ms", "prof", "sr", "jr",
+  #                 "vol", "pp", "env", "art", "réf", "ex", "mme", "p"]
+
   # Hesitation sounds, for the `fillers` transforms. Add a word, not a regex —
   # entries are escaped, so `u+m+` would look for those characters. A sound
   # held for any length is a pattern in the transform instead.

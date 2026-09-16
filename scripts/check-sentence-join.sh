@@ -4,12 +4,13 @@
 #   scripts/check-sentence-join.sh
 #
 # Half the cases are real sentence endings and half are pauses that cut one
-# sentence in two, in both the period and the question-mark shape. A third
-# shape, a capital with no mark in front of it, carries its three readings and
-# is checked on drift alone: it has no real/cut pair. Two numbers
-# decide per shape: how many cuts were repaired, and how many real endings were
-# joined by mistake. A joined real ending is a sentence nobody wrote, with
-# nothing on screen to say so, so one of those fails the run.
+# sentence in two, in both the period and the question-mark shape. Two more
+# shapes carry their readings and are checked on drift alone, because neither
+# has a real/cut pair: a capital with no mark in front of it, and a full stop
+# in front of a lowercase word. Two numbers decide per paired shape: how many
+# cuts were repaired, and how many real endings were joined by mistake. A
+# joined real ending is a sentence nobody wrote, with nothing on screen to say
+# so, so one of those fails the run.
 #
 # Each case also carries the readings measured when the set was built. This
 # compares the binary's against them. That is what says the app reads a boundary
@@ -80,7 +81,7 @@ def block_of(out, case):
 DRIFT = 0.05
 tally = {name: {} for name in
          ("en_real.json", "en_cuts.json", "enq_real.json", "enq_cuts_hard.json",
-          "bare-capitals")}
+          "bare-capitals", "en_lowercase.json", "fr_lowercase.json")}
 drifted = []
 
 for case in cases:
@@ -135,6 +136,18 @@ if bare_total:
     print("  %d read as the join, %d left as decoded" % (
         bare.get("join", 0), bare_total - bare.get("join", 0)))
     print()
+
+# The third shape, and the one with no real/cut pair either: every full stop
+# in front of a lowercase word this speaker has dictated. None of them is a
+# sentence ending — an ending carries a capital — so there is no false join to
+# count, and drift is what this scores.
+for name, key in (("lowercase en", "en_lowercase.json"),
+                  ("lowercase fr", "fr_lowercase.json")):
+    counts, total = row(name, key)
+    if total:
+        print("  %d read as the join, %d left as decoded" % (
+            counts.get("join", 0), total - counts.get("join", 0)))
+        print()
 
 if drifted:
     print()
