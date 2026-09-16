@@ -821,6 +821,50 @@ cases:
   - { name: "just the two of us", pipeline: numbers, input: Just the two of us, expect: unchanged }
   - { name: "seulement nous deux", pipeline: numbers, input: Seulement nous deux, expect: unchanged }
 
+  # --- the money scripts, below the numbers scripts -----------------------
+  #
+  # The `money` fixture is numbers then money, both languages, no gates. What
+  # only a pipeline shows: money reads digits, so it is the numbers step above
+  # it that turns the dictated words into something it can put a symbol on.
+
+  # The order. `money_en` alone does nothing with "twenty five euros": there is
+  # no number in it yet.
+  - { name: "numbers runs before money", pipeline: money, input: it cost me twenty five euros, expect: "it cost me €25" }
+  - { name: "numbers runs before money, thousands", pipeline: money, input: he charges three thousand dollars, expect: he charges $3000 }
+  - { name: "the cents tail survives both steps", pipeline: money, input: that will be twenty dollars and fifty cents, expect: that will be $20.50 }
+
+  # The floor. A lone number under ten stays a word — "chapter three" — unless
+  # a currency word follows it, which is the whole reason `money` can read
+  # digits only. Only a pipeline shows this: `numbers` decides it, `money`
+  # depends on it, and neither case set sees the other half.
+  - { name: "a currency word lifts the below-ten floor", pipeline: money, input: lunch came to five dollars today, expect: lunch came to $5 today }
+  - { name: "and it lifts it in French too", pipeline: money, input: le café était à cinq euros hier, expect: "le café était à 5 € hier" }
+  - { name: "the floor still holds without one", pipeline: money, input: chapter three of the book, expect: unchanged }
+  - { name: "cents under ten reach the tail", pipeline: money, input: that is twelve dollars and five cents, expect: that is $12.05 }
+  # And the currency word has to be attached to the number, as a percent
+  # marker is: a comma between them means two things, not a price.
+  - { name: "a comma between them is not a price", pipeline: money, input: he said five, dollars and left, expect: unchanged }
+
+  # Slang: one word, and it goes through both stages like any other.
+  - { name: "bucks is a dollar", pipeline: money, input: we bought coffee for twenty bucks, expect: we bought coffee for $20 }
+  - { name: "a currency code is left alone", pipeline: money, input: it came to two hundred USD, expect: it came to 200 USD }
+
+  # The guard. `dollars` and `euros` are the same word in both languages and
+  # `money_en` runs first, so without it every French amount would come out
+  # "$20". The script declines a language that is not its own.
+  - { name: "a French amount keeps the French shape", pipeline: money, input: ça m'a coûté vingt-cinq euros, expect: "ça m'a coûté 25 €" }
+  - { name: "a French amount, the plain form", pipeline: money, input: le billet coûte vingt euros, expect: "le billet coûte 20 €" }
+  - { name: "French centimes, written with a comma", pipeline: money, input: ça fera vingt euros et cinquante centimes, expect: "ça fera 20,50 €" }
+
+  # Below four words detection answers with the first configured language, so
+  # the English script wins and writes the English shape. Same limit as the
+  # numbers cases above, and the reason the steps carry no language gate.
+  - { name: "too short to detect: vingt euros", pipeline: money, input: vingt euros, expect: "€20" }
+
+  # And the currency word as a noun is left alone in both languages.
+  - { name: "money declines a noun", pipeline: money, input: the dollar is strong this quarter, expect: unchanged }
+  - { name: "money declines a French noun", pipeline: money, input: la zone euro est en crise, expect: unchanged }
+
 refused:
   - name: a condition reading a stage that runs later is refused
     pipeline: reads-later-stage

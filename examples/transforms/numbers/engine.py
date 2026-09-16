@@ -56,14 +56,16 @@ class Grammar:
     "vigesimal" (see `parse_vigesimal`). `bare_scale_is_one` says whether a
     scale word standing alone means one of itself. `article_one` is the word
     that stands in for one before a scale word, or None. `percent` is a tuple
-    of word tuples. `bare_scale_blockers` are the words after which a scale
-    word is never a number.
+    of word tuples. `currency` is the words that lift the below-ten floor for
+    the money stage below. `bare_scale_blockers` are the words after which a
+    scale word is never a number.
     """
 
     def __init__(self, code, units, teens, tens, scales, hundred,
                  ordinal_units, ordinal_teens, ordinal_tens, ordinal_scales,
                  ordinal_hundred, connectors, two_digit, bare_scale_is_one,
-                 article_one, bare_scale_blockers, percent, decimal_separator,
+                 article_one, bare_scale_blockers, percent, currency,
+                 decimal_separator,
                  ordinal_suffix):
         self.code = code
         self.units, self.teens, self.tens = units, teens, tens
@@ -77,6 +79,7 @@ class Grammar:
         self.article_one = article_one
         self.bare_scale_blockers = bare_scale_blockers
         self.percent = percent
+        self.currency = currency
         self.decimal_separator = decimal_separator
         self.ordinal_suffix = ordinal_suffix
 
@@ -554,6 +557,21 @@ def percent_marker(tokens, at, g):
     return None
 
 
+def currency_after(tokens, at, g):
+    """Whether a currency word follows the number's last token.
+
+    Attached to it with nothing but spaces or hyphens, as `percent_marker`
+    wants: "he said five, dollars and left" is two things, not a price.
+
+    Unlike `percent_marker` this does not consume the word: "dollars" is a
+    word in the sentence and stays one. All it decides is whether a number
+    below `DIGITS_FROM` is written as digits.
+    """
+    if not tokens[at].joined_to_next:
+        return False
+    return at + 1 < len(tokens) and tokens[at + 1].text in g.currency
+
+
 def written(number, g):
     """No thousands separators anywhere: a comma reads well in prose and badly
     in the terminals and code fields this app pastes into."""
@@ -605,9 +623,14 @@ def convert(run, tokens, g, guarded):
         # "5th%" is not a thing anyone would type.
         if not number.held and not number.ordinal:
             marker = percent_marker(tokens, run[number.end - 1].index, g)
-        # Percent lifts the floor: `five%` is never right.
+        # Percent lifts the floor: `five%` is never right. A currency word
+        # lifts it for the same reason — "five dollars" is a price, and the
+        # money stage below reads digits only.
+        currency = (not number.held and not number.ordinal
+                    and currency_after(tokens, run[number.end - 1].index, g))
         wanted = not number.held and (
             number.forced or marker is not None or number.fraction is not None
+            or currency
             or number.value >= DIGITS_FROM or number.words >= 2)
         if not wanted:
             continue

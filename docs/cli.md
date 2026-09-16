@@ -1060,6 +1060,7 @@ scripts/check-keyed.sh             scripts/check-dates.sh
 scripts/check-routing.sh           scripts/check-wake.sh
 scripts/check-split.sh             scripts/check-grammar.sh
 scripts/check-inplace.sh           examples/transforms/numbers/score.py
+examples/transforms/dates/score.py examples/transforms/money/score.py
 scripts/check-default-config.sh    scripts/check-transform-folders.sh
 scripts/check-eval.sh              # every case set, scored
 scripts/check-compose.sh           # what a prompt says once the scope is in it

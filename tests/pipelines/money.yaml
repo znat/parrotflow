@@ -1,0 +1,41 @@
+# The numbers steps of config.example.yaml with the money steps below them,
+# plus the French scripts the default config does not ship. No step carries a
+# language gate, as in the default config, so every script sees every
+# transcript.
+#
+# Two things only a whole pipeline shows:
+#
+#   - **The order.** `money_*` reads digits, not words. `numbers_en` writes
+#     "twenty dollars" as "20 dollars" first, and only then is there an amount
+#     for `money_en` to put a symbol on.
+#   - **The guard.** `dollars` and `euros` are the same word in both languages,
+#     which no pair of `dates` files is. Without one, `money_en` would write
+#     "$20" into a French transcript, since it runs first. Each script declines
+#     a language that is not its own — but only above `MINIMUM_WORDS`, since
+#     below that the detected language is a coin toss.
+#
+# The grammars themselves are scored by examples/transforms/money/score.py,
+# which also runs each script over the other language's cases.
+languages: [en, fr]
+transforms:
+  - name: numbers_en
+    description: spoken numbers as digits
+    command: en.py
+    returns: json
+  - name: numbers_fr
+    description: spoken numbers as digits
+    command: fr.py
+    returns: json
+  - name: money_en
+    description: dictated amounts of money with the currency symbol
+    command: en.py
+    returns: json
+  - name: money_fr
+    description: dictated amounts of money with the currency symbol
+    command: fr.py
+    returns: json
+pipeline:
+  - transform: numbers_en
+  - transform: numbers_fr
+  - transform: money_en
+  - transform: money_fr

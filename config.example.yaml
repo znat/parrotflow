@@ -101,6 +101,9 @@ transcription:
     # numbers eats its words. French ships too, see docs/pipelines.md.
     - transform: dates_en
     - transform: numbers_en
+    # Amounts of money with the symbol: "twenty dollars" -> $20. Below numbers,
+    # which is what wrote the digits it reads.
+    - transform: money_en
     # Repeats, false starts and empty markers. Below the number stages, or
     # "two two three" collapses to 23 before anything reads it as 223.
     - transform: disfluency
@@ -261,6 +264,16 @@ transforms:
     command: examples/numbers/en.py
     returns: json
     tests: { path: examples/numbers/cases-en.yaml }
+
+  # Amounts of money with the currency symbol, one script per language. Runs
+  # below numbers, on the digits it wrote. `dollars` and `euros` are the same
+  # word in French, so each script declines a transcript the pipeline detected
+  # as another language — see examples/transforms/money/engine.py.
+  - name: money_en
+    description: dictated amounts of money with the currency symbol
+    command: examples/money/en.py
+    returns: json
+    tests: examples/money/cases-en.yaml
 
   # Hesitation sounds. A `replace:` rule, so it costs no process at all — the
   # list above is the half you edit, and the pattern beside it catches a sound

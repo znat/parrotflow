@@ -96,6 +96,9 @@ GRAMMAR = engine.Grammar(
     # what keeps "soixante-quinze pour cent" from becoming "75 pour 100".
     bare_scale_blockers={"pour"},
     percent=(("pour", "cent"),),
+    # Un nombre devant l'un de ces mots est un prix : il s'écrit en chiffres
+    # quelle que soit sa taille, parce que `money/` ne lit que des chiffres.
+    currency={"euro", "euros", "dollar", "dollars", "centime", "centimes"},
     decimal_separator=",",
     # 1er, then 2e, 3e. The feminine "1re" cannot be known from the number, and
     # the masculine is the form that reads acceptably either way.

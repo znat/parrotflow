@@ -1,0 +1,211 @@
+# Validation set for `money_en`. Scored with `score.py --lang en` beside this
+# file, or with `ParrotFlow --eval money_en`, which runs the installed command.
+# The `tests:` key on the transform points `--eval` at this file.
+#
+# `change`: an amount was dictated — write it with the symbol.
+# `keep` (no `expect`): must come back byte for byte.
+#
+# The inputs are what `numbers_en` writes, not what was said. This stage runs
+# below it and reads digits only — "twenty dollars" never reaches it, and
+# neither does "five dollars": a currency word is in the numbers grammar's
+# `currency` set, so it lifts the below-ten floor and writes "5 dollars".
+# That "words in, digits out" half is scored in tests/pipeline-cases.yaml,
+# which runs the two stages together.
+#
+# The keep half is 19 of 41 cases and it is the half that decides. The stage
+# runs on every transcript and shows nothing, so a wrong rewrite is text nobody
+# watched change. Every keep is a shape that looks like an amount and is not.
+#
+# Every input is four words or more on purpose. Below that
+# `DictationLanguage.minimumWords` turns the cross-language guard off, and
+# `euros` is the same word in French — see `engine.py`.
+#
+# `lang:` is on every case because `--eval` hands it to the pipeline, and the
+# guard in `engine.py` reads it.
+
+cases:
+
+  # --- amount: the plain form ---
+  - probe: amount_en
+    lang: en
+    input: "the ticket was 20 dollars"
+    expect: "the ticket was $20"
+  - probe: amount_en
+    lang: en
+    input: "it cost me 25 euros"
+    expect: "it cost me €25"
+  - probe: amount_en
+    lang: en
+    input: "lunch came to 5 dollars"
+    expect: "lunch came to $5"
+  - probe: amount_en
+    lang: en
+    input: "the laptop was 3000 dollars"
+    expect: "the laptop was $3000"
+  - probe: amount_en
+    lang: en
+    input: "the invoice came to 1250 euros"
+    expect: "the invoice came to €1250"
+  - probe: amount_en
+    lang: en
+    input: "the coffee costs 7 euros"
+    expect: "the coffee costs €7"
+  - probe: amount_en
+    lang: en
+    input: "I will send you 40 dollars"
+    expect: "I will send you $40"
+  - probe: amount_en
+    lang: en
+    input: "a budget of 500 euros per month"
+    expect: "a budget of €500 per month"
+  - probe: amount_en
+    lang: en
+    input: "the fee is 1 dollar"
+    expect: "the fee is $1"
+  - probe: amount_en
+    lang: en
+    input: "he charges 20 dollars 3 times a week"
+    expect: "he charges $20 3 times a week"
+
+  # --- cents_en: the tail, said with the word and without it ---
+  - probe: cents_en
+    lang: en
+    input: "that will be 20 dollars and 50 cents"
+    expect: "that will be $20.50"
+  - probe: cents_en
+    lang: en
+    input: "please refund 12 dollars and 5 cents"
+    expect: "please refund $12.05"
+  - probe: cents_en
+    lang: en
+    input: "it rang up at 25 dollars 50"
+    expect: "it rang up at $25.50"
+  - probe: cents_en
+    lang: en
+    input: "the book was 9 euros 90"
+    expect: "the book was €9.90"
+
+  # --- scale_en: the scale word stays a word, when there still is one ---
+  #
+  # `numbers_en` writes a whole scale out — "three million dollars" arrives as
+  # "3000000 dollars" — and leaves the word only when a decimal is in front of
+  # it. So both shapes reach this stage, and both are here.
+  - probe: scale_en
+    lang: en
+    input: "the round was 2.5 million dollars"
+    expect: "the round was $2.5 million"
+  - probe: scale_en
+    lang: en
+    input: "we raised 3 million dollars last year"
+    expect: "we raised $3 million last year"
+  - probe: scale_en
+    lang: en
+    input: "we raised 3000000 dollars last year"
+    expect: "we raised $3000000 last year"
+
+  # --- keep: the currency word as a noun ---
+  - probe: keep_en
+    lang: en
+    input: "the dollar is strong this quarter"
+  - probe: keep_en
+    lang: en
+    input: "please type a dollar sign here"
+  - probe: keep_en
+    lang: en
+    input: "the euro zone is in trouble"
+  - probe: keep_en
+    lang: en
+    input: "it costs a few dollars more"
+  - probe: keep_en
+    lang: en
+    input: "euros and dollars are not the same"
+  - probe: keep_en
+    lang: en
+    input: "she was paid in euros last year"
+  - probe: keep_en
+    lang: en
+    input: "please convert dollars to euros today"
+  - probe: keep_en
+    lang: en
+    input: "a dollar today buys less than before"
+  - probe: keep_en
+    lang: en
+    input: "the fund holds millions of dollars"
+
+  # --- singular_en: a singular currency word, said as an amount ---
+  #
+  # Heard 2026-09-16: "sixty euro and seventy cents" came back untouched
+  # because the rule was "singular means one". English uses the singular word
+  # both ways, and the noun after it is what says which. Nothing after it,
+  # or cents after it, means an amount.
+  - probe: singular_en
+    lang: en
+    input: "60 euro and 70 cents."
+    expect: "€60.70."
+  - probe: singular_en
+    lang: en
+    input: "the whole thing costs 60 euro."
+    expect: "the whole thing costs €60."
+
+  # --- keep: a singular currency word in front of a noun is not an amount ---
+  - probe: singular_en
+    lang: en
+    input: "he handed me a 20 dollar bill"
+  - probe: singular_en
+    lang: en
+    input: "we bill a 30 dollar per hour rate"
+  - probe: singular_en
+    lang: en
+    input: "the 5 dollar footlong is gone"
+
+  # --- slang_en: the one word worth having ---
+  #
+  # 2 of 1713 archived dictations say "bucks"; none say "quid" or "grand".
+  # `USD` is left alone on purpose: a code is already unambiguous.
+  - probe: slang_en
+    lang: en
+    input: "including the 20 bucks for the fuel"
+    expect: "including the $20 for the fuel"
+  - probe: slang_en
+    lang: en
+    input: "we bought coffee for 20 bucks"
+    expect: "we bought coffee for $20"
+  - probe: slang_en
+    lang: en
+    input: "it came to 200 USD in the end"
+
+  # --- keep: already written, or not this stage's job ---
+  - probe: keep_en
+    lang: en
+    input: "the price is already $20 today"
+  - probe: keep_en
+    lang: en
+    input: "the sticker said 99 cents only"
+  - probe: keep_en
+    lang: en
+    input: "he owes me twenty dollars still"
+
+  # --- keep: this stage reads no number words ---
+  #
+  # It used to, and the archive found the bug: "I want ninety-nine Euros."
+  # came out "I want ninety-€9." The word-reading half is gone now — the
+  # pattern is `\d+` — and these hold it gone.
+  - probe: compound_en
+    lang: en
+    input: "I want ninety-nine Euros."
+  - probe: compound_en
+    lang: en
+    input: "I want ninety nine euros please"
+  - probe: compound_en
+    lang: en
+    input: "it came to two hundred dollars"
+
+  # --- amount: two of them in one sentence ---
+  #
+  # A second bug the word-reading half caused: "and" is one of the words a
+  # number is built from, so the guard that read the word in front threw the
+  # second amount away.
+  - probe: amount_en
+    lang: en
+    input: "it costs 5 dollars and 20 dollars for shipping"
+    expect: "it costs $5 and $20 for shipping"

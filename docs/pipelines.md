@@ -97,12 +97,14 @@ on.
 
 `numbers` used to be a stage here. It is a shipped transform now, and there is
 one script per language — `examples/transforms/numbers/en.py` and `fr.py`.
-`dates` is the same shape and runs above it. The default config ships the two
-English steps and nothing else:
+`dates` is the same shape and runs above it. `money` is the same shape again
+and runs below it. The default config ships the three English steps and nothing
+else:
 
 ```yaml
     - transform: dates_en
     - transform: numbers_en
+    - transform: money_en
 ```
 
 A config still saying `- numbers` is refused by name, with both halves of the
@@ -125,26 +127,55 @@ transforms:
     returns: json
     tests: { path: examples/numbers/cases-fr.yaml }
 
+  - name: money_fr
+    description: dictated amounts of money with the currency symbol
+    command: examples/money/fr.py
+    returns: json
+    tests: examples/money/cases-fr.yaml
+
 transcription:
   pipeline:
     - transform: dates_fr
     - transform: numbers_fr
+    - transform: money_fr
 ```
 
 Dates goes above numbers, in every language. A date is made of number words,
 and numbers would write them as digits before dates ever saw them.
 
+Money goes below numbers, for the mirror reason. Money reads digits, not words:
+`numbers_en` writes "twenty dollars" as `20 dollars`, and only then is there an
+amount for `money_en` to put a symbol on.
+
+That holds all the way down, because a currency word lifts the numbers floor.
+A lone number under ten normally stays a word — "chapter three" — but `dollar`,
+`euro`, `buck`, `cent` and their plurals are in each numbers grammar's
+`currency` set, so "five dollars" is written `5 dollars`. It is the same
+mechanism as percent, and for the same reason: `five%` is never right, and
+neither is a price in words next to one in digits. Money therefore reads `\d+`
+and no number words at all, which is worth saying plainly — take `numbers_en`
+out of the pipeline and `money_en` has nothing to work on.
+
 No step needs a language gate. Each script reads its own words only,
 and declines a number whose words are none of its own — measured over the other
 language's whole case set, every script changed nothing.
+
+**Money is the exception, and its guard is inside the script.** `dollars` and
+`euros` are spelled the same in both languages, which no pair of `dates` files
+is. With no gate `money_en` runs first and would write a French `20 euros` as
+`$20`. So each money script declines a transcript the pipeline detected as
+another language. Below `DictationLanguage.minimumWords` — four words —
+detection answers with the first configured language, the guard is off, and the
+first step wins. `examples/transforms/money/score.py --cross` is what holds
+this: it runs each script over the other language's cases and wants no change.
 
 `dates_fr` resolves a bare hour to the next time it comes round: at 12:00 "à
 4h" is `16h`. Add `--no-wall-clock` to its `command:` line to write `4h`
 instead. English writes 12-hour times and invents no pm.
 
-Both rewrite transcripts that were already correct, so run
+All three rewrite transcripts that were already correct, so run
 `examples/transforms/numbers/score.py --text "<line>"` — and the same script in
-`dates/` — to see what they would do before leaving them in. Adding another
+`dates/` and `money/` — to see what they would do before leaving them in. Adding another
 language is a copy of one file per folder; see the "Adding a language" note in
 each `engine.py`.
 
@@ -1051,7 +1082,8 @@ joined. The built-in ones publish `vocabulary.count`,
 `vocabulary.changes` and `vocabulary.before` — how many rules fired, which
 ones, and the sentence the stage was handed — and, for a prompt stage, `model`.
 Each shipped `numbers` script publishes `count` under its own name, so
-`numbers_en.count` and `numbers_fr.count`, and each `dates` script the same.
+`numbers_en.count` and `numbers_fr.count`, and each `dates` and `money` script
+the same.
 No step carries a language gate, so they run on every transcript and always
 publish. A step that a condition *does* skip publishes only
 `<name>.ran = false`, and a later condition then has to ask
