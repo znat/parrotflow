@@ -145,33 +145,44 @@ def cross(modules):
 
 
 def corpus(modules):
-    """Every edit these stages would make to the archive, for reading by eye."""
+    """Every edit these stages would make to the archive, for reading by eye.
+
+    Each clip is run at the language the app detected for it, which the trace
+    stores in `lang`. Dropping it would turn the cross-language guard off and
+    let `en.py` write a French "20 euros" as "$20" — the very thing the guard
+    exists to stop, reported as if the pipeline did it. A clip with no `lang`
+    is counted and named, not chained: there is nothing to run it as.
+    """
     if not TRACE.exists():
         sys.exit(f"no trace at {TRACE}")
 
-    seen = {}
+    seen, unknown = {}, 0
     for line in TRACE.read_text().splitlines():
         if not line.strip():
             continue
         record = json.loads(line)
         if (record.get("asr") or {}).get("text"):
-            seen[record["wav"]] = record["asr"]["text"]
+            seen[record["wav"]] = (record["asr"]["text"], record.get("lang"))
 
     changed = 0
-    for wav, text in sorted(seen.items()):
+    for wav, (text, lang) in sorted(seen.items()):
+        if not lang:
+            unknown += 1
+            continue
         out, applied = text, []
-        for lang, module in modules.items():
-            out, fired = written(module, out)
-            applied += [f"{lang}: {name}" for name in fired]
+        for code, module in modules.items():
+            out, fired = written(module, out, lang)
+            applied += [f"{code}: {name}" for name in fired]
         if out == text:
             continue
         changed += 1
-        print(f"\n{wav}  [{', '.join(dict.fromkeys(applied))}]")
+        print(f"\n{wav}  [{lang}]  [{', '.join(dict.fromkeys(applied))}]")
         for before, after in zip(text.split(". "), out.split(". ")):
             if before != after:
                 print(f"  -  {before}")
                 print(f"  +  {after}")
-    print(f"\n  {len(seen)} clips, {changed} changed")
+    print(f"\n  {len(seen)} clips, {changed} changed"
+          + (f", {unknown} skipped with no language" if unknown else ""))
 
 
 def main():
