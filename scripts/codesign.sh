@@ -63,14 +63,29 @@ pf_is_developer_id() {
 # the hardened runtime, the microphone entitlement it would otherwise block,
 # and a secure timestamp. Notarization refuses a submission missing any of
 # them, and it refuses it after the upload, minutes later.
+#
+# PF_SANDBOX=1 signs with Resources/entitlements-sandbox.plist instead, on
+# either identity. That is the App Store probe and not a way to ship: see
+# docs/proposals/app-store.md. It applies to the self-signed path too, which
+# otherwise passes no entitlements at all — a sandbox test that silently did
+# not turn the sandbox on would answer the question wrongly and look like it
+# had answered it.
 pf_sign() {
-    local app="$1" identity="$2" root
+    local app="$1" identity="$2" root entitlements
     root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
     # An interrupted codesign leaves a .cstemp behind, and the next run fails on
     # it with "invalid or unsupported format for signature" — which names the
     # temp file, not the cause, and sends you looking at the wrong thing.
     find "$app" -name '*.cstemp' -delete 2>/dev/null || true
+
+    if [ "${PF_SANDBOX:-}" = "1" ]; then
+        entitlements="$root/Resources/entitlements-sandbox.plist"
+        echo "==> Signing SANDBOXED (App Store probe) — not a shippable build"
+        codesign --force --options runtime --entitlements "$entitlements" \
+            --sign "$identity" "$app"
+        return
+    fi
 
     if pf_is_developer_id "$identity"; then
         codesign --force --options runtime --timestamp \

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Not a shipping configuration. This is the probe entitlement set for
+         the question "would the Mac App Store sandbox let the hotkeys work",
+         and nothing builds with it unless PF_SANDBOX=1 is set. See
+         docs/proposals/app-store.md.
+
+         The App Store requires the sandbox. The sandbox is what would break
+         OfferKeys' event tap and ModifierKey's global monitor, so the answer
+         has to be measured before anything is rewritten to suit it. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- Both microphone keys, because the two halves of the documentation
+         disagree about which one the sandbox reads and the cost of naming
+         both is nothing. Resources/entitlements.plist carries audio-input
+         alone; that file is for the hardened runtime without the sandbox and
+         is correct as it stands. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.device.microphone</key>
+    <true/>
+
+    <!-- HuggingFace for the models, GitHub for the update check, localhost for
+         Ollama. All three are outbound. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- The sandbox moves config.yaml into a container, so the probe needs a
+         way to read a config from where one already is. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+</dict>
+</plist>

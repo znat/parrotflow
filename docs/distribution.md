@@ -299,3 +299,8 @@ that carry no type.
 The $99 buys notarization, and notarization is what Homebrew, a
 double-clickable `.dmg`, and a shareable link need. Curl covers a developer who
 is already in a terminal. It does not cover a person who was sent a link.
+
+Closing that last gap through the Mac App Store has been costed rather than
+done: [proposals/app-store.md](proposals/app-store.md). It turns on one
+measurement, `make sandbox-probe`, because the sandbox the store requires is
+what would decide whether the hotkeys still work.

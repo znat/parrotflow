@@ -15,7 +15,7 @@ V := . scripts/variant.sh &&
 
 .PHONY: app run install uninstall uninstall-dev uninstall-release stop clean \
         reset-permissions fresh-setup logs dev-certificate release release-certificate \
-        try-install which hooks test
+        try-install which hooks test sandbox-probe
 
 ## Build the app bundle into .build/
 app:
@@ -153,6 +153,39 @@ try-install: release
 	@mkdir -p "$(TRY_DEST)"
 	@PARROTFLOW_BASE_URL="file://$(PWD)/dist" \
 	 PARROTFLOW_DEST="$(TRY_DEST)" sh scripts/install.sh
+
+## Answer one question: would the App Store sandbox let the hotkeys work?
+##
+## The App Store requires the sandbox, and the sandbox is what would break the
+## two input paths this app is built on — ModifierKey's global monitor for
+## "hold Right Command", and OfferKeys' CGEvent tap for the offer chips.
+## Nothing else about the App Store is worth costing until that is measured,
+## because a tap the sandbox refuses ends the question on its own. See
+## docs/proposals/app-store.md.
+##
+## Dev only, and it takes the dev app's grants with it: same bundle id, same
+## certificate, so macOS asks for Microphone, Accessibility and Input
+## Monitoring again. `make install` puts an ordinary dev build back.
+##
+## /Applications and not .build, for the reason try-install names — TCC keeps
+## a grant for an app there and may never list one running from elsewhere.
+sandbox-probe:
+	@[ "$(VARIANT)" = "dev" ] || { echo "error: sandbox-probe is dev only (got VARIANT=$(VARIANT))"; exit 1; }
+	@$(MAKE) --no-print-directory stop
+	@$(MAKE) --no-print-directory reset-permissions
+	@PF_SANDBOX=1 scripts/build-app.sh
+	@$(V) rm -rf "/Applications/$$APP_NAME.app" \
+	  && cp -R ".build/$$APP_NAME.app" /Applications/
+	@$(V) codesign -d --entitlements - "/Applications/$$APP_NAME.app" 2>&1 \
+	  | grep -q 'com.apple.security.app-sandbox' \
+	  || { echo "error: the bundle is not sandboxed — the probe would measure nothing"; exit 1; }
+	@$(V) echo "==> Sandboxed $$DISPLAY_NAME is in /Applications. Confirmed sandboxed."
+	@$(V) open "/Applications/$$APP_NAME.app"
+	@$(V) printf '\n%s\n' "Grant Microphone, Accessibility and Input Monitoring when asked, then:"
+	@$(V) printf '  1. %s\n' "hold the hotkey and talk — does recording start?"
+	@$(V) printf '  2. %s\n' "trigger an offer and press its letter — does the chip take the key?"
+	@$(V) printf '  3. %s\n\n' "read the three answers out of the log:"
+	@$(V) printf '     grep -E "launched —|offer keys:" "$(HOME)/Library/Logs/$$LOG_NAME"\n\n'
 
 ## Put this variant back to a first run and install it again — the setup
 ## screen with something to do. Forgets its permissions, deletes its models,
