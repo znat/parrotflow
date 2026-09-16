@@ -1,0 +1,7 @@
+# The sentence repair on its own. The stage needs a 320 MB model to read a
+# boundary and fails open without it, so the only thing a case here can score
+# is what the step does before the model is asked: the decoder's doubled full
+# stop, collapsed to one.
+languages: [en]
+pipeline:
+  - sentence_repair

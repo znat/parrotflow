@@ -1066,6 +1066,13 @@ struct Pipeline: Equatable, Codable {
     private func repairSentence(
         _ step: Step, on text: String, config: Config, words: [Trace.Word]
     ) async -> StageResult {
+        let text = Pipeline.collapsingDoubledStop(text)
+        let words = words.map {
+            Trace.Word(
+                word: Pipeline.collapsingDoubledStop($0.word),
+                start: $0.start, end: $0.end, confidence: $0.confidence
+            )
+        }
         guard #available(macOS 14, *) else {
             return StageResult(text: text, vars: ["count": .int(0)])
         }
@@ -1078,6 +1085,33 @@ struct Pipeline: Equatable, Codable {
             words: words
         )
         return StageResult(text: outcome.text, vars: ["count": .int(outcome.count(.join))])
+    }
+
+    /// `priced.. The` -> `priced. The`.
+    ///
+    /// The decoder writes two full stops now and then, and the second one
+    /// hides the boundary: `SentenceJoin.boundaries` refuses a mark inside a
+    /// run of marks, and refuses a mark that has no letter in front of it, so
+    /// neither stop is a boundary and the cut sentence is never read.
+    ///
+    /// Exactly two, and full stops only. Three or more is an ellipsis — 23
+    /// clips of the archive, mostly French — and only the full stop was ever
+    /// seen doubled: 7 clips against 0 for `??`, `!!` and `,,` over 24837.
+    ///
+    /// Applied to the decoder's words as well, so they still rebuild the text
+    /// and the pause gate keeps working.
+    static func collapsingDoubledStop(_ text: String) -> String {
+        guard text.contains("..") else { return text }
+        var out = ""
+        var run = 0
+        for character in text {
+            if character == "." { run += 1; continue }
+            out += String(repeating: ".", count: run == 2 ? 1 : run)
+            run = 0
+            out.append(character)
+        }
+        out += String(repeating: ".", count: run == 2 ? 1 : run)
+        return out
     }
 
     /// Every substitution the vocabulary pass made, settled where it stands.

@@ -33,6 +33,22 @@ cases:
     input: I have 99 cents
     expect: unchanged
 
+  # The decoder writes two full stops now and then, and both of them are
+  # invisible to `SentenceJoin.boundaries`. The collapse runs in front of the
+  # stage, so it happens with or without the model — which is what these two
+  # cases score. Neither text holds a boundary, so neither depends on a 320 MB
+  # download being present or absent.
+  - name: a doubled full stop is collapsed
+    pipeline: sentence-repair
+    input: "And they are priced.."
+    expect: "And they are priced."
+
+  # Three is an ellipsis, and the archive's are real: 23 clips, mostly French.
+  - name: an ellipsis is left alone
+    pipeline: sentence-repair
+    input: "I was going to... Then I stopped."
+    expect: unchanged
+
   # --- conditions gate a stage --------------------------------------------
   - name: unless does not match, so the stage runs
     pipeline: conditions
