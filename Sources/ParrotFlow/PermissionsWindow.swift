@@ -237,7 +237,6 @@ final class PermissionsModel: ObservableObject {
         return max(0, moment.timeIntervalSince(tourStartedAt))
     }
 
-
     /// Move on one screen: Next on the models screen, and the skip a revisit
     /// offers on a permission screen. It cannot walk past the last one — that
     /// is where the walk ends, and its button closes the window.

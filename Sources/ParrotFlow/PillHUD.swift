@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// What a notice is telling you. Carried as a colour, because the notice is
@@ -3251,7 +3252,6 @@ private struct OfferKeyCap: View {
             }
             .overlay { sheen }
     }
-
 
     /// A bright arc travelling round the box, over the resting border.
     ///
