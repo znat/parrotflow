@@ -75,7 +75,7 @@ logging:
 | Trace | `~/.config/parrotflow/recordings/trace.jsonl` |
 | Timeline | `~/.config/parrotflow/recordings/spans.jsonl` — one per dictation, rotating at 64 MB; off with `logging.spans: false` |
 | Log | `~/Library/Logs/ParrotFlow.log` — off with `logging.text: false` |
-| The shipped examples | `~/.config/parrotflow/transforms/examples/` — refreshed from the app on every launch, not yours to edit in place |
+| The built-in transforms | `~/.config/parrotflow/transforms/built-in/` — refreshed from the app on every launch, not yours to edit in place |
 
 The menu bar item shows the current state and offers *Open Recordings
 Folder* — the wavs, if `logging.audio` is on, and `trace.jsonl` — *Settings*,
@@ -94,7 +94,7 @@ inside, so it can be written, scored and handed to someone else as one thing:
 ~/.config/parrotflow/
   config.yaml
   transforms/
-    examples/                # every shipped example — the app's, refreshed
+    built-in/                # every shipped example — the app's, refreshed
       disfluency/            # on every launch, not yours to edit in place
         disfluency.py
         cases.yaml
@@ -112,22 +112,28 @@ directory. A script can open `roster.json` as a bare relative path, so the
 folder is self-contained: copy it to another machine and it works.
 
 A bare name is only ever looked for in that folder. A path with a directory in
-it — `command: examples/join/join.py` — may also name a file
+it — `command: built-in/join/join.py` — may also name a file
 elsewhere under `transforms/`, which is how the config that ships points every
-transform that uses a shipped example at the one copy in `transforms/examples/`
+transform that uses a shipped example at the one copy in `transforms/built-in/`
 instead of a copy per transform. The working directory still does not move: a
 shared script runs in the folder of whichever transform called it, so it reads
 its own data files from `__file__` rather than by bare relative name.
 
-`transforms/examples/` is the app's folder: refreshed from the copy that ships
+`transforms/built-in/` is the app's folder: refreshed from the copy that ships
 every time ParrotFlow starts, so an edit made there does not survive the next
 launch. The refresh also removes a file this version no longer ships, so an
 example a past version installed and this one dropped or renamed stops
-resolving through its old `examples/...` path instead of quietly going stale.
+resolving through its old `built-in/...` path instead of quietly going stale.
 `transforms/<name>/` is yours: nothing here ever writes it, and nothing in it
 is ever overwritten. To change a shipped example, copy its folder from
-`transforms/examples/` into `transforms/<name>/` and point `command:` at the
+`transforms/built-in/` into `transforms/<name>/` and point `command:` at the
 bare name there.
+
+`transforms/built-in/` used to be `transforms/examples/`. On launch, the app
+moves the folder and rewrites `examples/...` paths in `config.yaml` to
+`built-in/...`. It only rewrites a path that names a shipped file. A path that
+still says `examples/...` elsewhere, like in a `--pipeline` fixture, keeps
+working.
 
 Beyond that there is no flat alternative to fall back to: a `command:` that
 names neither a file under `transforms/` nor anything the shell can find on

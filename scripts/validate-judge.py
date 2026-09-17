@@ -239,7 +239,7 @@ def load_shipped():
     checkout without it should say so rather than raise from inside importlib.
     """
     import importlib.util
-    path = ROOT / "examples/transforms/verify_names/verify_names.py"
+    path = ROOT / "built-in/transforms/verify_names/verify_names.py"
     if not path.exists():
         print(f"✗ --script needs {path.relative_to(ROOT)}, which is not in this"
               " checkout.\n  Score the no-model control instead:"

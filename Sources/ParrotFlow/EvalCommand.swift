@@ -210,8 +210,8 @@ enum EvalCommand {
     }
 
     /// `cases.yaml` beside a shared `command:`, for a transform whose own
-    /// folder is not where its script lives — `command: examples/punctuation/
-    /// punctuation.py` reads from `transforms/examples/punctuation/`, and its
+    /// folder is not where its script lives — `command: built-in/punctuation/
+    /// punctuation.py` reads from `transforms/built-in/punctuation/`, and its
     /// case set is right there next to the script, not in `transforms/
     /// punctuation/`.
     ///

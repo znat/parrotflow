@@ -29,7 +29,7 @@ $PF --eval <transform>                              # score it against its set
 says. Everything else is in [docs/cli.md](docs/cli.md).
 
 **Never change a prompt or a pattern without scoring it.** Every rewrite has a
-case set — a transform's in its own folder under `examples/transforms/<name>/`,
+case set — a transform's in its own folder under `built-in/transforms/<name>/`,
 everything else in `tests/` — and a runner, either `$PF --eval <name>` or a
 script in `scripts/`. Get the number before, change one thing, get it after.
 "It looks better" is how a change fixes the example in front of you and breaks
@@ -71,7 +71,7 @@ release machinery and gets no warning. `make hooks` refuses it locally — see
   — and several check scripts read the real file rather than a fixture.
   Changing a default changes what everyone gets on first launch.
 - The word lists a `replace:` pattern reads, and the rules in
-  `examples/transforms/disfluency/disfluency.py`, are judgements about how
+  `built-in/transforms/disfluency/disfluency.py`, are judgements about how
   people speak, tuned against scored sets. They are meant to be edited by the
   person whose speech they describe — not silently widened to make one sentence
   work.

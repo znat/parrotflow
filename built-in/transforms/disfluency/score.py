@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Score and audit the `disfluency` transform without building the app.
 
-    examples/transforms/disfluency/score.py            # score the case set
-    examples/transforms/disfluency/score.py --verbose  # and show the passes
-    examples/transforms/disfluency/score.py --text "the the prompt"
-    examples/transforms/disfluency/score.py --corpus   # every edit it would
+    built-in/transforms/disfluency/score.py            # score the case set
+    built-in/transforms/disfluency/score.py --verbose  # and show the passes
+    built-in/transforms/disfluency/score.py --text "the the prompt"
+    built-in/transforms/disfluency/score.py --corpus   # every edit it would
                                                         # make to the archive
 
 `ParrotFlow --eval disfluency` answers a different question, and the numbers

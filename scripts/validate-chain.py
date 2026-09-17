@@ -26,7 +26,7 @@ RIGHT = {
 
 
 def shipped():
-    path = ROOT / "examples/transforms/verify_names/verify_names.py"
+    path = ROOT / "built-in/transforms/verify_names/verify_names.py"
     spec = importlib.util.spec_from_file_location("verify_names", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

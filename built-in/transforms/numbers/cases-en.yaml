@@ -1,7 +1,7 @@
 # Validation set for `numbers_en`, the English half of the numbers transform.
 #
 #   ParrotFlow --eval numbers_en
-#   examples/transforms/numbers/score.py          # every language, from the tree
+#   built-in/transforms/numbers/score.py          # every language, from the tree
 #
 # `expect`: what must come out. No `expect` means "comes back byte for byte" —
 # the --eval contract, in docs/cli.md.

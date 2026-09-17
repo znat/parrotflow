@@ -16,7 +16,7 @@
 #     sentence. Only this fixture can show that; every case-set input is
 #     already short.
 #
-# The grammars themselves are scored by examples/transforms/money/score.py,
+# The grammars themselves are scored by built-in/transforms/money/score.py,
 # which also runs each script over the other language's cases.
 languages: [en, fr]
 transforms:

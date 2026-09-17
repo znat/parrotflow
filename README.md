@@ -191,7 +191,7 @@ transforms:
     prompt: Fix grammar and punctuation...
 ```
 
-> See [examples/transforms/grammar](examples/transforms/grammar) for a more elaborate version.
+> See [built-in/transforms/grammar](built-in/transforms/grammar) for a more elaborate version.
 <br>
 Or you can run the grammar fix in chat and mail apps (but not in coding agents, for instance) for all dictations:
 
@@ -208,20 +208,20 @@ far, on the app being dictated into, or on your own variables. See
 
 ### More examples
 
-Each with its own test cases, in [examples/transforms](examples/transforms).
+Each with its own test cases, in [built-in/transforms](built-in/transforms).
 `fillers`, `dates`, `numbers` and `disfluency` are in the pipeline a new install
 gets; the rest ship with no step — see [What ships
 unwired](docs/pipelines.md#what-ships-unwired).
 
-- [numbers](examples/transforms/numbers) — spoken numbers as digits, one
+- [numbers](built-in/transforms/numbers) — spoken numbers as digits, one
   script per language: *"two hundred forty-three"* → `243`,
   *"soixante-quinze pour cent"* → `75%`.
-- [disfluency](examples/transforms/disfluency) — what you did not mean to say,
+- [disfluency](built-in/transforms/disfluency) — what you did not mean to say,
   taken out: a word said twice, *"the the prompt"* → *"the prompt"*; a phrase
   begun again, *"in the ter in the terminal"*; and a marker that carries
   nothing, *"so use like you know five"* → *"so use five"*. Only that last one
   wants a parse; the rest are string work.
-- [dates](examples/transforms/dates) — a dictated date or time in the shape it
+- [dates](built-in/transforms/dates) — a dictated date or time in the shape it
   was said, *"at ten fifteen"* → *"at 10:15"*. One script per language, above
   the numbers step; English is in the pipeline and French is two lines of
   config away.

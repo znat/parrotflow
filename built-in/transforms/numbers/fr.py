@@ -6,9 +6,9 @@ Transcript in, rewrite out — plain text, or the JSON envelope when the app set
 
     - name: numbers_fr
       description: spoken numbers as digits
-      command: examples/numbers/fr.py
+      command: built-in/numbers/fr.py
       returns: json
-      tests: { path: examples/numbers/cases-fr.yaml }
+      tests: { path: built-in/numbers/cases-fr.yaml }
 
     pipeline:
       - transform: numbers_fr

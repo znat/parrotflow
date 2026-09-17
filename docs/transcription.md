@@ -934,7 +934,7 @@ which is the reason that command prints the linkage rather than assuming it.
 Getting the real thing means vendoring and notarising a native blob for one
 pass. Not worth it.
 
-`examples/transforms/numbers/` does it instead: no model, no library, a linear
+`built-in/transforms/numbers/` does it instead: no model, no library, a linear
 scan. It is a shipped command transform with one script per language — `en.py`,
 `fr.py`, and `engine.py` holding everything that is not a language — so a
 language is on only when the pipeline lists its step. The default config lists
@@ -989,7 +989,7 @@ either language, and percent lifts the below-ten floor because `five%` is never
 right. The other direction is left alone: "pour cent" with no number in front is
 the preposition and a hundred, so "il paie pour cent euros" is untouched.
 
-`examples/transforms/numbers/score.py` scores every language, and
+`built-in/transforms/numbers/score.py` scores every language, and
 `--text "<line>" --lang fr` runs a single line. `ParrotFlow --eval numbers_en`
 and `--eval numbers_fr` score the copies installed on this machine.
 

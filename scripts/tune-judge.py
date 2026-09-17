@@ -35,7 +35,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "tests/judge-menus.json"
-PROMPT = ROOT / "examples/prompts/verify_names.md"
+PROMPT = ROOT / "built-in/prompts/verify_names.md"
 CLIPS = Path.home() / "Recordings/ParrotFlow Dev"
 ENDPOINT = os.environ.get("PARROTFLOW_LLM_ENDPOINT", "http://localhost:11434") + "/api/chat"
 

@@ -5,7 +5,7 @@
 .DS_Store
 dist/
 
-# The runner imports examples/code_identifiers.py, which leaves this behind.
+# The runner imports built-in/code_identifiers.py, which leaves this behind.
 __pycache__/
 
 # One person's voice, and the table mined out of it. It lives in `voice/`

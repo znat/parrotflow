@@ -9,6 +9,24 @@ import Foundation
 /// splice a pronunciation into it.
 enum ConfigWriter {
 
+    // MARK: - The built-in rename
+
+    /// `examples/<rest>` turned into `built-in/<rest>`, for each path whose
+    /// `rest` is a shipped file. Checking the file keeps a transform's own
+    /// `examples/` subfolder, and prose in comments, as they are.
+    static func renamingBuiltInPaths(in yaml: String, isShipped: (String) -> Bool) -> String {
+        let pattern = #"(?<![\w/.-])examples/([^\s"'},\]#]+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return yaml }
+        var result = yaml as NSString
+        let matches = regex.matches(in: yaml, range: NSRange(location: 0, length: result.length))
+        for match in matches.reversed() {
+            let rest = result.substring(with: match.range(at: 1))
+            guard isShipped(rest) else { continue }
+            result = result.replacingCharacters(in: match.range, with: "built-in/" + rest) as NSString
+        }
+        return result as String
+    }
+
     // MARK: - The microphone order
 
     /// Writes `audio.microphones` into `config.yaml`, in the order given.

@@ -196,7 +196,7 @@ transforms:
 - Two seconds is right for a script and wrong for one that asks a model. A
   command ending in `--model something` wants `timeout_seconds: 12` beside it.
 
-`examples/transforms/disfluency/disfluency.py` is the shipped one, and the best
+`built-in/transforms/disfluency/disfluency.py` is the shipped one, and the best
 template: rules first, the one rule that needs a parse behind a check for it,
 and a case file beside the script.
 
@@ -298,7 +298,7 @@ so will you the first time a stage misbehaves.
 > config whose script predates it means the script prints bare text, the app
 > cannot read it, and the stage silently stops doing anything. Edit the script
 > first, then the config. `--pipeline <fixture> "<text>" --vars` is how you
-> check, before it matters. `transforms/examples/` is different: it is
+> check, before it matters. `transforms/built-in/` is different: it is
 > refreshed on every launch, so the shipped scripts there are always current.
 
 ## Recipe: a language
@@ -357,7 +357,7 @@ and you stop running it.
 - **Include negatives — a lot of them.** Roughly one in five, and closer to
   half for anything that runs on every transcript rather than on demand. Models
   are strongly biased toward producing output, and a confident wrong answer
-  beats a refusal on any set without negatives. `examples/transforms/disfluency/cases.yaml`
+  beats a refusal on any set without negatives. `built-in/transforms/disfluency/cases.yaml`
   carries the cases that must come back untouched, and that half is the one that
   catches regressions.
 - **Keep the residue in, failing.** A set that reaches 100% by dropping what it
@@ -383,14 +383,14 @@ to a built-in stage or to the router have nowhere else to be and stay in
 
 | Where | Sets |
 |---|---|
-| `examples/transforms/<name>/` | `dates` (133, two languages), `numbers` (99, two languages), `grammar` (17), `email` (26), `join`, `priorities`, `disfluency` (100) |
+| `built-in/transforms/<name>/` | `dates` (133, two languages), `numbers` (99, two languages), `grammar` (17), `email` (26), `join`, `priorities`, `disfluency` (100) |
 | `tests/` | `spelling` (62), `french` (45), `routing` (45), `wake` (25), `split` (14), `generic`, `dates`, `inplace`, `pipeline`, `replacement`, `word-gate` (25) |
 
 Each has a runner in `scripts/`, or a `score.py` beside the set as `dates`
 does; the transform sets can also be scored with `--eval`.
-`examples/transforms/` is copied whole into
-`~/.config/parrotflow/transforms/examples/`, refreshed on every launch — one
-tree, not files kept in sync by hand. See `Config.exampleTransformsDirectory`.
+`built-in/transforms/` is copied whole into
+`~/.config/parrotflow/transforms/built-in/`, refreshed on every launch — one
+tree, not files kept in sync by hand. See `Config.builtInTransformsDirectory`.
 
 ## Before you call it done
 

@@ -14,9 +14,9 @@
 #   either spelling            `transforms/X/shout.py` names the same file,
 #                              because people write both. It is accepted only
 #                              when it lands inside the folder
-#   a path may reach            `examples/shout/shout.py`, a directory in the
+#   a path may reach            `built-in/shout/shout.py`, a directory in the
 #   sideways under transforms/  path, may name a file elsewhere under
-#                              `transforms/` — the shipped examples share one
+#                              `transforms/` — the built-in transforms share one
 #                              copy this way instead of one per transform
 #   the folder is the          so a script opens a sibling data file by a bare
 #   working directory          relative path, and the whole transform is one
@@ -127,26 +127,26 @@ check "and that is a fault, so --check-config exits 1" \
 
 # --- a path with a slash may reach a shared script under transforms/ --------
 #
-# `command: examples/shared/shared.py` is not this transform's own folder —
+# `command: built-in/shared/shared.py` is not this transform's own folder —
 # `transforms/shared_user/` — so it is resolved against `transforms/` itself,
-# which is how the shipped examples are read from one copy rather than a copy
+# which is how the built-in transforms are read from one copy rather than a copy
 # per transform. The working directory does not move: it is still
 # `transforms/shared_user/`, which is why the script reads its own sibling
 # file from `__file__` instead of by bare name.
-mkdir -p "$WORK/transforms/examples/shared"
-cat > "$WORK/transforms/examples/shared/shared.py" <<'PY'
+mkdir -p "$WORK/transforms/built-in/shared"
+cat > "$WORK/transforms/built-in/shared/shared.py" <<'PY'
 #!/usr/bin/env python3
 import pathlib, sys
 here = pathlib.Path(__file__).resolve().parent
 suffix = (here / "suffix.txt").read_text().strip()
 print(sys.stdin.read().strip().upper() + suffix)
 PY
-chmod +x "$WORK/transforms/examples/shared/shared.py"
-printf '?\n' > "$WORK/transforms/examples/shared/suffix.txt"
+chmod +x "$WORK/transforms/built-in/shared/shared.py"
+printf '?\n' > "$WORK/transforms/built-in/shared/suffix.txt"
 
 fixture shared.yaml '  - name: shared_user
-    description: shares a script under transforms/examples
-    command: examples/shared/shared.py' shared_user
+    description: shares a script under transforms/built-in
+    command: built-in/shared/shared.py' shared_user
 
 check "a slash path reaches a script shared under transforms/" \
   "$("$BIN" --pipeline "$WORK/shared.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
@@ -275,24 +275,24 @@ FRESH="$WORK/fresh"
 mkdir -p "$FRESH"
 seeded="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
 
-# What is expected is read from `examples/transforms/` itself rather than
+# What is expected is read from `built-in/transforms/` itself rather than
 # spelled out here, so a folder gaining a file — or the tree gaining a
 # folder — does not make this check stale.
-expected_examples="$(cd "$ROOT/examples/transforms" && find . -type f | sed 's|^\./|transforms/examples/|')"
+expected_built_in="$(cd "$ROOT/built-in/transforms" && find . -type f | sed 's|^\./|transforms/built-in/|')"
 # Plus the one script written once into the person's own folder.
-expected="$(printf 'config.yaml\nvocabulary.yaml\ntransforms/slack_mentions/slack_mentions.py\n%s\n' "$expected_examples" | sort | tr '\n' ' ')"
+expected="$(printf 'config.yaml\nvocabulary.yaml\ntransforms/slack_mentions/slack_mentions.py\n%s\n' "$expected_built_in" | sort | tr '\n' ' ')"
 
-check "a first launch copies the whole examples/ tree" \
+check "a first launch copies the whole built-in/ tree" \
   "$(cd "$FRESH" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' ')" \
   "$expected"
 
 check "the seeded script is executable" \
-  "$([ -x "$FRESH/transforms/examples/disfluency/disfluency.py" ] && echo yes || echo no)" \
+  "$([ -x "$FRESH/transforms/built-in/disfluency/disfluency.py" ] && echo yes || echo no)" \
   "yes"
 
-check "the seeded config resolves its command through transforms/examples/" \
+check "the seeded config resolves its command through transforms/built-in/" \
   "$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --check-config 2>/dev/null \
-     | grep -c 'transforms/examples/disfluency/disfluency.py')" \
+     | grep -c 'transforms/built-in/disfluency/disfluency.py')" \
   "1"
 
 check "a seeded config is clean" \
@@ -303,49 +303,49 @@ check "seeding twice writes no new file the second time" \
   "$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null | grep -c '✓')" \
   "0"
 
-# --- transforms/examples/ is refreshed, not preserved ------------------------
+# --- transforms/built-in/ is refreshed, not preserved ------------------------
 #
 # It is the app's folder, not yours: an edit there does not survive the next
 # `--seed-config`, the same as it would not survive the next launch. That is
 # what buys one copy of a script instead of a copy per transform that a
 # person has to notice has gone stale.
-echo "# edited" >> "$FRESH/transforms/examples/join/join.py"
+echo "# edited" >> "$FRESH/transforms/built-in/join/join.py"
 refreshed_out="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
 
-check "an edit under transforms/examples/ does not survive a refresh" \
-  "$(grep -c '# edited' "$FRESH/transforms/examples/join/join.py")" \
+check "an edit under transforms/built-in/ does not survive a refresh" \
+  "$(grep -c '# edited' "$FRESH/transforms/built-in/join/join.py")" \
   "0"
 
 check "and the refresh is reported" \
-  "$(printf '%s\n' "$refreshed_out" | grep -c 'transforms/examples/join/join.py — refreshed')" \
+  "$(printf '%s\n' "$refreshed_out" | grep -c 'transforms/built-in/join/join.py — refreshed')" \
   "1"
 
 # --- a file the shipped tree drops is pruned, not left stale -----------------
 #
 # An example a past version installed and this one no longer ships must not
-# keep resolving through an `examples/...` path forever. `retired` is not a
-# folder `examples/transforms/` has, so the next refresh has nothing to copy
+# keep resolving through a `built-in/...` path forever. `retired` is not a
+# folder `built-in/transforms/` has, so the next refresh has nothing to copy
 # there and removes what is left over from before.
-mkdir -p "$FRESH/transforms/examples/retired"
-printf '#!/usr/bin/env python3\nprint("gone")\n' > "$FRESH/transforms/examples/retired/retired.py"
+mkdir -p "$FRESH/transforms/built-in/retired"
+printf '#!/usr/bin/env python3\nprint("gone")\n' > "$FRESH/transforms/built-in/retired/retired.py"
 pruned_out="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
 
-check "a file the app no longer ships is removed from transforms/examples/" \
-  "$([ -e "$FRESH/transforms/examples/retired/retired.py" ] && echo present || echo gone)" \
+check "a file the app no longer ships is removed from transforms/built-in/" \
+  "$([ -e "$FRESH/transforms/built-in/retired/retired.py" ] && echo present || echo gone)" \
   "gone"
 
 check "and the removal is reported" \
-  "$(printf '%s\n' "$pruned_out" | grep -c 'transforms/examples/retired/retired.py — removed, no longer shipped')" \
+  "$(printf '%s\n' "$pruned_out" | grep -c 'transforms/built-in/retired/retired.py — removed, no longer shipped')" \
   "1"
 
 # It stops resolving too. Written into `$FRESH` itself, not `$WORK` — a
 # `--pipeline` fixture resolves `command:` against its own directory, and
-# `transforms/examples/` was just pruned under `$FRESH`.
+# `transforms/built-in/` was just pruned under `$FRESH`.
 cat > "$FRESH/retired.yaml" <<YAML
 transforms:
   - name: retired_user
     description: points at a file the app no longer ships
-    command: examples/retired/retired.py
+    command: built-in/retired/retired.py
 pipeline:
   - transform: retired_user
 YAML
@@ -363,11 +363,11 @@ check "and a command pointed at it no longer resolves — fails open" \
 #
 # Skipped for root, which unlinks through a read-only directory anyway.
 if [ "$(id -u)" != "0" ]; then
-  mkdir -p "$FRESH/transforms/examples/stuck"
-  printf '#!/usr/bin/env python3\nprint("stuck")\n' > "$FRESH/transforms/examples/stuck/stuck.py"
-  chmod 500 "$FRESH/transforms/examples/stuck"
+  mkdir -p "$FRESH/transforms/built-in/stuck"
+  printf '#!/usr/bin/env python3\nprint("stuck")\n' > "$FRESH/transforms/built-in/stuck/stuck.py"
+  chmod 500 "$FRESH/transforms/built-in/stuck"
   stuck_out="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
-  chmod 700 "$FRESH/transforms/examples/stuck"
+  chmod 700 "$FRESH/transforms/built-in/stuck"
 
   check "a stale file that cannot be removed is reported as left behind" \
     "$(printf '%s\n' "$stuck_out" | grep -c 'stuck/stuck.py — no longer shipped, and could not be removed')" \
@@ -378,10 +378,10 @@ if [ "$(id -u)" != "0" ]; then
     "0"
 
   check "and the file really is still there, so the report was true" \
-    "$([ -e "$FRESH/transforms/examples/stuck/stuck.py" ] && echo present || echo gone)" \
+    "$([ -e "$FRESH/transforms/built-in/stuck/stuck.py" ] && echo present || echo gone)" \
     "present"
 
-  rm -rf "$FRESH/transforms/examples/stuck"
+  rm -rf "$FRESH/transforms/built-in/stuck"
 fi
 
 # --- an older install's own folder is never touched --------------------------
@@ -402,6 +402,55 @@ check "and it is left exactly as it was" \
   "$(cat "$FRESH/transforms/punctuation/punctuation.py")" \
   "#!/usr/bin/env python3
 print(\"mine\")"
+
+# --- an install from before the rename ---------------------------------------
+#
+# `transforms/built-in/` was `transforms/examples/`, and configs said
+# `command: examples/...`. An update moves the folder and keeps the old
+# spelling working.
+OLD="$WORK/old"
+mkdir -p "$OLD"
+PARROTFLOW_CONFIG_DIR="$OLD" "$BIN" --seed-config > /dev/null 2>&1
+mv "$OLD/transforms/built-in" "$OLD/transforms/examples"
+sed -i '' 's|built-in/|examples/|g' "$OLD/config.yaml"
+PARROTFLOW_CONFIG_DIR="$OLD" "$BIN" --seed-config > /dev/null 2>&1
+
+check "an update moves transforms/examples/ to transforms/built-in/" \
+  "$([ -e "$OLD/transforms/examples" ] && echo old || echo gone) $([ -x "$OLD/transforms/built-in/disfluency/disfluency.py" ] && echo new || echo missing)" \
+  "gone new"
+
+check "an update rewrites examples/ paths in config.yaml" \
+  "$(grep -cE '(command|tests|path): examples/' "$OLD/config.yaml") $(grep -c 'command: built-in/disfluency/disfluency.py' "$OLD/config.yaml")" \
+  "0 1"
+
+check "and the rewritten config is clean" \
+  "$(PARROTFLOW_CONFIG_DIR="$OLD" "$BIN" --check-config > /dev/null 2>&1; echo $?)" \
+  "0"
+
+# A path that is not a shipped file is not ours to rename.
+printf '# see examples/nothing-here.py\n' >> "$OLD/config.yaml"
+PARROTFLOW_CONFIG_DIR="$OLD" "$BIN" --seed-config > /dev/null 2>&1
+
+check "a path that names no shipped file is left alone" \
+  "$(grep -c 'examples/nothing-here.py' "$OLD/config.yaml")" \
+  "1"
+
+# A fixture the app does not rewrite still resolves the old spelling.
+fixture legacy.yaml '  - name: legacy_user
+    description: the spelling from before the rename
+    command: examples/shared/shared.py' legacy_user
+
+check "a path that still says examples/ resolves through transforms/built-in/" \
+  "$("$BIN" --pipeline "$WORK/legacy.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
+  "KEEP IT DOWN?"
+
+mkdir -p "$OLD/transforms/examples/stale"
+printf 'old\n' > "$OLD/transforms/examples/stale/stale.txt"
+PARROTFLOW_CONFIG_DIR="$OLD" "$BIN" --seed-config > /dev/null 2>&1
+
+check "if both folders exist, the old one is removed" \
+  "$([ -e "$OLD/transforms/examples" ] && echo old || echo gone)" \
+  "gone"
 
 echo
 echo "  $pass/$total$failed"

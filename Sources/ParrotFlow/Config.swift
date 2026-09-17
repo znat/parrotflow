@@ -3029,7 +3029,7 @@ struct Config: Decodable, Equatable {
     static let retiredStages = [
         "numbers": "is two shipped transforms now, one per language, not a"
             + " built-in stage. Add both to `transforms:` —"
-            + " `name: numbers_en`, `command: examples/numbers/en.py`,"
+            + " `name: numbers_en`, `command: built-in/numbers/en.py`,"
             + " `returns: json`, and the same with `_fr` and `fr.py` — then"
             + " write `- transform: numbers_en` and `- transform: numbers_fr`"
             + " in the pipeline, in that order. Neither takes a `when:`:"
@@ -3425,41 +3425,41 @@ enum ConfigStore {
         directory.appendingPathComponent("transforms", isDirectory: true)
     }
 
-    /// `<config>/transforms/examples/` — every shipped example, in one
-    /// folder, refreshed from `exampleTransformsDirectory` on every launch.
+    /// `<config>/transforms/built-in/` — every shipped example, in one
+    /// folder, refreshed from `builtInTransformsDirectory` on every launch.
     ///
     /// This folder is the app's, not yours: unlike `transforms/<name>/`,
     /// which is written once and never touched again, this one is
     /// overwritten every time `createIfMissing()` runs, so the shipped
     /// examples never go stale. That is what buys one copy of a script
     /// instead of a copy per transform that uses it —
-    /// `command: examples/punctuation/punctuation.py` reads the file here,
+    /// `command: built-in/punctuation/punctuation.py` reads the file here,
     /// and every config that points a `command:` at it shares the same one.
     /// Edit a file in here and the edit is gone at the next launch; copy it
     /// into `transforms/<name>/` first if you want to keep changes to it.
     /// A file a later version stops shipping is removed from here too, so a
     /// deleted or renamed example does not go on resolving through an
-    /// `examples/...` path after the app that shipped it is gone.
-    static var installedExamplesDirectory: URL {
-        transformsDirectory.appendingPathComponent("examples", isDirectory: true)
+    /// `built-in/...` path after the app that shipped it is gone.
+    static var installedBuiltInDirectory: URL {
+        transformsDirectory.appendingPathComponent("built-in", isDirectory: true)
     }
 
-    /// Every file under `exampleTransformsDirectory`, as paths relative to
+    /// Every file under `builtInTransformsDirectory`, as paths relative to
     /// it — `code_identifiers/code_identifiers.py`,
     /// `punctuation/cases.yaml`, and so on.
     ///
     /// Walked rather than named one by one, so a folder that gains a file,
     /// or the tree that gains a folder, is picked up without a list here to
-    /// keep in sync with `examples/transforms/`.
-    static func exampleTransformFiles() -> [String] {
-        filesUnder(exampleTransformsDirectory)
+    /// keep in sync with `built-in/transforms/`.
+    static func builtInTransformFiles() -> [String] {
+        filesUnder(builtInTransformsDirectory)
     }
 
     /// The same walk, over what is actually installed at
-    /// `installedExamplesDirectory` — which, right before a refresh, may
+    /// `installedBuiltInDirectory` — which, right before a refresh, may
     /// still include files an older version shipped and this one does not.
-    static func installedExampleFiles() -> [String] {
-        filesUnder(installedExamplesDirectory)
+    static func installedBuiltInFiles() -> [String] {
+        filesUnder(installedBuiltInDirectory)
     }
 
     private static func filesUnder(_ root: URL) -> [String] {
@@ -3484,11 +3484,11 @@ enum ConfigStore {
         return files.sorted()
     }
 
-    /// `examples/transforms/` — the one copy of every shipped example, seeded
+    /// `built-in/transforms/` — the one copy of every shipped example, seeded
     /// from here instead of a string in the binary.
     ///
     /// SwiftPM's `resources:` only copies paths inside the target's own
-    /// directory: a symlink out to `examples/` gets copied as a symlink, and
+    /// directory: a symlink out to `built-in/` gets copied as a symlink, and
     /// it breaks once relocated into the bundle — tried, confirmed broken.
     /// `Bundle.main` after `scripts/build-app.sh` has assembled the .app is
     /// the one place this already works, because that script puts real files
@@ -3497,9 +3497,9 @@ enum ConfigStore {
     /// Running the raw `swift build`/`swift run` binary has no such bundle —
     /// `isRunningFromBuildDirectory` catches that, and the source tree this
     /// file compiled from is right there to read instead.
-    static var exampleTransformsDirectory: URL {
+    static var builtInTransformsDirectory: URL {
         if !Permissions.isRunningFromBuildDirectory,
-           let bundled = Bundle.main.resourceURL?.appendingPathComponent("examples/transforms"),
+           let bundled = Bundle.main.resourceURL?.appendingPathComponent("built-in/transforms"),
            FileManager.default.fileExists(atPath: bundled.path) {
             return bundled
         }
@@ -3507,14 +3507,14 @@ enum ConfigStore {
             .deletingLastPathComponent()  // Config.swift -> Sources/ParrotFlow/
             .deletingLastPathComponent()  // -> Sources/
             .deletingLastPathComponent()  // -> repo root
-            .appendingPathComponent("examples/transforms", isDirectory: true)
+            .appendingPathComponent("built-in/transforms", isDirectory: true)
     }
 
-    /// Creates the config file, and refreshes the shipped examples, if they
-    /// are not there yet — or, for the examples, whether they are or not.
+    /// Creates the config file, and refreshes the built-in transforms, if they
+    /// are not there yet — or, for the built-in transforms, whether they are or not.
     ///
-    /// **`transforms/examples/` is the app's**, refreshed from
-    /// `exampleTransformsDirectory` on every call — every launch, and every
+    /// **`transforms/built-in/` is the app's**, refreshed from
+    /// `builtInTransformsDirectory` on every call — every launch, and every
     /// `--seed-config`. That is the point: an improvement to
     /// `code_identifiers.py` reaches every config that points a `command:`
     /// at it, from one copy, instead of a copy per transform that a person
@@ -3527,17 +3527,18 @@ enum ConfigStore {
     /// it, or copies over it.
     ///
     /// **A file this version no longer ships is removed from
-    /// `transforms/examples/`.** Without that, an example an earlier version
+    /// `transforms/built-in/`.** Without that, an example an earlier version
     /// installed but this one dropped or renamed would keep sitting there,
-    /// still resolvable through its old `examples/...` path, working when it
+    /// still resolvable through its old `built-in/...` path, working when it
     /// should instead be reported as missing.
     static func createIfMissing() throws {
         let fm = FileManager.default
-        let source = exampleTransformsDirectory
-        let shipped = exampleTransformFiles()
+        moveRenamedBuiltInDirectory()
+        let source = builtInTransformsDirectory
+        let shipped = builtInTransformFiles()
         for relative in shipped {
             let shippedFile = source.appendingPathComponent(relative)
-            let destination = installedExamplesDirectory.appendingPathComponent(relative)
+            let destination = installedBuiltInDirectory.appendingPathComponent(relative)
             let isNew = !fm.fileExists(atPath: destination.path)
             try fm.createDirectory(
                 at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -3547,29 +3548,29 @@ enum ConfigStore {
                 // A shebang does nothing without this.
                 try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination.path)
             }
-            if isNew { Log.write("config: wrote transforms/examples/\(relative)") }
+            if isNew { Log.write("config: wrote transforms/built-in/\(relative)") }
         }
         let stillShipped = Set(shipped)
-        for relative in installedExampleFiles() where !stillShipped.contains(relative) {
-            var url = installedExamplesDirectory.appendingPathComponent(relative)
+        for relative in installedBuiltInFiles() where !stillShipped.contains(relative) {
+            var url = installedBuiltInDirectory.appendingPathComponent(relative)
             do {
                 try fm.removeItem(at: url)
             } catch {
                 // Said out loud, because the whole point of the prune is that a
                 // dropped example stops resolving. A failure that logged
                 // "removed" would report the opposite of what happened, and the
-                // stale `examples/...` path would go on working.
-                Log.write("config: could not remove transforms/examples/\(relative):"
+                // stale `built-in/...` path would go on working.
+                Log.write("config: could not remove transforms/built-in/\(relative):"
                     + " \(error.localizedDescription); it is stale and still resolves")
                 continue
             }
-            Log.write("config: removed transforms/examples/\(relative) (no longer shipped)")
+            Log.write("config: removed transforms/built-in/\(relative) (no longer shipped)")
             // A folder a removed example leaves empty — `retired/` once
             // `retired/retired.py` is gone — is cleaned up too, stopping at
             // the first one that still has something else in it, and never
-            // above `installedExamplesDirectory` itself.
+            // above `installedBuiltInDirectory` itself.
             url.deleteLastPathComponent()
-            while url.path != installedExamplesDirectory.path,
+            while url.path != installedBuiltInDirectory.path,
                   (try? fm.contentsOfDirectory(atPath: url.path))?.isEmpty == true {
                 try? fm.removeItem(at: url)
                 url.deleteLastPathComponent()
@@ -3604,26 +3605,67 @@ enum ConfigStore {
             }
         }
 
+        if let original = try? String(contentsOf: fileURL, encoding: .utf8) {
+            let updated = ConfigWriter.renamingBuiltInPaths(in: original) { rest in
+                fm.fileExists(atPath: installedBuiltInDirectory.appendingPathComponent(rest).path)
+            }
+            if updated != original {
+                do {
+                    try updated.write(to: fileURL, atomically: true, encoding: .utf8)
+                    Log.write("config: rewrote examples/ paths in config.yaml to built-in/")
+                } catch {
+                    Log.write("config: could not rewrite examples/ paths in config.yaml:"
+                        + " \(error.localizedDescription)")
+                }
+            }
+        }
+
         guard !fm.fileExists(atPath: fileURL.path) else { return }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         try defaultYAML.write(to: fileURL, atomically: true, encoding: .utf8)
     }
 
+    /// `transforms/examples/`, the folder's name before it was `built-in/`.
+    static var renamedBuiltInDirectory: URL {
+        transformsDirectory.appendingPathComponent("examples", isDirectory: true)
+    }
+
+    /// Moves an install's `transforms/examples/` to `transforms/built-in/`.
+    /// If both exist, the old one is deleted: the refresh rewrites the new one
+    /// whole anyway.
+    private static func moveRenamedBuiltInDirectory() {
+        let fm = FileManager.default
+        let old = renamedBuiltInDirectory
+        guard fm.fileExists(atPath: old.path) else { return }
+        do {
+            if fm.fileExists(atPath: installedBuiltInDirectory.path) {
+                try fm.removeItem(at: old)
+                Log.write("config: removed transforms/examples/ (now transforms/built-in/)")
+            } else {
+                try fm.moveItem(at: old, to: installedBuiltInDirectory)
+                Log.write("config: moved transforms/examples/ to transforms/built-in/")
+            }
+        } catch {
+            Log.write("config: could not move transforms/examples/ to transforms/built-in/:"
+                + " \(error.localizedDescription)")
+        }
+    }
+
     /// Scripts written once into `transforms/<name>/` and never touched
-    /// again. They are yours to edit, unlike `transforms/examples/`.
+    /// again. They are yours to edit, unlike `transforms/built-in/`.
     ///
     /// `slack_mentions.py` holds the roster of names and handles, so the
     /// shipped copy cannot be the running one.
     static var seededTransformFiles: [(relative: String, source: URL)] {
         [("transforms/slack_mentions/slack_mentions.py",
-          examplesDirectory.appendingPathComponent("slack_mentions/slack_mentions.py"))]
+          builtInDirectory.appendingPathComponent("slack_mentions/slack_mentions.py"))]
     }
 
-    /// `examples/` in the bundle, or in the source tree when run from the
-    /// build directory. Same rule as `exampleTransformsDirectory`.
-    static var examplesDirectory: URL {
+    /// `built-in/` in the bundle, or in the source tree when run from the
+    /// build directory. Same rule as `builtInTransformsDirectory`.
+    static var builtInDirectory: URL {
         if !Permissions.isRunningFromBuildDirectory,
-           let bundled = Bundle.main.resourceURL?.appendingPathComponent("examples"),
+           let bundled = Bundle.main.resourceURL?.appendingPathComponent("built-in"),
            FileManager.default.fileExists(atPath: bundled.path) {
             return bundled
         }
@@ -3631,7 +3673,7 @@ enum ConfigStore {
             .deletingLastPathComponent()  // Config.swift -> Sources/ParrotFlow/
             .deletingLastPathComponent()  // -> Sources/
             .deletingLastPathComponent()  // -> repo root
-            .appendingPathComponent("examples", isDirectory: true)
+            .appendingPathComponent("built-in", isDirectory: true)
     }
 
     /// What `vocabulary.yaml` says before anything has been learnt.
@@ -3748,7 +3790,7 @@ enum ConfigStore {
     }
 
     /// `config.example.yaml` — the one copy of the default config's content,
-    /// same reasoning as `exampleTransformsDirectory` above: seeded from the
+    /// same reasoning as `builtInTransformsDirectory` above: seeded from the
     /// real file instead of a second, hand-synced copy in the binary. It was
     /// a string here for a while, and it drifted — config.example.yaml
     /// gained the vocabulary judge stage and app-scoped transforms that this

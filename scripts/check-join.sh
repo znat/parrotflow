@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scores the `join` transform against examples/transforms/join/cases.yaml.
+# Scores the `join` transform against built-in/transforms/join/cases.yaml.
 #
 #   scripts/check-join.sh
 #
@@ -27,8 +27,8 @@ except ImportError:
     sys.exit("pip install pyyaml")
 
 root = Path(sys.argv[1])
-transform = root / "examples/transforms/join/join.py"
-cases = yaml.safe_load((root / "examples/transforms/join/cases.yaml").read_text())["cases"]
+transform = root / "built-in/transforms/join/join.py"
+cases = yaml.safe_load((root / "built-in/transforms/join/cases.yaml").read_text())["cases"]
 
 passed = missed = rewrote = 0
 for case in cases:
