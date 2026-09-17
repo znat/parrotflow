@@ -313,9 +313,6 @@ struct OfferedCommand: Equatable {
 }
 
 /// Which way a docked surface hangs off its line of text.
-///
-/// Nil is the third answer and means it is not docked at all — floating at the
-/// bottom of the screen, or wearing the capsule it wears while you speak.
 enum Dock {
     /// Under the line, which is where it goes when there is room.
     case below
@@ -394,14 +391,14 @@ final class PillModel: ObservableObject {
     /// on the way out, and `.offer` means a rim that turns.
     @Published var onScreen = true
 
-    /// Which way the surface on screen is hanging, when it is hanging at all.
+    /// Which way the surface on screen is hanging.
     ///
     /// Published rather than worked out in the view, because only `beside` knows
     /// it: the choice is made from how much room is left under the line, which
     /// is a question about the screen and not about the state.
-    /// `.free` until the first placement, never nil: the surface has one form
-    /// and the dock says which edge of it touches the line — see `isDocked`.
-    @Published var docked: Dock? = .free
+    /// `.free` until the first placement: the surface has one form, and the dock
+    /// says which edge of it touches the line.
+    @Published var docked: Dock = .free
 
     @Published var level: Float = 0
     @Published var elapsed: TimeInterval = 0
@@ -532,27 +529,6 @@ final class PillHUD {
     /// See `PillMetrics.bleed(for:)`.
     private var currentBleed: CGFloat { PillMetrics.bleed(for: model.state) }
 
-    /// The glass under the capsule, taken out of the window while it is docked.
-    ///
-    /// A docked surface is not a lens over the desktop, so it does not get the
-    /// frost — and it could not keep it anyway: the backdrop is sized once, at
-    /// build, from the floating margin, and a docked window is 80pt narrower
-    /// than that on both axes.
-    ///
-    /// Removed rather than hidden, which was the first attempt and made the tab
-    /// come out 110x110 instead of 46x20. The backdrop sits 50pt inside every
-    /// edge of the window and will not go below about 10pt square, so the
-    /// window holding it cannot go below 110 square either, whatever frame it
-    /// is given. A hidden view is still in the hierarchy and still says that —
-    /// measured both ways, and hiding changes nothing. Every other state is
-    /// bigger than 110 on both axes and never noticed; the tab is the first
-    /// surface small enough to be crushed by it.
-    ///
-    /// Strong, because a view with no superview is only kept alive by this.
-    private var backdrop: NSView?
-    /// Whether it is currently in the window, so it is not put back twice.
-    private var backdropIsIn = true
-
     /// Where this dictation's words are going, set at the press by `aim(at:)`.
     /// Every state reads it while the pill is up, and `fadeOut` clears it, so
     /// one dictation never inherits the aim of the last.
@@ -577,7 +553,7 @@ final class PillHUD {
     /// at the press, and a dictation with none is the one that lands free.
     /// Below and above are the same width, so the two attached cases are one
     /// answer here.
-    private var wantedDock: Dock? { near == nil ? .free : .below }
+    private var wantedDock: Dock { near == nil ? .free : .below }
 
     /// One number for the whole surface: the rise, the morph and the fade.
     ///
@@ -1078,14 +1054,7 @@ final class PillHUD {
             morph(to: size)
         } else {
             let placed = anchor(size)
-            // Before the size, not after. The glass will not let the window go
-            // below 110 square while it is still in it, so a tab asked for
-            // 62x51 with the backdrop still there came out 110x110 — and
-            // nothing asked again afterwards, so it stayed that way until the
-            // next state morphed it. That is why it was the first pill after a
-            // launch and never the ones after. `morph` already had this order;
-            // this path did not.
-            dock(placed.dock)
+            model.docked = placed.dock
             panel.setContentSize(size)
             panel.setFrameOrigin(placed.origin)
             fadeIn(panel)
@@ -1234,7 +1203,7 @@ final class PillHUD {
         // without moving it by a point — an offer arriving at the width the
         // notice before it happened to have — and the corners still have to
         // square up.
-        dock(placed.dock)
+        model.docked = placed.dock
         guard frame != panel.frame else { return }
         defer { logFrame("moved") }
 
@@ -1247,9 +1216,9 @@ final class PillHUD {
 
     /// Builds the panel before anything is waiting on it.
     ///
-    /// An NSPanel, an NSHostingView and the glass container, all on the main
-    /// thread. Measured at 219 ms on the first press of a launch, between the
-    /// key going down and the pill appearing. Every press after it cost 25 ms.
+    /// An NSPanel and an NSHostingView, both on the main thread. Measured at
+    /// 219 ms on the first press of a launch, between the key going down and
+    /// the pill appearing. Every press after it cost 25 ms.
     ///
     /// `onScreen` goes false here because the default is true: a panel built
     /// and not shown would otherwise draw the pill into a window nobody can
@@ -1283,7 +1252,7 @@ final class PillHUD {
             what, capsule.minX, capsule.minY, capsule.width, capsule.height,
             panel.frame.width, panel.frame.height,
             wantedSize.width, wantedSize.height,
-            model.docked.map { "\($0)" } ?? "floating",
+            "\(model.docked)",
             screen.map(String.init) ?? "none",
             model.onScreen ? "" : " — but the surface is unmounted"
         ))
@@ -1299,7 +1268,9 @@ final class PillHUD {
 
         let hosting = NSHostingView(rootView: PillView().environmentObject(model))
         hosting.frame = NSRect(origin: .zero,
-                               size: PillMetrics.panelSize(for: .recording(nil), hasIcon: false))
+                               size: PillMetrics.panelSize(
+                                   for: .recording(nil), hasIcon: false, dock: .free
+                               ))
         // The panel is what resizes; the view follows it. Done this way round
         // because a SwiftUI frame inside a fixed panel centres a narrow pill in
         // a wide transparent box and takes the shadow with it.
@@ -1320,30 +1291,13 @@ final class PillHUD {
         hosting.layer?.isOpaque = false
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
 
-        // Real glass under the capsule. See `ParrotGlass` for why AppKit has to
-        // do this and SwiftUI cannot — and why it is masked rather than left to
-        // fill the window, which here would frost the margin the glow lives in.
-        //
-        // Still here under a near-black capsule, because the capsule is 95%
-        // opaque and this is what the last 5% shows. A blurred hint of the
-        // desktop is what makes the surface read as sitting over something; the
-        // desktop itself, unblurred, would read as the surface being thin.
-        let container = ParrotGlass.container(
-            hosting, radius: PillMetrics.height / 2, inset: PillMetrics.bleed,
-            // Barely tinted. The pill is glanced at over whatever you are
-            // reading, and the less of that it takes away the better.
-            tint: NSColor.black.withAlphaComponent(0.10)
-        )
-
-        backdrop = container.subviews.first
-
         let panel = NSPanel(
             contentRect: hosting.frame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.contentView = container
+        panel.contentView = hosting
         panel.isFloatingPanel = true
         panel.level = .statusBar
         panel.backgroundColor = .clear
@@ -1372,7 +1326,7 @@ final class PillHUD {
     /// Recomputed at every state rather than once at the first show, so a pill
     /// that grows stays centred and one that arrives after you have moved to
     /// the other monitor arrives on that one.
-    private func anchor(_ size: NSSize) -> (origin: NSPoint, dock: Dock?) {
+    private func anchor(_ size: NSSize) -> (origin: NSPoint, dock: Dock) {
         // Every state of a dictation that has an anchor, not just the last one.
         // The point of aiming the pill is that it says where the words are
         // going *before* they go there, and a pill that pointed at the caret
@@ -1400,10 +1354,10 @@ final class PillHUD {
             return beside(near.rect, column: near.text.minX, size: size, on: visible)
         }
         guard let visible = screenUnderPointer()?.visibleFrame
-        else { return (panel?.frame.origin ?? .zero, isDocked ? .free : nil) }
+        else { return (panel?.frame.origin ?? .zero, .free) }
         return (NSPoint(x: visible.midX - size.width / 2,
                         y: visible.minY + 96 - currentBleed),
-                isDocked ? .free : nil)
+                .free)
     }
 
     /// The screen the caret is on: the one it overlaps most.
@@ -1473,8 +1427,8 @@ final class PillHUD {
     /// for no reason the user can see.
     private func beside(
         _ target: NSRect, column: CGFloat, size: NSSize, on visible: NSRect
-    ) -> (origin: NSPoint, dock: Dock?) {
-        let gap = isDocked ? PillMetrics.dockGap : PillMetrics.floatGap
+    ) -> (origin: NSPoint, dock: Dock) {
+        let gap = PillMetrics.dockGap
         let margin = currentBleed
         let capsule = NSSize(
             width: size.width - margin * 2, height: size.height - margin * 2
@@ -1500,45 +1454,8 @@ final class PillHUD {
         return (NSPoint(
             x: min(max(column, room.minX), room.maxX - capsule.width) - margin,
             y: min(max(y, room.minY), room.maxY - capsule.height) - margin
-        ), isDocked ? dock : nil)
+        ), dock)
     }
-
-    /// Record which way the surface is hanging, and take the glass out of the
-    /// window while it is. See `backdrop`.
-    private func dock(_ which: Dock?) {
-        model.docked = which
-        let wanted = which == nil
-        guard wanted != backdropIsIn, let backdrop, let container = panel?.contentView
-        else { return }
-        backdropIsIn = wanted
-        if wanted {
-            // Put back where `ParrotGlass.backdrop` would have built it, for
-            // the window as it is *now*. Its frame is kept up to date by the
-            // container's autoresizing, and autoresizing only runs on a view
-            // that is in the hierarchy — so while it was out, every state the
-            // pill went through left it further behind. Re-added on its own it
-            // came back as a blurred rectangle the size of some earlier state,
-            // sitting next to the capsule instead of under it.
-            let edge = max(0, PillMetrics.bleed - ParrotGlass.overlap)
-            backdrop.frame = container.bounds.insetBy(dx: edge, dy: edge)
-            // Behind the hosting view, which is where it was built.
-            container.addSubview(backdrop, positioned: .below, relativeTo: nil)
-        } else {
-            backdrop.removeFromSuperview()
-        }
-    }
-
-    /// Whether this is the docked surface rather than the floating capsule.
-    ///
-    /// Always, now. Twice it was asked to pick — first on whether there was an
-    /// anchor, then on whether a dictation was on screen — and both times one
-    /// message came out as two different surfaces.
-    ///
-    /// The anchor decides *where* the surface goes, never what it is: with one
-    /// it hangs off a line and squares the edge that touches it, and without
-    /// one it sits at the bottom of the screen with all four corners rounded.
-    /// See `Dock.free`.
-    private var isDocked: Bool { true }
 }
 
 // MARK: - Metrics
@@ -1546,13 +1463,11 @@ final class PillHUD {
 enum PillMetrics {
     static let height: CGFloat = 42
 
-    /// How far under the line each kind of surface sits.
+    /// How far under the line the surface sits.
     ///
-    /// A floating pill needs air around it or it reads as stuck to the text by
-    /// accident. A docked one needs the opposite: at 10pt the gap is wide enough
-    /// to read as a separate object parked nearby, which is the one thing it
-    /// must not read as. 3pt clears the descenders and nothing more.
-    static let floatGap: CGFloat = 10
+    /// At 10pt the gap is wide enough to read as a separate object parked
+    /// nearby, which is the one thing it must not read as. 3pt clears the
+    /// descenders and nothing more.
     static let dockGap: CGFloat = 3
 
     /// The corners a docked surface keeps. The other two go to zero — that
@@ -1720,7 +1635,7 @@ enum PillMetrics {
     }
 
     static func panelSize(
-        for state: PillState, hasIcon: Bool, hotkey: String = "", dock: Dock? = nil
+        for state: PillState, hasIcon: Bool, hotkey: String = "", dock: Dock
     ) -> NSSize {
         let width = width(for: state, hasIcon: hasIcon, hotkey: hotkey, dock: dock)
         let margin = bleed(for: state)
@@ -1882,7 +1797,7 @@ enum PillMetrics {
     /// An offer with nothing to say about the decode is the height the pill has
     /// always been, so a dictation that went fine changes nothing.
     static func height(
-        for state: PillState, width: CGFloat, hotkey: String = "", dock: Dock? = nil
+        for state: PillState, width: CGFloat, hotkey: String = "", dock: Dock
     ) -> CGFloat {
         guard case .offer(let commands, let headline, let reading, let open) = state else {
             // The one state with no fixed height: it takes what its blocks
@@ -1890,12 +1805,11 @@ enum PillMetrics {
             if case .alert(let markdown, let tone) = state {
                 return AlertContent.height(markdown: markdown, tone: tone, width: width)
             }
-            // Docked, the recording and the transcribing are the bird's own tab
-            // — see `RecordingContent`. A notice is not: it is a sentence, and a
-            // sentence needs the height it has always had whether it is hanging
-            // off a line or floating at the bottom of the screen.
+            // The recording and the transcribing are the bird's own tab — see
+            // `RecordingContent`. A notice is not: it is a sentence, and a
+            // sentence needs the height it has always had.
             if case .notice = state { return height }
-            return dock == nil ? height : tabHeight
+            return tabHeight
         }
         guard open else { return tabHeight }
         // A selection offer is three rows: the words, the chips, and the line
@@ -1985,51 +1899,29 @@ enum PillMetrics {
 
     static let padding: CGFloat = 15
     static let gap: CGFloat = 10
-    /// The gap on the meter's right, 2pt tighter than the one on its left.
-    ///
-    /// Both were the same and did not look it. The dot is small, round and
-    /// spills a little glow into its gap; the meter closes on its shortest,
-    /// dimmest bar and the icon has a hard edge — so the eye measures from the
-    /// last bar it can actually see to that edge, and reads that side as wider.
-    /// Equal numbers, unequal gaps. These two are equal to look at.
-    static let tuck: CGFloat = 8
     static let dot: CGFloat = 8
-    static let icon: CGFloat = 22
-    static let meter: CGFloat = 66
 
     static func width(
-        for state: PillState, hasIcon: Bool, hotkey: String = "", dock: Dock? = nil
+        for state: PillState, hasIcon: Bool, hotkey: String = "", dock: Dock
     ) -> CGFloat {
         // The icon says where the words are going, and a tab hanging off a line
         // has already said it by hanging there. Free, nothing else says it.
         let icon = hasIcon && dock == .free
         switch state {
         case .recording(let label):
-            // Docked, the whole recording state is the bird — no dot, no bars.
-            // A label still widens it, because tap-then-hold has to say what
-            // the hold is for before you speak.
-            guard dock != nil else { return recording(hasIcon: hasIcon, label: label) }
+            // The whole recording state is the bird — no dot, no bars. A label
+            // still widens it, because tap-then-hold has to say what the hold
+            // is for before you speak.
             return tabWidth(label: label, icon: icon)
-        case .working(let message):
-            // Docked, the plumage travels through the bird while it thinks. The
-            // message is what the undocked one is for — a download has no line
-            // to hang from.
-            return dock == nil ? text(message) : tabWidth(label: nil, icon: icon)
+        case .working:
+            // The plumage travels through the bird while it thinks.
+            return tabWidth(label: nil, icon: icon)
         case .notice(let message, _): return text(message)
         case .alert: return alertWidth
         case .offer(let commands, let headline, let reading, let open):
             guard open else { return tabWidth(hotkey: hotkey) }
             return offer(commands, headline: headline, reading: reading, hotkey: hotkey)
         }
-    }
-
-    /// 15 + 8 + 10 + 66 + 15, and the icon after the meter when there is one
-    /// to show.
-    static func recording(hasIcon: Bool, label: String? = nil) -> CGFloat {
-        let base = padding * 2 + dot + gap + meter
-        let width = hasIcon ? base + icon + tuck : base
-        guard let label else { return width }
-        return width + gap + title(label)
     }
 
     /// Wide enough for the message, the dot in front of it and the padding —
@@ -2400,12 +2292,9 @@ struct PillView: View {
                         dock: model.docked
                     )
                     .transition(.opacity)
-                case .working(let message):
-                    MessageContent(
-                        message: message, tone: .thinking, dock: model.docked,
-                        icon: model.appIcon
-                    )
-                    .transition(.opacity)
+                case .working:
+                    WorkingContent(dock: model.docked, icon: model.appIcon)
+                        .transition(.opacity)
                 case .notice(let message, let tone):
                     MessageContent(message: message, tone: tone)
                         .transition(.opacity)
@@ -2501,8 +2390,6 @@ struct PillView: View {
         return false
     }
 
-    private var isDocked: Bool { model.docked != nil }
-
     /// The radius of the free edge. The tab is a smaller object than the panel
     /// and 12 on a 20pt-tall surface is most of its height, which reads as a
     /// lozenge rather than as something cut off a larger shape.
@@ -2532,29 +2419,17 @@ struct PillView: View {
     }
 
     /// The colour laid over the ground. A warning first, and otherwise the
-    /// docked surface's own lift — see `PillMetrics.dockedWash`.
-    private var wash: Color? {
-        if let warning { return warning.wash }
-        return isDocked ? PillMetrics.dockedWash : nil
-    }
+    /// surface's own lift — see `PillMetrics.dockedWash`.
+    private var wash: Color? { warning?.wash ?? PillMetrics.dockedWash }
 
-    /// A fixed radius, not a `Capsule`. At the pill's resting height the
-    /// two are the same shape — but an offer carrying the dictated sentence is
-    /// taller, and a capsule would round its ends to half of that. The glass
-    /// behind it cannot follow: `ParrotGlass.backdrop` takes its corner radius
-    /// once, when the panel is built. So the shape stops growing where the glass
-    /// stops, and a tall pill is a rounded rectangle rather than a lozenge.
-    static let floating = PillMetrics.height / 2
-
-    /// The surface's outline right now: a lozenge while it floats, and squared
-    /// along whichever edge is touching the text once it docks.
+    /// The surface's outline right now: squared along whichever edge is
+    /// touching the text, and rounded all round when it touches none.
     private var shape: DockedShape {
         switch model.docked {
         case .below: return DockedShape(top: 0, bottom: hanging)
         case .above: return DockedShape(top: hanging, bottom: 0)
         // Attached to nothing, so no edge gets to claim a line.
         case .free: return DockedShape(top: hanging, bottom: hanging)
-        case nil: return DockedShape(top: Self.floating, bottom: Self.floating)
         }
     }
 }
@@ -2616,20 +2491,12 @@ private struct RecordingContent: View {
     let icon: NSImage?
     /// What this recording is for, when it is not dictation.
     var label: String?
-    /// Which way the surface hangs. Nil is the floating capsule; `.free` is
-    /// the tab with no line under it. See `body`.
-    var dock: Dock?
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulse = false
+    /// Which way the surface hangs. `.free` is the tab with no line under it.
+    var dock: Dock
 
     /// The words on the highlight: the glass text, so they read the way the
     /// dictated sentence does on the offer rather than as white on blue.
     private static let editedText = Color(red: 0.875, green: 0.941, blue: 0.906)
-
-    var body: some View {
-        if dock == nil { capsule } else { tab }
-    }
 
     /// The whole recording state, in the shape it ends in.
     ///
@@ -2638,14 +2505,13 @@ private struct RecordingContent: View {
     /// was hearing you; the bird says both, because an empty bird is a
     /// microphone waiting and a filling one is a microphone hearing something.
     /// The icon is gone and `blind` is what took its job — see `PlumageMeter`.
-    private var tab: some View {
+    var body: some View {
         HStack(spacing: PillMetrics.tabGap) {
             PlumageMeter(
                 level: Double(level), size: PillMetrics.tabMark, blind: icon == nil
             )
-            // Attached to a line, the line says where the words are going. Free
-            // it says nothing, so the icon comes back — the same job it did on
-            // the old floating capsule.
+            // Attached to a line, the line says where the words are going.
+            // Free it says nothing, so the icon comes back.
             if dock == .free, let icon {
                 AppIconMark(icon: icon)
             }
@@ -2670,47 +2536,11 @@ private struct RecordingContent: View {
         .padding(.horizontal, PillMetrics.tabPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
-
-    private var capsule: some View {
-        HStack(spacing: 0) {
-            Circle()
-                .fill(Parrot.scarlet)
-                .frame(width: PillMetrics.dot, height: PillMetrics.dot)
-                .shadow(color: Parrot.scarlet.opacity(0.7), radius: 4)
-                .opacity(pulse ? 0.35 : 1)
-                .animation(Parrot.pulse(pulse), value: pulse)
-
-            Meter(level: level)
-                .frame(width: PillMetrics.meter, height: 14)
-                .padding(.leading, PillMetrics.gap)
-
-            if let icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: PillMetrics.icon, height: PillMetrics.icon)
-                    .padding(.leading, PillMetrics.tuck)
-            }
-
-            if let label {
-                Text(label)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color(white: 0.88))
-                    .fixedSize()
-                    .padding(.leading, PillMetrics.gap)
-            }
-        }
-        .padding(.horizontal, PillMetrics.padding)
-        // `initial: true` covers what `onAppear` did; the view stays alive
-        // across recordings, so a Reduce Motion toggle mid-session needs the
-        // same assignment again, not just on the first appearance.
-        .onChange(of: reduceMotion, initial: true) { _, newValue in pulse = !newValue }
-    }
 }
 
 /// Where the words are going, on a tab with no line under it.
 ///
-/// Smaller than the 22 the floating capsule drew it at: this sits in a 27pt tab
+/// Smaller than the 22 the pill used to draw it at: this sits in a 27pt tab
 /// beside an 18pt bird, and 22 filled it edge to edge.
 private struct AppIconMark: View {
     let icon: NSImage
@@ -2723,33 +2553,36 @@ private struct AppIconMark: View {
     }
 }
 
-private struct MessageContent: View {
-    let message: String
-    let tone: NoticeTone
-    /// Hanging off the line, where there is no room for a sentence and none
-    /// needed: the bird standing full says the words are in and something is
-    /// being done with them, which is the whole of what "Thinking…" said.
-    var dock: Dock?
+/// The bird standing full while the app works on what it heard.
+///
+/// No sentence, because there is no room for one and none needed: a full bird
+/// says the words are in and something is being done with them, which is the
+/// whole of what "Thinking…" said.
+private struct WorkingContent: View {
+    /// Which way the surface hangs. `.free` is the tab with no line under it.
+    let dock: Dock
     /// Where the words are going, shown only on a tab that hangs off nothing.
-    /// See `RecordingContent.tab`.
+    /// See `RecordingContent.body`.
     var icon: NSImage?
 
     var body: some View {
-        if dock == nil {
-            capsule
-        } else {
-            HStack(spacing: PillMetrics.tabGap) {
-                PlumageMeter(level: 1, size: PillMetrics.tabMark, working: true)
-                if dock == .free, let icon {
-                    AppIconMark(icon: icon)
-                }
+        HStack(spacing: PillMetrics.tabGap) {
+            PlumageMeter(level: 1, size: PillMetrics.tabMark, working: true)
+            if dock == .free, let icon {
+                AppIconMark(icon: icon)
             }
-            .padding(.horizontal, PillMetrics.tabPadding)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
+        .padding(.horizontal, PillMetrics.tabPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
+}
 
-    private var capsule: some View {
+/// A notice: one sentence, and the dot that says how it went.
+private struct MessageContent: View {
+    let message: String
+    let tone: NoticeTone
+
+    var body: some View {
         HStack(spacing: PillMetrics.gap) {
             ToneDot(tone: tone)
 
@@ -3508,42 +3341,5 @@ private struct WalkingDot: View {
         ToneDot.dot(Parrot.wheel[step % 4])
             .animation(.easeInOut(duration: 0.5), value: step)
             .onReceive(clock) { _ in step += 1 }
-    }
-}
-
-/// The bars walk the plumage as they light up, left to right, so a loud sound
-/// fills the pill with the same four colours that ring every other surface.
-///
-/// Against the wheel's direction: sky at the quiet end, scarlet at the loud
-/// one. The last bars are the ones a shout reaches, and the colour arriving
-/// there should be the one that means loud.
-struct Meter: View {
-    let level: Float
-    private let bars = 12
-
-    var body: some View {
-        HStack(spacing: 2.5) {
-            ForEach(0..<bars, id: \.self) { index in
-                let threshold = Float(index + 1) / Float(bars)
-                let active = level >= threshold * 0.85
-                Capsule()
-                    .fill(active ? feather(index) : Color.secondary.opacity(0.25))
-                    .frame(width: 3, height: active ? height(for: index) : 4)
-            }
-        }
-        .animation(.linear(duration: 0.08), value: level)
-        .frame(maxHeight: .infinity, alignment: .center)
-    }
-
-    private func feather(_ index: Int) -> Color {
-        Parrot.wheel[3 - min(3, index * 4 / bars)]
-    }
-
-    private func height(for index: Int) -> CGFloat {
-        // A triangle, not a diamond. The arc rose to the middle and fell away
-        // again, which reads as a shape with a peak — something that has
-        // already happened. Rising the whole way reads as something still
-        // opening, which is what a microphone that is still listening is.
-        5 + CGFloat(index) / CGFloat(bars - 1) * 12
     }
 }

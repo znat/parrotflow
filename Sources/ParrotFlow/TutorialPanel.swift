@@ -1359,8 +1359,8 @@ struct TourPill: View {
             model.hotkey = Tutorial.hotkey
             // Attached to the line, which is where this pill is: the bird's own
             // tab while it listens, square along the top where it meets the
-            // words. Free, it is the floating capsule, and that is a different
-            // surface.
+            // words. Free, it hangs off nothing and shows the icon instead,
+            // which is a different surface.
             model.docked = .below
             // The icon is set and not drawn. `docked` is what decides whether it
             // appears — an attached pill says where the words are going by being

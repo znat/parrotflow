@@ -853,11 +853,11 @@ struct PermissionsView: View {
 /// parts rather than illustrated.
 ///
 /// A microphone glyph says "microphone", which the heading already says. The
-/// recording pill says what is about to appear at the bottom of the screen
-/// every time you hold the key — so the screen that asks for the microphone is
-/// also the only place anyone is told what the pill is before it turns up over
-/// their work. That is the whole argument for it: the illustration is the
-/// feature, at the size it will really be.
+/// recording pill says what is about to appear under your words every time you
+/// hold the key — so the screen that asks for the microphone is also the only
+/// place anyone is told what the pill is before it turns up over their work.
+/// That is the whole argument for it: the illustration is the feature, at the
+/// size it will really be.
 private struct Instrument: View {
     let step: PermissionStep
 
@@ -868,13 +868,13 @@ private struct Instrument: View {
 
             switch step {
             case .microphone:
-                // The real view, at its real size. It carries its own dark
-                // glass, which is what it will look like over your document.
-                // Sized explicitly: the pill fills whatever it is given, and
-                // the panel that owns it is what decides its width in the app.
+                // The real view, at its real size — what it will look like
+                // over your document. Sized explicitly: the pill fills whatever
+                // it is given, and the panel that owns it is what decides its
+                // size in the app.
                 PillView().environmentObject(Instrument.hearing)
-                    .frame(width: PillMetrics.recording(hasIcon: false) + PillMetrics.bleed * 2,
-                           height: PillMetrics.height + PillMetrics.bleed * 2)
+                    .frame(width: Instrument.hearingBox.width,
+                           height: Instrument.hearingBox.height)
             case .accessibility:
                 SettingsRowMock()
             }
@@ -882,13 +882,19 @@ private struct Instrument: View {
         .frame(height: 88)
     }
 
-    /// Mid-sentence, so the meter has something to show.
+    /// Mid-sentence, so the mark has something to show.
     private static let hearing: PillModel = {
         let model = PillModel()
         model.state = .recording(nil)
         model.level = 0.62
         return model
     }()
+
+    /// The window the app would give it, bleed included. `hearing` hangs off
+    /// nothing, so this is the free tab's size.
+    private static let hearingBox: NSSize = PillMetrics.panelSize(
+        for: .recording(nil), hasIcon: false, dock: .free
+    )
 }
 
 /// What Accessibility actually asks for is a row in System Settings, not
