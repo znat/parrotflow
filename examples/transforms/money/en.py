@@ -14,9 +14,8 @@ the rules that fired.
     pipeline:
       - transform: money_en     # below numbers_en, which writes the digits
 
-Digits in, symbol out. It reads no number words: `numbers_en` above it has a
-currency word in its `currency` set, so it writes even "five dollars" as
-"5 dollars" before this stage sees it.
+Reads the ten unit words itself: `numbers_en` above it leaves a lone number
+under ten as a word, so "five dollars" arrives as it was said.
 
 No number, no rewrite: the currency word alone is a noun, so "the dollar is
 strong" and "dollar sign" are left as they are. A singular "dollar" with a
@@ -47,6 +46,16 @@ CURRENCIES = {
 SINGULAR = {"dollar", "euro", "buck"}
 CENTS = ("cents", "cent")
 
+# The only number words this stage reads. `numbers_en` writes everything from
+# ten up, and every compound, before this runs.
+UNITS = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
+    "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+}
+# A unit word after one of these is the end of a bigger number.
+TENS = {"twenty", "thirty", "forty", "fourty", "fifty", "sixty", "seventy",
+        "eighty", "ninety", "hundred", "thousand"}
+
 # What a scale word after the digits is allowed to be. "2.5 million dollars"
 # keeps the word: "$2500000" is not what was said and not how it is written.
 SCALES = ("thousand", "million", "billion", "trillion")
@@ -61,10 +70,11 @@ STOP_AFTER = {
 
 # --- the patterns ------------------------------------------------------------
 
-# The amount `numbers_en` wrote: digits of any size. The lookbehind leaves
-# "$20" and "20.50" alone once something already wrote them, and the hyphen in
-# it keeps this off the second half of a number nothing converted.
-AMOUNT = r"(?<![$€\d.,\-‑])\d+(?:\.\d+)?"
+# Digits of any size, or a unit word. The lookbehind leaves "$20" and "20.50"
+# alone once something already wrote them, and its hyphen keeps this off the
+# second half of "ninety-nine".
+UNIT = engine.alt(UNITS)
+AMOUNT = rf"(?<![$€\d.,\-‑])(?:\d+(?:\.\d+)?|{UNIT})"
 CUR = engine.alt(CURRENCIES)
 SCALE = engine.alt(SCALES)
 
@@ -93,7 +103,7 @@ def singular_ok(m, text, tail=False):
     """
     if m.group("cur").lower() not in SINGULAR:
         return True
-    if m.group("n") == "1" or tail:
+    if engine.value(m.group("n"), UNITS) == "1" or tail:
         return True
     return bool(CLAUSE_END.match(text[m.end():]))
 
@@ -102,11 +112,14 @@ def singular_ok(m, text, tail=False):
 
 def with_cents(m, text):
     """"twenty dollars and fifty cents" -> "$20.50"."""
-    whole, word = m.group("n"), m.group("cur")
+    word = m.group("cur")
+    if engine.half_of_a_number(m, text, TENS):
+        return None
+    whole = engine.value(m.group("n"), UNITS)
     if not singular_ok(m, text, tail=True):
         return None
     written = whole
-    cents = int(m.group("c"))
+    cents = int(engine.value(m.group("c"), UNITS))
     if not 0 <= cents <= 99 or "." in written:
         return None
     return f"{symbol(word)}{written}.{cents:02d}"
@@ -118,11 +131,14 @@ def bare_cents_tail(m, text):
     Only a tail of ten and over. "20 dollars 3" is a count that ran on, and a
     tail under ten is never dictated without "oh" or the cents word.
     """
-    whole, word = m.group("n"), m.group("cur")
+    word = m.group("cur")
+    if engine.half_of_a_number(m, text, TENS):
+        return None
+    whole = engine.value(m.group("n"), UNITS)
     if not singular_ok(m, text, tail=True):
         return None
     written = whole
-    cents = int(m.group("c"))
+    cents = int(engine.value(m.group("c"), UNITS))
     if not 10 <= cents <= 99 or "." in written:
         return None
     if engine.word_after(text, m.end()) in STOP_AFTER:
@@ -132,7 +148,10 @@ def bare_cents_tail(m, text):
 
 def with_scale(m, text):
     """"2.5 million dollars" -> "$2.5 million". The scale word stays a word."""
-    whole, word = m.group("n"), m.group("cur")
+    word = m.group("cur")
+    if engine.half_of_a_number(m, text, TENS):
+        return None
+    whole = engine.value(m.group("n"), UNITS)
     if not singular_ok(m, text):
         return None
     return f"{symbol(word)}{whole} {m.group('scale').lower()}"
@@ -140,7 +159,10 @@ def with_scale(m, text):
 
 def plain(m, text):
     """"twenty dollars" -> "$20"."""
-    whole, word = m.group("n"), m.group("cur")
+    word = m.group("cur")
+    if engine.half_of_a_number(m, text, TENS):
+        return None
+    whole = engine.value(m.group("n"), UNITS)
     if not singular_ok(m, text):
         return None
     return f"{symbol(word)}{whole}"
@@ -150,8 +172,8 @@ def plain(m, text):
 # its shorter ones, so the cents never get left behind as a stray number.
 RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler in [
     ("amount and cents",
-     rf"\b(?P<n>{AMOUNT})\s+(?P<cur>{CUR})\s+(?:and\s+)?(?P<c>\d{{1,2}}"
-     rf")\s+(?:{engine.alt(CENTS)})\b",
+     rf"\b(?P<n>{AMOUNT})\s+(?P<cur>{CUR})\s+(?:and\s+)?(?P<c>\d{{1,2}}|{UNIT})"
+     rf"\s+(?:{engine.alt(CENTS)})\b",
      with_cents),
     ("amount with a scale word",
      rf"\b(?P<n>{AMOUNT})\s+(?P<scale>{SCALE})\s+(?P<cur>{CUR})\b",

@@ -6,13 +6,11 @@
 # `keep` (no `expect`): must come back byte for byte.
 #
 # The inputs are what `numbers_en` writes, not what was said. This stage runs
-# below it and reads digits only — "twenty dollars" never reaches it, and
-# neither does "five dollars": a currency word is in the numbers grammar's
-# `currency` set, so it lifts the below-ten floor and writes "5 dollars".
-# That "words in, digits out" half is scored in tests/pipeline-cases.yaml,
-# which runs the two stages together.
+# below it, so "twenty dollars" never reaches it; "20 dollars" does. The one
+# thing numbers leaves in words is a lone number under ten, so "five dollars"
+# does reach it, and this stage reads those ten words itself.
 #
-# The keep half is 19 of 41 cases and it is the half that decides. The stage
+# The keep half is 19 of 44 cases and it is the half that decides. The stage
 # runs on every transcript and shows nothing, so a wrong rewrite is text nobody
 # watched change. Every keep is a shape that looks like an amount and is not.
 #
@@ -38,6 +36,14 @@ cases:
     lang: en
     input: "lunch came to 5 dollars"
     expect: "lunch came to $5"
+  - probe: amount_en
+    lang: en
+    input: "lunch came to five dollars"
+    expect: "lunch came to $5"
+  - probe: amount_en
+    lang: en
+    input: "five dollars and two dollars more"
+    expect: "$5 and $2 more"
   - probe: amount_en
     lang: en
     input: "the laptop was 3000 dollars"
@@ -76,6 +82,10 @@ cases:
     lang: en
     input: "please refund 12 dollars and 5 cents"
     expect: "please refund $12.05"
+  - probe: cents_en
+    lang: en
+    input: "that is 12 dollars and five cents"
+    expect: "that is $12.05"
   - probe: cents_en
     lang: en
     input: "it rang up at 25 dollars 50"
@@ -185,11 +195,11 @@ cases:
     lang: en
     input: "he owes me twenty dollars still"
 
-  # --- keep: this stage reads no number words ---
+  # --- keep: half of a number is not an amount ---
   #
-  # It used to, and the archive found the bug: "I want ninety-nine Euros."
-  # came out "I want ninety-€9." The word-reading half is gone now — the
-  # pattern is `\d+` — and these hold it gone.
+  # Found on the archive: read on raw text, "I want ninety-nine Euros." came out
+  # "I want ninety-€9." `numbers_en` normally writes these first; this is what
+  # holds when it did not run.
   - probe: compound_en
     lang: en
     input: "I want ninety-nine Euros."

@@ -824,8 +824,8 @@ cases:
   # --- the money scripts, below the numbers scripts -----------------------
   #
   # The `money` fixture is numbers then money, both languages, no gates. What
-  # only a pipeline shows: money reads digits, so it is the numbers step above
-  # it that turns the dictated words into something it can put a symbol on.
+  # only a pipeline shows: the numbers step above writes every amount from ten
+  # up, and money reads what is left.
 
   # The order. `money_en` alone does nothing with "twenty five euros": there is
   # no number in it yet.
@@ -833,16 +833,14 @@ cases:
   - { name: "numbers runs before money, thousands", pipeline: money, input: he charges three thousand dollars, expect: he charges $3000 }
   - { name: "the cents tail survives both steps", pipeline: money, input: that will be twenty dollars and fifty cents, expect: that will be $20.50 }
 
-  # The floor. A lone number under ten stays a word — "chapter three" — unless
-  # a currency word follows it, which is the whole reason `money` can read
-  # digits only. Only a pipeline shows this: `numbers` decides it, `money`
-  # depends on it, and neither case set sees the other half.
-  - { name: "a currency word lifts the below-ten floor", pipeline: money, input: lunch came to five dollars today, expect: lunch came to $5 today }
-  - { name: "and it lifts it in French too", pipeline: money, input: le café était à cinq euros hier, expect: "le café était à 5 € hier" }
+  # The floor. `numbers` leaves a lone number under ten a word — "chapter three"
+  # — and knows nothing about money. `money` reads those words itself.
+  - { name: "money reads a number under ten", pipeline: money, input: lunch came to five dollars today, expect: lunch came to $5 today }
+  - { name: "and in French too", pipeline: money, input: le café était à cinq euros hier, expect: "le café était à 5 € hier" }
   - { name: "the floor still holds without one", pipeline: money, input: chapter three of the book, expect: unchanged }
   - { name: "cents under ten reach the tail", pipeline: money, input: that is twelve dollars and five cents, expect: that is $12.05 }
-  # And the currency word has to be attached to the number, as a percent
-  # marker is: a comma between them means two things, not a price.
+  # A comma between the number and the currency word means two things, not a
+  # price.
   - { name: "a comma between them is not a price", pipeline: money, input: he said five, dollars and left, expect: unchanged }
 
   # Slang: one word, and it goes through both stages like any other.

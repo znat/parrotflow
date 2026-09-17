@@ -143,18 +143,10 @@ transcription:
 Dates goes above numbers, in every language. A date is made of number words,
 and numbers would write them as digits before dates ever saw them.
 
-Money goes below numbers, for the mirror reason. Money reads digits, not words:
-`numbers_en` writes "twenty dollars" as `20 dollars`, and only then is there an
-amount for `money_en` to put a symbol on.
-
-That holds all the way down, because a currency word lifts the numbers floor.
-A lone number under ten normally stays a word — "chapter three" — but `dollar`,
-`euro`, `buck`, `cent` and their plurals are in each numbers grammar's
-`currency` set, so "five dollars" is written `5 dollars`. It is the same
-mechanism as percent, and for the same reason: `five%` is never right, and
-neither is a price in words next to one in digits. Money therefore reads `\d+`
-and no number words at all, which is worth saying plainly — take `numbers_en`
-out of the pipeline and `money_en` has nothing to work on.
+Money goes below numbers, for the mirror reason. `numbers_en` writes "twenty
+dollars" as `20 dollars`, and `money_en` puts the symbol on it. Numbers leaves a
+lone number under ten as a word — "chapter three" — so each money script reads
+those ten words itself. `numbers` knows nothing about money.
 
 No step needs a language gate. Each script reads its own words only,
 and declines a number whose words are none of its own — measured over the other

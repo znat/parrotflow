@@ -79,11 +79,6 @@ GRAMMAR = engine.Grammar(
     # number word anyway, but the list costs nothing and documents the shape.
     bare_scale_blockers={"per"},
     percent=(("percent",), ("per", "cent")),
-    # A number in front of one of these is a price, so it is written as digits
-    # however small it is: `examples/transforms/money/` reads digits only.
-    # "bucks" is here and "USD" is not — a code is already unambiguous, and
-    # rewriting it loses what the speaker chose.
-    currency={"dollar", "dollars", "euro", "euros", "buck", "bucks", "cent", "cents"},
     decimal_separator=".",
     ordinal_suffix=suffix,
 )

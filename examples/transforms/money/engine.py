@@ -1,20 +1,18 @@
 """Writing a dictated amount of money, minus the language. Imported by the
 language files beside it.
 
-An amount has two halves: a number and a currency word. This transform reads
-no number words at all. It runs AFTER `numbers_<code>`, which has written
-"three thousand dollars" as "3000 dollars" — and, because a currency word is
-in its `currency` set, "five dollars" as "5 dollars" too. So the amount is
-always digits by the time it gets here, and the pattern is `\d+`.
+An amount has two halves: a number and a currency word. This transform runs
+AFTER `numbers_<code>`, which has written "three thousand dollars" as
+"3000 dollars", and rewrites what is left: the currency word becomes its
+symbol, in the place the language puts it.
+
+`numbers` leaves a lone number under ten as a word on purpose — "chapter
+three" — so "five dollars" arrives in words. Each language file reads those
+ten words itself. That keeps `numbers` free of any knowledge of this stage.
 
 That is the one way this differs from `dates`, which runs BEFORE numbers and
-reads the words itself. Money needs every magnitude, and `numbers/engine.py`
-is where that lives and where it is scored. Reading words here as well cost
-two bugs before it was dropped: "ninety-nine Euros" became "ninety-€9", and
-"10 euros et 20 euros" lost its second amount.
-
-The coupling is real and deliberate: take `numbers_<code>` out of the pipeline
-and this stage sees no digits to work with.
+reads all the words itself. Money needs every magnitude, and
+`numbers/engine.py` is where that lives and where it is scored.
 
 A language file exposes `RULES`, an ordered list of (name, compiled regex,
 handler). A handler is `f(match, text) -> str | None`: what to write in place
@@ -50,6 +48,29 @@ def word_after(text, at):
     """The next word after offset `at`, lowercased, or "" at the end."""
     found = re.match(r"\s*([\w'’-]+)", text[at:])
     return found.group(1).lower() if found else ""
+
+
+def value(raw, units):
+    """The amount as digits: a digit run as it is, or a unit word's value."""
+    if raw[0].isdigit():
+        return raw
+    return str(units[raw.lower()])
+
+
+def half_of_a_number(m, text, tens):
+    """Whether a unit word is the end of a bigger number nothing converted.
+
+    "ninety nine euros" and "quatre-vingt-dix neuf euros" end in a unit word,
+    and reading only that word writes "ninety €9". `numbers` above this stage
+    normally writes them first, so this only matters when it did not run. The
+    word before is read hyphen by hyphen, so "quatre-vingt-dix" ends in "dix".
+    Digits are never checked: "10 euros et 20 euros" has a number word, "et",
+    in front of its second amount, and that amount is still one.
+    """
+    if m.group("n")[0].isdigit():
+        return False
+    before = re.split(r"[\s\-\u2011]+", text[:m.start("n")].strip().lower())
+    return bool(before) and before[-1] in tens
 
 
 def apply_rule(text, name, pattern, handler, applied):
