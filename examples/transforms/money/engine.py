@@ -21,9 +21,13 @@ of the match, or None to leave it alone. Order is the whole of rule precedence.
 Both languages spell `dollars` and `euros` the same way, which no pair of
 `dates` files does. Without a guard `money_en` would write "20 dollars" said
 in French as "$20". `ctx.language` decides: a script declines everything when
-the pipeline detected another language and the transcript is long enough for
-that detection to mean something. Below `MINIMUM_WORDS` the guard is off and
-the first step in the pipeline wins, exactly as in `numbers/engine.py`.
+the pipeline detected another language.
+
+Unlike `numbers/engine.py`, there is no word count. The count would be taken on
+text `numbers` already shortened — "vingt et un euros chacun" reaches this
+stage as "21 euros chacun", three words — so the guard turned off on a French
+sentence and `money_en` wrote "€21". A short transcript is still handled: the
+app gives it the first configured language, and that script writes it.
 
 Adding a language: copy `fr.py`, edit its words, symbols and RULES, write
 `cases-<code>.yaml` beside it, and add a `transforms:` entry and a step below
@@ -33,11 +37,6 @@ import json
 import os
 import re
 import sys
-
-# `DictationLanguage.minimumWords`: below four words the recogniser's answer is
-# a coin toss, so no language file is held to the cross-language guard.
-MINIMUM_WORDS = 4
-
 
 def alt(words):
     """An alternation, longest first — "dollars" must beat "dollar"."""
@@ -98,14 +97,14 @@ def rewrite(text, rules, applied=None):
     return text
 
 
-def declines(code, language, text):
+def declines(code, language, _text):
     """Whether another language's script should keep its hands off this text.
 
     `dollars` and `euros` are the same word in both languages, so the guard
-    `dates` never needed is mandatory here.
+    `dates` never needed is mandatory here. No language — a bare
+    `echo … | en.py` — declines nothing.
     """
-    return ((language or code) != code
-            and len(text.split()) >= MINIMUM_WORDS)
+    return bool(language) and language != code
 
 
 def main(module):

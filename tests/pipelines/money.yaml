@@ -11,8 +11,10 @@
 #   - **The guard.** `dollars` and `euros` are the same word in both languages,
 #     which no pair of `dates` files is. Without one, `money_en` would write
 #     "$20" into a French transcript, since it runs first. Each script declines
-#     a language that is not its own — but only above `MINIMUM_WORDS`, since
-#     below that the detected language is a coin toss.
+#     a language that is not its own. It counts no words: `numbers` shortens
+#     the text first, so a count here would turn the guard off on a French
+#     sentence. Only this fixture can show that; every case-set input is
+#     already short.
 #
 # The grammars themselves are scored by examples/transforms/money/score.py,
 # which also runs each script over the other language's cases.

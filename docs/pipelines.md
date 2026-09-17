@@ -156,10 +156,12 @@ language's whole case set, every script changed nothing.
 `euros` are spelled the same in both languages, which no pair of `dates` files
 is. With no gate `money_en` runs first and would write a French `20 euros` as
 `$20`. So each money script declines a transcript the pipeline detected as
-another language. Below `DictationLanguage.minimumWords` — four words —
-detection answers with the first configured language, the guard is off, and the
-first step wins. `examples/transforms/money/score.py --cross` is what holds
-this: it runs each script over the other language's cases and wants no change.
+another language. It counts no words, unlike `numbers`: the text has already
+been shortened by `numbers` — "vingt et un euros" is three words once it reads
+"21 euros" — and a count would turn the guard off on a French sentence. A short
+transcript gets the first configured language from the app, and that script
+writes it. `examples/transforms/money/score.py --cross` runs each script over
+the other language's cases and wants no change.
 
 `dates_fr` resolves a bare hour to the next time it comes round: at 12:00 "à
 4h" is `16h`. Add `--no-wall-clock` to its `command:` line to write `4h`

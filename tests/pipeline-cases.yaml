@@ -855,9 +855,16 @@ cases:
   - { name: "French centimes, written with a comma", pipeline: money, input: ça fera vingt euros et cinquante centimes, expect: "ça fera 20,50 €" }
 
   # Below four words detection answers with the first configured language, so
-  # the English script wins and writes the English shape. Same limit as the
-  # numbers cases above, and the reason the steps carry no language gate.
+  # the English script writes the English shape. The French script declines, so
+  # a French unit word it alone reads stays a word.
   - { name: "too short to detect: vingt euros", pipeline: money, input: vingt euros, expect: "€20" }
+  - { name: "too short to detect: cinq euros cinquante", pipeline: money, input: cinq euros cinquante, expect: "cinq euros 50" }
+
+  # The guard counts no words, because `numbers` shortens the text first.
+  # "vingt et un euros chacun" is four words said and three once numbers wrote
+  # "21"; a count taken here turned the guard off and money_en wrote "€21".
+  - { name: "numbers shortening the text does not flip the guard", pipeline: money, input: vingt et un euros chacun, expect: "21 € chacun" }
+  - { name: "and English keeps the adjective", pipeline: money, input: two hundred and fifty dollar bills, expect: 250 dollar bills }
 
   # And the currency word as a noun is left alone in both languages.
   - { name: "money declines a noun", pipeline: money, input: the dollar is strong this quarter, expect: unchanged }

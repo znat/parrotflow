@@ -14,10 +14,6 @@
 # runs on every transcript and shows nothing, so a wrong rewrite is text nobody
 # watched change. Every keep is a shape that looks like an amount and is not.
 #
-# Every input is four words or more on purpose. Below that
-# `DictationLanguage.minimumWords` turns the cross-language guard off, and
-# `euros` is the same word in French — see `engine.py`.
-#
 # `lang:` is on every case because `--eval` hands it to the pipeline, and the
 # guard in `engine.py` reads it.
 
