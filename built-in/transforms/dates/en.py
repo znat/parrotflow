@@ -7,9 +7,9 @@ rewrote, and `applied`, the rules that fired.
 
     - name: dates_en
       description: dictated dates and clock times as digits
-      command: examples/dates/en.py
+      command: built-in/dates/en.py
       returns: json
-      tests: examples/dates/cases-en.yaml
+      tests: built-in/dates/cases-en.yaml
 
     pipeline:
       - transform: dates_en     # above numbers_en, which eats the same words

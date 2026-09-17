@@ -191,7 +191,7 @@ lists:
 #   done          what the pill says when this leaves the text alone on purpose
 #   failed        what the pill says when this could not run — markdown
 #   path          a body too long for here — transforms/X/, e.g. prompt: { path: slack.md }
-# More of them ship unwired in examples/transforms/ — spoken punctuation,
+# More of them ship unwired in transforms/built-in/ — spoken punctuation,
 # dotted paths, code identifiers. See docs/pipelines.md.
 transforms:
   - name: grammar
@@ -263,27 +263,27 @@ transforms:
   # language. `tests:` is what sends --eval to the right case file.
   - name: dates_en
     description: dictated dates and clock times as digits
-    command: examples/dates/en.py
+    command: built-in/dates/en.py
     returns: json
-    tests: examples/dates/cases-en.yaml
+    tests: built-in/dates/cases-en.yaml
 
   # Spoken numbers as digits, one script per language. Runs after dates, on
   # what dates left.
   - name: numbers_en
     description: spoken numbers as digits
-    command: examples/numbers/en.py
+    command: built-in/numbers/en.py
     returns: json
-    tests: { path: examples/numbers/cases-en.yaml }
+    tests: { path: built-in/numbers/cases-en.yaml }
 
   # Amounts of money with the currency symbol, one script per language. Runs
   # below numbers, on the digits it wrote. `dollars` and `euros` are the same
   # word in French, so each script declines a transcript the pipeline detected
-  # as another language — see examples/transforms/money/engine.py.
+  # as another language — see transforms/built-in/money/engine.py.
   - name: money_en
     description: dictated amounts of money with the currency symbol
-    command: examples/money/en.py
+    command: built-in/money/en.py
     returns: json
-    tests: examples/money/cases-en.yaml
+    tests: built-in/money/cases-en.yaml
 
   # Hesitation sounds. A `replace:` rule, so it costs no process at all — the
   # list above is the half you edit, and the pattern beside it catches a sound
@@ -319,9 +319,9 @@ transforms:
     # matches on, and without these "clean up the repetitions" reaches the
     # catch-all instead of this — which the rename broke, 25/26.
     say: [repetitions, hesitations, false starts]
-    command: examples/disfluency/disfluency.py
+    command: built-in/disfluency/disfluency.py
     returns: json
-    tests: { path: examples/disfluency/cases.yaml }
+    tests: { path: built-in/disfluency/cases.yaml }
 
   # Opens the last dictation's timeline in a text editor: every step, every
   # decode, what each cost and what each stage changed. See docs/cli.md.

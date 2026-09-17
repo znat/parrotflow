@@ -129,14 +129,14 @@ jobs:
       # Each on its own step, so a red run says which set broke in the summary
       # rather than in the middle of a log.
       - name: Numbers
-        run: examples/transforms/numbers/score.py
+        run: built-in/transforms/numbers/score.py
 
       # Repeats, false starts and empty markers. The marker rule needs a
       # dependency parse and this runner has no venv, so those cases are
       # skipped here and the scorer says how many — a green run never means
       # more than it did.
       - name: Disfluency
-        run: examples/transforms/disfluency/score.py
+        run: built-in/transforms/disfluency/score.py
 
       - name: Replacements
         # The fuzzy half asks NSSpellChecker whether a word is real, and that
@@ -182,14 +182,14 @@ jobs:
 
       # The `dates_en` and `dates_fr` transforms, both languages at once.
       - name: Dates transform
-        run: examples/transforms/dates/score.py
+        run: built-in/transforms/dates/score.py
 
       # The `money_en` and `money_fr` transforms, both languages at once. The
       # run ends with --cross, which is the check nothing else makes: `dollars`
       # and `euros` are the same word in both, so each script is run over the
       # other language's cases and has to change nothing.
       - name: Money transform
-        run: examples/transforms/money/score.py
+        run: built-in/transforms/money/score.py
 
       # Where a transform's files are found, and where its command runs. Builds
       # whole config directories in /tmp and runs the real binary against them

@@ -96,7 +96,7 @@ on.
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
 `numbers` used to be a stage here. It is a shipped transform now, and there is
-one script per language — `examples/transforms/numbers/en.py` and `fr.py`.
+one script per language — `built-in/transforms/numbers/en.py` and `fr.py`.
 `dates` is the same shape and runs above it. `money` is the same shape again
 and runs below it. The default config ships the three English steps and nothing
 else:
@@ -117,21 +117,21 @@ name them. Add one `transforms:` entry per script and one step per entry:
 transforms:
   - name: dates_fr
     description: dictated dates and clock times as digits
-    command: examples/dates/fr.py
+    command: built-in/dates/fr.py
     returns: json
-    tests: examples/dates/cases-fr.yaml
+    tests: built-in/dates/cases-fr.yaml
 
   - name: numbers_fr
     description: spoken numbers as digits
-    command: examples/numbers/fr.py
+    command: built-in/numbers/fr.py
     returns: json
-    tests: { path: examples/numbers/cases-fr.yaml }
+    tests: { path: built-in/numbers/cases-fr.yaml }
 
   - name: money_fr
     description: dictated amounts of money with the currency symbol
-    command: examples/money/fr.py
+    command: built-in/money/fr.py
     returns: json
-    tests: examples/money/cases-fr.yaml
+    tests: built-in/money/cases-fr.yaml
 
 transcription:
   pipeline:
@@ -160,7 +160,7 @@ another language. It counts no words, unlike `numbers`: the text has already
 been shortened by `numbers` — "vingt et un euros" is three words once it reads
 "21 euros" — and a count would turn the guard off on a French sentence. A short
 transcript gets the first configured language from the app, and that script
-writes it. `examples/transforms/money/score.py --cross` runs each script over
+writes it. `built-in/transforms/money/score.py --cross` runs each script over
 the other language's cases and wants no change.
 
 `dates_fr` resolves a bare hour to the next time it comes round: at 12:00 "à
@@ -168,15 +168,15 @@ the other language's cases and wants no change.
 instead. English writes 12-hour times and invents no pm.
 
 All three rewrite transcripts that were already correct, so run
-`examples/transforms/numbers/score.py --text "<line>"` — and the same script in
+`built-in/transforms/numbers/score.py --text "<line>"` — and the same script in
 `dates/` and `money/` — to see what they would do before leaving them in. Adding another
 language is a copy of one file per folder; see the "Adding a language" note in
 each `engine.py`.
 
 ## What ships unwired
 
-The app copies `examples/transforms/` into
-`~/.config/parrotflow/transforms/examples/` on every launch. Not all of it is
+The app copies `built-in/transforms/` into
+`~/.config/parrotflow/transforms/built-in/` on every launch. Not all of it is
 in the default pipeline: `email`, `join`, `priorities`, `parse` and
 `substitutions` are there with their case files and no step.
 
@@ -695,11 +695,11 @@ A path *with a directory in it* may also name a file elsewhere under
 ```yaml
 transforms:
   - name: fitted
-    command: examples/join/join.py   # transforms/examples/…
+    command: built-in/join/join.py   # transforms/built-in/…
 ```
 
 The rule is the slash. `join.py` can only ever mean your own folder, so
-the spelling you write every day cannot resolve in two places. `examples/…`
+the spelling you write every day cannot resolve in two places. `built-in/…`
 says out loud that it reaches sideways, and it still cannot leave
 `transforms/`.
 
@@ -735,7 +735,7 @@ start.
 
 ### `join`, which fits a clip to the box it lands in
 
-`examples/transforms/join/join.py` reads `input.*` and decides two things: what
+`built-in/transforms/join/join.py` reads `input.*` and decides two things: what
 goes at the leading edge of the clip, and whether the trailing full stop
 survives.
 
@@ -809,7 +809,7 @@ down. The stops inside the sentence are a different question and need no caret,
 so that half still fires.
 
 `scripts/check-join.sh` scores it — 44/44 — against
-`examples/transforms/join/cases.yaml`. It runs the deployed script on the
+`built-in/transforms/join/cases.yaml`. It runs the deployed script on the
 envelope it really receives, because `--eval` feeds a transcript and nothing
 else. The tags come from `--tag` rather than from the case file, so what is
 scored is the tagger the app ships. A case may name the `rule:` it expects, and
@@ -861,7 +861,7 @@ part. Four findings, all of them the prompt making things worse before better:
 | the greeting rule given examples | put the examples in the output: "Hi Tom," and "À toi," |
 | the list rule moved after the short-reply clause | a two-word reply came back as "[No body text]" |
 
-The first is the lesson `examples/transforms/grammar/cases.yaml` already records — a rule
+The first is the lesson `built-in/transforms/grammar/cases.yaml` already records — a rule
 about restraint making the model less restrained. The third is that file's
 other lesson running the opposite way: elsewhere here examples beat rules, and
 in a prompt whose output is the same shape as its examples they get copied.

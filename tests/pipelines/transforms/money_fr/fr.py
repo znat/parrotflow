@@ -1,1 +1,1 @@
-../../../../examples/transforms/money/fr.py
+../../../../built-in/transforms/money/fr.py

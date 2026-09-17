@@ -11,8 +11,8 @@
 #     none of its units, teens or tens — but only above `MINIMUM_WORDS`, since
 #     below that the detected language is a coin toss.
 #
-# The grammars themselves are scored by examples/transforms/dates/score.py and
-# examples/transforms/numbers/score.py.
+# The grammars themselves are scored by built-in/transforms/dates/score.py and
+# built-in/transforms/numbers/score.py.
 languages: [en, fr]
 transforms:
   - name: dates_en

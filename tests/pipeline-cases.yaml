@@ -225,8 +225,8 @@ cases:
 
   # A bare relative path, resolved against the directory of the file that
   # declared it — the fixture here, config.yaml in a real install. The script is
-  # examples/transforms/disfluency/disfluency.py, whose own set is
-  # examples/transforms/disfluency/cases.yaml; what this case adds is that the
+  # built-in/transforms/disfluency/disfluency.py, whose own set is
+  # built-in/transforms/disfluency/cases.yaml; what this case adds is that the
   # app finds it and hands it the transcript.
   - name: a command transform finds a script beside the file that names it
     pipeline: command-relative

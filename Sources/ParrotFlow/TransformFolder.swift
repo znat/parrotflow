@@ -26,8 +26,8 @@ import Foundation
 /// What that invariant is really about is the *bare name*: `punctuation.py`
 /// resolves in the folder or nowhere, so the spelling written every day cannot
 /// mean two files. A path with a directory in it —
-/// `examples/punctuation/punctuation.py` — may name a file elsewhere under
-/// `transforms/`, which is how the shipped examples are read from one copy
+/// `built-in/punctuation/punctuation.py` — may name a file elsewhere under
+/// `transforms/`, which is how the built-in transforms are read from one copy
 /// rather than copied per transform. It is still one answer per spelling, and
 /// the working directory does not move: a shared script runs in the folder of
 /// whichever transform called it, so it locates its own data from `__file__`.
@@ -103,7 +103,7 @@ struct TransformFolder: Equatable {
 
         // A folder shared between transforms, resolved against `transforms/`
         // rather than against any one transform's own folder —
-        // `examples/punctuation/punctuation.py`. The shipped examples are the
+        // `built-in/punctuation/punctuation.py`. The built-in transforms are the
         // case that wants it: one copy of a script, read by whoever names it,
         // instead of a copy per transform that names it.
         //
@@ -114,7 +114,7 @@ struct TransformFolder: Equatable {
         // says so by having a directory in it.
         if expanded.contains("/") {
             let shared = transformsDirectory
-                .appendingPathComponent(expanded).standardizedFileURL
+                .appendingPathComponent(Self.currentSpelling(expanded)).standardizedFileURL
             if fm.fileExists(atPath: shared.path), shared.isInside(transformsDirectory) {
                 return Resolved(url: shared)
             }
@@ -128,6 +128,13 @@ struct TransformFolder: Equatable {
         let spelledOut = configDirectory.appendingPathComponent(expanded).standardizedFileURL
         guard fm.fileExists(atPath: spelledOut.path), spelledOut.isInside(url) else { return nil }
         return Resolved(url: spelledOut)
+    }
+
+    /// `built-in/` was called `examples/`. The app rewrites its own
+    /// `config.yaml`, but not a `--pipeline` fixture, and the write can fail.
+    static func currentSpelling(_ path: String) -> String {
+        guard path.hasPrefix("examples/") else { return path }
+        return "built-in/" + path.dropFirst("examples/".count)
     }
 
     /// `<config>/transforms` — where every transform's folder sits.

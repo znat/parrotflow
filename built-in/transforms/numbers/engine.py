@@ -11,7 +11,7 @@ Adding a language is copying a file:
     cp cases-fr.yaml cases-es.yaml    # `transform: numbers_es` at the top
     ./score.py                        # scores every language file it finds
 
-Then a `transforms:` entry naming `examples/numbers/es.py` and a step naming
+Then a `transforms:` entry naming `built-in/numbers/es.py` and a step naming
 that. Steps carry no language gate: every grammar reads every transcript.
 
     ./score.py --text "cent euros" --lang fr    # one line

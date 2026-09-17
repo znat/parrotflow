@@ -83,10 +83,10 @@ cp "$ROOT/Resources/parrot.svg" "$APP/Contents/Resources/"
 
 # The shipped transforms and the default config.yaml are seeded from here —
 # copied, not baked into the binary as strings, so there is one copy of each
-# and not two drifting apart. See Config.exampleTransformsDirectory and
+# and not two drifting apart. See Config.builtInTransformsDirectory and
 # Config.configTemplateURL.
-cp -R "$ROOT/examples" "$APP/Contents/Resources/examples"
-find "$APP/Contents/Resources/examples" -name __pycache__ -type d -exec rm -rf {} +
+cp -R "$ROOT/built-in" "$APP/Contents/Resources/built-in"
+find "$APP/Contents/Resources/built-in" -name __pycache__ -type d -exec rm -rf {} +
 cp "$ROOT/config.example.yaml" "$APP/Contents/Resources/config.example.yaml"
 
 # The word list the auto-apply gate asks whether a name is a name. Named here

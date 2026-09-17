@@ -8,7 +8,7 @@ import Foundation
 /// a check script being able to assert.
 ///
 /// `config.yaml` and `vocabulary.yaml` are written once and never touched
-/// again. `transforms/examples/` is refreshed every time this runs, the same
+/// again. `transforms/built-in/` is refreshed every time this runs, the same
 /// as every launch — that folder is the app's, not yours. A file it no
 /// longer ships is removed from there too, so an example an older version
 /// installed does not go on resolving after this one drops it. Point it
@@ -20,8 +20,8 @@ enum SeedConfigCommand {
         print("config: \(directory.path)")
 
         let fm = FileManager.default
-        let relatives = ConfigStore.exampleTransformFiles()
-        let installedBefore = Set(ConfigStore.installedExampleFiles())
+        let relatives = ConfigStore.builtInTransformFiles()
+        let installedBefore = Set(ConfigStore.installedBuiltInFiles())
         let before = Set(relatives).intersection(installedBefore)
         let stale = installedBefore.subtracting(relatives).sorted()
         let configExisted = fm.fileExists(atPath: ConfigStore.fileURL.path)
@@ -59,7 +59,7 @@ enum SeedConfigCommand {
         var written = 0
         var refreshed = 0
         for relative in relatives {
-            let label = "transforms/examples/\(relative)"
+            let label = "transforms/built-in/\(relative)"
             if before.contains(relative) {
                 print("  · \(label) — refreshed")
                 refreshed += 1
@@ -73,14 +73,14 @@ enum SeedConfigCommand {
         // to remove, and this reports what it did remove. The two differ when a
         // file cannot be deleted, and that is exactly the case worth printing —
         // a stale example that survives goes on resolving.
-        let installedAfter = Set(ConfigStore.installedExampleFiles())
+        let installedAfter = Set(ConfigStore.installedBuiltInFiles())
         let removed = stale.filter { !installedAfter.contains($0) }
         let kept = stale.filter { installedAfter.contains($0) }
         for relative in removed {
-            print("  · transforms/examples/\(relative) — removed, no longer shipped")
+            print("  · transforms/built-in/\(relative) — removed, no longer shipped")
         }
         for relative in kept {
-            print("  ✗ transforms/examples/\(relative) — no longer shipped, and could not"
+            print("  ✗ transforms/built-in/\(relative) — no longer shipped, and could not"
                 + " be removed; it still resolves")
         }
 
@@ -88,8 +88,8 @@ enum SeedConfigCommand {
         print("  \(written) example file(s) written, \(refreshed) refreshed"
             + (removed.isEmpty ? "" : ", \(removed.count) removed")
             + (kept.isEmpty ? "." : ", \(kept.count) left behind."))
-        print("  transforms/examples/ is the app's; edits there do not survive the next launch.")
-        print("  transforms/<name>/ is yours — copy a file out of examples/ before editing it.")
+        print("  transforms/built-in/ is the app's; edits there do not survive the next launch.")
+        print("  transforms/<name>/ is yours — copy a file out of built-in/ before editing it.")
         print("  transforms/slack_mentions/slack_mentions.py is yours too, written once.")
         return 0
     }

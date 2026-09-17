@@ -342,7 +342,7 @@ modifiers — all listed in the config file.
 **3. Numbers.** On by default. Show, do not explain:
 
 ```sh
-NUMBERS=~/.config/parrotflow/transforms/examples/numbers
+NUMBERS=~/.config/parrotflow/transforms/built-in/numbers
 echo "I need two hundred and forty three of them by nineteen eighty four" | $NUMBERS/en.py
 ```
 

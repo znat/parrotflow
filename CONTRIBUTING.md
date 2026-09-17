@@ -16,7 +16,7 @@ terms — that is what signing off certifies.
 | Point a coding agent at this repo | [AGENTS.md](AGENTS.md) |
 
 The best first contribution is a transform. One folder under
-`examples/transforms/`, with its cases next to it. It is small, it is testable,
+`built-in/transforms/`, with its cases next to it. It is small, it is testable,
 and it is what other people copy.
 
 ## Build and test

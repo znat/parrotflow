@@ -45,7 +45,7 @@ from importlib.machinery import SourceFileLoader
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "tests/judge-menus.json"
-PROMPT = ROOT / "examples/prompts/verify_names.md"
+PROMPT = ROOT / "built-in/prompts/verify_names.md"
 KINDS = ROOT / "tests/term-kinds.yaml"
 ENDPOINT = os.environ.get("PARROTFLOW_LLM_ENDPOINT", "http://localhost:11434") + "/api/chat"
 

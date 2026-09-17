@@ -7,9 +7,9 @@ rules that fired.
 
     - name: money_fr
       description: dictated amounts of money with the currency symbol
-      command: examples/money/fr.py
+      command: built-in/money/fr.py
       returns: json
-      tests: examples/money/cases-fr.yaml
+      tests: built-in/money/cases-fr.yaml
 
     pipeline:
       - transform: money_fr     # below numbers_fr, which writes the digits

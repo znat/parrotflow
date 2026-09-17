@@ -7,9 +7,9 @@ Transcript in, rewrite out. Publishes `count`, the spans it rewrote, and
 
     - name: dates_fr
       description: dictated dates and clock times as digits
-      command: examples/dates/fr.py
+      command: built-in/dates/fr.py
       returns: json
-      tests: examples/dates/cases-fr.yaml
+      tests: built-in/dates/cases-fr.yaml
 
     pipeline:
       - transform: dates_fr     # above numbers_fr, which eats the same words

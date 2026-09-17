@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scores the grammar prompt against examples/transforms/grammar/cases.yaml.
+# Scores the grammar prompt against built-in/transforms/grammar/cases.yaml.
 #
 # Counts the two failures separately, because they are not the same problem.
 # Leaving an error in is a miss. Changing something that was already fine is a
@@ -35,7 +35,7 @@ done < <(python3 -c '
 import sys, yaml
 for case in yaml.safe_load(open(sys.argv[1]))["cases"]:
     print(str(case["input"]) + "|" + str(case["expect"]))
-' "$ROOT/examples/transforms/grammar/cases.yaml")
+' "$ROOT/built-in/transforms/grammar/cases.yaml")
 
 elapsed=$(( $(date +%s) - started ))
 echo

@@ -10,7 +10,7 @@ of the match, or None to leave it alone. Order is the whole of rule precedence.
 `rewrite` applies each rule over the text left to right, taking non-overlapping
 matches, and a rule never sees another rule's output.
 
-The number words come from `examples/transforms/numbers/<code>.py`, so the two
+The number words come from `built-in/transforms/numbers/<code>.py`, so the two
 transforms cannot drift. A dates file adds month names, cue words, and the
 ordinals the numbers grammar leaves out.
 

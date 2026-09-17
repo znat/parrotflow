@@ -415,7 +415,7 @@ check "an undeclared numbers transform is refused" "$code" "1"
 check "and the message says to declare it" \
   "$(printf '%s\n' "$out" | grep -c 'no transform named "numbers_en"')" "1"
 check "and says where the script is" \
-  "$(printf '%s\n' "$out" | grep -c 'examples/numbers/en.py')" "1"
+  "$(printf '%s\n' "$out" | grep -c 'built-in/numbers/en.py')" "1"
 
 # --- the retired key ----------------------------------------------------------
 #

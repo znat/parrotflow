@@ -21,7 +21,7 @@ import Foundation
 /// transform does and probably belongs beside it rather than here. Left for
 /// later, deliberately: the numbers it would build on are English-only today.
 /// That is now built, as one command transform per language in
-/// `examples/transforms/dates/` — `dates_en` and `dates_fr`.
+/// `built-in/transforms/dates/` — `dates_en` and `dates_fr`.
 ///
 /// The division of labour is the point. Finding a date and rendering it in a
 /// named format is arithmetic over a calendar — there is exactly one right
