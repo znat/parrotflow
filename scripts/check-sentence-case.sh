@@ -64,4 +64,36 @@ if [ "$total" -eq 0 ]; then
   exit 1
 fi
 printf '  %d/%d  (tests/sentence-case-cases.json)\n' "$pass" "$total"
+echo
+
+# The abbreviations, from tests/sentence-abbreviation-cases.json. A full stop
+# in front of a lowercase word is a boundary, and "approx. ten euros" is not:
+# the readings joined five of these twelve when nothing refused them, so
+# `lists: abbreviations:` refuses them before they are read. Here the boundary
+# must not be found at all, which is one line that must not be printed.
+if ! python3 -c '
+import json, sys
+for case in json.load(open(sys.argv[1])):
+    print(case["text"])
+    print(case["word"])
+    print(case["why"])
+' "$ROOT/tests/sentence-abbreviation-cases.json" > "$WORK/abbreviations"; then
+  echo "  ✗ tests/sentence-abbreviation-cases.json could not be read"
+  exit 1
+fi
+
+while IFS= read -r text && IFS= read -r word && IFS= read -r why; do
+  total=$((total + 1))
+  got="$("$BIN" --sentence-join --case "$text" 2>/dev/null | awk -v w="$word" '
+    $1 == "next" && $2 == w { print $2; exit }')"
+  if [ -z "$got" ]; then
+    pass=$((pass + 1))
+    printf '  ✓  %-12s refused\n' "$why"
+  else
+    printf '  ✗  %-12s read as a boundary — "%s"\n' "$why" "$text"
+  fi
+done < "$WORK/abbreviations"
+
+echo
+printf '  %d/%d  (both sets)\n' "$pass" "$total"
 [ "$pass" = "$total" ]

@@ -25,13 +25,20 @@ import Foundation
 @available(macOS 14, *)
 enum SentenceJoinCommand {
 
-    static func run(_ text: String, caseOnly: Bool) -> Int32 {
+    static func run(_ written: String, caseOnly: Bool) -> Int32 {
+        // What the pipeline hands the stage, not what was typed. The doubled
+        // full stop is taken out in `repairSentence`, above `apply`, so a probe
+        // that skipped it would find no boundary in "priced.. The" and the
+        // check scripts would score a stage the app does not run.
+        let text = Pipeline.collapsingDoubledStop(written)
         let config = (try? ConfigStore.load()) ?? Config()
         if caseOnly {
             let terms = Array(config.vocabulary.terms.keys)
             let scan = SentenceJoin.scanned(config.transcription.marks(for: "en"))
             let found = (
-                SentenceJoin.boundaries(in: text, scanning: scan)
+                SentenceJoin.boundaries(
+                    in: text, scanning: scan, refusing: config.abbreviations
+                )
                 + SentenceJoin.bareBoundaries(in: text)
             ).sorted { $0.next.lowerBound < $1.next.lowerBound }
             for boundary in found {

@@ -778,5 +778,321 @@
    "as-decoded": -2.3563,
    "join": -2.4674
   }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "Use the same architecture as in the Slack handles.",
+  "right": "transformations in the code identifiers use the model to identify the entities",
+  "winner": ".",
+  "mean": {
+   ",": -5.4234,
+   ".": -5.3345,
+   "join": -5.7193
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "our implementations of prompts and regexes, but it's the responsibility of scripts.",
+  "right": "if they're implemented uh locally.",
+  "winner": ",",
+  "mean": {
+   ",": -5.5593,
+   ".": -5.9741,
+   "join": -6.107
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "There is no explicit cap.",
+  "right": "was to only",
+  "winner": ",",
+  "mean": {
+   ",": -7.0572,
+   ".": -7.9491,
+   "join": -8.6512
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "time compli should be sufficient. We're always expecting the same tunnel format.",
+  "right": "or the same JSON object.",
+  "winner": ",",
+  "mean": {
+   ",": -3.7389,
+   ".": -4.286,
+   "join": -4.3007
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "The vessel arrived and Mira signed for it.",
+  "right": "nine vs ten.",
+  "winner": ".",
+  "mean": {
+   ",": -6.6661,
+   ".": -6.4657,
+   "join": -7.322
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "By default, it's at the last caret of the first.",
+  "right": "word input by moving with the right and left arrows you go",
+  "winner": "join",
+  "mean": {
+   ",": -5.2019,
+   ".": -5.354,
+   "join": -4.656
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "I want all the phonetic data that is specific to the user.",
+  "right": "stored in the user application folder.",
+  "winner": ",",
+  "mean": {
+   ",": -3.9447,
+   ".": -4.5866,
+   "join": -4.0128
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "an intuition of the f the how pose the paraclate model works.",
+  "right": "the st the data they return and how we can act on",
+  "winner": ",",
+  "mean": {
+   ",": -4.4971,
+   ".": -4.5078,
+   "join": -4.7503
+  }
+ },
+ {
+  "set": "fr_lowercase.json",
+  "mark": ".",
+  "left": "En fait, ce qui m'a retenu, c'est l'estimation de la longueur.",
+  "right": "maximal d'une section avant qu'on la résume.",
+  "winner": "join",
+  "mean": {
+   ",": -5.0225,
+   ".": -4.7617,
+   ":": -5.2317,
+   "join": -4.7122
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "AI visibility conversation is warming. This could give an idea or two.",
+  "right": "about how we could leverage our calling technology to participate in that",
+  "winner": "join",
+  "mean": {
+   ",": -4.5296,
+   ".": -4.8653,
+   "join": -4.2509
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "for example, AI is saying this. But there is no well established.",
+  "right": "blah blah blah blah blah.",
+  "winner": "join",
+  "mean": {
+   ",": -4.1742,
+   ".": -4.0018,
+   "join": -3.9759
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "I don't like the anything name than under LLM in the configuration.",
+  "right": "and also default could be a Boolean parameter in one of the",
+  "winner": ",",
+  "mean": {
+   ",": -4.5641,
+   ".": -4.6997,
+   "join": -4.8393
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "yet. And if you need to run a probe, delegate an agent.",
+  "right": "for obvious probes you would delegate to a junior engineer opus if",
+  "winner": ".",
+  "mean": {
+   ",": -6.2762,
+   ".": -6.1016,
+   "join": -6.3938
+  }
+ },
+ {
+  "set": "fr_lowercase.json",
+  "mark": ".",
+  "left": "Mais au-delà de.",
+  "right": "du fait que ce soit le même verbe, le même type de...",
+  "winner": "join",
+  "mean": {
+   ",": -4.3897,
+   ".": -4.5991,
+   ":": -4.5793,
+   "join": -4.3489
+  }
+ },
+ {
+  "set": "fr_lowercase.json",
+  "mark": ".",
+  "left": "il y a vraiment des écoles décidés d'être décidés dans le proponence.",
+  "right": "prend une place plus proéminente sur l'écran et s'adresse directement à l'utilisateur.",
+  "winner": ".",
+  "mean": {
+   ",": -3.4833,
+   ".": -3.3562,
+   ":": -3.6353,
+   "join": -3.6361
+  }
+ },
+ {
+  "set": "fr_lowercase.json",
+  "mark": ".",
+  "left": "Alors plutôt que de plutôt que Déterminer une règle dure.",
+  "right": "où on attend exactement le type grammatical et pas un autre. Ce",
+  "winner": ".",
+  "mean": {
+   ",": -4.6174,
+   ".": -4.4466,
+   ":": -4.963,
+   "join": -4.7958
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "at the beginning of the without recording segment it's about to edit.",
+  "right": "never get saved. And it should say explain. What you want to",
+  "winner": ".",
+  "mean": {
+   ",": -4.8547,
+   ".": -4.7671,
+   "join": -4.9849
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "holds all the prototyping, all the information and the results regarding prototype.",
+  "right": "the prototyping we we made before writing the task.",
+  "winner": ",",
+  "mean": {
+   ",": -4.7048,
+   ".": -4.7409,
+   "join": -4.9184
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "there a least Of examples that you can get from that session.",
+  "right": "all dictations with this fluency or at least a good number of",
+  "winner": ",",
+  "mean": {
+   ",": -4.3842,
+   ".": -4.4178,
+   "join": -4.7254
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "if the vocabulary step is not decisive, which means it doesn't decide.",
+  "right": "whether the herd term or the vocabulary term must be substituted and",
+  "winner": "join",
+  "mean": {
+   ",": -4.5058,
+   ".": -4.9891,
+   "join": -4.3891
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "know, And what of I mean so spacey can help us determine.",
+  "right": "the filler is disconnected syntactically from the rest of the sentence.",
+  "winner": ".",
+  "mean": {
+   ",": -4.0755,
+   ".": -3.8919,
+   "join": -4.2415
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "But this is only in analytics.",
+  "right": "the session remains in the local storage.",
+  "winner": ",",
+  "mean": {
+   ",": -4.298,
+   ".": -4.3707,
+   "join": -5.0935
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "know if there is a dash dash yes option, but if not.",
+  "right": "instructions to say yes must be explicit.",
+  "winner": ",",
+  "mean": {
+   ",": -4.8451,
+   ".": -5.5593,
+   "join": -5.5447
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "also a bit cryptic. So you simplified the concerns or the explanations.",
+  "right": "can you also simplify the titles or at least make them explicit",
+  "winner": ".",
+  "mean": {
+   ",": -3.8892,
+   ".": -3.7483,
+   "join": -4.2422
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "C P so day of week and uh hour of the day.",
+  "right": "may mean more because of that.",
+  "winner": "join",
+  "mean": {
+   ",": -5.047,
+   ".": -5.0561,
+   "join": -5.0218
+  }
+ },
+ {
+  "set": "en_lowercase.json",
+  "mark": ".",
+  "left": "first time it did it it didn't pick up the pattern file.",
+  "right": "syntax",
+  "winner": ",",
+  "mean": {
+   ",": -7.5596,
+   ".": -8.1055,
+   "join": -10.3568
+  }
  }
 ]

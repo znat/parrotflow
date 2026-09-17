@@ -22,8 +22,16 @@ import NaturalLanguage
 ///
 /// A pause is written `word? Capital` or `word? lowercase` about a quarter as
 /// often as `word. Capital`, so question marks are scanned as well. A period
-/// followed by a lowercase word is not: the transcriber did not start a
-/// sentence there, and the shape has never been measured.
+/// followed by a lowercase word is scanned too. That shape is rare — 26 over
+/// 9399 dictations — and none of the 26 is a sentence ending, because an
+/// ending carries a capital. Read, 7 of them join and 19 are left as decoded.
+/// The capital used to refuse the abbreviations for free; `Config.abbreviations`
+/// refuses them now.
+///
+/// The decoder also writes two full stops now and then, and both of them are
+/// invisible here: the first is a mark inside a run, the second has no letter
+/// in front of it. `Pipeline.collapsingDoubledStop` takes one out before this
+/// runs.
 ///
 /// A capital with no mark at all is scanned, with a fourth reading — the text
 /// as decoded — because there is no mark to take out and "leave it alone" has
@@ -93,11 +101,17 @@ actor SentenceJoin {
 
     /// Marks that only start a boundary in front of a capital.
     ///
-    /// `word? lowercase` is a boundary: of 19 such lines in the user's
-    /// dictation, 7 hold a spurious mark and 12 a real question, so the reading
-    /// has to decide and no rule can. `word. lowercase` is left alone, because
-    /// that shape has never been measured.
-    static let capitalOnly: Set<Character> = ["."]
+    /// Empty. `word? lowercase` was always a boundary: of 19 such lines in the
+    /// user's dictation, 7 hold a spurious mark and 12 a real question, so the
+    /// reading has to decide and no rule can. `word. lowercase` was left alone
+    /// as an unmeasured shape, and has now been measured: 26 of them over 9399
+    /// dictations, none of which is a sentence ending — an ending carries a
+    /// capital — and none of which is an abbreviation. Read, 7 join and the
+    /// other 19 are left as decoded.
+    ///
+    /// What the capital bought for free was the abbreviations, and
+    /// `refusing:` buys them again.
+    static let capitalOnly: Set<Character> = []
 
     /// Where a boundary is looked for: the sentence enders in the configured
     /// mark list. The rest of the list — the comma — is a reading tried at a
@@ -135,11 +149,15 @@ actor SentenceJoin {
 
     /// Every place one of `marks` is followed by a word.
     ///
-    /// Three things that look like a boundary and are not. A mark inside a run
+    /// Four things that look like a boundary and are not. A mark inside a run
     /// of them is an ellipsis or a stutter. A mark after a single letter is an
     /// initial — "J. Smith". A mark after anything but a letter or a digit is
-    /// closing something rather than ending a sentence.
-    static func boundaries(in text: String, scanning marks: Set<Character>) -> [Boundary] {
+    /// closing something rather than ending a sentence. And a word in
+    /// `refusing` is an abbreviation, which carries a full stop that ends no
+    /// sentence — see `Config.defaultAbbreviations`.
+    static func boundaries(
+        in text: String, scanning marks: Set<Character>, refusing: Set<String> = []
+    ) -> [Boundary] {
         var found: [Boundary] = []
         var cursor = text.startIndex
         while let at = text[cursor...].firstIndex(where: { marks.contains($0) }) {
@@ -155,6 +173,7 @@ actor SentenceJoin {
             let ahead = text[..<at].reversed().drop { $0.isWhitespace }
             let word = ahead.prefix { $0.isLetter || $0.isNumber }
             guard word.count > 1 else { continue }
+            guard !refusing.contains(String(word.reversed()).lowercased()) else { continue }
 
             var start = cursor
             while start < text.endIndex, text[start].isWhitespace {
@@ -401,7 +420,9 @@ actor SentenceJoin {
         guard Self.languages.contains(language) else { return .unchanged(text) }
         let marks = written ?? config.transcription.marks(for: language)
         let found = (
-            Self.boundaries(in: text, scanning: Self.scanned(marks))
+            Self.boundaries(
+                in: text, scanning: Self.scanned(marks), refusing: config.abbreviations
+            )
             // English only: the refusal rules for a bare capital were tuned on
             // English capitalisation, and French capitalises far less.
             + (capitals && language == "en" ? Self.bareBoundaries(in: text) : [])

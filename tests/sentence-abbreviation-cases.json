@@ -1,0 +1,52 @@
+[
+ {
+  "text": "we ship the parser, the tokeniser, etc. and the tests come after",
+  "word": "and",
+  "why": "etc."
+ },
+ {
+  "text": "it costs approx. ten euros a month for the whole team",
+  "word": "ten",
+  "why": "approx."
+ },
+ {
+  "text": "the new encoder wins vs. the one we shipped last year",
+  "word": "the",
+  "why": "vs."
+ },
+ {
+  "text": "I asked Dr. smith about the results of the second trial",
+  "word": "smith",
+  "why": "Dr."
+ },
+ {
+  "text": "we were told to take route no. four through the valley",
+  "word": "four",
+  "why": "no."
+ },
+ {
+  "text": "the file lives in the repo, cf. the readme at the top",
+  "word": "the",
+  "why": "cf."
+ },
+ {
+  "text": "the invoice came from Acme Inc. and nobody could read it",
+  "word": "and",
+  "why": "Inc."
+ },
+ {
+  "text": "the office is on Baker St. near the old station",
+  "word": "near",
+  "why": "St."
+ },
+ {
+  "text": "il faut compter env. dix minutes pour la première passe",
+  "word": "dix",
+  "why": "env."
+ },
+ {
+  "text": "regarde la page 4, cf. le tableau des correspondances",
+  "word": "le",
+  "why": "cf. in French"
+ }
+]
