@@ -2725,7 +2725,7 @@ struct Config: Decodable, Equatable {
         /// several times a sentence, so full volume reads as shouting — hence
         /// the low default. Values outside the range are clamped.
         var soundVolume: Float = 0.3
-        /// Show the floating recording pill near the bottom of the screen.
+        /// Show the recording pill while the microphone is open.
         var overlay: Bool = true
         /// After a dictation lands, offer to correct it for a few seconds.
         ///

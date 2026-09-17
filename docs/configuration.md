@@ -996,9 +996,9 @@ thing that costs you the words.
 
 ## `feedback`
 
-`sound` is the chime when a transcript lands. `overlay` is the floating pill
-that shows the mic is hot. Both on by default; the pill is the only thing on
-screen that says recording is happening, so turning it off is a real choice.
+`sound` is the chime when a transcript lands. `overlay` is the pill that shows
+the mic is hot. Both on by default; the pill is the only thing on screen that
+says recording is happening, so turning it off is a real choice.
 
 **The start chime means the microphone is sending**, not that the key was
 registered. It used to play as soon as the audio graph was running, which is

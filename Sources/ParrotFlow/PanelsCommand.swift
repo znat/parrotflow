@@ -750,7 +750,7 @@ enum PanelsCommand {
         // between them shows.
         func pill(
             _ state: PillState, icon: NSImage? = nil, level: Float = 0,
-            docked: Dock? = nil
+            docked: Dock
         ) -> PillModel {
             let model = PillModel()
             model.state = state
@@ -770,7 +770,6 @@ enum PanelsCommand {
 
         let notice = pill(.notice("Grammar applied", .done), docked: .below)
         let caution = pill(.notice("Grammar copied — this app won't let me edit it", .caution), docked: .below)
-        let thinking = pill(.working("Thinking…"))
         // The offer before it is asked for: the bird and the key, and nothing
         // else. First because it is what every dictation now ends as — the ones
         // below are what it becomes when you rest on it.
@@ -890,23 +889,6 @@ enum PanelsCommand {
         // this and the tab above it.
         let listeningFree = pill(.recording(nil), icon: sampleIcon(), level: 0.55, docked: .free)
         let thinkingFree = pill(.working("Thinking…"), icon: sampleIcon(), docked: .free)
-
-        let overlay = pill(.recording(nil), icon: sampleIcon(), level: 0.75)
-
-        // The pill has two states now and the difference is the whole point of
-        // the slot: with somewhere to type it holds that app's icon, with
-        // nowhere it holds nothing and is simply narrower — which is how you
-        // are told the words are going to the clipboard instead. Both are on
-        // the sheet because "it looks wrong with no icon" is the kind of thing
-        // that is obvious side by side and invisible a week apart.
-        let overlayBlind = pill(.recording(nil), level: 0.75)
-
-        // And the third, which is not dictation at all: tap-then-hold, where
-        // what you say is routed instead of written down. The label is the only
-        // thing that says so, which is exactly why it belongs on this sheet.
-        let overlayCommand = pill(
-            .recording("editing the selection"), icon: sampleIcon(), level: 0.75
-        )
 
         // A row the spell check proposed, half filled in, and a row typed by
         // hand — the two shapes the panel exists for, side by side.
@@ -1036,12 +1018,6 @@ enum PanelsCommand {
         // an ordinary titled window, it follows the system, and it has to be
         // legible both ways. So it appears twice, once each.
         let surfaces: [(view: AnyView, size: NSSize, scheme: ColorScheme, drawn: Bool)] = [
-            (AnyView(PillView().environmentObject(overlay)),
-             pillSize(overlay), .dark, true),
-            (AnyView(PillView().environmentObject(overlayBlind)),
-             pillSize(overlayBlind), .dark, true),
-            (AnyView(PillView().environmentObject(overlayCommand)),
-             pillSize(overlayCommand), .dark, true),
             // The one real window the app has, and the first thing anyone sees.
             // On the sheet for the same reason as the rest: it is looked at,
             // not asserted on, and two screens that drift apart are obvious
@@ -1074,8 +1050,6 @@ enum PanelsCommand {
             (openingPane, setupSize(openingPane), .light, false),
             (AnyView(PillView().environmentObject(notice)),
              pillSize(notice), .dark, true),
-            (AnyView(PillView().environmentObject(thinking)),
-             pillSize(thinking), .dark, true),
             (AnyView(PillView().environmentObject(caution)),
              pillSize(caution), .dark, true),
             // What every dictation now ends as, and what the rest of this
