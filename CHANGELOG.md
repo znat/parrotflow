@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.0](https://github.com/znat/parrotflow/compare/v0.12.1...v0.13.0) (2026-09-17)
+
+
+### Features
+
+* dictated amounts of money are written with the currency symbol ([#317](https://github.com/znat/parrotflow/issues/317)) ([3c5fa31](https://github.com/znat/parrotflow/commit/3c5fa312d85217ded32acc429d0b8f99121b7ed7))
+* more of the full stops a pause put mid-sentence are taken out ([#318](https://github.com/znat/parrotflow/issues/318)) ([60cbbfa](https://github.com/znat/parrotflow/commit/60cbbfab9fcb7d495185bfdd28e0f72036d8a815))
+* the shipped transforms live in built-in/ instead of examples/ ([#320](https://github.com/znat/parrotflow/issues/320)) ([5a30fc6](https://github.com/znat/parrotflow/commit/5a30fc6267ffe3ecce1be55d9d7ede27932ecd8b))
+
 ## [0.12.1](https://github.com/znat/parrotflow/compare/v0.12.0...v0.12.1) (2026-09-15)
 
 
