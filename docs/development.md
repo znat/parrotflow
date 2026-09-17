@@ -147,6 +147,7 @@ scripts/check-pipeline-config.sh  # which pipeline a whole config resolves to
 scripts/check-dotted.sh           # the one rewrite that fires on ordinary language
 examples/transforms/numbers/score.py   # 101 cases, one file per language
 examples/transforms/dates/score.py     # 133 cases, dates and clock times
+examples/transforms/money/score.py     # 95 cases, amounts of money
 scripts/check-routing.sh          # which transform an instruction reaches
 scripts/check-compose.sh          # what a prompt says once the scope is in it
 scripts/check-context.sh          # what the context stage publishes for a screen

@@ -837,6 +837,67 @@ cases:
   - { name: "just the two of us", pipeline: numbers, input: Just the two of us, expect: unchanged }
   - { name: "seulement nous deux", pipeline: numbers, input: Seulement nous deux, expect: unchanged }
 
+  # --- the money scripts, below the numbers scripts -----------------------
+  #
+  # The `money` fixture is numbers then money, both languages, no gates. What
+  # only a pipeline shows: the numbers step above writes every amount from ten
+  # up, and money reads what is left.
+
+  # The order. `money_en` alone does nothing with "twenty five euros": there is
+  # no number in it yet.
+  - { name: "numbers runs before money", pipeline: money, input: it cost me twenty five euros, expect: "it cost me €25" }
+  - { name: "numbers runs before money, thousands", pipeline: money, input: he charges three thousand dollars, expect: he charges $3000 }
+  - { name: "the cents tail survives both steps", pipeline: money, input: that will be twenty dollars and fifty cents, expect: that will be $20.50 }
+
+  # The floor. `numbers` leaves a lone number under ten a word — "chapter three"
+  # — and knows nothing about money. `money` reads those words itself.
+  - { name: "money reads a number under ten", pipeline: money, input: lunch came to five dollars today, expect: lunch came to $5 today }
+  - { name: "and in French too", pipeline: money, input: le café était à cinq euros hier, expect: "le café était à 5 € hier" }
+  - { name: "the floor still holds without one", pipeline: money, input: chapter three of the book, expect: unchanged }
+  - { name: "cents under ten reach the tail", pipeline: money, input: that is twelve dollars and five cents, expect: that is $12.05 }
+  # A comma between the number and the currency word means two things, not a
+  # price.
+  - { name: "a comma between them is not a price", pipeline: money, input: he said five, dollars and left, expect: unchanged }
+
+  # A unit word with a spoken tail, through both stages.
+  - { name: "a unit word keeps its cents", pipeline: money, input: le café était à cinq euros cinquante, expect: "le café était à 5,50 €" }
+  - { name: "a hyphenated adjective stays whole", pipeline: money, input: he gave me a twenty-dollar bill, expect: he gave me a 20-dollar bill }
+
+  # Limits, kept visible so nobody re-files them. A range puts the symbol on the
+  # last number only; "and fifty" without "cents" is not read as cents; "a buck
+  # fifty" has no numeral for money to take.
+  - { name: "a range puts the symbol on the last number", pipeline: money, input: it costs five to ten dollars, expect: it costs five to $10 }
+  - { name: "and a between range the same", pipeline: money, input: somewhere between five and ten dollars, expect: somewhere between five and $10 }
+  - { name: "and fifty without cents is not read", pipeline: money, input: it is twenty dollars and fifty, expect: it is $20 and 50 }
+  - { name: "a buck fifty has no numeral", pipeline: money, input: it costs a buck fifty, expect: it costs a buck 50 }
+
+  # Slang: one word, and it goes through both stages like any other.
+  - { name: "bucks is a dollar", pipeline: money, input: we bought coffee for twenty bucks, expect: we bought coffee for $20 }
+  - { name: "a currency code is left alone", pipeline: money, input: it came to two hundred USD, expect: it came to 200 USD }
+
+  # The guard. `dollars` and `euros` are the same word in both languages and
+  # `money_en` runs first, so without it every French amount would come out
+  # "$20". The script declines a language that is not its own.
+  - { name: "a French amount keeps the French shape", pipeline: money, input: ça m'a coûté vingt-cinq euros, expect: "ça m'a coûté 25 €" }
+  - { name: "a French amount, the plain form", pipeline: money, input: le billet coûte vingt euros, expect: "le billet coûte 20 €" }
+  - { name: "French centimes, written with a comma", pipeline: money, input: ça fera vingt euros et cinquante centimes, expect: "ça fera 20,50 €" }
+
+  # Below four words detection answers with the first configured language, so
+  # the English script writes the English shape. The French script declines, so
+  # a French unit word it alone reads stays a word.
+  - { name: "too short to detect: vingt euros", pipeline: money, input: vingt euros, expect: "€20" }
+  - { name: "too short to detect: cinq euros cinquante", pipeline: money, input: cinq euros cinquante, expect: "cinq euros 50" }
+
+  # The guard counts no words, because `numbers` shortens the text first.
+  # "vingt et un euros chacun" is four words said and three once numbers wrote
+  # "21"; a count taken here turned the guard off and money_en wrote "€21".
+  - { name: "numbers shortening the text does not flip the guard", pipeline: money, input: vingt et un euros chacun, expect: "21 € chacun" }
+  - { name: "and English keeps the adjective", pipeline: money, input: two hundred and fifty dollar bills, expect: 250 dollar bills }
+
+  # And the currency word as a noun is left alone in both languages.
+  - { name: "money declines a noun", pipeline: money, input: the dollar is strong this quarter, expect: unchanged }
+  - { name: "money declines a French noun", pipeline: money, input: la zone euro est en crise, expect: unchanged }
+
 refused:
   - name: a condition reading a stage that runs later is refused
     pipeline: reads-later-stage

@@ -1,0 +1,1 @@
+../../../../examples/transforms/money/fr.py

@@ -97,12 +97,14 @@ on.
 
 `numbers` used to be a stage here. It is a shipped transform now, and there is
 one script per language — `examples/transforms/numbers/en.py` and `fr.py`.
-`dates` is the same shape and runs above it. The default config ships the two
-English steps and nothing else:
+`dates` is the same shape and runs above it. `money` is the same shape again
+and runs below it. The default config ships the three English steps and nothing
+else:
 
 ```yaml
     - transform: dates_en
     - transform: numbers_en
+    - transform: money_en
 ```
 
 A config still saying `- numbers` is refused by name, with both halves of the
@@ -125,26 +127,49 @@ transforms:
     returns: json
     tests: { path: examples/numbers/cases-fr.yaml }
 
+  - name: money_fr
+    description: dictated amounts of money with the currency symbol
+    command: examples/money/fr.py
+    returns: json
+    tests: examples/money/cases-fr.yaml
+
 transcription:
   pipeline:
     - transform: dates_fr
     - transform: numbers_fr
+    - transform: money_fr
 ```
 
 Dates goes above numbers, in every language. A date is made of number words,
 and numbers would write them as digits before dates ever saw them.
 
+Money goes below numbers, for the mirror reason. `numbers_en` writes "twenty
+dollars" as `20 dollars`, and `money_en` puts the symbol on it. Numbers leaves a
+lone number under ten as a word — "chapter three" — so each money script reads
+those ten words itself. `numbers` knows nothing about money.
+
 No step needs a language gate. Each script reads its own words only,
 and declines a number whose words are none of its own — measured over the other
 language's whole case set, every script changed nothing.
+
+**Money is the exception, and its guard is inside the script.** `dollars` and
+`euros` are spelled the same in both languages, which no pair of `dates` files
+is. With no gate `money_en` runs first and would write a French `20 euros` as
+`$20`. So each money script declines a transcript the pipeline detected as
+another language. It counts no words, unlike `numbers`: the text has already
+been shortened by `numbers` — "vingt et un euros" is three words once it reads
+"21 euros" — and a count would turn the guard off on a French sentence. A short
+transcript gets the first configured language from the app, and that script
+writes it. `examples/transforms/money/score.py --cross` runs each script over
+the other language's cases and wants no change.
 
 `dates_fr` resolves a bare hour to the next time it comes round: at 12:00 "à
 4h" is `16h`. Add `--no-wall-clock` to its `command:` line to write `4h`
 instead. English writes 12-hour times and invents no pm.
 
-Both rewrite transcripts that were already correct, so run
+All three rewrite transcripts that were already correct, so run
 `examples/transforms/numbers/score.py --text "<line>"` — and the same script in
-`dates/` — to see what they would do before leaving them in. Adding another
+`dates/` and `money/` — to see what they would do before leaving them in. Adding another
 language is a copy of one file per folder; see the "Adding a language" note in
 each `engine.py`.
 
@@ -1051,7 +1076,8 @@ joined. The built-in ones publish `vocabulary.count`,
 `vocabulary.changes` and `vocabulary.before` — how many rules fired, which
 ones, and the sentence the stage was handed — and, for a prompt stage, `model`.
 Each shipped `numbers` script publishes `count` under its own name, so
-`numbers_en.count` and `numbers_fr.count`, and each `dates` script the same.
+`numbers_en.count` and `numbers_fr.count`, and each `dates` and `money` script
+the same.
 No step carries a language gate, so they run on every transcript and always
 publish. A step that a condition *does* skip publishes only
 `<name>.ran = false`, and a later condition then has to ask

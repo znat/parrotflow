@@ -1,0 +1,203 @@
+# Validation set for `money_fr`. Scored with `score.py --lang fr` beside this
+# file, or with `ParrotFlow --eval money_fr`, which runs the installed command.
+# The `tests:` key on the transform points `--eval` at this file.
+#
+# `change`: an amount was dictated — write it with the symbol.
+# `keep` (no `expect`): must come back byte for byte.
+#
+# The inputs are what `numbers_fr` writes, not what was said. This stage runs
+# below it, so "vingt euros" never reaches it; "20 euros" does. The one thing
+# numbers leaves in words is a lone number under ten, so "cinq euros" does
+# reach it, and this stage reads those words itself — all but "un" and "une".
+#
+# The keep half is 17 of 41 cases and it is the half that decides. The stage
+# runs on every transcript and shows nothing, so a wrong rewrite is text nobody
+# watched change. Every keep is a shape that looks like an amount and is not.
+#
+# `lang:` is on every case because `--eval` hands it to the pipeline, and the
+# guard in `engine.py` reads it.
+
+cases:
+
+  # --- somme_fr: la forme simple ---
+  - probe: somme_fr
+    lang: fr
+    input: "le billet coûte 20 euros"
+    expect: "le billet coûte 20 €"
+  - probe: somme_fr
+    lang: fr
+    input: "ça m'a coûté 25 euros"
+    expect: "ça m'a coûté 25 €"
+  - probe: somme_fr
+    lang: fr
+    input: "le café était à 5 euros"
+    expect: "le café était à 5 €"
+  - probe: somme_fr
+    lang: fr
+    input: "le café était à cinq euros"
+    expect: "le café était à 5 €"
+  - probe: somme_fr
+    lang: fr
+    input: "l'ordinateur coûtait 3000 euros"
+    expect: "l'ordinateur coûtait 3000 €"
+  - probe: somme_fr
+    lang: fr
+    input: "la facture montait à 1250 euros"
+    expect: "la facture montait à 1250 €"
+  - probe: somme_fr
+    lang: fr
+    input: "le loyer est de 1200 euros"
+    expect: "le loyer est de 1200 €"
+  - probe: somme_fr
+    lang: fr
+    input: "le ticket était à 90 euros"
+    expect: "le ticket était à 90 €"
+  - probe: somme_fr
+    lang: fr
+    input: "un budget de 500 euros par mois"
+    expect: "un budget de 500 € par mois"
+  - probe: somme_fr
+    lang: fr
+    input: "il reste 1 euro sur le compte"
+    expect: "il reste 1 € sur le compte"
+
+  # --- dollars_fr: le symbole suit, comme l'euro ---
+  - probe: dollars_fr
+    lang: fr
+    input: "je t'envoie 40 dollars demain"
+    expect: "je t'envoie 40 $ demain"
+  - probe: dollars_fr
+    lang: fr
+    input: "le tarif est de 25 dollars"
+    expect: "le tarif est de 25 $"
+
+  # --- elision_fr: "deux millions d'euros" devient "2000000 d'euros" ---
+  - probe: elision_fr
+    lang: fr
+    input: "il a levé 2000000 d'euros"
+    expect: "il a levé 2000000 €"
+
+  # --- centimes_fr: la queue, dite avec le mot et sans ---
+  - probe: centimes_fr
+    lang: fr
+    input: "ça fera 20 euros et 50 centimes"
+    expect: "ça fera 20,50 €"
+  - probe: centimes_fr
+    lang: fr
+    input: "rembourse-moi 12 euros et 5 centimes"
+    expect: "rembourse-moi 12,05 €"
+  - probe: centimes_fr
+    lang: fr
+    input: "ça fait 12 euros et cinq centimes"
+    expect: "ça fait 12,05 €"
+  - probe: centimes_fr
+    lang: fr
+    input: "ça fait 25 euros 50 au total"
+    expect: "ça fait 25,50 € au total"
+  - probe: centimes_fr
+    lang: fr
+    input: "le livre était à 9 euros 90"
+    expect: "le livre était à 9,90 €"
+
+  # --- keep: le mot comme nom ---
+  - probe: keep_fr
+    lang: fr
+    input: "la zone euro est en crise"
+  - probe: keep_fr
+    lang: fr
+    input: "le dollar est fort ce trimestre"
+  - probe: keep_fr
+    lang: fr
+    input: "ça coûte quelques euros de plus"
+  - probe: keep_fr
+    lang: fr
+    input: "il a été payé en euros"
+  - probe: keep_fr
+    lang: fr
+    input: "convertir des dollars en euros"
+  - probe: keep_fr
+    lang: fr
+    input: "le symbole euro est à droite"
+  - probe: keep_fr
+    lang: fr
+    input: "euros et dollars ne sont pas pareils"
+  - probe: keep_fr
+    lang: fr
+    input: "le fonds pèse des millions de dollars"
+
+  # --- article_fr: "un" reste un mot, "1" est une somme ---
+  #
+  # "un euro" est un article aussi souvent qu'une somme, et rien ici ne les
+  # distingue. Le mot reste ; le chiffre, déjà écrit, est lu.
+  - probe: article_fr
+    lang: fr
+    input: "il gagne 1 euro par clic"
+    expect: "il gagne 1 € par clic"
+  - probe: article_fr
+    lang: fr
+    input: "un dollar aujourd'hui vaut moins qu'avant"
+  - probe: article_fr
+    lang: fr
+    input: "il gagne un euro par clic"
+
+  # --- keep: le mot d'échelle garde la forme écrite ---
+  - probe: echelle_fr
+    lang: fr
+    input: "il a levé 2,5 millions d'euros"
+  - probe: echelle_fr
+    lang: fr
+    input: "le budget est de 3 milliards de dollars"
+
+  # --- keep: déjà écrit, ou pas le travail de cette étape ---
+  - probe: keep_fr
+    lang: fr
+    input: "le prix est déjà 20 € aujourd'hui"
+  - probe: keep_fr
+    lang: fr
+    input: "il reste 99 centimes sur le compte"
+  - probe: keep_fr
+    lang: fr
+    input: "elle me doit vingt euros encore"
+
+  # --- keep: la moitié d'un composé n'est pas une somme ---
+  #
+  # Le même défaut que `compound_en`, trouvé sur l'archive. Le mot d'avant est
+  # lu trait d'union par trait d'union : "quatre-vingt-dix" finit par "dix".
+  - probe: compose_fr
+    lang: fr
+    input: "je veux quatre-vingt-dix neuf euros"
+  - probe: compose_fr
+    lang: fr
+    input: "ça fait deux cents euros en tout"
+
+  # --- somme: deux dans la même phrase ---
+  #
+  # Le garde-fou des composés lit le mot d'avant, et "et" en fait partie. Les
+  # chiffres passent : l'étape des nombres est déjà passée au-dessus.
+  - probe: somme_fr
+    lang: fr
+    input: "ça fait 10 euros et 20 euros de livraison"
+    expect: "ça fait 10 € et 20 € de livraison"
+
+  # --- queue_fr: un nombre nu après une somme n'est des centimes que si rien
+  # d'autre ne le réclame. Une autre devise, ou un pourcentage, font deux choses.
+  - probe: queue_fr
+    lang: fr
+    input: "j'ai 20 euros 20 dollars"
+    expect: "j'ai 20 € 20 $"
+  - probe: queue_fr
+    lang: fr
+    input: "ça fait 20 euros 50 % de plus"
+    expect: "ça fait 20 € 50 % de plus"
+
+  # --- unite_fr: les mots d'unité, avec leur queue ---
+  - probe: unite_fr
+    lang: fr
+    input: "le café était à cinq euros 50"
+    expect: "le café était à 5,50 €"
+  # French has no singular rule: a singular currency word after a number is
+  # only ever a slip. English has one, because "a 20 dollar bill" is grammar.
+  - probe: unite_fr
+    lang: fr
+    input: "ça coûte 20 euro."
+    expect: "ça coûte 20 €."

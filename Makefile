@@ -97,7 +97,8 @@ CHECKS := replacements pipeline pipeline-config wake split dates keyed \
 
 ## A shipped transform keeps its case set in its own folder and scores it with
 ## a script beside it, not with scripts/check-<name>.sh.
-SCORERS := examples/transforms/dates/score.py examples/transforms/numbers/score.py
+SCORERS := examples/transforms/dates/score.py examples/transforms/numbers/score.py \
+           examples/transforms/money/score.py
 
 test:
 	@swift build -c release

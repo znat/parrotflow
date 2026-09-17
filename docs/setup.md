@@ -347,9 +347,11 @@ echo "I need two hundred and forty three of them by nineteen eighty four" | $NUM
 ```
 
 There is one script per language — `fr.py` beside it. English is the pipeline
-step a new install gets, and `dates_en` above it writes a dictated date or
-clock time. If they dictate in French, add a `numbers_fr` transform pointing at
-`fr.py` and a step for it — see [docs/pipelines.md](pipelines.md). If they do not want numbers at all, delete
+step a new install gets, `dates_en` above it writes a dictated date or clock
+time, and `money_en` below it writes an amount with its symbol: "twenty
+dollars" comes out `$20`, and the French script writes `20 €`. If they dictate
+in French, add a `numbers_fr` transform pointing at `fr.py` and a step for it,
+and the same for the other two — see [docs/pipelines.md](pipelines.md). If they do not want numbers at all, delete
 the `- transform: numbers_en` line. There is no `numbers:` setting — a config
 carrying one is refused by `--check-config`, and so is the old `- numbers`
 stage line.
