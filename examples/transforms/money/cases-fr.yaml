@@ -10,7 +10,7 @@
 # numbers leaves in words is a lone number under ten, so "cinq euros" does
 # reach it, and this stage reads those words itself — all but "un" and "une".
 #
-# The keep half is 17 of 37 cases and it is the half that decides. The stage
+# The keep half is 17 of 41 cases and it is the half that decides. The stage
 # runs on every transcript and shows nothing, so a wrong rewrite is text nobody
 # watched change. Every keep is a shape that looks like an amount and is not.
 #
@@ -178,3 +178,26 @@ cases:
     lang: fr
     input: "ça fait 10 euros et 20 euros de livraison"
     expect: "ça fait 10 € et 20 € de livraison"
+
+  # --- queue_fr: un nombre nu après une somme n'est des centimes que si rien
+  # d'autre ne le réclame. Une autre devise, ou un pourcentage, font deux choses.
+  - probe: queue_fr
+    lang: fr
+    input: "j'ai 20 euros 20 dollars"
+    expect: "j'ai 20 € 20 $"
+  - probe: queue_fr
+    lang: fr
+    input: "ça fait 20 euros 50 % de plus"
+    expect: "ça fait 20 € 50 % de plus"
+
+  # --- unite_fr: les mots d'unité, avec leur queue ---
+  - probe: unite_fr
+    lang: fr
+    input: "le café était à cinq euros 50"
+    expect: "le café était à 5,50 €"
+  # French has no singular rule: a singular currency word after a number is
+  # only ever a slip. English has one, because "a 20 dollar bill" is grammar.
+  - probe: unite_fr
+    lang: fr
+    input: "ça coûte 20 euro."
+    expect: "ça coûte 20 €."

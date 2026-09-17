@@ -107,7 +107,9 @@ def centimes_sans_le_mot(m, text):
     cents = int(engine.value(m.group("c"), UNITS))
     if not 10 <= cents <= 99 or "," in written:
         return None
-    if engine.word_after(text, m.end()) in STOP_AFTER:
+    # "20 euros 20 dollars" is two amounts, not 20,20 €.
+    following = engine.word_after(text, m.end()).split("'")[-1].split("\u2019")[-1]
+    if following in STOP_AFTER or following in CURRENCIES or following in CENTIMES:
         return None
     return f"{written},{cents:02d} {symbol(word)}"
 
@@ -127,7 +129,7 @@ RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler i
      rf"\s+(?:{engine.alt(CENTIMES)})\b",
      avec_centimes),
     ("somme et centimes sans le mot",
-     rf"\b(?P<n>{AMOUNT})\s+{OF}(?P<cur>{CUR})\s+(?P<c>\d{{1,2}})\b(?![.,]\d)",
+     rf"\b(?P<n>{AMOUNT})\s+{OF}(?P<cur>{CUR})\s+(?P<c>\d{{1,2}})\b(?![.,]\d|\s*%)",
      centimes_sans_le_mot),
     ("somme",
      rf"\b(?P<n>{AMOUNT})\s+{OF}(?P<cur>{CUR})\b",

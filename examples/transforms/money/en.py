@@ -141,7 +141,9 @@ def bare_cents_tail(m, text):
     cents = int(engine.value(m.group("c"), UNITS))
     if not 10 <= cents <= 99 or "." in written:
         return None
-    if engine.word_after(text, m.end()) in STOP_AFTER:
+    # "20 dollars 20 euros" is two amounts, not $20.20.
+    following = engine.word_after(text, m.end()).split("'")[-1]
+    if following in STOP_AFTER or following in CURRENCIES or following in CENTS:
         return None
     return f"{symbol(word)}{written}.{cents:02d}"
 
@@ -179,7 +181,7 @@ RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler i
      rf"\b(?P<n>{AMOUNT})\s+(?P<scale>{SCALE})\s+(?P<cur>{CUR})\b",
      with_scale),
     ("amount and a bare tail",
-     rf"\b(?P<n>{AMOUNT})\s+(?P<cur>{CUR})\s+(?P<c>\d{{1,2}})\b(?![.,]\d)",
+     rf"\b(?P<n>{AMOUNT})\s+(?P<cur>{CUR})\s+(?P<c>\d{{1,2}})\b(?![.,]\d|\s*%)",
      bare_cents_tail),
     ("amount",
      rf"\b(?P<n>{AMOUNT})\s+(?P<cur>{CUR})\b",

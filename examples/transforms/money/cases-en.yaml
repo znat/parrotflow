@@ -10,7 +10,7 @@
 # thing numbers leaves in words is a lone number under ten, so "five dollars"
 # does reach it, and this stage reads those ten words itself.
 #
-# The keep half is 19 of 44 cases and it is the half that decides. The stage
+# The keep half is 22 of 54 cases and it is the half that decides. The stage
 # runs on every transcript and shows nothing, so a wrong rewrite is text nobody
 # watched change. Every keep is a shape that looks like an amount and is not.
 #
@@ -215,3 +215,52 @@ cases:
     lang: en
     input: "it costs 5 dollars and 20 dollars for shipping"
     expect: "it costs $5 and $20 for shipping"
+
+  # --- tail_en: a bare number after an amount is cents only if nothing else
+  # claims it. Another currency word, or a percent, means two things.
+  - probe: tail_en
+    lang: en
+    input: "I have 20 dollars 20 euros"
+    expect: "I have $20 €20"
+  - probe: tail_en
+    lang: en
+    input: "it costs 20 dollars 50% more"
+    expect: "it costs $20 50% more"
+  - probe: tail_en
+    lang: en
+    input: "it costs 20 dollars 50 % more"
+    expect: "it costs $20 50 % more"
+
+  # --- unit_en: the unit words, with every tail ---
+  - probe: unit_en
+    lang: en
+    input: "it came to five dollars 50"
+    expect: "it came to $5.50"
+  - probe: unit_en
+    lang: en
+    input: "it came to five dollars and five cents"
+    expect: "it came to $5.05"
+  - probe: unit_en
+    lang: en
+    input: "Five dollars."
+    expect: "$5."
+
+  # --- limit_en: left as it is, on purpose ---
+  #
+  # None of these appear in 1861 archived dictations. The recogniser never
+  # writes the symbol and the word together, and `numbers` writes no thousands
+  # separator, so a comma run is left whole rather than half read.
+  - probe: limit_en
+    lang: en
+    input: "it was $20 dollars in the end"
+  - probe: limit_en
+    lang: en
+    input: "it came to about 1,000 dollars"
+  - probe: limit_en
+    lang: en
+    input: "it is 20 euro cents only"
+  # The decimals are kept as they were said, not padded to two places.
+  - probe: limit_en
+    lang: en
+    input: "that is 20.5 dollars today"
+    expect: "that is $20.5 today"
