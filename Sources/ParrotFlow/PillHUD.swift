@@ -1292,13 +1292,24 @@ final class PillHUD {
         hosting.layer?.isOpaque = false
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
 
+        // A plain view between the hosting view and the window.
+        //
+        // With the hosting view as the panel's own content view, the window
+        // collapsed to 104x104 while recording — the bleed with a capsule of
+        // 0x0 inside it — and nothing was drawn until the next state set the
+        // frame again. The glass container this replaced was doing the same
+        // job.
+        let container = NSView(frame: hosting.frame)
+        container.autoresizesSubviews = true
+        container.addSubview(hosting)
+
         let panel = NSPanel(
             contentRect: hosting.frame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.contentView = hosting
+        panel.contentView = container
         panel.isFloatingPanel = true
         panel.level = .statusBar
         panel.backgroundColor = .clear
