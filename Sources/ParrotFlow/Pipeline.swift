@@ -973,6 +973,10 @@ struct Pipeline: Equatable, Codable {
                 "chars": .int(0),
                 "lines": .int(0),
                 "truncated": .bool(false),
+                // Emptied like the rest: a condition on `context.place` is
+                // written once and has to hold on the runs that read nothing.
+                "place": .string(""),
+                "people": .string(""),
             ])
         case .success(let capture):
             // The whole capture goes to the log, not a count of it. The point of
@@ -981,7 +985,9 @@ struct Pipeline: Equatable, Codable {
             // before turning it on: while it is on, the log holds what was on
             // screen when you dictated.
             Log.write("pipeline: context read \(capture.chars) chars, \(capture.lines) line(s)"
-                + (capture.truncated ? " (truncated to the last \(Context.maxChars))" : ""))
+                + (capture.truncated ? " (truncated to the last \(Context.maxChars))" : "")
+                + (capture.place.isEmpty ? "" : " in \(capture.place)")
+                + (capture.people.isEmpty ? "" : ", \(capture.people.count) name(s)"))
             for row in capture.text.components(separatedBy: "\n") {
                 Log.write("    | \(row)")
             }
@@ -990,6 +996,10 @@ struct Pipeline: Equatable, Codable {
                 "chars": .int(capture.chars),
                 "lines": .int(capture.lines),
                 "truncated": .bool(capture.truncated),
+                "place": .string(capture.place),
+                // One scalar, joined on `; `, the way `protected` is: a
+                // variable holds a value and a list of names is still a value.
+                "people": .string(capture.people.joined(separator: "; ")),
             ])
         }
     }

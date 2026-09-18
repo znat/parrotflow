@@ -47,6 +47,9 @@ struct AppProfile: Equatable {
     var anchor: Anchor
     /// Whether the visible text can be handed to the pipeline. See `Context`.
     var readsPane: Bool
+    /// Whether the conversation can be walked out of the window's tree, for an
+    /// app that publishes no pane. See `TreeContext`.
+    var readsTree: Bool = false
     var paste: Paste
 
     static let ordinary = AppProfile(
@@ -83,6 +86,7 @@ struct AppProfile: Equatable {
 
         var profile = AppProfile.ordinary
         profile.paste = pasteFlavour(bundle: bundle)
+        profile.readsTree = treeBundleIDs.contains(bundle)
         return profile
     }
 
@@ -103,6 +107,14 @@ struct AppProfile: Equatable {
         "terminal", "iterm", "iterm2", "ghostty", "kitty", "wezterm", "alacritty",
         "warp", "hyper", "rio", "tabby",
     ]
+
+    /// An app whose window can be walked for the conversation around the box.
+    ///
+    /// By bundle id, and one line per app that has been measured: the walk
+    /// picks its subtree by the labels that app writes, so an app nobody has
+    /// read cannot be served by another app's rules. Slack, 2026-09-18: 973
+    /// nodes, a tree without asking for one, 130–150ms.
+    private static let treeBundleIDs: Set<String> = ["com.tinyspeck.slackmacgap"]
 
     /// An app belongs here only once two things are measured: that
     /// `ChromiumAccessibility` fails on it, and that a ⌘V into it lands. Codex
