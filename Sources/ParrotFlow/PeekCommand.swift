@@ -172,6 +172,7 @@ enum PeekCommand {
             if !got.place.isEmpty { report("  place   \(got.place)") }
             if !got.people.isEmpty { report("  people  \(got.people.joined(separator: "; "))") }
             if !got.code.isEmpty { report("  code    \(got.code.joined(separator: "; "))") }
+            if !got.roster.isEmpty { report("  roster  \(got.roster.joined(separator: "; "))") }
             for row in got.text.components(separatedBy: "\n") {
                 report("  | \(row)")
             }

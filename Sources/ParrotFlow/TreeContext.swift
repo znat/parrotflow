@@ -75,6 +75,86 @@ enum TreeContext {
         let code: [String]
     }
 
+    // MARK: - The sidebar
+
+    /// Rows that organise the sidebar rather than name anything in it.
+    private static let sections: Set<String> = [
+        "Threads", "Huddles", "Recap", "Drafts & sent", "Directories", "Starred",
+        "Priority", "Activity", "DMs", "Later", "Canvases", "Files", "Templates",
+        "Automations", "Apps", "Slack Connect", "External connections", "More",
+        "Channels", "Direct messages", "Channels and direct messages", "Add channels",
+        "VIP unreads", "Direct Messages", "My team", "Unreads", "Mentions",
+    ]
+
+    /// `Mik Okun (notifications snoozed), status: …` and `sws-engineering-internal
+    /// (private, is a member, 14 members, …)` — a sidebar row is a name followed
+    /// by whatever Slack has to say about it today. Presence, unread counts and
+    /// draft marks change while you dictate; the name does not.
+    ///
+    /// A channel is written with its `#`, a person without. The tell is the
+    /// shape rather than the metadata: a public channel's row carries no
+    /// metadata at all, and one word in lower case is not how anybody's name is
+    /// drawn here.
+    static func rosterNames(in label: String) -> [String] {
+        var name = label
+        if let status = name.range(of: ", status:") { name = String(name[..<status.lowerBound]) }
+        if let open = name.range(of: " (") { name = String(name[..<open.lowerBound]) }
+        name = name.trimmingCharacters(in: .whitespaces)
+        // A section drawn with an emoji arrives as "relaxed My team": the emoji
+        // is read out as its own name, in lower case, in front of the heading.
+        if let space = name.firstIndex(of: " "), name.first?.isLowercase == true,
+           name[name.index(after: space)].isUppercase {
+            name = String(name[name.index(after: space)...])
+        }
+        // A group conversation is drawn as everybody in it.
+        let parts = name.components(separatedBy: ", ").map {
+            $0.trimmingCharacters(in: .whitespaces)
+        }
+        return parts.compactMap { part -> String? in
+            guard !part.isEmpty, part.count <= 60, !sections.contains(part),
+                  part.rangeOfCharacter(from: .letters) != nil else { return nil }
+            let channel = !part.contains(" ") && part == part.lowercased()
+            return channel ? "#\(part)" : part
+        }
+    }
+
+    /// Every channel and person the sidebar lists.
+    ///
+    /// A second, shallow walk rather than part of the conversation's: the
+    /// sidebar is a sibling of the message pane, so the pane walk never reaches
+    /// it, and it answers a different question — not who is in this thread, but
+    /// who and what exist to be named at all.
+    static func roster(in window: AXUIElement) -> [String] {
+        guard let outline = outline(in: window, depth: 0) else { return [] }
+        var names: [String] = []
+        rows(under: outline, depth: 0, into: &names)
+        return names
+    }
+
+    /// The sidebar sits about eighteen rungs down in a real window, so this
+    /// walks as deep as everything else here rather than stopping early.
+    private static func outline(in element: AXUIElement, depth: Int) -> AXUIElement? {
+        guard depth < depthLimit else { return nil }
+        if (attribute(element, kAXRoleAttribute) as? String) == "AXOutline" { return element }
+        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
+            if let found = outline(in: child, depth: depth + 1) { return found }
+        }
+        return nil
+    }
+
+    private static func rows(under element: AXUIElement, depth: Int, into names: inout [String]) {
+        guard depth < 8, names.count < maxRoster else { return }
+        if (attribute(element, kAXRoleAttribute) as? String) == "AXRow",
+           let label = label(of: element) {
+            for name in rosterNames(in: label) where !names.contains(name) {
+                names.append(name)
+            }
+        }
+        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
+            rows(under: child, depth: depth + 1, into: &names)
+        }
+    }
+
     // MARK: - Reading the tree
 
     private static let nodeLimit = 4000
@@ -86,6 +166,9 @@ enum TreeContext {
     /// and a pasted file is one code run of any length.
     static let maxSpans = 40
     static let maxSpanChars = 200
+    /// The sidebar is a list of short names, so it is capped higher: this
+    /// speaker's has 44 channels and people in it.
+    static let maxRoster = 80
 
     /// Every labelled element under `element`, in drawing order.
     ///
