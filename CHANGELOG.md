@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/znat/parrotflow/compare/v0.13.0...v0.13.1) (2026-09-18)
+
+
+### Fixes
+
+* the pill is on screen while you speak, not only after ([#323](https://github.com/znat/parrotflow/issues/323)) ([1d85576](https://github.com/znat/parrotflow/commit/1d8557649790396cc3942790230e6f22a9b2b460))
+
 ## [0.13.0](https://github.com/znat/parrotflow/compare/v0.12.1...v0.13.0) (2026-09-17)
 
 
