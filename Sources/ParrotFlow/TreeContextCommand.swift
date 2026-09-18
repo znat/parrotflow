@@ -45,6 +45,23 @@ enum TreeContextCommand {
         Node(role: "AXGroup", label: "mik: shipping it too. 9:05 PM.", frame: nil, inMessage: true),
     ]
 
+    /// Two people writing the same short word, each announced and then drawn.
+    /// The copy inside an announcement's box goes; the other message stays.
+    private static let sameWords: [Node] = [
+        Node(role: "AXList", label: "Mik Okun, Martin Alix (group direct message)", frame: nil),
+        Node(role: "AXGroup", label: "Mik Okun: ok. 9:03 PM.",
+             frame: CGRect(x: 0, y: 0, width: 400, height: 40), inMessage: true),
+        Node(role: "AXStaticText", label: "ok",
+             frame: CGRect(x: 10, y: 10, width: 40, height: 16), inMessage: true),
+        Node(role: "AXGroup", label: "Martin Alix: ok. 9:04 PM.",
+             frame: CGRect(x: 0, y: 50, width: 400, height: 40), inMessage: true),
+        Node(role: "AXStaticText", label: "ok",
+             frame: CGRect(x: 10, y: 60, width: 40, height: 16), inMessage: true),
+        // A time somebody typed, in a label Slack did not announce.
+        Node(role: "AXStaticText", label: "see you at 9:03 PM.",
+             frame: CGRect(x: 10, y: 110, width: 200, height: 16), inMessage: true),
+    ]
+
     /// No list label at all: the title is the only thing naming the place, and
     /// it arrives with an unread count and a notification mark on it.
     private static let titleOnly: [Node] = [
@@ -77,6 +94,10 @@ enum TreeContextCommand {
              people: ["Matthieu Joannon"],
              text: "Matthieu Joannon: shipping it after the review.\n"
                  + "mik: shipping it too."),
+        Case(name: "same words", nodes: sameWords, title: nil,
+             place: "Mik Okun, Martin Alix",
+             people: ["Mik Okun", "Martin Alix"],
+             text: "Mik Okun: ok.\nMartin Alix: ok.\nsee you at 9:03 PM."),
         Case(name: "title only", nodes: titleOnly, title: "! Tasmeen Kathuria (DM) - Swoop - 21 new items - Slack",
              place: "Tasmeen Kathuria (DM) - Swoop",
              people: ["Tasmeen Kathuria"],
@@ -91,6 +112,9 @@ enum TreeContextCommand {
         ("place, group dm", TreeContext.place(in: "Mik Okun, Mirza Baig (group direct message)"),
          "Mik Okun, Mirza Baig"),
         ("place, not a place", TreeContext.place(in: "Files & links (2)"), nil),
+        // A name with brackets of its own: the last "(" opens the kind.
+        ("place, bracketed name", TreeContext.place(in: "Nathan (Swoop) (direct message, away)"),
+         "Nathan (Swoop)"),
         ("author", TreeContext.author(in: "Martin Alix: the deploy hook fired"), "Martin Alix"),
         // A lowercase display name is still a message, and still not a person:
         // `people` is offered to a dictation as a spelling, and "tip" is a word.
