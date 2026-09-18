@@ -977,6 +977,7 @@ struct Pipeline: Equatable, Codable {
                 // written once and has to hold on the runs that read nothing.
                 "place": .string(""),
                 "people": .string(""),
+                "code": .string(""),
             ])
         case .success(let capture):
             // The whole capture goes to the log, not a count of it. The point of
@@ -1000,6 +1001,9 @@ struct Pipeline: Equatable, Codable {
                 // One scalar, joined on `; `, the way `protected` is: a
                 // variable holds a value and a list of names is still a value.
                 "people": .string(capture.people.joined(separator: "; ")),
+                // What was backticked, so a later stage can tell a name
+                // somebody typed as code from a word they merely capitalised.
+                "code": .string(capture.code.joined(separator: "; ")),
             ])
         }
     }

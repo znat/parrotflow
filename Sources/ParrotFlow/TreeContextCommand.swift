@@ -28,6 +28,8 @@ enum TreeContextCommand {
         Node(role: "AXStaticText", label: "React with +1", frame: nil, inMessage: true),
         Node(role: "AXGroup", label: "Mik Okun: I set EDITOR_FRAME_ANCESTORS in my .env file. 12:09 AM. 3 replies, 1 link.",
              frame: nil, inMessage: true),
+        Node(role: "AXStaticText", label: "EDITOR_FRAME_ANCESTORS=", frame: nil,
+             inMessage: true, code: true),
         Node(role: "AXStaticText", label: "Bold", frame: nil),
         Node(role: "AXStaticText", label: "Schedule for later", frame: nil),
         Node(role: "AXTextArea", label: "what I am dictating right now", frame: nil),
@@ -56,6 +58,7 @@ enum TreeContextCommand {
         let place: String
         let people: [String]
         let text: String
+        var code: [String] = []
     }
 
     private static let cases: [Case] = [
@@ -65,7 +68,9 @@ enum TreeContextCommand {
              // land first. Order is what a later stage sees, so it is pinned.
              people: ["Mik Okun", "Parsa Gouran", "Martin Alix"],
              text: "Martin Alix: the deploy hook fired.\n"
-                 + "Mik Okun: I set EDITOR_FRAME_ANCESTORS in my .env file."),
+                 + "Mik Okun: I set EDITOR_FRAME_ANCESTORS in my .env file.\n"
+                 + "EDITOR_FRAME_ANCESTORS=",
+             code: ["EDITOR_FRAME_ANCESTORS="]),
         Case(name: "group dm", nodes: groupDM, title: "! Matthieu Joannon (DM) - Swoop - Slack",
              place: "Matthieu Joannon, Mik Okun",
              people: ["Matthieu Joannon"],
@@ -111,6 +116,9 @@ enum TreeContextCommand {
             if got.people != one.people {
                 failed.append("  \(one.name) people: want \(one.people), got \(got.people)")
             }
+            if got.code != one.code {
+                failed.append("  \(one.name) code: want \(one.code), got \(got.code)")
+            }
             if got.text != one.text {
                 failed.append("  \(one.name) text: want"
                     + " \(one.text.replacingOccurrences(of: "\n", with: " | ")), got"
@@ -118,7 +126,7 @@ enum TreeContextCommand {
             }
         }
 
-        let total = readings.count + cases.count * 3
+        let total = readings.count + cases.count * 4
         guard failed.isEmpty else {
             print("✗ tree context: \(failed.count) of \(total)")
             for line in failed { print(line) }

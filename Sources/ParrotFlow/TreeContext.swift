@@ -39,6 +39,10 @@ enum TreeContext {
         let label: String
         let frame: CGRect?
         var inMessage: Bool = false
+        /// Inside a run of code: `` `EDITOR_FRAME_ANCESTORS=` `` rather than a
+        /// word somebody wrote. Chromium marks it with the `AXCodeStyleGroup`
+        /// subrole, so this is not a Slack rule.
+        var code: Bool = false
     }
 
     /// What a walk found, before anything is cut to size.
@@ -49,6 +53,10 @@ enum TreeContext {
         let people: [String]
         /// The conversation, newest last, one label per line.
         let text: String
+        /// What was written as code, in the order it appears. A term found here
+        /// was marked as code by whoever typed it, which is a better reason to
+        /// write it that way than anything a spelling rule can work out.
+        let code: [String]
     }
 
     // MARK: - Reading the tree
@@ -69,20 +77,24 @@ enum TreeContext {
     }
 
     private static func walk(
-        _ element: AXUIElement, depth: Int, inList: Bool, into found: inout [Node]
+        _ element: AXUIElement, depth: Int, inList: Bool, code: Bool = false,
+        into found: inout [Node]
     ) {
         guard found.count < nodeLimit, depth < depthLimit else { return }
         let role = attribute(element, kAXRoleAttribute) as? String ?? ""
         let text = label(of: element)
+        let inCode = code
+            || (attribute(element, kAXSubroleAttribute) as? String) == "AXCodeStyleGroup"
         // A composer carries the sentence being dictated, not the conversation,
         // and `input` publishes it already.
         let messages = (inList || text.flatMap(author(in:)) != nil) && role != "AXTextArea"
         if let text, !text.isEmpty, role != "AXButton" || text.hasPrefix(memberPrefix) {
             found.append(Node(
-                role: role, label: text, frame: frame(of: element), inMessage: messages))
+                role: role, label: text, frame: frame(of: element),
+                inMessage: messages, code: inCode))
         }
         for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
-            walk(child, depth: depth + 1, inList: messages, into: &found)
+            walk(child, depth: depth + 1, inList: messages, code: inCode, into: &found)
         }
     }
 
@@ -277,6 +289,7 @@ enum TreeContext {
         var named = ""
         var people: [String] = []
         var lines: [String] = []
+        var code: [String] = []
 
         for node in nodes {
             let label = node.label
@@ -289,6 +302,7 @@ enum TreeContext {
             for member in members(in: label)
             where !member.isEmpty && !people.contains(member) { people.append(member) }
             guard node.inMessage, !isFurniture(label) else { continue }
+            if node.code, !code.contains(label) { code.append(label) }
             // The screen-reader announcement of a message, which the message
             // itself follows. Dropped by shape — a name, a colon, and an
             // ellipsis where the text was cut — rather than by comparing it
@@ -306,7 +320,8 @@ enum TreeContext {
             kept.append(line)
         }
         if named.isEmpty, let title { named = cleanTitle(title) }
-        return Assembled(place: named, people: people, text: kept.joined(separator: "\n"))
+        return Assembled(
+            place: named, people: people, text: kept.joined(separator: "\n"), code: code)
     }
 
     /// `! Tasmeen Kathuria (DM) - Swoop Enterprise - 21 new items - Slack` is a
