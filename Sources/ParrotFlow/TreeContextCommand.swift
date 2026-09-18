@@ -42,6 +42,7 @@ enum TreeContextCommand {
         Node(role: "AXGroup", label: "Matthieu Joannon: shipping it after the review. 9:03 PM.",
              frame: nil, inMessage: true),
         Node(role: "AXStaticText", label: "2 days ago", frame: nil, inMessage: true),
+        Node(role: "AXGroup", label: "mik: shipping it too. 9:05 PM.", frame: nil, inMessage: true),
     ]
 
     /// No list label at all: the title is the only thing naming the place, and
@@ -74,7 +75,8 @@ enum TreeContextCommand {
         Case(name: "group dm", nodes: groupDM, title: "! Matthieu Joannon (DM) - Swoop - Slack",
              place: "Matthieu Joannon, Mik Okun",
              people: ["Matthieu Joannon"],
-             text: "Matthieu Joannon: shipping it after the review."),
+             text: "Matthieu Joannon: shipping it after the review.\n"
+                 + "mik: shipping it too."),
         Case(name: "title only", nodes: titleOnly, title: "! Tasmeen Kathuria (DM) - Swoop - 21 new items - Slack",
              place: "Tasmeen Kathuria (DM) - Swoop",
              people: ["Tasmeen Kathuria"],
@@ -90,6 +92,11 @@ enum TreeContextCommand {
          "Mik Okun, Mirza Baig"),
         ("place, not a place", TreeContext.place(in: "Files & links (2)"), nil),
         ("author", TreeContext.author(in: "Martin Alix: the deploy hook fired"), "Martin Alix"),
+        // A lowercase display name is still a message, and still not a person:
+        // `people` is offered to a dictation as a spelling, and "tip" is a word.
+        ("speaker, lowercase", TreeContext.speaker(in: "mik: hello team"), "mik"),
+        ("author, lowercase", TreeContext.author(in: "mik: hello team"), nil),
+        ("speaker, not a url", TreeContext.speaker(in: "http://localhost:3000"), nil),
         ("author, trailing stop", TreeContext.author(in: "Matthieu Joannon.: it shipped"), "Matthieu Joannon"),
         ("author, not one", TreeContext.author(in: "Note: this is not a name"), "Note"),
         ("author, needs a space", TreeContext.author(in: "http://localhost:3000"), nil),

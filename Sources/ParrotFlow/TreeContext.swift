@@ -64,6 +64,13 @@ enum TreeContext {
     private static let nodeLimit = 4000
     private static let depthLimit = 26
 
+    /// How many names and code runs are published, and how long one may be.
+    /// `context.text` is capped at 2000 characters and these are published
+    /// beside it, so they are capped too: a busy channel has a hundred authors
+    /// and a pasted file is one code run of any length.
+    static let maxSpans = 40
+    static let maxSpanChars = 200
+
     /// Every labelled element under `element`, in drawing order.
     ///
     /// Buttons, checkboxes and pop-ups are dropped here rather than in
@@ -87,7 +94,7 @@ enum TreeContext {
             || (attribute(element, kAXSubroleAttribute) as? String) == "AXCodeStyleGroup"
         // A composer carries the sentence being dictated, not the conversation,
         // and `input` publishes it already.
-        let messages = (inList || text.flatMap(author(in:)) != nil) && role != "AXTextArea"
+        let messages = (inList || text.flatMap(speaker(in:)) != nil) && role != "AXTextArea"
         if let text, !text.isEmpty, role != "AXButton" || text.hasPrefix(memberPrefix) {
             found.append(Node(
                 role: role, label: text, frame: frame(of: element),
@@ -143,7 +150,7 @@ enum TreeContext {
         let role = attribute(element, kAXRoleAttribute) as? String
         if let label = label(of: element) {
             if role == "AXList", place(in: label) != nil { named = true }
-            if role != "AXTextArea", author(in: label) != nil { messages += 1 }
+            if role != "AXTextArea", speaker(in: label) != nil { messages += 1 }
         }
         for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
             look(child, depth: depth + 1, named: &named, messages: &messages)
@@ -174,20 +181,40 @@ enum TreeContext {
         return isChannel ? "#\(name)" : name
     }
 
-    /// `Martin Alix: @channel Thank you everyone!` — Slack writes the author
-    /// into the label of each message group, which is the one name NLTagger
-    /// cannot find: it sits at the start of a line in front of a colon, where
-    /// a tagger sees a heading rather than a person.
-    static func author(in label: String) -> String? {
+    /// `Martin Alix: @channel Thank you everyone!` — Slack writes whoever spoke
+    /// into the label of each message group, and the paragraphs of that message
+    /// hang under it. This answers "is this a message", which is a question
+    /// about the window's shape.
+    ///
+    /// Anything can be a display name, `mik` and `deploy-bot` included, so this
+    /// asks only for the shape: a few words, then a colon, then a space. A URL
+    /// fails on the space — `http://localhost:3000` has none after its colon.
+    static func speaker(in label: String) -> String? {
         guard let colon = label.firstIndex(of: ":") else { return nil }
         let name = String(label[..<colon])
         let words = name.split(separator: " ")
         guard (1...4).contains(words.count), name.count <= 48,
-              words.allSatisfy({ $0.first?.isUppercase == true || $0.first?.isNumber == true }),
+              words.allSatisfy({ $0.first?.isLetter == true || $0.first?.isNumber == true }),
               label.index(after: colon) < label.endIndex,
               label[label.index(after: colon)] == " "
         else { return nil }
         return tidy(name)
+    }
+
+    /// The same label read as a person, which is a stricter question: this name
+    /// is published as `context.people` and offered to a dictation as a
+    /// spelling, so "tip: try this" must not make somebody called Tip.
+    ///
+    /// Capitalisation is what separates the two. It costs the lowercase display
+    /// names — `mik` stays out of `people` — and those are the ones a speaker
+    /// says as an ordinary word anyway. The message itself is kept either way,
+    /// because `speaker` decides that.
+    static func author(in label: String) -> String? {
+        guard let name = speaker(in: label) else { return nil }
+        let words = name.split(separator: " ")
+        guard words.allSatisfy({ $0.first?.isUppercase == true || $0.first?.isNumber == true })
+        else { return nil }
+        return name
     }
 
     /// `View all 14 members. Includes Mik Okun, Parsa Gouran, and Sa…` — three
@@ -296,26 +323,33 @@ enum TreeContext {
                 .replacingOccurrences(of: "\n", with: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if named.isEmpty, let here = place(in: label) { named = here }
-            if let author = author(in: label), !author.isEmpty, !people.contains(author) {
+            if let author = author(in: label), !author.isEmpty, people.count < maxSpans,
+               !people.contains(author) {
                 people.append(author)
             }
             for member in members(in: label)
-            where !member.isEmpty && !people.contains(member) { people.append(member) }
+            where !member.isEmpty && people.count < maxSpans && !people.contains(member) {
+                people.append(member)
+            }
             guard node.inMessage, !isFurniture(label) else { continue }
-            if node.code, !code.contains(label) { code.append(label) }
+            if node.code, code.count < maxSpans, label.count <= maxSpanChars,
+               !code.contains(label) { code.append(label) }
             // The screen-reader announcement of a message, which the message
             // itself follows. Dropped by shape — a name, a colon, and an
             // ellipsis where the text was cut — rather than by comparing it
             // with what comes next, because the two are not always adjacent.
-            if author(in: label) != nil, label.hasSuffix("…") { continue }
+            if speaker(in: label) != nil, label.hasSuffix("…") { continue }
             lines.append(trimAnnouncement(label))
         }
 
         // Slack draws the same words at several depths, so a label that is a
-        // fragment of another is the same message read twice.
+        // fragment of the label beside it is one message read twice. Only its
+        // neighbours are compared: two people can write "ok", and matching
+        // against the whole screen would delete the second one.
         var kept: [String] = []
-        for line in lines {
-            if lines.contains(where: { $0 != line && $0.contains(line) }) { continue }
+        for (i, line) in lines.enumerated() {
+            let neighbours = lines[max(0, i - 2)..<min(lines.count, i + 3)]
+            if neighbours.contains(where: { $0 != line && $0.contains(line) }) { continue }
             if kept.last == line { continue }
             kept.append(line)
         }
