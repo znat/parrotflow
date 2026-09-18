@@ -45,6 +45,22 @@ enum TreeContext {
         var code: Bool = false
     }
 
+    /// One line of the conversation, and enough about it to tell a message
+    /// from Slack's announcement of that same message.
+    private struct Line {
+        let text: String
+        let frame: CGRect?
+        let announced: Bool
+
+        /// Whether this line is drawn around the other one. Unknown boxes
+        /// answer true: a tree that publishes no geometry is the case the
+        /// wording rule was written for.
+        func holds(_ other: Line) -> Bool {
+            guard let mine = frame, let theirs = other.frame else { return true }
+            return mine.insetBy(dx: -2, dy: -2).contains(theirs)
+        }
+    }
+
     /// What a walk found, before anything is cut to size.
     struct Assembled: Equatable {
         /// The channel or direct message this window is showing.
@@ -171,7 +187,8 @@ enum TreeContext {
         // channel and holds none of it, and an earlier version stopped there
         // and published three characters.
         guard !label.hasPrefix("Recent history") else { return nil }
-        guard let open = label.range(of: " ("), label.hasSuffix(")") else { return nil }
+        guard let open = label.range(of: " (", options: .backwards),
+              label.hasSuffix(")") else { return nil }
         let kind = label[open.upperBound...].dropLast().lowercased()
         // "group direct message" as well as "direct message, away": Slack says
         // which kind of conversation it is, and how many people are in it.
@@ -315,7 +332,7 @@ enum TreeContext {
     static func assemble(_ nodes: [Node], title: String?) -> Assembled {
         var named = ""
         var people: [String] = []
-        var lines: [String] = []
+        var lines: [Line] = []
         var code: [String] = []
 
         for node in nodes {
@@ -339,19 +356,30 @@ enum TreeContext {
             // ellipsis where the text was cut — rather than by comparing it
             // with what comes next, because the two are not always adjacent.
             if speaker(in: label) != nil, label.hasSuffix("…") { continue }
-            lines.append(trimAnnouncement(label))
+            // Only Slack's own announcement of a message carries the clock and
+            // the counts. Trimming every label would cut "let's meet at 9:03 PM."
+            // out of a sentence somebody wrote.
+            let announced = speaker(in: label) != nil
+            let said = announced ? trimAnnouncement(label) : label
+            guard !said.isEmpty else { continue }
+            lines.append(Line(text: said, frame: node.frame, announced: announced))
         }
 
-        // Slack draws the same words at several depths, so a label that is a
-        // fragment of the label beside it is one message read twice. Only its
-        // neighbours are compared: two people can write "ok", and matching
-        // against the whole screen would delete the second one.
+        // Slack announces each message and then draws it, so the same words
+        // arrive twice. The copy is dropped by where it is, not by how it
+        // reads: the announcement's box contains the message's own. Two people
+        // can both write "ok", and a rule about wording alone would delete the
+        // second one.
         var kept: [String] = []
         for (i, line) in lines.enumerated() {
             let neighbours = lines[max(0, i - 2)..<min(lines.count, i + 3)]
-            if neighbours.contains(where: { $0 != line && $0.contains(line) }) { continue }
-            if kept.last == line { continue }
-            kept.append(line)
+            let copied = neighbours.contains { other in
+                other.announced && !line.announced && other.text != line.text
+                    && other.text.contains(line.text) && other.holds(line)
+            }
+            if copied { continue }
+            if kept.last == line.text { continue }
+            kept.append(line.text)
         }
         if named.isEmpty, let title { named = cleanTitle(title) }
         return Assembled(
