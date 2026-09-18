@@ -1236,7 +1236,7 @@ pipeline:
     when: context.ok && context.chars > 200
 ```
 
-It publishes seven things, on top of the four every stage gets:
+It publishes eight things, on top of the four every stage gets:
 
 | | |
 |---|---|
@@ -1246,6 +1246,7 @@ It publishes seven things, on top of the four every stage gets:
 | `context.truncated` | whether the cap cut anything off the front |
 | `context.place` | which conversation this is — the channel or direct message in Slack, empty in a terminal |
 | `context.people` | who is named on screen, joined on `; ` — message authors and the members the header lists |
+| `context.code` | what was written as code, joined on `; ` — a backticked run in Slack, empty in a terminal |
 | `context.declined` | why nothing was read, when nothing was |
 
 **It never changes the transcript.** `context.changed` is false on every run and
