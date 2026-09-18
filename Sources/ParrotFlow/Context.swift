@@ -39,6 +39,9 @@ enum Context {
         /// Who is named on screen: message authors, and the members the header
         /// lists. Empty from a terminal, for the same reason.
         var people: [String] = []
+        /// What was written as code on screen. A terminal is all code and says
+        /// nothing here; Slack marks a backticked run and this is it.
+        var code: [String] = []
 
         var chars: Int { text.count }
         var lines: Int { text.isEmpty ? 0 : text.components(separatedBy: "\n").count }
@@ -271,7 +274,7 @@ enum Context {
         let (text, truncated) = tail(of: assembled.text, limit: maxChars)
         return .success(Capture(
             text: text, truncated: truncated,
-            place: assembled.place, people: assembled.people
+            place: assembled.place, people: assembled.people, code: assembled.code
         ))
     }
 
