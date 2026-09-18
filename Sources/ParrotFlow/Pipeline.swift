@@ -978,6 +978,7 @@ struct Pipeline: Equatable, Codable {
                 "place": .string(""),
                 "people": .string(""),
                 "code": .string(""),
+                "roster": .string(""),
             ])
         case .success(let capture):
             // The whole capture goes to the log, not a count of it. The point of
@@ -988,7 +989,8 @@ struct Pipeline: Equatable, Codable {
             Log.write("pipeline: context read \(capture.chars) chars, \(capture.lines) line(s)"
                 + (capture.truncated ? " (truncated to the last \(Context.maxChars))" : "")
                 + (capture.place.isEmpty ? "" : " in \(capture.place)")
-                + (capture.people.isEmpty ? "" : ", \(capture.people.count) name(s)"))
+                + (capture.people.isEmpty ? "" : ", \(capture.people.count) name(s)")
+                + (capture.roster.isEmpty ? "" : ", \(capture.roster.count) in the sidebar"))
             for row in capture.text.components(separatedBy: "\n") {
                 Log.write("    | \(row)")
             }
@@ -1004,6 +1006,10 @@ struct Pipeline: Equatable, Codable {
                 // What was backticked, so a later stage can tell a name
                 // somebody typed as code from a word they merely capitalised.
                 "code": .string(capture.code.joined(separator: "; ")),
+                // Who and what the window offers, which is not the same as who
+                // is in this conversation: a sidebar names every channel you
+                // are in and everyone you message.
+                "roster": .string(capture.roster.joined(separator: "; ")),
             ])
         }
     }
