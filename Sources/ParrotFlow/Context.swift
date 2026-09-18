@@ -254,14 +254,19 @@ enum Context {
     /// this must not do is return the sidebar's channel list as if it were the
     /// conversation, which is why the fallback keeps the same assembly.
     private static func readTree(from element: AXUIElement) -> Result<Capture, Declined> {
-        let root = TreeContext.conversation(around: element)
-            ?? TreeContext.window(of: element)
-        guard let root else { return .failure(.unreadable) }
-        let assembled = TreeContext.assemble(
-            TreeContext.nodes(under: root),
-            title: TreeContext.window(of: element).flatMap(TreeContext.title(of:))
-        )
-        guard !assembled.text.isEmpty else { return .failure(.empty) }
+        let window = TreeContext.window(of: element)
+        let title = window.flatMap(TreeContext.title(of:))
+        var assembled = TreeContext.conversation(around: element).map {
+            TreeContext.assemble(TreeContext.nodes(under: $0), title: title)
+        }
+        // A pane that yields almost nothing was the wrong pane. Slack's own
+        // layout moves between a channel, a thread and a search result, and the
+        // window always holds the conversation somewhere.
+        if assembled == nil || assembled!.text.count < 200, let window {
+            let whole = TreeContext.assemble(TreeContext.nodes(under: window), title: title)
+            if whole.text.count > (assembled?.text.count ?? 0) { assembled = whole }
+        }
+        guard let assembled, !assembled.text.isEmpty else { return .failure(.empty) }
 
         let (text, truncated) = tail(of: assembled.text, limit: maxChars)
         return .success(Capture(

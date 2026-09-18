@@ -108,19 +108,34 @@ enum TreeContext {
         return nil
     }
 
-    /// Whether this element contains the list Slack labels with the channel or
-    /// direct message it is showing. Bounded: the composer's ancestors are
-    /// shallow, and a full walk per rung would cost the whole window each time.
+    /// Whether this element contains both the list Slack labels with the
+    /// conversation *and* messages under it.
+    ///
+    /// Both halves are needed. Slack keeps a second list beside the messages,
+    /// labelled "Recent history in <channel>", which names the conversation and
+    /// holds none of it — stopping there published three characters and a place
+    /// nobody writes down.
+    ///
+    /// Bounded: the composer's ancestors are shallow, and a full walk per rung
+    /// would cost the whole window each time.
     private static func holdsMessageList(_ element: AXUIElement, depth: Int = 0) -> Bool {
-        guard depth < 6 else { return false }
-        if (attribute(element, kAXRoleAttribute) as? String) == "AXList",
-           let label = label(of: element), place(in: label) != nil {
-            return true
+        var named = false, messages = 0
+        look(element, depth: depth, named: &named, messages: &messages)
+        return named && messages >= 1
+    }
+
+    private static func look(
+        _ element: AXUIElement, depth: Int, named: inout Bool, messages: inout Int
+    ) {
+        guard depth < 8, !(named && messages >= 1) else { return }
+        let role = attribute(element, kAXRoleAttribute) as? String
+        if let label = label(of: element) {
+            if role == "AXList", place(in: label) != nil { named = true }
+            if role != "AXTextArea", author(in: label) != nil { messages += 1 }
         }
         for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
-            if holdsMessageList(child, depth: depth + 1) { return true }
+            look(child, depth: depth + 1, named: &named, messages: &messages)
         }
-        return false
     }
 
     // MARK: - Making sense of the labels
@@ -132,6 +147,11 @@ enum TreeContext {
     /// thing on screen that names the conversation without the window title's
     /// unread counts and notification marks.
     static func place(in label: String) -> String? {
+        // "Recent history in sws-engineering-internal (private channel)" is a
+        // marker on an empty list Slack keeps beside the messages. It names the
+        // channel and holds none of it, and an earlier version stopped there
+        // and published three characters.
+        guard !label.hasPrefix("Recent history") else { return nil }
         guard let open = label.range(of: " ("), label.hasSuffix(")") else { return nil }
         let kind = label[open.upperBound...].dropLast().lowercased()
         // "group direct message" as well as "direct message, away": Slack says
