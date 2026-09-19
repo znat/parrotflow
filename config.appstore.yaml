@@ -4,15 +4,16 @@
 #
 # This is the App Store build. It differs from the one at
 # github.com/znat/parrotflow in one way, and the difference is the sandbox:
-# **it cannot run a program.** Apple requires an App Store app to be
-# self-contained in its bundle, so `command:` transforms — your own scripts —
-# and `prompt:` transforms, which need Ollama installed separately, are both
-# absent. `replace:` rules and everything the app does in its own code work
-# exactly as they do in the other build.
+# **it runs only the scripts it ships.** Apple requires an App Store app to be
+# self-contained in its bundle, so the Python that runs the stages below is
+# inside the app and the stages are too. A `command:` of your own cannot run —
+# there is nowhere to put it that this build is allowed to execute from.
 #
-# What that costs, by name: hesitations and repeats (`disfluency`), spoken
-# numbers and dates (`dates_en`, `numbers_en`), and grammar. Install the
-# direct build if you want them: github.com/znat/parrotflow
+# `prompt:` transforms are absent for a different reason: they need Ollama
+# installed separately, and an App Store app cannot ask you to do that.
+#
+# What that costs, by name: `grammar`, and your own scripts. Install the direct
+# build if you want either: github.com/znat/parrotflow
 #
 # Agents: the docs are in the repository. Start at AGENTS.md. Every key here
 # is in docs/configuration.md. Validate with the binary, not by reading.
@@ -97,14 +98,19 @@ transcription:
 
   # What a transcript runs through, in order. Everything here rewrites text
   # and may be moved. Remove a line to skip that stage.
-  #
-  # Shorter than the direct build's, and every step left is a `replace:`
-  # rule. The number, date and disfluency stages are scripts, which this
-  # build cannot run.
   pipeline:
+    # Hesitation sounds, above the number stages and not below them: a filler
+    # inside a number splits it, and "two uh two three" comes out "two uh 23".
     - transform: fillers
     - transform: fillers_fr
       when: language == "fr"
+    # Dates, times and numbers as digits. Dates first, or numbers eats its
+    # words.
+    - transform: dates_en
+    - transform: numbers_en
+    # Repeats, false starts and empty markers. Below the number stages, or
+    # "two two three" collapses to 23 before anything reads it as 223.
+    - transform: disfluency
 
 transforms:
   # "PR one two three is ready" -> a clickable #123. Defined, not in the
@@ -141,3 +147,33 @@ transforms:
     replace:
       "": ['/[,]?\s*\b(?:{{fillers_fr}})\b[,]?/',
            '/[,]?\s*\be+u+h+\b[,]?/']
+
+  # "at ten fifteen" -> at 10:15, "March third" -> March 3. One script per
+  # language, run by the Python inside the app.
+  - name: dates_en
+    description: dictated dates and clock times as digits
+    command: examples/dates/en.py
+    returns: json
+    tests: examples/dates/cases-en.yaml
+
+  # Spoken numbers as digits, one script per language. Runs after dates, on
+  # what dates left.
+  - name: numbers_en
+    description: spoken numbers as digits
+    command: examples/numbers/en.py
+    returns: json
+    tests: { path: examples/numbers/cases-en.yaml }
+
+  # Repeats, false starts, and a discourse marker that carries nothing.
+  #
+  # Four of its five rules. The fifth wants a dependency parse, because "you
+  # know" is a real verb with a real object half the time — "we'll let you
+  # know" has to survive. That parse is spaCy, which is a runtime install and
+  # so is not in this build at all. The other four run and
+  # `disfluency.declined` says what was lost.
+  - name: disfluency
+    description: delete hesitations, repeats and false starts
+    say: [repetitions, hesitations, false starts]
+    command: examples/disfluency/disfluency.py
+    returns: json
+    tests: { path: examples/disfluency/cases.yaml }

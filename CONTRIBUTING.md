@@ -70,6 +70,13 @@ branch with:
 git rebase --signoff main
 ```
 
+The DCO covers this repository, which is GPL-3.0, and nothing more. It does
+not grant the right to relicense your code, so a contribution signed off this
+way cannot go into the Mac App Store build — that build is under different
+terms. If you are about to send a change and the store build matters to you,
+say so on the pull request: it needs a CLA, and there is not one yet. See
+[LICENSING.md](LICENSING.md).
+
 ## Pull requests
 
 Keep it to one change. Say what a reviewer should check, and put the numbers in

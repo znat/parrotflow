@@ -1,10 +1,11 @@
 # Proposal: what publishing on the Mac App Store would cost
 
-**Status.** The `appstore` variant is built and the barebones scope is
-decided — pure Swift, no interpreter. It cannot be submitted yet: there is no
-Xcode target to archive from, and `make sandbox-probe` has still not been run,
-so whether the hotkeys survive the sandbox is still unmeasured. See *Built so
-far* and *What is left* below.
+**Status.** The `appstore` variant is built, it bundles its own CPython, and
+the licence split is written down in [LICENSING.md](../../LICENSING.md). It
+cannot be submitted yet: there is no Xcode target to archive from, none of the
+Swift has been compiled, and `make sandbox-probe` has still not been run — so
+whether the hotkeys survive the sandbox is still unmeasured. See *Built so far*
+and *What is left*.
 
 **The question.** The App Store would buy discovery and a one-click install
 for someone who was sent a link — the gap [distribution.md](../distribution.md)
@@ -76,12 +77,52 @@ serves all three.
 | `scripts/build-app.sh` | Ships the store config, and skips `examples/` and `parsing-requirements.txt` — several hundred kilobytes of scripts this build cannot run, in a bundle Apple reads. |
 
 **What a store install gets.** Local dictation, the vocabulary stage, spoken
-corrections, and `fillers`, `fillers_fr` and `github_refs`.
+corrections, `fillers`, `fillers_fr`, `github_refs` — and, since the
+interpreter was bundled, `disfluency`, `dates_en` and `numbers_en`. That is
+the README's two headline features back.
 
-**What it does not.** `disfluency`, `dates_en`, `numbers_en` and
-`slack_mentions` are scripts. `grammar` needs Ollama. The first two of those
-are the features the README leads with, and *A Python inside the bundle* below
-is the iteration that would bring them back.
+**What it does not.** `grammar` needs Ollama. `parse` needs spaCy.
+`slack_mentions` is a roster the user edits and this build cannot seed one. And
+no `command:` of the user's own, which is the real loss and the one nothing
+fixes.
+
+### The interpreter, as built
+
+`scripts/fetch-python.sh` pins CPython 3.13.15 from python-build-standalone by
+version and SHA-256, and trims it. Measured, not estimated:
+
+| | |
+|---|---|
+| download | 24 MB |
+| extracted | 66 MB |
+| after the trim | 28 MB |
+| Mach-O files to sign | **1** |
+
+That last row is why this was easier than the first draft said. This build of
+CPython is statically linked — `unicodedata`, `_sre`, `_json`, `_datetime`,
+`zlib` and the rest live in the executable, `lib-dynload` holds only `_dbm` and
+`_tkinter`, and the trim removes both. There are no `.so` files and no
+`libpython` dylib, so library validation has nothing to refuse and
+`disable-library-validation` is not needed. The script fails if a future
+CPython changes that.
+
+Signed inside-out, with `Resources/entitlements-inherit.plist`:
+`com.apple.security.inherit` makes the interpreter a child of the app's
+sandbox rather than a sandbox of its own, and it is the only entitlement a
+child that inherits may carry.
+
+`BundledPython.swift` is the gate. A `command:` may name one thing: a `.py`
+inside `Contents/Resources/examples`, checked after standardising the path so
+`..` cannot walk out. No shell, so nothing is resolved against PATH at run
+time. `Config.createIfMissing` no longer seeds the scripts into the container
+for this build — they run where they were signed, because writing an
+executable into the container and then running it is the shape 2.5.2 is about.
+
+`scripts/check-appstore-config.sh` enforces all of it, including that every
+shipped script imports only the standard library **at module level**. That
+distinction is load-bearing: `disfluency.py` imports spaCy inside
+`spacy_or_none()` under `try/except ImportError` and runs four of its five
+rules without it, which is the fail-open rule working, not a fault.
 
 ## What is left
 
@@ -95,8 +136,13 @@ is the iteration that would bring them back.
    variant, and falls back to the self-signed ones so a local sandbox build
    works on a machine that has never enrolled one. That fallback build runs
    and can be measured; it cannot be submitted.
-4. **The licence.** GPL-3.0 still conflicts with the store terms. One human
-   author, so this is a decision rather than a negotiation.
+4. **A CLA, before the first outside contribution.** The licence split is
+   written down and works today because one human holds the copyright. The DCO
+   does **not** grant the right to relicense, so the first patch merged under
+   it is GPL-3.0 and cannot go into the store build. Retrofitting a CLA means
+   asking every contributor, and removing the code of anyone who says no.
+   [LICENSING.md](../../LICENSING.md) has this and the third-party inventory —
+   including CharsiuG2P, whose upstream weights state no licence at all.
 5. **Verify.** None of the Swift above has been compiled — it was written
    without a macOS toolchain. `make test` is the first thing to run.
 

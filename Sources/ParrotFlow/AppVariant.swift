@@ -192,7 +192,19 @@ enum AppVariant {
 
         // The app's own terms first. This panel names what everything else is
         // under, and left ParrotFlow itself off.
-        line("GPL-3.0", size: 10, dim: true)
+        //
+        // The App Store build is not under the GPL and must not say it is —
+        // the store's terms and GPLv3 cannot both be satisfied, which is the
+        // whole reason it is a separate build. The source it was made from
+        // still is, and saying so is the honest version of both facts. See
+        // LICENSING.md.
+        line(
+            isAppStore
+                ? "Licensed under Apple's standard terms."
+                    + " Source: GPL-3.0 at github.com/znat/parrotflow"
+                : "GPL-3.0",
+            size: 10, dim: true
+        )
         credits.append(NSAttributedString(string: "\n"))
 
         line("BUILT WITH", size: 9, bold: true, dim: true)
@@ -211,6 +223,12 @@ enum AppVariant {
         item("Qwen3 Embedding 0.6B", "word vectors for the vocabulary gate · Apache 2.0")
         item("MLX", "runs both Qwen models · MIT")
         item("FluidAudio", "fetching and Core ML plumbing · Apache 2.0")
+        // Only the build that carries one. The other two run whichever python3
+        // the Mac already has, and crediting an interpreter this copy does not
+        // contain would be as wrong as leaving out one it does.
+        if isAppStore {
+            item("CPython 3.13", "runs the shipped transforms · PSF License")
+        }
 
         // Only the builds that can run it. The App Store build cannot spawn a
         // program at all, so naming eSpeak here would credit something this

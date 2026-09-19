@@ -4,11 +4,19 @@
 # is what makes it a different file from config.example.yaml. This is the
 # guard on that difference.
 #
-# A `command:` or a `prompt:` that reached this file would ship a default
-# config whose stages cannot run: the sandbox refuses to spawn a program, and
-# a prompt needs Ollama installed separately. The failure is quiet — a stage
-# that cannot run leaves the transcript alone, which is the right behaviour
-# and looks like the rule not matching.
+# A `command:` here may name one thing only: a script this build ships, under
+# `examples/`, run by the Python inside the bundle. Anything else — a program
+# on PATH, a shell line, a script of the user's — cannot run, because the
+# sandbox executes only what is in the bundle. A `prompt:` cannot run either;
+# it needs Ollama installed separately.
+#
+# The failure either way is quiet: a stage that cannot run leaves the
+# transcript alone, which is the right behaviour and looks like the rule not
+# matching. Hence a check rather than a bug report six months later.
+#
+# The second half is what build-app.sh removes from the bundle. `parse` needs
+# spaCy and `slack_mentions` is a roster the user edits, so a `command:`
+# naming either would resolve in this repository and be absent from the app.
 #
 # Runs without the binary and without a model, so it belongs in `make test`.
 set -euo pipefail
@@ -18,7 +26,7 @@ set -euo pipefail
 ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 python3 - "$ROOT" <<'PY'
-import sys, pathlib, yaml
+import ast, sys, pathlib, yaml
 
 root = pathlib.Path(sys.argv[1])
 store = root / "config.appstore.yaml"
@@ -32,12 +40,68 @@ reference = yaml.safe_load(direct.read_text())
 transforms = doc.get("transforms") or []
 names = {t["name"] for t in transforms}
 
-# 1. Nothing that spawns a process or calls a model.
+# What build-app.sh strips out of Contents/Resources/examples.
+NOT_SHIPPED = {"parse", "slack_mentions"}
+
+# 1. No model call, and no command that is not one of our own scripts.
 for t in transforms:
-    for banned in ("command", "prompt"):
-        if banned in t:
+    if "prompt" in t:
+        failures.append(
+            f"transform {t['name']!r} has a prompt: — this build calls no model")
+
+    command = t.get("command")
+    if command is None:
+        continue
+
+    if not command.startswith("examples/") or not command.endswith(".py"):
+        failures.append(
+            f"transform {t['name']!r} runs {command!r} — this build runs only"
+            " the scripts it ships, named as examples/<folder>/<script>.py")
+        continue
+
+    relative = command[len("examples/"):]
+    folder = relative.split("/", 1)[0]
+    if folder in NOT_SHIPPED:
+        failures.append(
+            f"transform {t['name']!r} runs {command!r}, and build-app.sh removes"
+            f" examples/transforms/{folder} from the App Store bundle")
+        continue
+
+    script = root / "examples" / "transforms" / relative
+    if not script.is_file():
+        failures.append(f"transform {t['name']!r} runs {command!r}, which is not a file")
+        continue
+
+    # Pure standard library at module level. The bundled interpreter has no
+    # packages and cannot install any, so a third-party import that runs on
+    # import kills the script.
+    #
+    # Module level only, and the distinction is the whole point.
+    # disfluency.py imports spacy inside spacy_or_none(), under
+    # `try: ... except ImportError`, and returns None when it is not there —
+    # four of its five rules still run. That is the fail-open rule in
+    # AGENTS.md working as intended, not a problem to report. An import at the
+    # top of the file has no such guard.
+    try:
+        tree = ast.parse(script.read_text())
+    except SyntaxError as error:
+        failures.append(f"{command} does not parse: {error}")
+        continue
+
+    siblings = {f.stem for f in script.parent.glob("*.py")}
+    top_level = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            top_level.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            top_level.add(node.module.split(".")[0])
+
+    for name in sorted(top_level - siblings):
+        if name not in sys.stdlib_module_names:
             failures.append(
-                f"transform {t['name']!r} has a {banned}: — the sandbox cannot run it")
+                f"{command} imports {name!r} at module level, and it is not in the"
+                " standard library — the bundled interpreter has no packages"
+                " and cannot install any")
 
 # 2. No models: block. Every prompt stage is gone, so a model name here would
 #    only be a config error waiting for someone to point a transform at it.
@@ -73,6 +137,8 @@ if failures:
         print(f"  - {f}")
     sys.exit(1)
 
-print(f"config.appstore.yaml: {len(transforms)} transforms, "
-      f"{len(pipeline)} pipeline steps, no command:, no prompt:, no models:")
+shipped = sum(1 for t in transforms if "command" in t)
+print(f"config.appstore.yaml: {len(transforms)} transforms "
+      f"({shipped} running a bundled script), {len(pipeline)} pipeline steps,"
+      f" no prompt:, no models:, nothing outside the bundle")
 PY

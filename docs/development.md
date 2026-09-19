@@ -49,10 +49,17 @@ VARIANT=release make logs  # act on the shipped app instead
 There is a third variant, `appstore`, for the sandboxed Mac App Store build.
 It is a separate application again — `ParrotFlowMAS.app`,
 `com.parrotflow.app.mas` — so it sits beside the other two while it is worked
-on. What it cannot do is the point of it: no `command:` transform, no model
-call, no self-update. It ships `config.appstore.yaml` instead of
-`config.example.yaml`, and `scripts/check-appstore-config.sh` is what stops
-the two drifting.
+on. What it cannot do is the point of it: no model call, no self-update, and
+no `command:` except the scripts it ships. It carries its own CPython
+(`scripts/fetch-python.sh`, ~28 MB trimmed) and runs `dates`, `numbers` and
+`disfluency` with it, from inside the signed bundle. It ships
+`config.appstore.yaml` instead of `config.example.yaml`, and
+`scripts/check-appstore-config.sh` is what stops the two drifting — it also
+checks every shipped script imports only the standard library at module level.
+
+It is under different licence terms from the other two. See
+[LICENSING.md](../LICENSING.md), and read it before accepting an outside
+contribution: the DCO does not grant the right to relicense.
 
 ```sh
 VARIANT=appstore make install   # build sandboxed, install, launch

@@ -3511,6 +3511,31 @@ enum ConfigStore {
     /// should instead be reported as missing.
     static func createIfMissing() throws {
         let fm = FileManager.default
+
+        // The App Store build runs the shipped scripts where they are, inside
+        // the signed bundle, so it must not copy them here first. Writing an
+        // executable script into the container and then running it is the
+        // shape guideline 2.5.2 is about, whatever the file came from — and
+        // the copy would be the one thing in this app that Apple reviewed and
+        // then saw replaced. BundledPython.script(for:) resolves an
+        // `examples/...` command against the bundle instead.
+        //
+        // The config file itself is still written: it is data, the user edits
+        // it, and it has to be somewhere writable.
+        if AppVariant.isAppStore {
+            if !fm.fileExists(atPath: vocabularyURL.path) {
+                try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+                try defaultVocabularyYAML.write(
+                    to: vocabularyURL, atomically: true, encoding: .utf8
+                )
+                Log.write("config: wrote vocabulary.yaml")
+            }
+            guard !fm.fileExists(atPath: fileURL.path) else { return }
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            try defaultYAML.write(to: fileURL, atomically: true, encoding: .utf8)
+            return
+        }
+
         let source = exampleTransformsDirectory
         let shipped = exampleTransformFiles()
         for relative in shipped {

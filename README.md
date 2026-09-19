@@ -253,6 +253,14 @@ Questions that are not bugs go to
 [GPL-3.0](LICENSE). Use it, change it, share it. If you ship something built on
 this code, that has to be under the GPL too.
 
+The Mac App Store build is the exception, and it is one the GPL allows: a
+copyright holder is not bound by their own licence. That build is offered under
+Apple's standard terms, because the GPL and the App Store's device limits
+cannot both be satisfied — the same conflict that pulled VLC from the store.
+The source stays GPL-3.0 and the direct build stays GPL-3.0.
+[LICENSING.md](LICENSING.md) has the details, including why a contribution
+signed off under the DCO cannot go into that build.
+
 The parrot is by Md Moniruzzaman, from the [Noun
 Project](https://thenounproject.com), used under CC BY. The outline is his; the
 plumage is ours — see [docs/development.md](docs/development.md#the-icons).

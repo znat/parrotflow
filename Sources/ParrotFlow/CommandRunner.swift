@@ -205,16 +205,36 @@ enum CommandRunner {
         }
 
         let process = Process()
-        // Through a shell, so a command can carry its arguments and its
-        // redirections the way it would in a terminal — `code_identifiers.py --lang
-        // python`. The shell is also what resolves a bare name against PATH,
-        // which is why the rewriting below only touches a first word that
-        // turns out to name a real file next to the config.
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", shellCommand(for: command, in: folder)]
+        if let bundled = BundledPython.invocation(for: command) {
+            // The App Store build. No shell: the sandbox executes only what is
+            // inside the bundle, and going through /bin/sh would mean resolving
+            // a name at run time against a PATH this build must not read. The
+            // interpreter and the script are both ours and both signed.
+            process.executableURL = bundled.executable
+            process.arguments = bundled.arguments
+        } else {
+            // Through a shell, so a command can carry its arguments and its
+            // redirections the way it would in a terminal — `code_identifiers.py --lang
+            // python`. The shell is also what resolves a bare name against PATH,
+            // which is why the rewriting below only touches a first word that
+            // turns out to name a real file next to the config.
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", shellCommand(for: command, in: folder)]
+        }
         // The folder, so a script opens `roster.json` as a bare relative path
         // and the whole transform is one directory you can copy.
-        process.currentDirectoryURL = folder.workingDirectory
+        //
+        // The App Store build runs from the script's own directory inside the
+        // bundle instead. `folder.workingDirectory` would name a path in the
+        // container that this build never creates — it does not seed the
+        // shipped scripts, it runs them where they were signed — and a working
+        // directory that does not exist is not a slower process, it is a
+        // process that cannot start.
+        if let bundled = BundledPython.script(for: command) {
+            process.currentDirectoryURL = bundled.url.deletingLastPathComponent()
+        } else {
+            process.currentDirectoryURL = folder.workingDirectory
+        }
         if structured {
             // So `returns: json` stays the only place the protocol is declared.
             // The script has to know too — it is reading stdin — and the
@@ -230,6 +250,7 @@ enum CommandRunner {
             process.environment = environment
         }
         applyInterpreterPath(to: process)
+        BundledPython.apply(to: process)
 
         let input = Pipe()
         let output = Pipe()
@@ -608,13 +629,12 @@ enum CommandRunner {
     /// an interpreter that is not installed — is the shell's to report, and it
     /// reports those well.
     static func complaint(about command: String, in folder: TransformFolder?) -> String? {
-        // The sandbox would refuse the spawn anyway, and the transcript would
-        // come through untouched either way. Said here so it is said once, in
-        // the log and in `--check-config`, rather than looking like a rule
-        // that did not match.
+        // The App Store build answers this itself: it has one interpreter and
+        // one directory of scripts, and anything else cannot run. Said here so
+        // it is said once, in the log and in `--check-config`, rather than
+        // looking like a rule that did not match.
         if AppVariant.isAppStore {
-            return "this build cannot run a program — install the one at "
-                + "github.com/znat/parrotflow for `command:` transforms"
+            return BundledPython.complaint(about: command)
         }
         let (program, _, resolved) = parts(of: command, in: folder)
         let fm = FileManager.default

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- The bundled Python, signed as a child of the sandboxed app.
+         `inherit` is the whole point: the interpreter gets the app's sandbox
+         rather than a sandbox of its own, so a script cannot reach anything
+         the app could not. It is the only key allowed alongside it — a child
+         that inherits may not ask for extra access. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.inherit</key>
+    <true/>
+</dict>
+</plist>

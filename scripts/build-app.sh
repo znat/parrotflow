@@ -85,13 +85,25 @@ cp "$ROOT/Resources/parrot.svg" "$APP/Contents/Resources/"
 # copied, not baked into the binary as strings, so there is one copy of each
 # and not two drifting apart. See Config.exampleTransformsDirectory and
 # Config.configTemplateURL.
-# The App Store build gets neither. Its default config names no `command:`
-# transform, and it could not run one if it did, so the scripts under
-# examples/ would be several hundred kilobytes of code the app cannot execute
-# sitting in a bundle Apple reviews. Config.exampleTransformFiles() finds an
-# empty set and seeds nothing, which is what we want.
 if [ "$VARIANT" = "appstore" ]; then
     cp "$ROOT/config.appstore.yaml" "$APP/Contents/Resources/config.appstore.yaml"
+
+    # The shipped transforms, run where they are signed. The App Store build
+    # does not seed them into the config folder the way the other two do —
+    # see Config.createIfMissing — so this copy is the one that executes.
+    cp -R "$ROOT/examples" "$APP/Contents/Resources/examples"
+    find "$APP/Contents/Resources/examples" -name __pycache__ -type d -exec rm -rf {} +
+
+    # `parse` needs spaCy, which is a runtime install and therefore not in this
+    # build at all. `slack_mentions` is a roster the user edits, and this build
+    # cannot seed an editable copy anywhere. Neither is in config.appstore.yaml;
+    # removing them here is what stops a script shipping that nothing can run.
+    rm -rf "$APP/Contents/Resources/examples/transforms/parse"
+    rm -rf "$APP/Contents/Resources/examples/transforms/slack_mentions"
+
+    # The interpreter. scripts/fetch-python.sh explains the pin and the trim.
+    "$ROOT/scripts/fetch-python.sh"
+    cp -R "$ROOT/.build/python" "$APP/Contents/Resources/python"
 else
     cp -R "$ROOT/examples" "$APP/Contents/Resources/examples"
     find "$APP/Contents/Resources/examples" -name __pycache__ -type d -exec rm -rf {} +
@@ -174,6 +186,26 @@ fi
 
 IDENTITY="$(pf_signing_identity)"
 echo "==> Signing with identity: $IDENTITY"
+
+# Inside out. A nested executable has to be signed before the bundle around it,
+# or the bundle's seal is computed over an unsigned file and `codesign --verify
+# --deep` rejects the result — after the build, from a different command, with
+# a message that names the inner file and not the order.
+#
+# `com.apple.security.inherit` is what makes the interpreter a child of this
+# app's sandbox rather than a sandbox of its own. It is the only entitlement it
+# may carry: a child that inherits cannot ask for more than its parent has.
+#
+# One file, because fetch-python.sh trims the build down to a statically linked
+# interpreter and fails if a .so or a .dylib survives.
+if [ "$VARIANT" = "appstore" ]; then
+    PYTHON_BIN="$APP/Contents/Resources/python/bin/python3.13"
+    echo "==> Signing the bundled interpreter"
+    codesign --force --options runtime \
+        --entitlements "$ROOT/Resources/entitlements-inherit.plist" \
+        --sign "$IDENTITY" "$PYTHON_BIN"
+fi
+
 pf_sign "$APP" "$IDENTITY"
 
 echo "==> Done: $APP"
