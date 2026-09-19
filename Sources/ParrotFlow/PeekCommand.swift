@@ -77,7 +77,7 @@ enum PeekCommand {
             return 1
         }
         guard !SelectionReader.isOurs(element) else {
-            report("element   ParrotFlow's own window — focus the target instead")
+            report("element   \(AppVariant.displayName)'s own window — focus the target instead")
             return 1
         }
 

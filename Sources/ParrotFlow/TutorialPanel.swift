@@ -866,7 +866,7 @@ struct TutorialPane: View {
 
     var body: some View {
         TutorialScreen(
-            title: "ParrotFlow understands what and who you are talking about",
+            title: "\(AppVariant.displayName) understands what and who you are talking about",
             lead: "",
             showsLead: false,
             progress: progress,
@@ -1032,7 +1032,7 @@ struct TutorialDownloadsPane: View {
                 progressTrack(progress)
                     .frame(width: 300 - 60 * lifted)
                 // The one place the walk says in words what it is.
-                Text("This takes a few minutes. Here is what ParrotFlow does.")
+                Text("This takes a few minutes. Here is what \(AppVariant.displayName) does.")
                     .font(.system(size: 13))
                     .foregroundStyle(Color.secondary)
                     .opacity(1 - lifted)

@@ -1133,7 +1133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if self.announcedUpdate != release.version {
                         self.announcedUpdate = release.version
                         Log.write("updates: \(release.version) is available")
-                        self.flash("ParrotFlow \(release.version) is available")
+                        self.flash("\(AppVariant.displayName) \(release.version) is available")
                     }
                     // The modal steals focus, so a background check waits for
                     // a moment with nothing running. A manual check was asked
@@ -1152,19 +1152,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Log.write("updates: holding \(release.version) for \(daysToGo) more day(s)")
                     if manual {
                         self.flash(
-                            "ParrotFlow \(release.version) is out, offered in "
+                            "\(AppVariant.displayName) \(release.version) is out, offered in "
                                 + "\(daysToGo) day\(daysToGo == 1 ? "" : "s")"
                         )
                     }
                 case .upToDate:
                     self.updateAvailable = nil
-                    if manual { self.flash("ParrotFlow is up to date") }
+                    if manual { self.flash("\(AppVariant.displayName) is up to date") }
                 case .skipped(let release):
                     self.updateAvailable = nil
                     if manual { self.flash("You skipped \(release.version)") }
                 case .snoozed(let release, _):
                     self.updateAvailable = nil
-                    if manual { self.flash("ParrotFlow \(release.version) is snoozed for now") }
+                    if manual { self.flash("\(AppVariant.displayName) \(release.version) is snoozed for now") }
                 case .disabled:
                     self.updateAvailable = nil
                 }
@@ -1183,7 +1183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// waits for this process to exit before it moves anything, so an update
     /// that could not close the app would simply hang.
     private func install(_ release: Updates.Release) {
-        let token = beginProgress("Downloading ParrotFlow \(release.version)…")
+        let token = beginProgress("Downloading \(AppVariant.displayName) \(release.version)…")
         Task<Void, Never> {
             do {
                 let app = try await UpdateInstaller.prepare(release)
@@ -7157,7 +7157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updateItem.isEnabled = false
         } else if let release = updateAvailable {
             updateItem.isHidden = false
-            updateItem.title = "↑ ParrotFlow \(release.version) is available"
+            updateItem.title = "↑ \(AppVariant.displayName) \(release.version) is available"
             updateItem.action = #selector(showUpdate)
             updateItem.isEnabled = true
         } else if config.updates.afterDays >= 0 {

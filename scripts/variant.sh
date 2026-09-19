@@ -11,6 +11,19 @@
 # `ParrotFlow` and CFBundleExecutable has to match it. Only the bundle differs,
 # which is also what keeps the two `pkill` patterns from matching each other.
 
+# The product name, and the one string a rename changes here.
+#
+# It reaches APP_NAME and DISPLAY_NAME and nothing else. BUNDLE_ID, CONFIG_DIR
+# and LOG_NAME are identity: TCC keys a grant to the bundle identifier, so a
+# rename that moved one would cost every existing user their permissions or
+# their config. AppVariant.productName carries the same string on the Swift
+# side and scripts/check-product-name.sh fails the build if they disagree.
+#
+# A name with a space in it works in DISPLAY_NAME and not in APP_NAME — the
+# bundle would be "My App.app" and every pkill pattern and path in the Makefile
+# would need quoting it does not have. Use a single word here.
+PRODUCT_NAME="ParrotFlow"
+
 VARIANT="${VARIANT:-dev}"
 
 case "$VARIANT" in
@@ -26,23 +39,23 @@ case "$VARIANT" in
         #
         # Both builds default to Right Command. Two of them running at once
         # both hear it; change one in its config.yaml while testing.
-        APP_NAME="ParrotFlowMAS"
+        APP_NAME="${PRODUCT_NAME}MAS"
         BUNDLE_ID="com.parrotflow.app.mas"
-        DISPLAY_NAME="ParrotFlow"
+        DISPLAY_NAME="$PRODUCT_NAME"
         LOG_NAME="ParrotFlow.log"
         CONFIG_DIR=".config/parrotflow"
         ;;
     release)
-        APP_NAME="ParrotFlow"
+        APP_NAME="$PRODUCT_NAME"
         BUNDLE_ID="com.parrotflow.app"
-        DISPLAY_NAME="ParrotFlow"
+        DISPLAY_NAME="$PRODUCT_NAME"
         LOG_NAME="ParrotFlow.log"
         CONFIG_DIR=".config/parrotflow"
         ;;
     dev)
-        APP_NAME="ParrotFlowDev"
+        APP_NAME="${PRODUCT_NAME}Dev"
         BUNDLE_ID="com.parrotflow.app.dev"
-        DISPLAY_NAME="ParrotFlow Dev"
+        DISPLAY_NAME="$PRODUCT_NAME Dev"
         LOG_NAME="ParrotFlow-Dev.log"
         CONFIG_DIR=".config/parrotflow-dev"
         ;;
@@ -64,6 +77,10 @@ else
     HOME_PREFIX="$HOME"
 fi
 
+# Not derived from PRODUCT_NAME. SwiftPM produces a binary named after the
+# product in Package.swift and CFBundleExecutable has to match it, so renaming
+# the app does not rename this. It is also what every `usage:` line in the
+# source prints, which is why those stayed literal.
 EXECUTABLE_NAME="ParrotFlow"
 
 # LOG_NAME and CONFIG_DIR must match AppVariant.swift. The app derives them from

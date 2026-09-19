@@ -42,7 +42,7 @@ struct MLXModelCache: Sendable {
         var errorDescription: String? {
             switch self {
             case .busy(let label):
-                return "another ParrotFlow process is fetching the \(label) model"
+                return "another \(AppVariant.displayName) process is fetching the \(label) model"
             }
         }
     }

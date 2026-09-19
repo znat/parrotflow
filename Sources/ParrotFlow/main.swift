@@ -955,7 +955,7 @@ if let unknown = arguments.dropFirst().first(where: {
 let attached = [FileHandle.standardInput, FileHandle.standardOutput,
                 FileHandle.standardError].contains { isatty($0.fileDescriptor) == 1 }
 if arguments.count == 1 && attached {
-    print("✗ ParrotFlow does not start from a terminal — it would hold permissions it cannot use.")
+    print("✗ \(AppVariant.displayName) does not start from a terminal — it would hold permissions it cannot use.")
     print("  open -a ParrotFlow        start it")
     print("  parrotflow --check-config check the install")
     exit(2)

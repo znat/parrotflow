@@ -36,7 +36,7 @@ enum UpdateInstaller {
             case .signature(let why):
                 return "the downloaded app failed signature verification: \(why)"
             case .certificate(let expected):
-                return "the downloaded app was not signed by ParrotFlow "
+                return "the downloaded app was not signed by \(AppVariant.displayName) "
                     + "(expected a Developer ID issued to Team ID \(expected))"
             case .notarization(let why):
                 return "the downloaded app is signed but not notarized by Apple: \(why)"

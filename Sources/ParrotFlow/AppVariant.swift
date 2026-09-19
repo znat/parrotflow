@@ -51,8 +51,32 @@ enum AppVariant {
     /// is why the properties below still branch on `isDev` alone.
     static var isAppStore: Bool { channel == .appStore }
 
+    /// The product name, and the one string a rename changes.
+    ///
+    /// `PRODUCT_NAME` in `scripts/variant.sh` is the same name for the bundle
+    /// that script writes, and `scripts/check-product-name.sh` fails the build
+    /// when the two disagree.
+    ///
+    /// It does **not** reach the bundle identifier, the config directory, the
+    /// log file or `identityName` below. Those are identity, not branding:
+    /// TCC keys a permission grant to the bundle identifier, and a rename that
+    /// moved any of them would cost every existing user their permissions,
+    /// their config or their models. See LICENSING.md and
+    /// docs/proposals/app-store.md.
+    static let productName = "ParrotFlow"
+
     /// What to call it in windows and menus.
-    static var displayName: String { isDev ? "ParrotFlow Dev" : "ParrotFlow" }
+    static var displayName: String { isDev ? "\(productName) Dev" : productName }
+
+    /// What it has always been called on disk, whatever it is called now.
+    ///
+    /// Pinned rather than derived from `displayName`, which is what it used to
+    /// be. `supportDirectory` is where the models land — about 3 GB of them —
+    /// and a rename that moved it would leave every existing install
+    /// re-downloading the lot with nothing to say why. The values are exactly
+    /// what `displayName` returns today, so nothing moves until someone
+    /// deliberately moves it.
+    static var identityName: String { isDev ? "ParrotFlow Dev" : "ParrotFlow" }
 
     /// `~/.config/parrotflow` or `~/.config/parrotflow-dev`.
     ///
@@ -72,13 +96,14 @@ enum AppVariant {
     /// For what the app downloads rather than for what a person edits — the
     /// config directory holds files somebody opens in an editor, and a 300 MB
     /// model cache does not belong next to them. Split per variant like
-    /// everything else here.
+    /// everything else here, and keyed on `identityName` rather than
+    /// `displayName` so renaming the product does not orphan the download.
     static var supportDirectory: URL {
         let base = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Application Support", isDirectory: true)
-        return base.appendingPathComponent(displayName, isDirectory: true)
+        return base.appendingPathComponent(identityName, isDirectory: true)
     }
 
     /// Right ⌥ for dev, Right ⌘ for release, so both builds can run at once
@@ -237,8 +262,8 @@ enum AppVariant {
             credits.append(NSAttributedString(string: "\n"))
             item(
                 "eSpeak NG",
-                "GPL-3.0. Not distributed with ParrotFlow. If you install it yourself,"
-                    + " ParrotFlow runs it as a separate program and reads its output."
+                "GPL-3.0. Not distributed with \(displayName). If you install it yourself,"
+                    + " \(displayName) runs it as a separate program and reads its output."
             )
             line("github.com/espeak-ng/espeak-ng", size: 10, dim: true)
         }

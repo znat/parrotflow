@@ -95,7 +95,7 @@ actor SlotModel {
         case busy
 
         var errorDescription: String? {
-            "another ParrotFlow process is fetching the slot model"
+            "another \(AppVariant.displayName) process is fetching the slot model"
         }
     }
 

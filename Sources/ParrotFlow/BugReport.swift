@@ -55,7 +55,7 @@ enum BugReport {
     static func text(fromTerminal: Bool, app: String? = nil) -> String {
         var sections: [String] = []
 
-        sections.append("ParrotFlow bug report")
+        sections.append("\(AppVariant.displayName) bug report")
 
         var version = [
             "Version",

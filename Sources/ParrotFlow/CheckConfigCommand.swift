@@ -383,7 +383,7 @@ enum CheckConfigCommand {
         // real answer lives instead — the app tests it at launch and logs it.
         if transcription.insertMode == .paste || !transcription.activationPhrases.isEmpty {
             emit("  · accessibility     needed, but not checkable from a terminal")
-            emit("      macOS credits this check to the shell, not to ParrotFlow.")
+            emit("      macOS credits this check to the shell, not to \(AppVariant.displayName).")
             emit("      The app records the true value each time it starts:")
             emit("      grep 'launched —' \(Log.fileURL.path) | tail -1")
         }

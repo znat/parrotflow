@@ -76,6 +76,28 @@ empty. Both it and the release build default to Right ⌘, so change one in its
 Why it exists and what it costs is in
 [proposals/app-store.md](proposals/app-store.md).
 
+## Renaming the app
+
+The product name is one string on each side: `AppVariant.productName` in
+Swift, `PRODUCT_NAME` in `scripts/variant.sh`. Change both and every window,
+panel, permission prompt and menu title follows.
+`scripts/check-product-name.sh` fails the build if the two disagree, or if a
+new string hardcodes the name where `AppVariant.displayName` belongs.
+
+What it deliberately does **not** touch:
+
+| | Why |
+|---|---|
+| `com.parrotflow.app*` | TCC keys a permission grant to the bundle identifier. Changing it costs every user their Microphone and Accessibility grants. |
+| `~/.config/parrotflow` | Their config and vocabulary are in it. |
+| `ParrotFlow.log` | What `make logs` and every debugging note point at. |
+| `AppVariant.identityName` | `~/Library/Application Support/ParrotFlow`, where about 3 GB of models live. A rename that moved it would silently re-download them all. |
+| `EXECUTABLE_NAME` | SwiftPM names the binary from `Package.swift` and `CFBundleExecutable` has to match. It is also what every `usage:` line prints. |
+
+So a rename changes what people read, and nothing they own. The two are
+separated on purpose, and the check script's `allowed()` list is where each
+exception is written down.
+
 ## Testing the setup screen
 
 That screen only appears when there is something to do — a permission that has

@@ -47,9 +47,9 @@ enum PermissionStep: CaseIterable {
     var reason: String {
         switch self {
         case .microphone:
-            return "ParrotFlow needs microphone access to turn what you say into text."
+            return "\(AppVariant.displayName) needs microphone access to turn what you say into text."
         case .accessibility:
-            return "ParrotFlow needs Accessibility access to type that text into "
+            return "\(AppVariant.displayName) needs Accessibility access to type that text into "
                 + "the app you're using."
         }
     }
@@ -76,7 +76,7 @@ enum PermissionStep: CaseIterable {
         case .microphone:
             return "Answer the prompt macOS just put up."
         case .accessibility:
-            return "Find ParrotFlow in the list and tick it. This window updates itself."
+            return "Find \(AppVariant.displayName) in the list and tick it. This window updates itself."
         }
     }
 }
@@ -616,7 +616,7 @@ final class PermissionsWindowController {
     private func askAboutEspeak(on window: NSWindow) {
         let alert = NSAlert()
         alert.messageText = "Install eSpeak NG?"
-        alert.informativeText = "Without it, ParrotFlow misses some of the names in your"
+        alert.informativeText = "Without it, \(AppVariant.displayName) misses some of the names in your"
             + " vocabulary. It is a separate program, so it installs in Terminal and takes"
             + " about a minute. Terminal will ask you to confirm."
         // The real app icon, the same file System Settings reads. `NSAlert`
@@ -1068,8 +1068,8 @@ private struct StepPane: View {
     /// macOS prompts once. After a refusal the only way back is the pane.
     private var deniedNote: String {
         step == .microphone
-            ? "macOS only asks once. Turn it on for ParrotFlow in System Settings, under Privacy & Security."
-            : "Tick ParrotFlow under Privacy & Security → Accessibility."
+            ? "macOS only asks once. Turn it on for \(AppVariant.displayName) in System Settings, under Privacy & Security."
+            : "Tick \(AppVariant.displayName) under Privacy & Security → Accessibility."
     }
 }
 
@@ -1116,7 +1116,7 @@ private struct ModelsPane: View {
                 .padding(.top, at(20))
                 .padding(.bottom, at(7))
 
-            Text("ParrotFlow will download these models in the background while you"
+            Text("\(AppVariant.displayName) will download these models in the background while you"
                 + " finish setup.")
                 .font(.system(size: at(13)))
                 .fixedSize(horizontal: false, vertical: true)
@@ -1130,7 +1130,7 @@ private struct ModelsPane: View {
 
             group(
                 "Language",
-                "These language models help ParrotFlow apply your vocabulary and correct"
+                "These language models help \(AppVariant.displayName) apply your vocabulary and correct"
                     + " transcription artifacts by understanding what you mean.",
                 in: .language
             )
@@ -1351,7 +1351,7 @@ private struct SetupPane: View {
             // key line, and it would end on "or".
             return hotkeyRegistered ? "\(opening) Try again, or" : "\(opening) Try again"
         case .espeak:
-            return "A separate GPL-3 library. eSpeak helps ParrotFlow understand your"
+            return "A separate GPL-3 library. eSpeak helps \(AppVariant.displayName) understand your"
                 + " own terms, such as your work jargon and your teammates' names."
         case .almostReady:
             // Nothing under the title. The bar below says the same thing
@@ -1366,7 +1366,7 @@ private struct SetupPane: View {
     /// never bound — another app already holds it, most likely. Naming the key
     /// it wanted would tell someone to press a key that does nothing.
     private var unregisteredHotkey: String {
-        "ParrotFlow's hotkey isn't registered. Check hotkey.key in config.yaml, "
+        "\(AppVariant.displayName)'s hotkey isn't registered. Check hotkey.key in config.yaml, "
             + "then reopen this window from the menu bar."
     }
 
@@ -1582,7 +1582,7 @@ private struct QuietFailureNote: View {
                     .font(.system(size: SetupMetrics.at(11)))
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("ParrotFlow downloads each of them again the first time it needs"
+            Text("\(AppVariant.displayName) downloads each of them again the first time it needs"
                 + " one. Nothing to do.")
                 .font(.system(size: SetupMetrics.at(11)))
                 .fixedSize(horizontal: false, vertical: true)
