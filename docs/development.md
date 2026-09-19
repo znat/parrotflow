@@ -46,6 +46,29 @@ make stop                 # quit dev; the installed app keeps running
 VARIANT=release make logs  # act on the shipped app instead
 ```
 
+There is a third variant, `appstore`, for the sandboxed Mac App Store build.
+It is a separate application again — `ParrotFlowMAS.app`,
+`com.parrotflow.app.mas` — so it sits beside the other two while it is worked
+on. What it cannot do is the point of it: no `command:` transform, no model
+call, no self-update. It ships `config.appstore.yaml` instead of
+`config.example.yaml`, and `scripts/check-appstore-config.sh` is what stops
+the two drifting.
+
+```sh
+VARIANT=appstore make install   # build sandboxed, install, launch
+VARIANT=appstore make which     # the container paths, not ~/
+```
+
+The sandbox rewrites the home directory, so this build's log and config live
+inside `~/Library/Containers/com.parrotflow.app.mas/Data/`. `make logs` and
+`make which` follow it there through `HOME_PREFIX` in `scripts/variant.sh`;
+a path typed by hand will point at a different file that also exists and is
+empty. Both it and the release build default to Right ⌘, so change one in its
+`config.yaml` if you run them together.
+
+Why it exists and what it costs is in
+[proposals/app-store.md](proposals/app-store.md).
+
 ## Testing the setup screen
 
 That screen only appears when there is something to do — a permission that has

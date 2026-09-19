@@ -608,6 +608,14 @@ enum CommandRunner {
     /// an interpreter that is not installed — is the shell's to report, and it
     /// reports those well.
     static func complaint(about command: String, in folder: TransformFolder?) -> String? {
+        // The sandbox would refuse the spawn anyway, and the transcript would
+        // come through untouched either way. Said here so it is said once, in
+        // the log and in `--check-config`, rather than looking like a rule
+        // that did not match.
+        if AppVariant.isAppStore {
+            return "this build cannot run a program — install the one at "
+                + "github.com/znat/parrotflow for `command:` transforms"
+        }
         let (program, _, resolved) = parts(of: command, in: folder)
         let fm = FileManager.default
         guard resolved != nil, fm.fileExists(atPath: program),

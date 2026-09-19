@@ -62,6 +62,9 @@ enum UpdateInstaller {
     /// again. A dev build is built from the source tree, and that is where its
     /// updates come from.
     static var blocker: String? {
+        if AppVariant.isAppStore {
+            return "This build updates through the App Store."
+        }
         if AppVariant.isDev {
             return "This is a dev build, so a release cannot be installed over it. "
                 + "Build it from the source tree instead."

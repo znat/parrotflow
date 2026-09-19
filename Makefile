@@ -65,8 +65,8 @@ stop:
 
 ## Print which app this variant refers to, and where its things live
 which:
-	@$(V) printf '  variant     %s\n  app         %s.app\n  bundle id   %s\n  config      ~/%s/config.yaml\n  log         ~/Library/Logs/%s\n' \
-	  "$$VARIANT" "$$APP_NAME" "$$BUNDLE_ID" "$$CONFIG_DIR" "$$LOG_NAME"
+	@$(V) printf '  variant     %s\n  app         %s.app\n  bundle id   %s\n  config      %s/%s/config.yaml\n  log         %s/Library/Logs/%s\n' \
+	  "$$VARIANT" "$$APP_NAME" "$$BUNDLE_ID" "$$HOME_PREFIX" "$$CONFIG_DIR" "$$HOME_PREFIX" "$$LOG_NAME"
 
 ## Create a self-signed cert so permissions survive rebuilds (asks for your password)
 dev-certificate:
@@ -93,7 +93,7 @@ CHECKS := replacements pipeline pipeline-config wake split dates keyed \
           profiles span-rule clipboard default-config vocabulary-config learn \
           signing-identity no-voice sound slot-tokenizer sentence-case term-uses \
           edit-diff sentence-open invented-tail sentence-window lowercase-refused \
-          selector sound-group trace-edits
+          selector sound-group trace-edits appstore-config
 
 ## A shipped transform keeps its case set in its own folder and scores it with
 ## a script beside it, not with scripts/check-<name>.sh.
@@ -203,9 +203,12 @@ reset-permissions:
 	@$(V) echo "==> Permissions reset for $$BUNDLE_ID"
 
 ## Tail this variant's log
+## HOME_PREFIX and not $(HOME): the App Store build writes inside its sandbox
+## container, and ~/Library/Logs/ParrotFlow.log is a different file that this
+## target would otherwise create empty and tail forever.
 logs:
-	@$(V) touch "$(HOME)/Library/Logs/$$LOG_NAME" \
-	  && tail -f "$(HOME)/Library/Logs/$$LOG_NAME"
+	@$(V) touch "$$HOME_PREFIX/Library/Logs/$$LOG_NAME" \
+	  && tail -f "$$HOME_PREFIX/Library/Logs/$$LOG_NAME"
 
 clean: stop
 	@rm -rf .build dist

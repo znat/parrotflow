@@ -1,8 +1,10 @@
 # Proposal: what publishing on the Mac App Store would cost
 
-**Status.** Not started. One measurement stands between this and a decision,
-and `make sandbox-probe` is that measurement. Nothing else here is worth
-paying for until it comes back.
+**Status.** The `appstore` variant is built and the barebones scope is
+decided — pure Swift, no interpreter. It cannot be submitted yet: there is no
+Xcode target to archive from, and `make sandbox-probe` has still not been run,
+so whether the hotkeys survive the sandbox is still unmeasured. See *Built so
+far* and *What is left* below.
 
 **The question.** The App Store would buy discovery and a one-click install
 for someone who was sent a link — the gap [distribution.md](../distribution.md)
@@ -53,6 +55,50 @@ transcript exactly as it arrived, which is the rule in
 still measurable. Rewriting the extension system to answer a question a plist
 answers would be paying the largest cost in this document to find out whether
 it was needed.
+
+---
+
+## Built so far
+
+A third variant, `appstore`, beside `dev` and `release`. Same mechanism as the
+other two: a separate bundle identifier, `com.parrotflow.app.mas`, and
+`AppVariant.channel` reads it off the bundle at runtime. One binary still
+serves all three.
+
+| | |
+|---|---|
+| `config.appstore.yaml` | What a store install is written with. Three `replace:` transforms, two pipeline steps, no `command:`, no `prompt:`, no `models:`. |
+| `scripts/check-appstore-config.sh` | The guard on that file. Runs in `make test`, needs no binary and no model. Takes a root argument so it can be tested against a broken copy. |
+| `AppVariant.Channel` | `.dev` / `.direct` / `.appStore`. `isDev` is unchanged for every existing caller. |
+| `CommandRunner.complaint` | Refuses in the store build and says why, once, in the log and in `--check-config` — rather than letting a stage look like a rule that did not match. |
+| `UpdateInstaller` + `AppDelegate` | No hourly GitHub call, no install path, and a manual check says updates come through the store. |
+| `scripts/variant.sh` | `HOME_PREFIX`, because the sandbox rewrites the home directory and `~/Library/Logs/ParrotFlow.log` is a different file that also exists and is empty. |
+| `scripts/build-app.sh` | Ships the store config, and skips `examples/` and `parsing-requirements.txt` — several hundred kilobytes of scripts this build cannot run, in a bundle Apple reads. |
+
+**What a store install gets.** Local dictation, the vocabulary stage, spoken
+corrections, and `fillers`, `fillers_fr` and `github_refs`.
+
+**What it does not.** `disfluency`, `dates_en`, `numbers_en` and
+`slack_mentions` are scripts. `grammar` needs Ollama. The first two of those
+are the features the README leads with, and *A Python inside the bundle* below
+is the iteration that would bring them back.
+
+## What is left
+
+1. **Run `make sandbox-probe`.** Still first, still unrun. A tap the sandbox
+   refuses ends this whether or not the variant builds.
+2. **An Xcode target.** `Package.swift` has a bare `executableTarget` and
+   SwiftPM cannot produce a signed `.pkg`. Nothing can be submitted until this
+   exists.
+3. **Store certificates.** `pf_signing_identity` already prefers
+   *3rd Party Mac Developer Application* and *Apple Distribution* for this
+   variant, and falls back to the self-signed ones so a local sandbox build
+   works on a machine that has never enrolled one. That fallback build runs
+   and can be measured; it cannot be submitted.
+4. **The licence.** GPL-3.0 still conflicts with the store terms. One human
+   author, so this is a decision rather than a negotiation.
+5. **Verify.** None of the Swift above has been compiled — it was written
+   without a macOS toolchain. `make test` is the first thing to run.
 
 ---
 

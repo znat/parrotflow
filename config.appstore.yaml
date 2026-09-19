@@ -1,0 +1,143 @@
+# ParrotFlow configuration
+# Edit and save — changes are picked up automatically. Delete any line to
+# get its default back. `--check-config` says what the file adds up to.
+#
+# This is the App Store build. It differs from the one at
+# github.com/znat/parrotflow in one way, and the difference is the sandbox:
+# **it cannot run a program.** Apple requires an App Store app to be
+# self-contained in its bundle, so `command:` transforms — your own scripts —
+# and `prompt:` transforms, which need Ollama installed separately, are both
+# absent. `replace:` rules and everything the app does in its own code work
+# exactly as they do in the other build.
+#
+# What that costs, by name: hesitations and repeats (`disfluency`), spoken
+# numbers and dates (`dates_en`, `numbers_en`), and grammar. Install the
+# direct build if you want them: github.com/znat/parrotflow
+#
+# Agents: the docs are in the repository. Start at AGENTS.md. Every key here
+# is in docs/configuration.md. Validate with the binary, not by reading.
+
+hotkey:
+  # A bare modifier (right_option, right_command, right_control, fn, ...) or
+  # a character key (a-z, 0-9, f1-f20, space, arrows) plus `modifiers` below.
+  key: right_command
+
+  # Any of: command, control, option, shift.
+  modifiers: []
+
+  # push_to_talk records while held, toggle taps on/off. A bare modifier
+  # needs push_to_talk.
+  mode: push_to_talk
+
+audio:
+  # Which microphone to record through, best first. The first one that is
+  # plugged in wins, whatever System Settings has the default set to, and
+  # nothing else on the Mac is moved. Names come from `--microphones`; the
+  # menu bar writes this list for you.
+  # microphones:
+  #   - Studio Display Microphone
+  #   - MacBook Pro Microphone
+
+  # Skip clips with no speech, so a stray keypress does not decode room tone.
+  speech_gate: true
+
+  # Decode each clip again with silence padding, and keep that decode if it
+  # reaches further. About 2% of dictations silently lose words, and this is
+  # what gets them back. Every dictation pays ~100ms for it: set this to
+  # false to keep the 100ms. Needs speech_gate.
+  second_opinion: true
+
+logging:
+  # One timeline per dictation in spans.jsonl, beside the recordings: every
+  # step, every decode, what each cost. Rotates at 64 MB.
+  spans: true
+
+  # Saves each dictation's recording, for --transcribe, calibration, or
+  # hearing what the app heard.
+  audio: false
+
+transcription:
+  # Languages you dictate in, most spoken first. Supported: en, fr. One
+  # entry turns off language detection.
+  languages: [en, fr]
+
+  # What you meant, where the decoder wrote what it heard. A pause makes it
+  # write a period or a question mark mid-sentence and capitalise the next
+  # word; this reads each boundary and takes the mark out again. English only,
+  # and only where the model is already on disk.
+  #
+  # Not a pipeline step: it reads the decoder's own word timings, so anything
+  # that rewrote a word above it would break the alignment. It runs first.
+  sentence_repair:
+    enabled: true
+    # capitals: true         # read a capital with no mark in front as a boundary
+    # pause: 0.35            # seconds of silence a bare capital needs first
+    # marks: [".", ",", "?"] # what a boundary may be written with
+
+  # Matches vocabulary.yaml renderings and settles each match against the
+  # sentence it stands in. No model call, and it is the reason to use this
+  # app: it runs in full here, exactly as in the direct build.
+  #
+  # Not a pipeline step either: it is handed spans measured on the transcript
+  # as the decoder wrote it, and any edit above it moves them. It runs second.
+  vocabulary:
+    enabled: true
+    # sound_below: 0.85      # how close a run of words must sound to a term
+    # gate_sentence: true    # read the sentence before keeping a match
+    # asks: true             # ask before typing a name it could not settle
+    #
+    # The rest switch off one half of the pass so the other can be scored.
+    # See docs/pipelines.md before changing them.
+    # near_misses: true      # also match a rendering one edit away
+    # by_sound: true         # also match words that sound like a term
+    # gate: true             # the word lists and the slot's part of speech
+    # slot_gate: true        # the mmBERT slot — false downloads nothing
+    # portrait: true         # a term's own sentences and its counter-examples
+    # lowercase_refused: true
+
+  # What a transcript runs through, in order. Everything here rewrites text
+  # and may be moved. Remove a line to skip that stage.
+  #
+  # Shorter than the direct build's, and every step left is a `replace:`
+  # rule. The number, date and disfluency stages are scripts, which this
+  # build cannot run.
+  pipeline:
+    - transform: fillers
+    - transform: fillers_fr
+      when: language == "fr"
+
+transforms:
+  # "PR one two three is ready" -> a clickable #123. Defined, not in the
+  # pipeline: the repository is yours, not this file's. Put your own in both
+  # URLs and add `- transform: github_refs` to the pipeline above.
+  #
+  # Spoken digits are not turned into 123 in this build, so say the number
+  # as digits — "PR one twenty three" reaches this rule as written.
+  #
+  # `\s*` and not `\s+` before the number, because the decoder writes "PR123"
+  # with no space when you say "P R one two three". Measured, and it is the
+  # most common spelling of the lot.
+  - name: github_refs
+    description: spoken PR and issue numbers as links
+    replace:
+      '[#$1](https://github.com/OWNER/REPO/pull/$1)':
+        ['/\b(?:pull request|PR|P\.R\.)\s*(?:(?:{{ref_words}})\s+)?#?(\d+)\b/']
+      '[#$1](https://github.com/OWNER/REPO/issues/$1)':
+        ['/\bissues?\s+(?:(?:{{ref_words}})\s+)?#?(\d+)\b/']
+
+  # Hesitation sounds. A `replace:` rule, so it costs no process at all — the
+  # list above is the half you edit, and the pattern beside it catches a sound
+  # held for any length, "uhhhh", which a literal list cannot.
+  - name: fillers
+    description: delete hesitation sounds
+    replace:
+      "": ['/[,]?\s*\b(?:{{fillers_en}})\b[,]?/',
+           '/[,]?\s*\bu+[hm]+\b[,]?/']
+
+  # `euh` never matched the English rule: the word boundary sits before the
+  # `e`, so `u+h+` cannot reach it.
+  - name: fillers_fr
+    description: supprime les hésitations
+    replace:
+      "": ['/[,]?\s*\b(?:{{fillers_fr}})\b[,]?/',
+           '/[,]?\s*\be+u+h+\b[,]?/']

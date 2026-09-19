@@ -3733,8 +3733,14 @@ enum ConfigStore {
     /// string never did, silently, because nothing compared the two beyond a
     /// key-name check that could not see into a pipeline's steps.
     static var configTemplateURL: URL {
+        // The App Store build gets its own file rather than a filtered copy of
+        // the other one. Filtering would have to delete the comments beside
+        // every stage it removed, and those comments are the documentation.
+        // scripts/check-appstore-config.sh is what keeps the second file from
+        // drifting. See docs/proposals/app-store.md.
+        let name = AppVariant.isAppStore ? "config.appstore.yaml" : "config.example.yaml"
         if !Permissions.isRunningFromBuildDirectory,
-           let bundled = Bundle.main.resourceURL?.appendingPathComponent("config.example.yaml"),
+           let bundled = Bundle.main.resourceURL?.appendingPathComponent(name),
            FileManager.default.fileExists(atPath: bundled.path) {
             return bundled
         }
@@ -3742,7 +3748,7 @@ enum ConfigStore {
             .deletingLastPathComponent()  // Config.swift -> Sources/ParrotFlow/
             .deletingLastPathComponent()  // -> Sources/
             .deletingLastPathComponent()  // -> repo root
-            .appendingPathComponent("config.example.yaml")
+            .appendingPathComponent(name)
     }
 
     /// What a new install's config.yaml is written with.

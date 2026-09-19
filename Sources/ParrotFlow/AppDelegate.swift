@@ -1019,6 +1019,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updatesTimer?.invalidate()
         updatesTimer = nil
 
+        // The App Store build is updated by the App Store. An hourly call to
+        // GitHub asking about a release it cannot install would be network
+        // traffic with nothing at the end of it.
+        guard !AppVariant.isAppStore else {
+            updateAvailable = nil
+            return
+        }
+
         guard config.updates.afterDays >= 0 else {
             updateAvailable = nil
             return
@@ -1042,6 +1050,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///   update alert straight away rather than waiting for the app to go
     ///   idle, since the user just asked for it.
     private func checkForUpdate(manual: Bool = false) {
+        if AppVariant.isAppStore {
+            if manual { flash("Updates come through the App Store") }
+            return
+        }
         let afterDays = config.updates.afterDays
         guard afterDays >= 0 else {
             if manual { flash("Update checks are disabled") }

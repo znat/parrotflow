@@ -27,7 +27,14 @@ pf_signing_identity() {
     local available candidates
     available="$(security find-identity -v -p codesigning 2>/dev/null || true)"
 
-    if [ "${VARIANT:-dev}" = "release" ]; then
+    # The App Store wants its own certificates, and neither is a Developer ID.
+    # The self-signed ones stay at the end so a local sandbox build works on a
+    # machine that has never enrolled a store certificate — that build cannot
+    # be submitted, only run and measured.
+    if [ "${VARIANT:-dev}" = "appstore" ]; then
+        candidates=("3rd Party Mac Developer Application" "Apple Distribution" \
+                    "ParrotFlow Dev" "ParrotFlow Release")
+    elif [ "${VARIANT:-dev}" = "release" ]; then
         candidates=("Developer ID Application" "ParrotFlow Release" "ParrotFlow Dev")
     else
         candidates=("ParrotFlow Dev" "ParrotFlow Release")

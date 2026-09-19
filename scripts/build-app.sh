@@ -85,16 +85,29 @@ cp "$ROOT/Resources/parrot.svg" "$APP/Contents/Resources/"
 # copied, not baked into the binary as strings, so there is one copy of each
 # and not two drifting apart. See Config.exampleTransformsDirectory and
 # Config.configTemplateURL.
-cp -R "$ROOT/examples" "$APP/Contents/Resources/examples"
-find "$APP/Contents/Resources/examples" -name __pycache__ -type d -exec rm -rf {} +
-cp "$ROOT/config.example.yaml" "$APP/Contents/Resources/config.example.yaml"
+# The App Store build gets neither. Its default config names no `command:`
+# transform, and it could not run one if it did, so the scripts under
+# examples/ would be several hundred kilobytes of code the app cannot execute
+# sitting in a bundle Apple reviews. Config.exampleTransformFiles() finds an
+# empty set and seeds nothing, which is what we want.
+if [ "$VARIANT" = "appstore" ]; then
+    cp "$ROOT/config.appstore.yaml" "$APP/Contents/Resources/config.appstore.yaml"
+else
+    cp -R "$ROOT/examples" "$APP/Contents/Resources/examples"
+    find "$APP/Contents/Resources/examples" -name __pycache__ -type d -exec rm -rf {} +
+    cp "$ROOT/config.example.yaml" "$APP/Contents/Resources/config.example.yaml"
+fi
 
 # The word list the auto-apply gate asks whether a name is a name. Named here
 # rather than copying the whole of data/: the other files in it are read by
 # scripts/calibrate.py on a checkout and have no business in the bundle. See
 # WordPieces.fileURL.
 cp "$ROOT/data/wordpiece.txt" "$APP/Contents/Resources/wordpiece.txt"
-cp "$ROOT/data/parsing-requirements.txt" "$APP/Contents/Resources/parsing-requirements.txt"
+# What --setup-parsing would install. The App Store build has no --setup-parsing
+# and no interpreter to install into.
+if [ "$VARIANT" != "appstore" ]; then
+    cp "$ROOT/data/parsing-requirements.txt" "$APP/Contents/Resources/parsing-requirements.txt"
+fi
 
 # SwiftPM resource bundles, which the binary looks for beside itself.
 #
@@ -152,6 +165,13 @@ echo "==> Build stamp: $STAMP"
 
 # How this is signed lives in scripts/codesign.sh, because release.sh has to
 # sign the same bundle again after it stamps the version in.
+# The sandbox is not optional for this variant — it is what the variant means.
+# PF_SANDBOX stays available on its own for `make sandbox-probe`, which
+# sandboxes the *dev* bundle to measure the hotkeys.
+if [ "$VARIANT" = "appstore" ]; then
+    export PF_SANDBOX=1
+fi
+
 IDENTITY="$(pf_signing_identity)"
 echo "==> Signing with identity: $IDENTITY"
 pf_sign "$APP" "$IDENTITY"

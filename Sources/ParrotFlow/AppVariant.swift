@@ -1,10 +1,11 @@
 import AppKit
 import Foundation
 
-/// Which build this is — the one you are working on, or the one people install.
+/// Which build this is — the one you are working on, the one people install,
+/// or the sandboxed one on the Mac App Store.
 ///
-/// The two are separate applications as far as macOS is concerned, and that is
-/// the point. Permissions are granted per bundle identifier, so a dev build that
+/// All three are separate applications as far as macOS is concerned, and that
+/// is the point. Permissions are granted per bundle identifier, so a dev build that
 /// shares an identifier with the released app is granting and revoking the
 /// released app's microphone access every time it is rebuilt. Splitting the
 /// identifier means work in progress cannot reach into a working install.
@@ -18,7 +19,37 @@ import Foundation
 /// different Info.plist.
 enum AppVariant {
 
-    static let isDev: Bool = Bundle.main.bundleIdentifier?.hasSuffix(".dev") ?? false
+    /// Which of the three builds this is.
+    ///
+    /// Read from the bundle identifier for the reason the type comment gives:
+    /// one binary serves all three, and `scripts/build-app.sh` decides by
+    /// writing a different Info.plist.
+    enum Channel {
+        /// The build you work on. `com.parrotflow.app.dev`.
+        case dev
+        /// Developer ID, installed by curl or Homebrew, updates itself.
+        /// `com.parrotflow.app`.
+        case direct
+        /// Sandboxed, through the Mac App Store. `com.parrotflow.app.mas`.
+        case appStore
+    }
+
+    static let channel: Channel = {
+        let identifier = Bundle.main.bundleIdentifier ?? ""
+        if identifier.hasSuffix(".dev") { return .dev }
+        if identifier.hasSuffix(".mas") { return .appStore }
+        return .direct
+    }()
+
+    static var isDev: Bool { channel == .dev }
+
+    /// The sandbox, asked about by its consequences.
+    ///
+    /// Everything this gates is forbidden rather than merely broken: running
+    /// a program, installing eSpeak or spaCy, replacing the app bundle. The
+    /// App Store build behaves like the released one everywhere else, which
+    /// is why the properties below still branch on `isDev` alone.
+    static var isAppStore: Bool { channel == .appStore }
 
     /// What to call it in windows and menus.
     static var displayName: String { isDev ? "ParrotFlow Dev" : "ParrotFlow" }
@@ -181,13 +212,18 @@ enum AppVariant {
         item("MLX", "runs both Qwen models · MIT")
         item("FluidAudio", "fetching and Core ML plumbing · Apache 2.0")
 
-        credits.append(NSAttributedString(string: "\n"))
-        item(
-            "eSpeak NG",
-            "GPL-3.0. Not distributed with ParrotFlow. If you install it yourself,"
-                + " ParrotFlow runs it as a separate program and reads its output."
-        )
-        line("github.com/espeak-ng/espeak-ng", size: 10, dim: true)
+        // Only the builds that can run it. The App Store build cannot spawn a
+        // program at all, so naming eSpeak here would credit something this
+        // copy never touches.
+        if !isAppStore {
+            credits.append(NSAttributedString(string: "\n"))
+            item(
+                "eSpeak NG",
+                "GPL-3.0. Not distributed with ParrotFlow. If you install it yourself,"
+                    + " ParrotFlow runs it as a separate program and reads its output."
+            )
+            line("github.com/espeak-ng/espeak-ng", size: 10, dim: true)
+        }
 
         return credits
     }
