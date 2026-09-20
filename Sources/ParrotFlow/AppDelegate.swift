@@ -1378,7 +1378,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // that is a different case and not this PR's to change.
             var promisesHold = pill.isOpen
             if case .choose = offerHeadline { promisesHold = false }
-            keyedAtPress = afterTap || (offerIsUp && promisesHold)
+            // Never both. The action key's words are about the screen, and
+            // an offer happening to be open while it is held does not make
+            // them an edit to the text underneath.
+            keyedAtPress = !action && (afterTap || (offerIsUp && promisesHold))
             // Only when it is on, and it says which of the two put it there.
             // This is the one decision at the press you cannot see from
             // outside: the same key, the same meter, and the words routed
