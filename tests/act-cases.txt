@@ -1,0 +1,22 @@
+# The port's gate: what the prototype measured on 2026-09-20, against the
+# snapshot it measured on. utterance | action | target id
+#
+# The snapshot is NOT in this repository and will not be: it is 224 items of a
+# real Slack window, colleagues' names and the first line of what they wrote.
+# Take your own with `--act "" --app <name> --look --save <file>` and write the
+# answers down here beside it. See docs/actions.md.
+#
+# A target id only means anything for its own utterance: the candidate list is
+# the 40 nearest plus whatever the words name, so it is numbered per call.
+send a message to john|send_message|t25
+click on antonio|click|t40
+search for "media"|search|t2
+reply here: on it, thanks|send_message|t2
+open this one|click|t0
+reply to this message: sounds good|send_message|t2
+envoie un message à John|send_message|t25
+clique sur Antonio|click|t40
+what time is it|none|t2
+open the thread with Ian|click|t4
+scroll down|scroll|none
+go to jira|click|t8
