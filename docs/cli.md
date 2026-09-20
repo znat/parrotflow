@@ -270,6 +270,22 @@ Custom gates — "a handle belonging to someone who was not named must be zero" 
 do not generalise and stay in a script of your own. See
 [authoring.md](authoring.md).
 
+## Acting on what is on screen
+
+```sh
+$PF --act "<what you'd say>" [--at <x> <y> | --gaze | --snapshot <file.json>]
+    [--app <name>] [--look] [--save <file.json>] [--execute]
+```
+
+The on-screen action path without a microphone — which window it read, what it
+was offered, what it decided, and with `--execute` the click itself. `--look`
+stops before the decision, so reading a window costs nothing.
+
+TCC credits an accessibility check to the *responsible* process, so run from a
+terminal this reads the screen with the terminal's grant rather than
+ParrotFlow's — the same wrinkle as `--peek`. The whole feature, what it sends
+and how it was measured, is in [actions.md](actions.md).
+
 ## Testing a spoken instruction
 
 ```sh

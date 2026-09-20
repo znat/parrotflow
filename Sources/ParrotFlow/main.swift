@@ -168,7 +168,8 @@ let appArgument: String? = arguments.firstIndex(of: "--app").flatMap { index in
 
 /// `--act "<what you'd say>"` — the on-screen action path, without a mic.
 /// `--at x y` a point, `--gaze` the tracker's, `--snapshot` a saved window,
-/// `--save` writes the window it read, `--execute` actually does it.
+/// `--save` writes the window it read, `--look` stops before the decision,
+/// `--execute` actually does it.
 if let index = arguments.firstIndex(of: "--act") {
     func value(_ flag: String) -> String? {
         arguments.firstIndex(of: flag).flatMap {
@@ -189,7 +190,8 @@ if let index = arguments.firstIndex(of: "--act") {
     exit(ActCommand.run(
         utterance: arguments[index + 1], at: point, app: appArgument,
         snapshotPath: value("--snapshot"), save: value("--save"),
-        useGaze: arguments.contains("--gaze"), execute: arguments.contains("--execute")
+        useGaze: arguments.contains("--gaze"), execute: arguments.contains("--execute"),
+        decide: !arguments.contains("--look")
     ))
 }
 
