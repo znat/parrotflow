@@ -28,9 +28,9 @@ import AppKit
 enum ActCommand {
 
     static func run(
-        utterance: String, at point: CGPoint?, app: String?, snapshotPath: String?,
+        utterance: String, at: CGPoint?, app: String?, snapshotPath: String?,
         save: String?, useGaze: Bool, execute: Bool, decide: Bool = true,
-        done: [String] = []
+        done: [String] = [], loop: Bool = false
     ) -> Int32 {
         defer { Log.flush() }
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -41,6 +41,37 @@ enum ActCommand {
             return 1
         }
         let actions = config.actions
+
+        // The loop has to act to see what a step did — the next window is the
+        // result of the last step. So there is no looking without doing, and
+        // it says so rather than quietly acting on a command that did not ask.
+        if loop {
+            guard execute else {
+                print("--loop acts on the screen to see what each step did. Add --execute.")
+                return 2
+            }
+            guard snapshotPath == nil else {
+                print("--loop needs a live screen; --snapshot is one frozen window.")
+                return 2
+            }
+            let point = at ?? (useGaze ? Gaze.now(file: actions.gazeFile).location : Gaze.mouse())
+            print("from       \(Int(point.x)),\(Int(point.y))")
+            var report = ActionLoop.Report()
+            let done = DispatchSemaphore(value: 0)
+            Task {
+                report = await ActionLoop.run(
+                    utterance: utterance, from: point, config: actions
+                )
+                done.signal()
+            }
+            done.wait()
+            for (index, step) in report.steps.enumerated() {
+                print("  \(index + 1). \(step)")
+            }
+            print("stopped    \(report.stopped)")
+            RunLoop.main.run(until: Date().addingTimeInterval(0.8))
+            return report.acted ? 0 : 1
+        }
 
         // Where it is looking, and where the snapshot came from. Every
         // measurement starts with these two lines, because a decision over the
@@ -53,10 +84,10 @@ enum ActCommand {
             }
             print("snapshot   \(snapshotPath) — \(snapshot.app), \(snapshot.items.count) items")
         } else {
-            var where_ = point ?? Gaze.mouse()
-            if useGaze || point == nil {
+            var where_ = at ?? Gaze.mouse()
+            if useGaze || at == nil {
                 let gaze = Gaze.now(file: useGaze ? actions.gazeFile : "")
-                where_ = point ?? gaze.location
+                where_ = at ?? gaze.location
                 let age = gaze.age.map { String(format: "%.1f s old", $0) } ?? "the mouse"
                 print("gaze       \(Int(where_.x)),\(Int(where_.y)) — \(gaze.source.rawValue), \(age)")
             }
