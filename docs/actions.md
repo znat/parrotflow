@@ -85,6 +85,7 @@ The split is the whole design, and it was measured rather than assumed.
 | Which target, when you said "this one" | the gaze | the model cannot: over the three nearest it answered 0.27 / 0.24 / 0.20 |
 | What to type | the utterance itself | the model is never asked to write anything |
 | Where the search field is | code | Slack's is not a text field in the accessibility API, so it can never be offered — `search` is mapped to ⌘G |
+| Opening a new message | code | the picker is a shortcut, not a target, so `new_message` is mapped to ⌘N. Who it is to is a second step, over the window the picker draws |
 
 The gaze only overrides a target the model could not use — a label, or none at
 all. It used to override every deictic, and on the twelve measured utterances
@@ -149,6 +150,11 @@ Twelve of twelve, on the model's own choice:
 
 610-770 ms per call, 3.1-3.5k input tokens.
 
+One case is unstable and always was. "Open the thread with Ian" scored 0.61 for
+his message against 0.39 for his button in the prototype's own run, and it
+flips about one run in four. Both answers open something of Ian's. Three runs
+in four are 12/12, and no run has ever chosen the wrong *action*.
+
 **The snapshot is not in this repository and will not be.** It is 224 items of
 somebody's Slack window: colleagues' names, and the first line of what they
 wrote. Take your own with `--look --save` and write the answers down beside
@@ -158,6 +164,15 @@ it.
 
 Measured, or seen once and not yet measured. None of it is fixed.
 
+- **A sequence is one step at a time, and only the first step is decided.**
+  "Send a message to Antonio and Peter" from an open DM has no right one-step
+  answer: it picks one of the two and drops the other. From the new-message
+  picker it is right in one click, because Slack offers the existing "Antonio
+  Nava, Peter Bohnert" conversation as a single target, chosen at 0.91. So the
+  two-recipient case mostly collapses rather than needing a sequence.
+  `--act --done "<step>"` puts what has already happened into the state and it
+  does move the answer on — Peter goes from 0.47 to 0.93 once Antonio is in
+  `done` — but nothing in the app passes it, and it will not stop on its own.
 - **Only Slack, Ghostty, ChatGPT and TextEdit have been tried.** The action
   list, the composer rule and the ⌘G mapping are all Slack-shaped.
 - **A full-window text area** was dropped by the 12 % container rule until
