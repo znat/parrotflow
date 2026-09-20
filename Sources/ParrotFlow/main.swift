@@ -191,7 +191,11 @@ if let index = arguments.firstIndex(of: "--act") {
         utterance: arguments[index + 1], at: point, app: appArgument,
         snapshotPath: value("--snapshot"), save: value("--save"),
         useGaze: arguments.contains("--gaze"), execute: arguments.contains("--execute"),
-        decide: !arguments.contains("--look")
+        decide: !arguments.contains("--look"),
+        // Repeatable: --done "opened a new message" --done "added Antonio".
+        done: arguments.indices.filter { arguments[$0] == "--done" }.compactMap {
+            arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+        }
     ))
 }
 
