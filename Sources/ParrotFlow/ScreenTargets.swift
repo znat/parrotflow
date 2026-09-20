@@ -135,6 +135,37 @@ enum ScreenTargets {
         return walk(window, pid: pid, pointer: point, budget: budget)
     }
 
+    /// Presses whatever is at a point through the accessibility API, without
+    /// touching the mouse. Says whether anything was pressed.
+    ///
+    /// A synthetic click has to move the pointer there first, and moving the
+    /// pointer closes things: a Slack hovercard, an open menu, anything drawn
+    /// because the mouse or the keyboard put it there. Measured on the first
+    /// real use — "click on Nathan" found Nathan, reported the click, and all
+    /// that happened was the menu he was in collapsing.
+    ///
+    /// `AXPress` is what the element itself says it can do, and it is how
+    /// VoiceOver activates everything. Nothing moves, so nothing closes.
+    ///
+    /// The hit test lands on the deepest element, which is usually the label
+    /// inside the button rather than the button, so it walks up until
+    /// something advertises the action.
+    static func press(at point: CGPoint) -> Bool {
+        let system = AXUIElementCreateSystemWide()
+        var under: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &under) == .success,
+              let element = under else { return false }
+        var current = element
+        for _ in 0..<6 {
+            if actionNames(current).contains(kAXPressAction) {
+                return AXUIElementPerformAction(current, kAXPressAction as CFString) == .success
+            }
+            guard let parent = attribute(current, kAXParentAttribute) else { return false }
+            current = parent as! AXUIElement
+        }
+        return false
+    }
+
     // MARK: - Finding the window
 
     private static func windowUnder(
