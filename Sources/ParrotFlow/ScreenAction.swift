@@ -68,7 +68,7 @@ enum ScreenAction {
             guard let target = decision.target else {
                 return .nothing("Nothing here matches \"\(utterance)\"")
             }
-            click(at: target.point)
+            activate(target)
             let name = target.name.isEmpty ? target.role : String(target.name.prefix(40))
             if decision.action == .click { return .did("Clicked \(name)") }
 
@@ -82,7 +82,7 @@ enum ScreenAction {
                 guard let composer = composer(ofApp: snapshot.app) else {
                     return .nothing("Opened \(name), but found no message box")
                 }
-                click(at: composer.point)
+                activate(composer)
                 try? await Task.sleep(nanoseconds: 300_000_000)
             }
 
@@ -106,6 +106,30 @@ enum ScreenAction {
     }
 
     // MARK: - Events
+
+    /// Activates a target: by asking it, if it says it can be pressed, and by
+    /// clicking it if not.
+    ///
+    /// Asking is strictly better where it works. A click has to put the
+    /// pointer on the target, and moving the pointer closes anything drawn
+    /// because of where the pointer was — which is how the first real use of
+    /// this ended, with the menu holding the target collapsing and nothing
+    /// else happening.
+    ///
+    /// A text field is clicked rather than pressed: pressing one does not put
+    /// the caret in it, and the caret is the whole reason for touching it.
+    static func activate(_ target: ScreenTargets.Item) {
+        let point = target.point
+        let canPress = target.actions.contains(kAXPressAction)
+            && target.kind != ScreenTargets.Kind.text
+        if canPress, ScreenTargets.press(at: point) {
+            Log.write("action: pressed at \(Int(point.x)),\(Int(point.y)) — the pointer did not move")
+            return
+        }
+        Log.write("action: clicking at \(Int(point.x)),\(Int(point.y))"
+            + (canPress ? " — the press was refused" : ""))
+        click(at: point)
+    }
 
     /// Moves the pointer there first, because an app that tracks hover draws
     /// the thing being clicked before the click lands. The waits are
