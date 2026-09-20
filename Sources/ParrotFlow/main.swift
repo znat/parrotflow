@@ -166,6 +166,33 @@ let appArgument: String? = arguments.firstIndex(of: "--app").flatMap { index in
     arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
 }
 
+/// `--act "<what you'd say>"` — the on-screen action path, without a mic.
+/// `--at x y` a point, `--gaze` the tracker's, `--snapshot` a saved window,
+/// `--save` writes the window it read, `--execute` actually does it.
+if let index = arguments.firstIndex(of: "--act") {
+    func value(_ flag: String) -> String? {
+        arguments.firstIndex(of: flag).flatMap {
+            arguments.indices.contains($0 + 1) && !arguments[$0 + 1].hasPrefix("--")
+                ? arguments[$0 + 1] : nil
+        }
+    }
+    guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
+        print("usage: --act \"click on Antonio\" [--at x y | --gaze | --snapshot f.json]"
+              + " [--app Name] [--save f.json] [--execute]")
+        exit(2)
+    }
+    var point: CGPoint?
+    if let at = arguments.firstIndex(of: "--at"), arguments.indices.contains(at + 2),
+       let x = Double(arguments[at + 1]), let y = Double(arguments[at + 2]) {
+        point = CGPoint(x: x, y: y)
+    }
+    exit(ActCommand.run(
+        utterance: arguments[index + 1], at: point, app: appArgument,
+        snapshotPath: value("--snapshot"), save: value("--save"),
+        useGaze: arguments.contains("--gaze"), execute: arguments.contains("--execute")
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--record") {
     let seconds = arguments.indices.contains(index + 1) ? Double(arguments[index + 1]) : nil
     exit(RecordTestCommand.run(seconds: seconds ?? 3))

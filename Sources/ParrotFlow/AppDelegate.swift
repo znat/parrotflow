@@ -17,6 +17,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let configReloadGraceSeconds: TimeInterval = 10
 
     private let hotKeys = HotKeyManager()
+
+    /// The action key: what to *do*, not what to write. Registered only when
+    /// `actions:` turns it on and names a key, and `id: 2` because Carbon
+    /// tells two registrations apart by their id and a handler hears both.
+    /// See `Config.Actions` and `ScreenAction`.
+    private let actionKeys = HotKeyManager(id: 2)
     private let recorder = Recorder()
     private let pill = PillHUD()
     private let permissions = PermissionsWindowController()
@@ -212,6 +218,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// landing mid-transcription must not be able to change what this one
         /// was for. See `handleVoiceCommand(_:keyed:)` for what it buys.
         var keyed = false
+        /// The action key started this one: the words are an instruction about
+        /// what is on screen, not text and not an edit. See `Config.Actions`.
+        var action = false
+        /// Where the speaker was looking when they pressed, frozen with the
+        /// rest of the press for the reason every other field here is frozen —
+        /// a second press must not be able to move this one's target.
+        var gaze: Gaze.Point?
         /// What was selected when this recording began.
         ///
         /// Frozen for the reason every other field here is. `selectionAtPress`
@@ -246,6 +259,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The current press was tap-then-hold, so its words are an instruction.
     private var keyedAtPress = false
+
+    /// The current press came from the action key, so its words are an
+    /// instruction about the *screen* — see `Config.Actions`.
+    ///
+    /// Every backstop that ends a push-to-talk recording asks whether the key
+    /// is still down, and until this existed they all asked about the
+    /// dictation key. A recording started by the action key was then judged
+    /// against a key nobody was holding.
+    private var actionAtPress = false
+
+    /// Where the speaker was looking when the action key went down.
+    ///
+    /// Read at the press, not when the words arrive. The transcript is about a
+    /// second behind the release, and by then they are looking at something
+    /// else — usually at whatever they expect to happen.
+    private var gazeAtPress: Gaze.Point?
 
     /// Watches for the last dictation being selected again — see
     /// `SelectionWatch`. Running from the moment there is something to select
@@ -986,6 +1015,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pill.model.hotkey = ""
         }
 
+        // The action key, when `actions:` asks for one. Registered after the
+        // dictation key and never instead of it: a config that turns actions
+        // on with no key, or names a key macOS refuses, still dictates.
+        actionKeys.onPress = { [weak self] _ in self?.handleHotKeyPress(action: true) }
+        actionKeys.onRelease = { [weak self] in self?.handleHotKeyRelease() }
+        actionKeys.onAbort = { [weak self] in self?.cancelDictation(.notTheHotkey) }
+        actionKeys.unregister()
+        if config.actions.isUsable {
+            do {
+                let binding = try actionKeys.register(
+                    key: config.actions.hotkey.key,
+                    modifiers: config.actions.hotkey.modifiers,
+                    pressDelay: config.actions.hotkey.pressDelaySeconds
+                )
+                Log.write("actions: \(binding.displayName) acts on what is on screen")
+            } catch {
+                Log.write("actions: hotkey registration FAILED: \(error.localizedDescription)")
+            }
+        } else if config.actions.enabled {
+            Log.write("actions: on, but actions.hotkey.key names no key — nothing registered")
+        }
+
         // Before the setup window is built, because that is where the tour
         // measures the boxes it reserves for a surface and a different key is a
         // different width. What registered, or failing that what the config
@@ -1273,7 +1324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Hotkey handling
 
-    private func handleHotKeyPress(afterTap: Bool = false) {
+    private func handleHotKeyPress(afterTap: Bool = false, action: Bool = false) {
         // First, before the selection snapshot and the caret read below. Those
         // run between the key going down and the microphone opening, and this
         // is the only measurement that can say what they cost the speaker.
@@ -1306,6 +1357,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // so it is visible precisely when the panel is open, and the promise
         // and the behaviour cannot come apart again.
         if !recorder.isRecording {
+            // Which key this is, before anything reads the state that depends
+            // on it — `activeMode` and `hotkeyStillHeld` are asked further
+            // down this same function.
+            actionAtPress = action
+            // Where they are looking, now, while they are still looking at it.
+            gazeAtPress = action ? Gaze.now(file: config.actions.gazeFile) : nil
+            if let gaze = gazeAtPress {
+                Log.write(
+                    "action key: gaze \(Int(gaze.location.x)),\(Int(gaze.location.y))"
+                    + " from the \(gaze.source.rawValue)"
+                    + (gaze.age.map { String(format: " (%.1fs old)", $0) } ?? "")
+                )
+            }
             // The selector is the one open panel that does not draw that row
             // — `PillMetrics.showsHold` refuses it — so a panel asking which
             // word you meant promises nothing about holding and must not take
@@ -1454,7 +1518,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // The microphone is already open by here for a press that starts one;
         // what is left is the pill, which needed the reads above.
-        switch config.hotkey.mode {
+        switch activeMode {
         case .toggle:
             if startsDictation {
                 if microphone == .open { presentRecording() }
@@ -1479,6 +1543,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// The hotkey the recording that is running belongs to.
+    ///
+    /// There are two, and they are held and released independently. Every
+    /// answer below is about the press in flight, not about the config's
+    /// `hotkey:` block.
+    private var activeBinding: HotKeyManager.Binding? {
+        actionAtPress ? actionKeys.binding : hotKeys.binding
+    }
+
+    private var activeModifiers: [String] {
+        actionAtPress ? config.actions.hotkey.modifiers : config.hotkey.modifiers
+    }
+
+    /// The action key is push-to-talk and only that: toggle would put a second
+    /// shape through every backstop here for no gesture anybody asked for.
+    private var activeMode: Config.Hotkey.Mode {
+        actionAtPress ? .pushToTalk : config.hotkey.mode
+    }
+
+    private var activeReleaseTail: Double {
+        actionAtPress ? config.actions.hotkey.releaseTailSeconds : config.hotkey.releaseTailSeconds
+    }
+
     /// Whether the hotkey is still physically down, as far as this process can
     /// tell without a permission it does not have.
     ///
@@ -1493,11 +1580,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and CoreGraphics answers the first one without an event at all. Let go
     /// of the character key while still holding the modifiers and this says so.
     private func hotkeyStillHeld() -> Bool {
-        switch hotKeys.binding {
+        switch activeBinding {
         case .modifier(let key):
             return key.isPressed
         case .combo(let key, _):
-            let required = KeyCodes.cocoaModifiers(config.hotkey.modifiers)
+            let required = KeyCodes.cocoaModifiers(activeModifiers)
             let modifiersHeld = required.isEmpty || NSEvent.modifierFlags
                 .intersection(.deviceIndependentFlagsMask)
                 .isSuperset(of: required)
@@ -1525,7 +1612,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ startsDictation: Bool, _ microphone: MicrophoneStart
     ) -> Bool {
         guard startsDictation, microphone == .open,
-              config.hotkey.mode == .pushToTalk, !hotkeyStillHeld()
+              activeMode == .pushToTalk, !hotkeyStillHeld()
         else { return false }
         cancelDictation(.releasedWhileStarting)
         return true
@@ -1671,7 +1758,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // that decides how it ends.
         if pressAwaitingMicrophone?.pushToTalk == true { pressAwaitingMicrophone = nil }
 
-        guard config.hotkey.mode == .pushToTalk else { return }
+        guard activeMode == .pushToTalk else { return }
         // The character key is actually up now, so there is nothing left for
         // the modifier poll to catch — unlike the poll's own call below, where
         // the character key is still down and a flicked-back modifier means
@@ -1687,7 +1774,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopRecordingAfterTail() {
         guard recorder.isRecording else { return }
 
-        let tail = config.hotkey.releaseTailSeconds
+        let tail = activeReleaseTail
         guard tail > 0 else {
             stopRecording()
             return
@@ -1713,8 +1800,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pushToTalkPoll?.invalidate()
         pushToTalkPoll = nil
 
-        guard hotKeys.binding?.isModifierOnly == false else { return }
-        let required = KeyCodes.cocoaModifiers(config.hotkey.modifiers)
+        guard activeBinding?.isModifierOnly == false else { return }
+        let required = KeyCodes.cocoaModifiers(activeModifiers)
         guard !required.isEmpty else { return }
 
         let timer = Timer(timeInterval: 0.06, repeats: true) { [weak self] _ in
@@ -1747,7 +1834,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Puts the modifier poll back for a dictation that started late, behind
     /// the microphone dialog. Push-to-talk only: nothing else polls.
     private func startPushToTalkPollIfHeld() {
-        guard config.hotkey.mode == .pushToTalk, recorder.isRecording else { return }
+        guard activeMode == .pushToTalk, recorder.isRecording else { return }
         startPushToTalkPoll()
     }
 
@@ -1779,7 +1866,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard Permissions.microphone == .granted else {
             let run = pressRun
-            pressAwaitingMicrophone = (run: run, pushToTalk: config.hotkey.mode == .pushToTalk)
+            pressAwaitingMicrophone = (run: run, pushToTalk: activeMode == .pushToTalk)
             Permissions.requestMicrophone { [weak self] granted in
                 guard let self else { return }
                 self.permissions.model.refresh()
@@ -2202,6 +2289,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // lose a sentence.
             paste: appAtPress.map { AppProfile.of($0).paste } ?? .plain,
             keyed: keyedAtPress,
+            action: actionAtPress,
+            gaze: gazeAtPress,
             // Still this press's: the recording has only just stopped and no
             // newer press can have landed. The gap this closes is the decode
             // that follows, not this moment.
@@ -2718,6 +2807,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     if !asked { self.flash(error.localizedDescription, tone: .failure) }
                 }
+            }
+        }
+    }
+
+    /// Does what was said, to whatever is on screen where they were looking.
+    ///
+    /// Three steps, none of them on the main thread: read the window under the
+    /// gaze (~0.4 s on Slack), ask the decider which action and which target
+    /// (~0.65 s), post the events. The pill carries the wait, and every way
+    /// this ends says what happened — an action that quietly did nothing is
+    /// indistinguishable from one that did something somewhere else.
+    ///
+    /// The gaze was read at the press and travels on `press`. Reading it here
+    /// would read where they are looking now, which is about a second and a
+    /// half later and usually at the pill.
+    private func act(on instruction: String, for press: Press) {
+        let settings = config.actions
+        let point = press.gaze?.location ?? Gaze.mouse()
+        let token = beginProgress("Looking…")
+
+        Task { [weak self] in
+            func give(up message: String, _ tone: NoticeTone) async {
+                Log.write("action: \(message)")
+                await MainActor.run {
+                    guard let self else { return }
+                    self.endProgress(token: token)
+                    self.flash(message, tone: tone)
+                }
+            }
+
+            let snapshot: ScreenTargets.Snapshot
+            do {
+                snapshot = try ScreenTargets.snapshot(
+                    at: point, ignoring: Set(settings.ignoreApps)
+                )
+            } catch {
+                await give(up: error.localizedDescription, .caution)
+                return
+            }
+            Log.write(
+                "action: \(snapshot.app) \"\(snapshot.window)\" — \(snapshot.items.count) targets"
+            )
+
+            do {
+                let decision = try await ActionDecider.decide(
+                    utterance: instruction, snapshot: snapshot, config: settings.decider
+                )
+                Log.write("action: \(decision.line) · \(decision.ms) ms")
+                let outcome = await ScreenAction.perform(
+                    decision, in: snapshot, utterance: instruction, send: settings.send
+                )
+                await give(up: outcome.said, outcome.isAction ? .plain : .caution)
+            } catch {
+                await give(up: error.localizedDescription, .failure)
             }
         }
     }
@@ -5774,6 +5917,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Newlines are still cut. A newline in a composer sends the message,
         // and no stage has a reason to ask for one at either end.
         let delivered = text.trimmingCharacters(in: .newlines)
+
+        // The action key said this is about the screen, not about the text.
+        // Nothing is typed on this path, ever — not the instruction, not a
+        // consolation. An instruction pasted into Slack is the one failure
+        // that writes nonsense without saying so.
+        if press.action {
+            dictationEnded(press.run)
+            guard !trimmed.isEmpty else {
+                Log.write("action: nothing was said")
+                flash("Didn't catch that", tone: .caution)
+                updateUI()
+                return
+            }
+            Log.write("action: \"\(trimmed)\"")
+            act(on: trimmed, for: press)
+            updateUI()
+            return
+        }
 
         // The gesture already said this is an instruction, so nothing is
         // looked for in the words. That is the whole point of it: the phrase
