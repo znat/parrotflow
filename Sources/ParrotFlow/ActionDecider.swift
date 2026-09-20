@@ -32,6 +32,8 @@ enum ActionDecider {
         case click
         case type
         case sendMessage = "send_message"
+        /// The step before a message to somebody the screen does not show.
+        case newMessage = "new_message"
         case search
         case scroll
         case none
@@ -43,7 +45,9 @@ enum ActionDecider {
             case .type:
                 return "put words into a text field without sending them"
             case .sendMessage:
-                return "write a message and send it, in a conversation or to a person"
+                return "write a message and send it, in a conversation or to a person that is on the screen"
+            case .newMessage:
+                return "start a new message, when the person or people to write to are not on the screen to pick"
             case .search:
                 return "look something up with the search field"
             case .scroll:

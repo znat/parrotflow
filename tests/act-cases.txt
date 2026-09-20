@@ -17,6 +17,9 @@ reply to this message: sounds good|send_message|t2
 envoie un message à John|send_message|t25
 clique sur Antonio|click|t40
 what time is it|none|t2
+# Unstable, and it always was: the prototype scored this 0.61 for t4 (Ian's
+# message, 2.6 cm) against 0.39 for t12 (his button, 4.6 cm). It flips about
+# one run in four and both answers open something of Ian's. Do not chase it.
 open the thread with Ian|click|t4
 scroll down|scroll|none
 go to jira|click|t8
