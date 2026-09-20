@@ -71,8 +71,19 @@ final class HotKeyManager {
     private var handlerRef: EventHandlerRef?
     private let modifierMonitor = ModifierKeyMonitor()
     private let signature: OSType = 0x50_46_4C_57  // 'PFLW'
+    /// Which hotkey this manager owns, in Carbon's terms.
+    ///
+    /// There is more than one now — dictation, and the action key that says
+    /// what to do instead of what to write. Carbon identifies a registration
+    /// by signature *and* id, and every handler installed on the application
+    /// target hears every hotkey event, so both halves matter: two managers
+    /// sharing an id register the same key twice, and a handler that does not
+    /// check the id fires on somebody else's key. It used to be `1` in both
+    /// places and neither had to be true.
+    private let id: UInt32
 
-    init() {
+    init(id: UInt32 = 1) {
+        self.id = id
         modifierMonitor.onPress = { [weak self] afterTap in self?.onPress?(afterTap) }
         modifierMonitor.onRelease = { [weak self] in self?.onRelease?() }
         modifierMonitor.onAbort = { [weak self] in self?.onAbort?() }
@@ -104,7 +115,7 @@ final class HotKeyManager {
 
         installHandlerIfNeeded()
 
-        let hotKeyID = EventHotKeyID(signature: signature, id: 1)
+        let hotKeyID = EventHotKeyID(signature: signature, id: id)
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(
             keyCode,
@@ -153,6 +164,15 @@ final class HotKeyManager {
             { _, event, userData -> OSStatus in
                 guard let event, let userData else { return noErr }
                 let manager = Unmanaged<HotKeyManager>.fromOpaque(userData).takeUnretainedValue()
+                // Whose key this was. Every handler on the application target
+                // hears every hotkey, so without this the action key would
+                // also start a dictation.
+                var which = EventHotKeyID()
+                GetEventParameter(
+                    event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                    nil, MemoryLayout<EventHotKeyID>.size, nil, &which
+                )
+                guard which.signature == manager.signature, which.id == manager.id else { return noErr }
                 let kind = GetEventKind(event)
                 DispatchQueue.main.async {
                     if kind == UInt32(kEventHotKeyPressed) {

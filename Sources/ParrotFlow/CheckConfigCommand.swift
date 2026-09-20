@@ -255,6 +255,42 @@ enum CheckConfigCommand {
         for capability in catalogue.capabilities {
             emit("      \(capability.kind)  \(capability.name) — \(capability.describedAs)")
         }
+        // Acting on the screen. Off by default and printed only when it is
+        // not, because a block nobody wrote is not news — but when it is on,
+        // every line below is something somebody should know without asking:
+        // a second key that records, a file another app writes, and a request
+        // that carries the contents of the window off this Mac.
+        let actions = config.actions
+        if actions.enabled {
+            if actions.hotkey.isSet {
+                // A bare modifier has no key code, so it spells itself —
+                // the same two cases `HotKeyManager.Binding` draws.
+                let key = ModifierKey(name: actions.hotkey.key)?.displayName
+                    ?? KeyCodes.displayString(
+                        key: actions.hotkey.key, modifiers: actions.hotkey.modifiers
+                    )
+                emit("  ✓ actions           \(key) acts on what is on screen where you look")
+            } else {
+                emit("  ✗ actions           on, but actions.hotkey.key names no key")
+                ok = false
+            }
+            let gaze = actions.gazeFile.isEmpty
+                ? "the mouse pointer — no actions.gaze file named"
+                : actions.gazeFile + " (the mouse when it is stale)"
+            emit("      gaze from       \(gaze)")
+            // The disclosure. `models:` says a cloud model sends your text;
+            // this sends more than your text, and the difference is the whole
+            // reason it gets a line of its own rather than joining that list.
+            emit("      ⚠︎ sends the window you are looking at to \(actions.decider.host)")
+            emit("         its buttons, labels and visible text — not only what you said.")
+            emit("         model \(actions.decider.model), key from \(actions.decider.apiKey.described)")
+            if actions.decider.apiKey.resolve() == nil {
+                emit("  ✗ actions           no key, so nothing can be decided")
+                ok = false
+            }
+            emit("      sends messages  \(actions.send ? "yes — Return is pressed" : "no — typed, not sent")")
+        }
+
         // A transform with no description cannot be routed to, so it is not in
         // the list above. It still runs from a pipeline, where the name is
         // written down rather than said — which is the difference worth naming,
