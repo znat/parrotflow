@@ -144,7 +144,8 @@ enum ActCommand {
         let acted = DispatchSemaphore(value: 0)
         Task {
             outcome = await ScreenAction.perform(
-                decision, in: snapshot, utterance: utterance, send: actions.send
+                decision, in: snapshot, utterance: utterance, send: actions.send,
+                never: actions.neverPress
             )
             acted.signal()
         }

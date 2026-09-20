@@ -34,12 +34,41 @@ enum ScreenAction {
     /// `snapshot` is what was decided over — used again for the composer,
     /// which is not the thing clicked. `send` gates Return and nothing else:
     /// with it off the words land in the field and stay there.
+    /// Names this will not press, whatever was decided.
+    ///
+    /// A word-boundary match on the target's name, so "Send" and "Send now"
+    /// are refused and "Sender" is not. The check is here, at the last
+    /// moment before the event is posted, because that is the only place
+    /// nothing can get past it: not in the prompt, where it is a request, and
+    /// not at the decision, which the loop may revisit.
+    static func refuses(_ name: String, _ never: [String]) -> String? {
+        let words = name.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        guard !words.isEmpty else { return nil }
+        let text = " " + words.joined(separator: " ") + " "
+        return never.first { forbidden in
+            let phrase = forbidden.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            return !phrase.isEmpty && text.contains(" " + phrase + " ")
+        }
+    }
+
     static func perform(
         _ decision: ActionDecider.Decision,
         in snapshot: ScreenTargets.Snapshot,
         utterance: String,
-        send: Bool
+        send: Bool,
+        never: [String] = []
     ) async -> Outcome {
+        // Before anything is posted. A target whose name is on the list is
+        // not pressed, not by this step and not by a later one.
+        if let target = decision.target, let word = refuses(target.name, never) {
+            Log.write("action: refused — \"\(target.name.prefix(40))\" matches \"\(word)\"")
+            return .nothing("Won't press \"\(target.name.prefix(30))\" — that is yours to do")
+        }
         switch decision.action {
         case .none:
             return .nothing("Nothing to do on screen")

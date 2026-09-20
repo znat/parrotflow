@@ -2912,6 +2912,21 @@ struct Config: Decodable, Equatable {
         /// finds the overlay rather than the window under it.
         var ignoreApps: [String] = ["GazeOverlay"]
         var decider: Decider = Decider()
+        /// Targets this will not press, whatever the model picks.
+        ///
+        /// A guarantee rather than a request. The model is not asked to avoid
+        /// these — asking is a preference that holds until the one time it
+        /// does not, and the failure is a message sent to the wrong person.
+        /// The step is refused at the moment of acting, by the name of the
+        /// thing being acted on.
+        ///
+        /// Matched as whole words, case-insensitively, against the target's
+        /// name. Writing this replaces the list rather than adding to it.
+        var neverPress: [String] = [
+            "send", "send now", "delete", "delete for everyone", "remove", "archive",
+            "leave", "leave channel", "unsubscribe", "deactivate", "discard", "clear",
+            "envoyer", "supprimer", "quitter", "archiver", "effacer",
+        ]
         /// Whether Return is pressed after a message is typed. Off: the words
         /// land in the composer and you send them yourself. A wrong target
         /// that types is a mess to clear up; a wrong target that sends cannot
@@ -3016,6 +3031,7 @@ struct Config: Decodable, Equatable {
             case enabled, hotkey, decider, send
             case gazeFile = "gaze"
             case ignoreApps = "ignore_apps"
+            case neverPress = "never_press"
         }
 
         init() {}
@@ -3029,6 +3045,7 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent([String].self, forKey: .ignoreApps) { ignoreApps = v }
             if let v = try c.decodeIfPresent(Decider.self, forKey: .decider) { decider = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .send) { send = v }
+            if let v = try c.decodeIfPresent([String].self, forKey: .neverPress) { neverPress = v }
         }
     }
 

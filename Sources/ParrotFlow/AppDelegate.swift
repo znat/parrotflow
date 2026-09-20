@@ -2859,7 +2859,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
                 Log.write("action: \(decision.line) · \(decision.ms) ms")
                 let outcome = await ScreenAction.perform(
-                    decision, in: snapshot, utterance: instruction, send: settings.send
+                    decision, in: snapshot, utterance: instruction, send: settings.send,
+                    never: settings.neverPress
                 )
                 await give(up: outcome.said, outcome.isAction ? .plain : .caution)
             } catch {
