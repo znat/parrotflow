@@ -61,7 +61,8 @@ enum ScreenAction {
         in snapshot: ScreenTargets.Snapshot,
         utterance: String,
         send: Bool,
-        never: [String] = []
+        never: [String] = [],
+        at gaze: CGPoint? = nil
     ) async -> Outcome {
         // Before anything is posted. A target whose name is on the list is
         // not pressed, not by this step and not by a later one.
@@ -76,9 +77,23 @@ enum ScreenAction {
         case .scroll:
             // Which way is in the words, not in the model: it was asked what
             // kind of thing this is, and "down" is not a target.
-            let down = utterance.lowercased().contains("down") || utterance.lowercased().contains("bas")
-            press(down ? CGKeyCode(kVK_DownArrow) : CGKeyCode(kVK_UpArrow))
-            return .did(down ? "Scrolled down" : "Scrolled up")
+            let words = utterance.lowercased()
+            let down = words.contains("down") || words.contains("bas")
+                || words.contains("descend")
+
+            // *Where* is the gaze, and this is the one step where that
+            // matters most. An arrow key scrolls whatever holds the keyboard
+            // focus, which is the conversation — so "scroll up the sidebar"
+            // scrolled the conversation instead. A wheel event carries a
+            // location, and the pane under that point is the one that moves.
+            let point = decision.target?.point ?? gaze
+            guard let point else {
+                press(down ? CGKeyCode(kVK_DownArrow) : CGKeyCode(kVK_UpArrow))
+                return .did(down ? "Scrolled down" : "Scrolled up")
+            }
+            wheel(at: point, down: down)
+            return .did(down ? "Scrolled down where you were looking"
+                             : "Scrolled up where you were looking")
 
         case .newMessage:
             // ⌘N, the same shape as `search` below: the thing that opens the
@@ -186,6 +201,40 @@ enum ScreenAction {
             mouseEventSource: source, mouseType: .leftMouseUp,
             mouseCursorPosition: point, mouseButton: .left
         ))
+    }
+
+    /// Turns the wheel over a point, without moving the pointer there.
+    ///
+    /// A scroll event carries its own location, so the pane under that point
+    /// is the one that moves — which is how "the sidebar" and "the
+    /// conversation" are told apart at all. Several small turns rather than
+    /// one large one: a single big delta is dropped or clamped by some
+    /// scrollers, and small ones read as a flick.
+    static func wheel(at point: CGPoint, down: Bool, turns: Int = 6) {
+        // The pointer has to be there. A scroll event carries a location and
+        // Slack ignores it — measured: six turns aimed at the sidebar moved
+        // nothing at all, in either pane. Chromium routes a wheel by where
+        // the cursor actually is, so the cursor goes there.
+        //
+        // Warped rather than moved: `CGWarpMouseCursorPosition` sets the
+        // position without posting a move, so nothing reads it as the mouse
+        // travelling across the window. It is put back afterwards, because
+        // the pointer is the user's and a scroll should not steal it.
+        let wasAt = Gaze.mouse()
+        CGWarpMouseCursorPosition(point)
+        usleep(50_000)
+        let source = CGEventSource(stateID: .combinedSessionState)
+        for _ in 0..<turns {
+            guard let event = CGEvent(
+                scrollWheelEvent2Source: source, units: .line, wheelCount: 1,
+                wheel1: down ? -3 : 3, wheel2: 0, wheel3: 0
+            ) else { break }
+            event.location = point
+            event.post(tap: .cghidEventTap)
+            usleep(20_000)
+        }
+        usleep(50_000)
+        CGWarpMouseCursorPosition(wasAt)
     }
 
     /// Pastes rather than pressing a key per character.

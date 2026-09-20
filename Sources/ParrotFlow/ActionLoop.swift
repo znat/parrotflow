@@ -66,6 +66,7 @@ enum ActionLoop {
         var previous: ScreenTargets.Snapshot?
         var quiet = 0
         var last = ""
+        var repeats = 0
 
         for step in 1...max(1, config.maxSteps) {
             let snapshot: ScreenTargets.Snapshot
@@ -86,7 +87,16 @@ enum ActionLoop {
                 return report
             }
 
-            let changed = previous.map { difference(from: $0, to: snapshot) }
+            var changed = previous.map { difference(from: $0, to: snapshot) }
+            if let seen = changed, seen.isEmpty {
+                // An empty diff told the model nothing at all. Said out loud
+                // it is the most useful sentence in the state: the last step
+                // was posted, was reported as done, and moved nothing. That
+                // is the moment to try something else rather than the same
+                // thing again.
+                changed = "the last step changed nothing on screen — it did not work, try another way"
+            }
+            if let changed { Log.write("action loop: changed — \(changed.prefix(160))") }
             if let changed, changed.isEmpty {
                 quiet += 1
                 if quiet >= 2 {
@@ -127,10 +137,20 @@ enum ActionLoop {
             // did not stop it either. A rule here does.
             let signature = decision.action.rawValue + "\u{1}" + (decision.target?.name ?? "")
             if signature == last {
-                report.stopped = "Asked for the same step twice — stopping"
-                Log.write("action loop: repeated \(decision.action.rawValue); stopping")
-                return report
+                repeats += 1
+                // Twice is a stutter worth interrupting; the loop is told so
+                // and gets one more go at a different step. Three times is a
+                // loop, and no amount of telling has helped.
+                if repeats >= 2 {
+                    report.stopped = "Asked for the same step three times — stopping"
+                    Log.write("action loop: repeated \(decision.action.rawValue) again; stopping")
+                    return report
+                }
+                Log.write("action loop: repeated \(decision.action.rawValue); skipping it")
+                previous = snapshot
+                continue
             }
+            repeats = 0
             last = signature
 
             if decision.finished > 0.5 {
@@ -145,7 +165,7 @@ enum ActionLoop {
 
             let outcome = await ScreenAction.perform(
                 decision, in: snapshot, utterance: utterance,
-                send: config.send, never: config.neverPress
+                send: config.send, never: config.neverPress, at: point
             )
             guard outcome.isAction else {
                 // A refusal, or nothing to act on. Either way this is not a
