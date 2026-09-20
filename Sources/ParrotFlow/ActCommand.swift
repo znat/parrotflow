@@ -176,7 +176,7 @@ enum ActCommand {
         Task {
             outcome = await ScreenAction.perform(
                 decision, in: snapshot, utterance: utterance, send: actions.send,
-                never: actions.neverPress
+                never: actions.neverPress, at: at
             )
             acted.signal()
         }
