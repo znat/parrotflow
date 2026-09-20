@@ -29,7 +29,8 @@ enum ActCommand {
 
     static func run(
         utterance: String, at point: CGPoint?, app: String?, snapshotPath: String?,
-        save: String?, useGaze: Bool, execute: Bool, decide: Bool = true
+        save: String?, useGaze: Bool, execute: Bool, decide: Bool = true,
+        done: [String] = []
     ) -> Int32 {
         defer { Log.flush() }
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -110,7 +111,8 @@ enum ActCommand {
             do {
                 decided = .success(
                     try await ActionDecider.decide(
-                        utterance: utterance, snapshot: snapshot, config: actions.decider
+                        utterance: utterance, snapshot: snapshot, config: actions.decider,
+                        done: done
                     )
                 )
             } catch {

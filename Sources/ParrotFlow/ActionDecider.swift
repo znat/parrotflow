@@ -171,13 +171,17 @@ enum ActionDecider {
     // MARK: - The call
 
     static func decide(
-        utterance: String, snapshot: ScreenTargets.Snapshot, config: Config.Actions.Decider
+        utterance: String, snapshot: ScreenTargets.Snapshot, config: Config.Actions.Decider,
+        done: [String] = []
     ) async throws -> Decision {
         guard let key = config.apiKey.resolve() else {
             throw Failure.noKey(config.apiKey.described)
         }
         let offers = candidates(in: snapshot, for: utterance)
-        let body = request(utterance: utterance, snapshot: snapshot, offers: offers, model: config.model)
+        let body = request(
+            utterance: utterance, snapshot: snapshot, offers: offers,
+            model: config.model, done: done
+        )
 
         var request = URLRequest(url: config.url)
         request.httpMethod = "POST"
@@ -198,7 +202,7 @@ enum ActionDecider {
     /// The JSON, with its keys in the order the probe sent them.
     static func request(
         utterance: String, snapshot: ScreenTargets.Snapshot,
-        offers: [ScreenTargets.Item], model: String
+        offers: [ScreenTargets.Item], model: String, done: [String] = []
     ) -> String {
         let note = "The user looks at a point on the screen and speaks. Each target gives its "
             + "distance from that point in cm; nearer targets are more likely to be meant, but a "
@@ -206,14 +210,39 @@ enum ActionDecider {
         let targets = offers.enumerated().map { index, item in
             ("t\(index)", quoted(describe(item, in: snapshot)))
         }
-        let state = object([
+        // What has already been done for this utterance, in order.
+        //
+        // One utterance is not always one step: "send a message to Antonio and
+        // Peter" is a new message, then a name, then another name, then the
+        // words. Without this the same question gets the same answer forever,
+        // because nothing in the state says the first step happened.
+        var pairs: [(String, String)] = [
             ("utterance", quoted(utterance)),
             ("app", quoted(snapshot.app)),
             ("window", quoted(snapshot.window)),
             ("note", quoted(note)),
-            ("targets", object(targets)),
-        ])
-        let actions = object(Act.allCases.map { ($0.rawValue, quoted($0.describedAs)) })
+        ]
+        if !done.isEmpty {
+            pairs.append(("done", "[" + done.map(quoted).joined(separator: ",") + "]"))
+            pairs.append(("next", quoted(
+                "The steps in `done` have already happened. Answer with the next step only, "
+                + "and answer `none` when the utterance has been carried out in full."
+            )))
+        }
+        pairs.append(("targets", object(targets)))
+        let state = object(pairs)
+        // `none` means one more thing once steps have been taken: there is
+        // nothing left to do. Without it the loop cannot stop — measured, with
+        // both recipients in `done` it still answered "Peter", at 0.40.
+        //
+        // Only when `done` is not empty, so a single-step call is word for
+        // word the one that was measured.
+        let actions = object(Act.allCases.map { act in
+            guard act == .none, !done.isEmpty else { return (act.rawValue, quoted(act.describedAs)) }
+            return (act.rawValue, quoted(
+                act.describedAs + ", or the steps in `done` have already carried it out in full"
+            ))
+        })
         let targetChoices = object(
             targets.map { ($0.0, $0.1) } + [("none", quoted("no listed target fits the utterance"))]
         )
