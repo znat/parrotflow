@@ -22,7 +22,7 @@
 # A name with a space in it works in DISPLAY_NAME and not in APP_NAME — the
 # bundle would be "My App.app" and every pkill pattern and path in the Makefile
 # would need quoting it does not have. Use a single word here.
-PRODUCT_NAME="ParrotFlow"
+PRODUCT_NAME="Gibbr"
 
 VARIANT="${VARIANT:-dev}"
 

@@ -3791,7 +3791,7 @@ enum ConfigStore {
         guard AppVariant.isDev else { return text }
         return text
             .replacingOccurrences(
-                of: "# ParrotFlow configuration",
+                of: "# Gibbr configuration",
                 with: "# \(AppVariant.displayName) configuration")
             .replacingOccurrences(
                 of: "  key: right_command",

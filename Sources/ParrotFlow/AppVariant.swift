@@ -63,7 +63,7 @@ enum AppVariant {
     /// moved any of them would cost every existing user their permissions,
     /// their config or their models. See LICENSING.md and
     /// docs/proposals/app-store.md.
-    static let productName = "ParrotFlow"
+    static let productName = "Gibbr"
 
     /// What to call it in windows and menus.
     static var displayName: String { isDev ? "\(productName) Dev" : productName }

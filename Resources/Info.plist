@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>ParrotFlow</string>
+	<string>Gibbr</string>
 	<key>CFBundleDisplayName</key>
-	<string>ParrotFlow</string>
+	<string>Gibbr</string>
 	<key>CFBundleExecutable</key>
 	<string>ParrotFlow</string>
 	<key>CFBundleIdentifier</key>
@@ -34,6 +34,6 @@
 
 	<!-- Without this key macOS terminates the process instead of prompting. -->
 	<key>NSMicrophoneUsageDescription</key>
-	<string>ParrotFlow records your voice so it can be transcribed on this Mac. Audio is never uploaded anywhere.</string>
+	<string>Gibbr records your voice so it can be transcribed on this Mac. Audio is never uploaded anywhere.</string>
 </dict>
 </plist>
