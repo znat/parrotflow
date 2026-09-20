@@ -145,6 +145,49 @@ models:
   #   model: claude-sonnet-5
   #   reasoning: off
 
+# Saying what to do instead of what to write. Off, and the whole of it —
+# the second key, the gaze, the request — is off with it.
+#
+# Hold the action key, look at something, say "click on Antonio". What is
+# around the gaze is read out of the accessibility API, a model picks the
+# action and the target, and the click is posted. Nothing is ever typed on
+# this path, so a misheard instruction costs you nothing.
+#
+# READ THIS BEFORE TURNING IT ON. Every other cloud model here sends what you
+# dictated. This sends the window you are looking at — its buttons, its
+# labels, the messages visible in it — to whoever answers `decider.endpoint`.
+# `--check-config` says so every time it runs. See docs/actions.md.
+#
+# actions:
+#   enabled: true
+#
+#   # A second hotkey, separate from the dictation one. Push-to-talk only:
+#   # hold it, say what to do, let go.
+#   hotkey:
+#     key: right_control
+#     modifiers: []
+#
+#   # Where a gaze tracker writes its position — one line, "x y ms", in
+#   # screen coordinates. Older than 1.5s means it is not tracking, and the
+#   # mouse pointer is used instead. Leave it out to always use the mouse.
+#   gaze: ~/Documents/gaze-overlay/gaze.pos
+#
+#   # Apps whose windows are never what you meant. A tracker draws its dot at
+#   # the point being asked about, so a hit test there finds the tracker.
+#   ignore_apps: [GazeOverlay]
+#
+#   # What picks the action and the target. Not a `models:` entry: it answers
+#   # questions with probabilities rather than writing text.
+#   decider:
+#     model: jev-latest
+#     endpoint: https://api.typesafe.ai/v1/systemone
+#     api_key: file:~/.typesafe_api_key
+#     timeout_seconds: 10
+#
+#   # Whether Return is pressed after a message is typed. Off: the words land
+#   # in the composer and you send them yourself.
+#   send: false
+
 # What "hey parrot, …" can reach, and which model runs each part. Each falls
 # back to the default model above.
 commands:

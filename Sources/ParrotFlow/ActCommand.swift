@@ -29,7 +29,7 @@ enum ActCommand {
 
     static func run(
         utterance: String, at point: CGPoint?, app: String?, snapshotPath: String?,
-        save: String?, useGaze: Bool, execute: Bool
+        save: String?, useGaze: Bool, execute: Bool, decide: Bool = true
     ) -> Int32 {
         defer { Log.flush() }
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -88,6 +88,14 @@ enum ActCommand {
         // What the model is shown, before it is asked. A target missing from
         // this list is a target the answer could never have been.
         let offers = ActionDecider.candidates(in: snapshot, for: utterance)
+        guard decide else {
+            // `--look`: which window, and what is in it. No call, so a case
+            // set can be built without spending one per snapshot.
+            for (index, item) in offers.prefix(12).enumerated() {
+                print("             t\(index) \(ActionDecider.describe(item, in: snapshot))")
+            }
+            return 0
+        }
         print("offered    \(offers.count) targets, nearest:")
         for (index, item) in offers.prefix(3).enumerated() {
             print("             t\(index) \(ActionDecider.describe(item, in: snapshot))")

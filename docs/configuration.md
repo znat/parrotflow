@@ -808,6 +808,48 @@ no key, an expired key, a rate limit, a timeout, a dead network. This is the
 same rule Ollama has always had here, and a cloud model needs it more, not
 less.
 
+## `actions`
+
+Saying what to do instead of what to write. Off by default, and off
+completely: with `enabled: false` no key is registered, no gaze file is read
+and nothing is sent anywhere.
+
+```yaml
+actions:
+  enabled: true
+  hotkey:
+    key: right_control      # a second key, separate from `hotkey:`
+    modifiers: []           # push-to-talk only; no `mode:`
+  gaze: ~/Documents/gaze-overlay/gaze.pos
+  ignore_apps: [GazeOverlay]
+  decider:
+    model: jev-latest
+    endpoint: https://api.typesafe.ai/v1/systemone
+    api_key: file:~/.typesafe_api_key
+    timeout_seconds: 10
+  send: false
+```
+
+**This sends the window you are looking at off this Mac** — its buttons, its
+labels, the text visible in it, not only what you said. `--check-config` says
+so, with the host, every time. It is the one thing in this file worth reading
+twice before turning on.
+
+| Key | What |
+| --- | --- |
+| `enabled` | The whole feature. `false`, or absent, and none of the rest exists. |
+| `hotkey.key`, `hotkey.modifiers` | The action key, written like `hotkey:` — a bare modifier, or a character key with modifiers. No `mode:`: push-to-talk only. |
+| `hotkey.press_delay_seconds`, `hotkey.release_tail_seconds` | As in `hotkey:`, for this key. |
+| `gaze` | A file another app writes: one line, `x y ms`, in screen coordinates. Older than 1.5 s, unreadable or absent, and the mouse pointer is used instead. |
+| `ignore_apps` | Apps whose windows are never the target. A tracker draws its dot at the point being asked about, so a hit test there finds the tracker. ParrotFlow always ignores itself. |
+| `decider.*` | What picks the action and the target. Not a `models:` entry — it answers questions with probabilities rather than writing text — but `api_key:` takes the same `file:`, `env:` and literal forms. The Keychain is per model name, so it does not apply here. |
+| `send` | Whether Return is pressed after a message is typed. Off by default: the words land in the composer and you send them. |
+
+`enabled: true` with no `hotkey.key` registers nothing, and `--check-config`
+fails with the reason. Everything else about it — the order it happens in,
+what decides what, how it was measured and what is known to be wrong — is in
+[actions.md](actions.md).
+
 ## `updates`
 
 One call a day to GitHub's release API — no account, nothing about you, nothing

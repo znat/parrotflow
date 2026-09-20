@@ -177,7 +177,15 @@ enum ScreenTargets {
         return nil
     }
 
-    /// The pids owning on-screen windows containing the point, front first.
+    /// The pids owning ordinary on-screen windows containing the point, front
+    /// first.
+    ///
+    /// Layer 0 only. Everything above it is system furniture and floating
+    /// panels — the menu bar, Notification Centre's full-height window, a
+    /// tracker's dot — and this list is consulted precisely when the topmost
+    /// thing at the point turned out to be one of those. Measured: without
+    /// the filter, a point over the gaze panel resolved to Notification
+    /// Centre and its three items.
     private static func pidsAt(_ point: CGPoint) -> [pid_t] {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let listing = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]]
@@ -188,6 +196,7 @@ enum ScreenTargets {
                   let x = bounds["X"] as? Double, let y = bounds["Y"] as? Double,
                   let w = bounds["Width"] as? Double, let h = bounds["Height"] as? Double,
                   CGRect(x: x, y: y, width: w, height: h).contains(point),
+                  (window[kCGWindowLayer as String] as? Int) == 0,
                   let pid = window[kCGWindowOwnerPID as String] as? pid_t,
                   !pids.contains(pid)
             else { continue }
@@ -239,10 +248,17 @@ enum ScreenTargets {
         // A container is not a target: at some size it holds the thing meant
         // rather than being it. 12 % of the window is where the prototype put
         // the line.
+        //
+        // A text field is exempt, because it holds no targets — it is one.
+        // Measured on TextEdit: its text area fills the window, the rule
+        // dropped it, and the window came back with two items and nothing to
+        // type into. Slack's composer is small enough that the prototype
+        // never saw this.
         let tooBig = windowFrame.width * windowFrame.height * 0.12
         var items: [Item] = []
         for item in found {
-            guard item.frame.width * item.frame.height <= tooBig else { continue }
+            let fits = item.frame.width * item.frame.height <= tooBig
+            guard fits || item.kind == Kind.text else { continue }
             let blank = item.name.trimmingCharacters(in: .whitespaces).isEmpty
                 && item.value.trimmingCharacters(in: .whitespaces).isEmpty
             // A nameless text field is still a target — the composer has no
