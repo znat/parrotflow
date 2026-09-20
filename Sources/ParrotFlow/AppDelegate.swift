@@ -2840,32 +2840,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
 
-            let snapshot: ScreenTargets.Snapshot
-            do {
-                snapshot = try ScreenTargets.snapshot(
-                    at: point, ignoring: Set(settings.ignoreApps)
-                )
-            } catch {
-                await give(up: error.localizedDescription, .caution)
-                return
-            }
-            Log.write(
-                "action: \(snapshot.app) \"\(snapshot.window)\" — \(snapshot.items.count) targets"
+            // One request, as many steps as it takes — see `ActionLoop`. A
+            // request is rarely one step: a conversation below the fold has
+            // to be scrolled to before it exists to be clicked.
+            let report = await ActionLoop.run(
+                utterance: instruction, from: point, config: settings
             )
-
-            do {
-                let decision = try await ActionDecider.decide(
-                    utterance: instruction, snapshot: snapshot, config: settings.decider
-                )
-                Log.write("action: \(decision.line) · \(decision.ms) ms")
-                let outcome = await ScreenAction.perform(
-                    decision, in: snapshot, utterance: instruction, send: settings.send,
-                    never: settings.neverPress
-                )
-                await give(up: outcome.said, outcome.isAction ? .plain : .caution)
-            } catch {
-                await give(up: error.localizedDescription, .failure)
-            }
+            await give(up: report.said, report.acted ? .plain : .caution)
         }
     }
 

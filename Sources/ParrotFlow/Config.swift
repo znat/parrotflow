@@ -2927,6 +2927,13 @@ struct Config: Decodable, Equatable {
             "leave", "leave channel", "unsubscribe", "deactivate", "discard", "clear",
             "envoyer", "supprimer", "quitter", "archiver", "effacer",
         ]
+        /// How many steps one request may take before it gives up.
+        ///
+        /// The backstop, not the guard: a loop is stopped by the request
+        /// being carried out, or by two steps in a row changing nothing.
+        /// This is for the loop that keeps making progress in the wrong
+        /// direction. 0 runs a single step and no loop at all.
+        var maxSteps: Int = 15
         /// Whether Return is pressed after a message is typed. Off: the words
         /// land in the composer and you send them yourself. A wrong target
         /// that types is a mess to clear up; a wrong target that sends cannot
@@ -3032,6 +3039,7 @@ struct Config: Decodable, Equatable {
             case gazeFile = "gaze"
             case ignoreApps = "ignore_apps"
             case neverPress = "never_press"
+            case maxSteps = "max_steps"
         }
 
         init() {}
@@ -3046,6 +3054,15 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(Decider.self, forKey: .decider) { decider = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .send) { send = v }
             if let v = try c.decodeIfPresent([String].self, forKey: .neverPress) { neverPress = v }
+            if let v = try c.decodeIfPresent(Int.self, forKey: .maxSteps) {
+                guard v >= 0, v <= 50 else {
+                    throw ConfigError.invalidValue(
+                        key: "actions.max_steps", value: String(v),
+                        expected: "a number of steps between 0 and 50"
+                    )
+                }
+                maxSteps = v
+            }
         }
     }
 

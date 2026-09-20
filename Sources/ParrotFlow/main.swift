@@ -195,7 +195,8 @@ if let index = arguments.firstIndex(of: "--act") {
         // Repeatable: --done "opened a new message" --done "added Antonio".
         done: arguments.indices.filter { arguments[$0] == "--done" }.compactMap {
             arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
-        }
+        },
+        loop: arguments.contains("--loop")
     ))
 }
 

@@ -87,6 +87,10 @@ enum ActionDecider {
         var text: String?
         /// True when the gaze chose the target, not the model.
         var byGaze: Bool
+        /// Whether the steps already taken have carried the request out.
+        /// Only asked once there are steps, so a single-step call is word for
+        /// word the one that was measured.
+        var finished: Double
         var ms: Int
         var inputTokens: Int
 
@@ -176,7 +180,7 @@ enum ActionDecider {
 
     static func decide(
         utterance: String, snapshot: ScreenTargets.Snapshot, config: Config.Actions.Decider,
-        done: [String] = []
+        done: [String] = [], changed: String? = nil, canScroll: Bool = false
     ) async throws -> Decision {
         guard let key = config.apiKey.resolve() else {
             throw Failure.noKey(config.apiKey.described)
@@ -184,7 +188,7 @@ enum ActionDecider {
         let offers = candidates(in: snapshot, for: utterance)
         let body = request(
             utterance: utterance, snapshot: snapshot, offers: offers,
-            model: config.model, done: done
+            model: config.model, done: done, changed: changed, canScroll: canScroll
         )
 
         var request = URLRequest(url: config.url)
@@ -206,11 +210,21 @@ enum ActionDecider {
     /// The JSON, with its keys in the order the probe sent them.
     static func request(
         utterance: String, snapshot: ScreenTargets.Snapshot,
-        offers: [ScreenTargets.Item], model: String, done: [String] = []
+        offers: [ScreenTargets.Item], model: String, done: [String] = [],
+        changed: String? = nil, canScroll: Bool = false
     ) -> String {
-        let note = "The user looks at a point on the screen and speaks. Each target gives its "
+        var note = "The user looks at a point on the screen and speaks. Each target gives its "
             + "distance from that point in cm; nearer targets are more likely to be meant, but a "
             + "name in the utterance beats distance."
+        // Only when another step can follow. The single-step request stays
+        // word for word the one the twelve cases were measured against, and
+        // this sentence would be a lie there: with no second look, scrolling
+        // reveals something nothing will ever act on.
+        if canScroll {
+            note += " Only what is drawn on screen is listed. Something the user named may exist "
+                + "further down the list and not be here at all — scrolling brings more into view, "
+                + "and it is a step worth taking when nothing listed matches."
+        }
         let targets = offers.enumerated().map { index, item in
             ("t\(index)", quoted(describe(item, in: snapshot)))
         }
@@ -228,6 +242,10 @@ enum ActionDecider {
         ]
         if !done.isEmpty {
             pairs.append(("done", "[" + done.map(quoted).joined(separator: ",") + "]"))
+            // What the last step did to the screen. The only thing that tells
+            // a step that worked from a step that did nothing: a click can be
+            // posted, reported, and change nothing at all.
+            if let changed { pairs.append(("changed", quoted(changed))) }
             pairs.append(("next", quoted(
                 "The steps in `done` have already happened. Answer with the next step only, "
                 + "and answer `none` when the utterance has been carried out in full."
@@ -278,7 +296,17 @@ enum ActionDecider {
                     + "\"that one\", \"ça\", \"ici\") rather than naming it?"
                 )),
             ])),
-        ])
+        ] + (done.isEmpty ? [] : [
+            // Asked only once there are steps behind it, so the single-step
+            // call stays byte for byte the one the twelve cases scored.
+            ("finished", object([
+                ("type", quoted("noul")),
+                ("instructions", quoted(
+                    "Have the steps in `done` already carried out the user's request in full, "
+                    + "so that nothing further needs doing on this screen?"
+                )),
+            ])),
+        ]))
         return object([("state", state), ("model", quoted(model)), ("questions", questions)])
     }
 
@@ -337,7 +365,7 @@ enum ActionDecider {
             actionProbability: actionProbability, targetProbability: targetProbability,
             hasText: hasText, deictic: deictic,
             text: hasText > 0.5 ? messageText(in: utterance) : nil,
-            byGaze: byGaze, ms: ms,
+            byGaze: byGaze, finished: noul("finished"), ms: ms,
             inputTokens: ((top["usage"] as? [String: Any])?["input_tokens"] as? Int) ?? 0
         )
     }
