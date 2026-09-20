@@ -51,6 +51,14 @@ enum ScreenAction {
             press(down ? CGKeyCode(kVK_DownArrow) : CGKeyCode(kVK_UpArrow))
             return .did(down ? "Scrolled down" : "Scrolled up")
 
+        case .newMessage:
+            // ⌘N, the same shape as `search` below: the thing that opens the
+            // picker is a shortcut, not a target, and a target that is not on
+            // screen can never be offered. What comes next is a second step,
+            // over the window the picker draws.
+            press(CGKeyCode(kVK_ANSI_N), flags: .maskCommand)
+            return .did("Opened a new message — say who it is to")
+
         case .search:
             // Slack's search bar is not a text field as far as the
             // accessibility API is concerned, so it is never among the
