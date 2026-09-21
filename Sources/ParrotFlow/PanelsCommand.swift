@@ -1017,7 +1017,10 @@ enum PanelsCommand {
         // window is the exception and the reason this is a column at all: it is
         // an ordinary titled window, it follows the system, and it has to be
         // legible both ways. So it appears twice, once each.
-        let surfaces: [(view: AnyView, size: NSSize, scheme: ColorScheme, drawn: Bool)] = [
+        // A nil scheme means the surface follows the appearance of the column.
+        // The Context pill is adaptive; the older floating panels that still
+        // call `adoptParrotAppearance` remain explicitly dark.
+        let surfaces: [(view: AnyView, size: NSSize, scheme: ColorScheme?, drawn: Bool)] = [
             // The one real window the app has, and the first thing anyone sees.
             // On the sheet for the same reason as the rest: it is looked at,
             // not asserted on, and two screens that drift apart are obvious
@@ -1049,61 +1052,61 @@ enum PanelsCommand {
             (vadPane, setupSize(vadPane), .dark, false),
             (openingPane, setupSize(openingPane), .light, false),
             (AnyView(PillView().environmentObject(notice)),
-             pillSize(notice), .dark, true),
+             pillSize(notice), nil, true),
             (AnyView(PillView().environmentObject(caution)),
-             pillSize(caution), .dark, true),
+             pillSize(caution), nil, true),
             // What every dictation now ends as, and what the rest of this
             // block is that surface opened. Next to the notices because that is
             // the comparison that matters: it has to not look like one, and at
             // 46pt it has to be findable at all.
             (AnyView(PillView().environmentObject(listeningQuiet)),
-             pillSize(listeningQuiet), .dark, true),
+             pillSize(listeningQuiet), nil, true),
             (AnyView(PillView().environmentObject(listening)),
-             pillSize(listening), .dark, true),
+             pillSize(listening), nil, true),
             (AnyView(PillView().environmentObject(listeningBlind)),
-             pillSize(listeningBlind), .dark, true),
+             pillSize(listeningBlind), nil, true),
             (AnyView(PillView().environmentObject(editing)),
-             pillSize(editing), .dark, true),
+             pillSize(editing), nil, true),
             (AnyView(PillView().environmentObject(thinkingDocked)),
-             pillSize(thinkingDocked), .dark, true),
+             pillSize(thinkingDocked), nil, true),
             (AnyView(PillView().environmentObject(listeningFree)),
-             pillSize(listeningFree), .dark, true),
+             pillSize(listeningFree), nil, true),
             (AnyView(PillView().environmentObject(thinkingFree)),
-             pillSize(thinkingFree), .dark, true),
+             pillSize(thinkingFree), nil, true),
             (AnyView(PillView().environmentObject(tab)),
-             pillSize(tab), .dark, true),
+             pillSize(tab), nil, true),
             (AnyView(PillView().environmentObject(tabWarned)),
-             pillSize(tabWarned), .dark, true),
+             pillSize(tabWarned), nil, true),
             (AnyView(PillView().environmentObject(offer)),
-             pillSize(offer), .dark, true),
+             pillSize(offer), nil, true),
             (AnyView(PillView().environmentObject(offerSelection)),
-             pillSize(offerSelection), .dark, true),
+             pillSize(offerSelection), nil, true),
             (AnyView(PillView().environmentObject(offerLearn)),
-             pillSize(offerLearn), .dark, true),
+             pillSize(offerLearn), nil, true),
             (AnyView(PillView().environmentObject(offerLearnShort)),
-             pillSize(offerLearnShort), .dark, true),
+             pillSize(offerLearnShort), nil, true),
             (AnyView(PillView().environmentObject(offerLearnLong)),
-             pillSize(offerLearnLong), .dark, true),
+             pillSize(offerLearnLong), nil, true),
             (AnyView(PillView().environmentObject(offerSelector)),
-             pillSize(offerSelector), .dark, true),
+             pillSize(offerSelector), nil, true),
             (AnyView(PillView().environmentObject(offerSelectorLong)),
-             pillSize(offerSelectorLong), .dark, true),
+             pillSize(offerSelectorLong), nil, true),
             (AnyView(PillView().environmentObject(offerSelectorTwo)),
-             pillSize(offerSelectorTwo), .dark, true),
+             pillSize(offerSelectorTwo), nil, true),
             (AnyView(PillView().environmentObject(offerCopied)),
-             pillSize(offerCopied), .dark, true),
+             pillSize(offerCopied), nil, true),
             // The same offer with `feedback.confidence` on: two rows instead of
             // one, and the only pill on the sheet that is not a lozenge.
             (AnyView(PillView().environmentObject(offerWarned)),
-             pillSize(offerWarned), .dark, true),
+             pillSize(offerWarned), nil, true),
             (AnyView(PillView().environmentObject(offerStopped)),
-             pillSize(offerStopped), .dark, true),
+             pillSize(offerStopped), nil, true),
             (AnyView(PillView().environmentObject(offerHeard)),
-             pillSize(offerHeard), .dark, true),
+             pillSize(offerHeard), nil, true),
             (AnyView(PillView().environmentObject(offerWrapped)),
-             pillSize(offerWrapped), .dark, true),
+             pillSize(offerWrapped), nil, true),
             (AnyView(PillView().environmentObject(offerHeardLong)),
-             pillSize(offerHeardLong), .dark, true),
+             pillSize(offerHeardLong), nil, true),
             // Not a pill state at all, and the only surface here that is
             // about the hardware rather than about the words. Next to the pill
             // because that is what it appears beside.
@@ -1156,8 +1159,8 @@ enum PanelsCommand {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: canvas)
 
-        // The surfaces are dark either way; the columns are the two kinds of app
-        // they land on top of.
+        // Adaptive surfaces follow the two columns; fixed HUDs keep the
+        // appearance they use in production.
         for index in 0..<2 {
             let left = CGFloat(index) * column
             (index == 0 ? NSColor.white : NSColor(white: 0.13, alpha: 1)).setFill()
@@ -1165,6 +1168,7 @@ enum PanelsCommand {
 
             var top = size.height - margin
             for (view, natural, scheme, drawn) in surfaces {
+                let actualScheme = scheme ?? (index == 0 ? .light : .dark)
                 let box = NSRect(
                     x: left + (column - natural.width) / 2,
                     y: top - natural.height,
@@ -1190,7 +1194,7 @@ enum PanelsCommand {
                     let rendered = MainActor.assumeIsolated { () -> NSImage? in
                         let renderer = ImageRenderer(
                             content: view
-                                .environment(\.colorScheme, scheme)
+                                .environment(\.colorScheme, actualScheme)
                                 .frame(width: natural.width, height: natural.height)
                         )
                         renderer.scale = 2
@@ -1200,7 +1204,9 @@ enum PanelsCommand {
                     rendered?.draw(in: box)
                 } else {
                     let hosting = NSHostingView(rootView: view)
-                    hosting.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                    hosting.appearance = NSAppearance(
+                        named: actualScheme == .dark ? .darkAqua : .aqua
+                    )
                     hosting.frame = NSRect(origin: .zero, size: natural)
                     hosting.layoutSubtreeIfNeeded()
                     if let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) {
