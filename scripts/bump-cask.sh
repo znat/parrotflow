@@ -47,17 +47,20 @@ echo "==> Cloning $TAP"
 git clone --depth 1 "$TAP_URL" "$TMP/tap"
 mkdir -p "$TMP/tap/Casks"
 
-cat > "$TMP/tap/Casks/parrotflow.rb" <<EOF
-# Written by scripts/bump-cask.sh in $REPO. Edit it there.
+# Quoted, so the shell leaves the body alone. Unquoted, it ran every
+# backticked word in the comments: `open` printed xdg-open's usage into the
+# cask and brew could not read it, from 0.11.0 to 0.13.1.
+cat > "$TMP/tap/Casks/parrotflow.rb" <<'EOF'
+# Written by scripts/bump-cask.sh in @REPO@. Edit it there.
 cask "parrotflow" do
-  version "$VERSION"
-  sha256 "$SHA256"
+  version "@VERSION@"
+  sha256 "@SHA256@"
 
-  url "https://github.com/$REPO/releases/download/v#{version}/ParrotFlow.zip",
-      verified: "github.com/$REPO/"
+  url "https://github.com/@REPO@/releases/download/v#{version}/ParrotFlow.zip",
+      verified: "github.com/@REPO@/"
   name "ParrotFlow"
   desc "Programmable dictation with local speech recognition"
-  homepage "https://github.com/$REPO"
+  homepage "https://github.com/@REPO@"
 
   livecheck do
     url :url
@@ -127,6 +130,13 @@ cask "parrotflow" do
   end
 end
 EOF
+sed -i.bak -e "s|@VERSION@|$VERSION|g" -e "s|@SHA256@|$SHA256|g" -e "s|@REPO@|$REPO|g" \
+    "$TMP/tap/Casks/parrotflow.rb"
+rm "$TMP/tap/Casks/parrotflow.rb.bak"
+if grep -q '@[A-Z0-9]*@' "$TMP/tap/Casks/parrotflow.rb"; then
+    echo "error: a placeholder is left in the cask" >&2; exit 1
+fi
+ruby -c "$TMP/tap/Casks/parrotflow.rb" >/dev/null
 
 cd "$TMP/tap"
 # `add` rather than `commit -a`: the first release ever writes a file the tap
