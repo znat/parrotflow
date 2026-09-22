@@ -947,7 +947,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recorder.preferredMicrophones = config.audio.microphones
         recorder.reevaluateInput()
         pill.model.primaryColor = config.feedback.primaryColor
+        pill.model.theme = config.feedback.theme
         launch.primaryColor = config.feedback.primaryColor
+        launch.theme = config.feedback.theme
 
         configProblems = config.problems()
         for problem in configProblems { Log.write("config: \(problem)") }

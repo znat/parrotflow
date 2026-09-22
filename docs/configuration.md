@@ -58,6 +58,7 @@ feedback:
   sound: true
   overlay: true
   correct_offer: true
+  theme: system          # system contrasts with macOS; or force dark / light
   primary_color: "#5F46CA"
 
 logging:
@@ -1122,6 +1123,23 @@ Read it knowing it barely moves. Of the dictations holding a word below the
 amber band, only 13% fall under its own p10. A sentence with one bad name in it
 still scores near 0.93 — the word colour catches that, and this number does
 not.
+
+`theme` chooses the appearance of the floating Context surfaces: the recording
+and feedback pill, and the startup model panel. `dark` and `light` force those
+literal appearances. The default, `system`, deliberately **contrasts with** the
+current macOS appearance: a light Mac gets dark floating surfaces, and a dark
+Mac gets light floating surfaces. It updates when macOS changes appearance and
+when `config.yaml` is saved; no restart is needed.
+
+This does not sample or guess the background of whichever app is frontmost.
+The regular titled setup window continues to follow macOS so its native controls
+and permission guidance behave like a normal Mac window. Native permission
+dialogs remain macOS-owned, and the release menu-bar icon remains a template so
+macOS supplies its contrast automatically. The one-time blue menu callout keeps
+its fixed branded palette.
+
+Anything except `dark`, `light`, or `system` is reported by `--check-config`
+and falls back to `system`; the rest of `feedback` still loads.
 
 `primary_color` sets the Context accent used by the pill's voice meter,
 selected choices and actions, and by the startup screen. Write one six-digit

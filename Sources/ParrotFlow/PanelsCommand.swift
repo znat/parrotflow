@@ -1036,9 +1036,10 @@ enum PanelsCommand {
         // window is the exception and the reason this is a column at all: it is
         // an ordinary titled window, it follows the system, and it has to be
         // legible both ways. So it appears twice, once each.
-        // A nil scheme means the surface follows the appearance of the column.
-        // The Context pill is adaptive; the older floating panels that still
-        // call `adoptParrotAppearance` remain explicitly dark.
+        // A nil scheme lets the surface apply its own policy to the column.
+        // Context surfaces use the default `feedback.theme: system`, so they
+        // deliberately contrast with it; older floating panels that still call
+        // `adoptParrotAppearance` remain explicitly dark.
         let surfaces: [(view: AnyView, size: NSSize, scheme: ColorScheme?, drawn: Bool)] = [
             // The one real window the app has, and the first thing anyone sees.
             // On the sheet for the same reason as the rest: it is looked at,
@@ -1188,8 +1189,9 @@ enum PanelsCommand {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: canvas)
 
-        // Adaptive surfaces follow the two columns; fixed HUDs keep the
-        // appearance they use in production.
+        // Context surfaces contrast with the two columns, as the default
+        // `feedback.theme: system` does in production. Fixed HUDs keep their
+        // own production appearance.
         for index in 0..<2 {
             let left = CGFloat(index) * column
             (index == 0 ? NSColor.white : NSColor(white: 0.13, alpha: 1)).setFill()

@@ -323,6 +323,8 @@ final class PillModel: ObservableObject {
     @Published var state: PillState = .recording(nil)
     /// The effective `feedback.primary_color`, refreshed with config.yaml.
     @Published var primaryColor = ContextIdentity.defaultPrimary
+    /// The effective `feedback.theme`, refreshed with config.yaml.
+    @Published var theme: ContextAppearance = .system
 
     /// Whether the panel is on screen. False unmounts the surface.
     ///
@@ -2217,7 +2219,9 @@ struct PillView: View {
 
     var body: some View {
         // Nothing at all while the panel is out. See `PillModel.onScreen`.
-        if model.onScreen { pill }
+        if model.onScreen {
+            pill.environment(\.colorScheme, effectiveColorScheme)
+        }
     }
 
     private var pill: some View {
@@ -2297,19 +2301,20 @@ struct PillView: View {
         // inside a window of the right one.
         .padding(PillMetrics.bleed(for: model.state))
         .environment(\.contextPrimaryColor, model.primaryColor)
-        // State content is installed synchronously. AppKit animates the
-        // surface frame; meter updates never acquire a layout animation.
-        .transaction { $0.disablesAnimations = true }
     }
 
     private var theme: ContextTheme {
-        ContextTheme(scheme: colorScheme, primaryHex: model.primaryColor)
+        ContextTheme(scheme: effectiveColorScheme, primaryHex: model.primaryColor)
+    }
+
+    private var effectiveColorScheme: ColorScheme {
+        model.theme.resolved(against: colorScheme)
     }
 
     private var border: Color {
         guard case .offer(_, _, let reading, _) = model.state,
               reading.warning != nil else { return theme.edge }
-        return reading.stopped ? Parrot.scarlet : Parrot.amber
+        return reading.stopped ? theme.failure : theme.caution
     }
 
     /// Revision 08 uses one silhouette in every state so the visible surface,
@@ -2389,7 +2394,7 @@ private struct TabContent: View {
             ContextMeter(level: 0.55)
             if warned {
                 Circle()
-                    .fill(Parrot.amber)
+                    .fill(theme.caution)
                     .frame(width: 7, height: 7)
             }
             if !model.hotkey.isEmpty {
@@ -2821,7 +2826,7 @@ private struct OfferContent: View {
             ToneDot(tone: reading.stopped ? .failure : .caution)
             Text(text)
                 .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(reading.stopped ? Parrot.scarlet : Parrot.amber)
+                .foregroundStyle(reading.stopped ? theme.failure : theme.caution)
                 .lineLimit(1)
                 .fixedSize()
         }

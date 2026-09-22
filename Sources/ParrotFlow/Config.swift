@@ -2753,6 +2753,14 @@ struct Config: Decodable, Equatable {
         /// Needs `correct_offer`. There is no offer to draw it on without one.
         var confidence: Bool = false
 
+        /// Appearance of the floating Context surfaces.
+        ///
+        /// Explicit dark/light are literal. System is contrastive: light on a
+        /// dark macOS appearance and dark on a light one. An invalid value is
+        /// retained for `problems()` while the safe system default is used.
+        var theme: ContextAppearance = .system
+        var refusedTheme: String?
+
         /// The Context UI's primary colour, written as `#RRGGBB`.
         ///
         /// This is the light-appearance colour. Dark appearance lifts the same
@@ -2829,6 +2837,7 @@ struct Config: Decodable, Equatable {
             case overlay
             case correctOffer = "correct_offer"
             case confidence
+            case theme
             case primaryColor = "primary_color"
             case lowConfidence = "low_confidence"
         }
@@ -2848,6 +2857,20 @@ struct Config: Decodable, Equatable {
             }
             if let shown = try c.decodeIfPresent(Bool.self, forKey: .confidence) {
                 self.confidence = shown
+            }
+            if c.contains(.theme) {
+                do {
+                    let value = try c.decode(String.self, forKey: .theme)
+                    let normalised = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .lowercased()
+                    if let theme = ContextAppearance(rawValue: normalised) {
+                        self.theme = theme
+                    } else {
+                        self.refusedTheme = "\"\(value)\""
+                    }
+                } catch {
+                    self.refusedTheme = "a non-string value"
+                }
             }
             if c.contains(.primaryColor) {
                 do {
@@ -3071,6 +3094,10 @@ struct Config: Decodable, Equatable {
 
     func problems() -> [String] {
         var found: [String] = []
+        if let refused = feedback.refusedTheme {
+            found.append("feedback.theme: \(refused) is not valid — expected dark, light,"
+                + " or system; using system")
+        }
         if let refused = feedback.refusedPrimaryColor {
             found.append("feedback.primary_color: \(refused) is not valid — expected #RRGGBB;"
                 + " using \(ContextIdentity.defaultPrimary)")

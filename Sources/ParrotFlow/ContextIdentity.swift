@@ -1,6 +1,23 @@
 import AppKit
 import SwiftUI
 
+/// Which appearance the floating Context surfaces use.
+///
+/// `system` is deliberately contrastive rather than a synonym for following
+/// macOS: a dark desktop gets a light floating surface, and a light desktop
+/// gets a dark one. Explicit `dark` and `light` are literal overrides.
+enum ContextAppearance: String, Codable, CaseIterable {
+    case dark, light, system
+
+    func resolved(against system: ColorScheme) -> ColorScheme {
+        switch self {
+        case .dark: return .dark
+        case .light: return .light
+        case .system: return system == .dark ? .light : .dark
+        }
+    }
+}
+
 /// The visual constants shared by the Context pill, launch panel and status
 /// mark. The configured colour is the light-appearance accent; dark appearance
 /// lifts the same hue until it clears the charcoal surface.
@@ -92,6 +109,11 @@ struct ContextTheme {
     var edge: Color { foreground.opacity(0.65) }
     var controlFill: Color { foreground.opacity(dark ? 0.045 : 0.025) }
     var controlEdge: Color { muted.opacity(0.22) }
+    /// Semantic warning colours stay amber/scarlet, but the platinum surface
+    /// needs darker variants for 12-point text. These clear 4.5:1 there; dark
+    /// appearance keeps the established Parrot colours.
+    var caution: Color { dark ? Parrot.amber : Color(hex: 0x8A5A00) }
+    var failure: Color { dark ? Parrot.scarlet : Color(hex: 0x9D3732) }
 }
 
 private struct ContextPrimaryColorKey: EnvironmentKey {

@@ -35,6 +35,10 @@ final class LaunchPanel {
     var primaryColor = ContextIdentity.defaultPrimary {
         didSet { model?.primaryColor = primaryColor }
     }
+    /// Updated with config reloads; the system choice also follows macOS live.
+    var theme: ContextAppearance = .system {
+        didSet { model?.theme = theme }
+    }
 
     init(downloads: ModelDownloads = .shared) {
         self.downloads = downloads
@@ -108,7 +112,8 @@ final class LaunchPanel {
 
     private func build() {
         let model = LaunchModel(
-            downloads: downloads, hotkey: hotkey, primaryColor: primaryColor
+            downloads: downloads, hotkey: hotkey, primaryColor: primaryColor,
+            theme: theme
         )
         self.model = model
         let hosting = NSHostingView(rootView: LaunchView(onHide: { [weak self] in
@@ -205,15 +210,18 @@ final class LaunchModel: ObservableObject {
     let downloads: ModelDownloads
     let hotkey: String?
     @Published var primaryColor: String
+    @Published var theme: ContextAppearance
     private var watch: AnyCancellable?
 
     init(
         downloads: ModelDownloads, hotkey: String? = nil,
-        primaryColor: String = ContextIdentity.defaultPrimary
+        primaryColor: String = ContextIdentity.defaultPrimary,
+        theme: ContextAppearance = .system
     ) {
         self.downloads = downloads
         self.hotkey = hotkey
         self.primaryColor = primaryColor
+        self.theme = theme
         watch = downloads.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
@@ -284,7 +292,11 @@ struct LaunchView: View {
     let onHide: () -> Void
 
     private var theme: ContextTheme {
-        ContextTheme(scheme: colorScheme, primaryHex: model.primaryColor)
+        ContextTheme(scheme: effectiveColorScheme, primaryHex: model.primaryColor)
+    }
+
+    private var effectiveColorScheme: ColorScheme {
+        model.theme.resolved(against: colorScheme)
     }
 
     var body: some View {
@@ -306,7 +318,7 @@ struct LaunchView: View {
                 VStack(spacing: 18) {
                     Text("\(name) did not arrive. Open Setup… from the menu bar.")
                         .font(.system(size: 13))
-                        .foregroundStyle(Parrot.scarlet)
+                        .foregroundStyle(theme.failure)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 12)
@@ -339,6 +351,7 @@ struct LaunchView: View {
         .padding(LaunchMetrics.bleed)
         .foregroundStyle(theme.foreground)
         .environment(\.contextPrimaryColor, model.primaryColor)
+        .environment(\.colorScheme, effectiveColorScheme)
     }
 
     /// Without a bound key there is nothing to hold, so the line goes rather
@@ -485,7 +498,7 @@ private struct Breath: View {
     var body: some View {
         Text(text)
             .font(.system(size: 14))
-            .foregroundStyle(theme.muted.opacity(lit ? 1 : 0.65))
+            .foregroundStyle(theme.muted.opacity(lit || reduceMotion ? 1 : 0.65))
             .padding(.top, 14)
             .onAppear {
                 guard !reduceMotion else { return }
