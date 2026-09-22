@@ -58,6 +58,7 @@ feedback:
   sound: true
   overlay: true
   correct_offer: true
+  primary_color: "#5F46CA"
 
 logging:
   text: true    # ~/Library/Logs/ParrotFlow.log
@@ -1121,6 +1122,18 @@ Read it knowing it barely moves. Of the dictations holding a word below the
 amber band, only 13% fall under its own p10. A sentence with one bad name in it
 still scores near 0.93 — the word colour catches that, and this number does
 not.
+
+`primary_color` sets the Context accent used by the pill's voice meter,
+selected choices and actions, and by the startup screen. Write one six-digit
+sRGB colour as `#RRGGBB`; the default is Context indigo, `#5F46CA`. The light
+appearance uses that colour directly when it has enough contrast. The dark
+appearance keeps its hue and lifts it only as far as needed to remain visible
+on charcoal. Warning and error colours stay amber and scarlet, regardless of
+the primary colour.
+
+A malformed value is reported by `--check-config` and the app safely uses the
+default indigo. Saving `config.yaml` applies a valid replacement immediately;
+no restart is needed.
 
 A grey word is one with no reading at all: nothing the decoder said became it.
 That happens where a stage inserted a word — the question mark a punctuation

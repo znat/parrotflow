@@ -71,7 +71,7 @@ enum PillState: Equatable {
     /// a dictation that went fine.
     ///
     /// `open` is the whole of the two-stage offer. Closed, the surface is a
-    /// 46x20 tab hanging off the line: the bird and the key, and nothing else.
+    /// Compact tab hanging off the line: the voice mark and key, and nothing else.
     /// Open, it is everything above. The payload is carried either way, so
     /// opening is a morph of a surface that is already there rather than a
     /// second one being built — and closing again loses nothing.
@@ -319,60 +319,10 @@ enum Dock {
     case free
 }
 
-/// A rounded rectangle whose top and bottom corners are different.
-///
-/// The docked offer is square where it meets the line of text and rounded where
-/// it hangs free, so it reads as hanging off that line rather than floating
-/// beside it — the corner that is not rounded is the one saying which line this
-/// is about. Flipped above the line, the two swap.
-///
-/// Its own shape rather than a `RoundedRectangle` with a mask, because it is
-/// passed to `parrotSurface`, which needs an `InsettableShape` to inset the
-/// hairline by.
-struct DockedShape: InsettableShape {
-    var top: CGFloat
-    var bottom: CGFloat
-    var amount: CGFloat = 0
-
-    func path(in rect: CGRect) -> Path {
-        let box = rect.insetBy(dx: amount, dy: amount)
-        guard box.width > 0, box.height > 0 else { return Path() }
-        let limit = min(box.width, box.height) / 2
-        let t = max(0, min(top - amount, limit))
-        let b = max(0, min(bottom - amount, limit))
-
-        var path = Path()
-        path.move(to: CGPoint(x: box.minX, y: box.minY + t))
-        path.addArc(tangent1End: CGPoint(x: box.minX, y: box.minY),
-                    tangent2End: CGPoint(x: box.minX + t, y: box.minY), radius: t)
-        path.addLine(to: CGPoint(x: box.maxX - t, y: box.minY))
-        path.addArc(tangent1End: CGPoint(x: box.maxX, y: box.minY),
-                    tangent2End: CGPoint(x: box.maxX, y: box.minY + t), radius: t)
-        path.addLine(to: CGPoint(x: box.maxX, y: box.maxY - b))
-        path.addArc(tangent1End: CGPoint(x: box.maxX, y: box.maxY),
-                    tangent2End: CGPoint(x: box.maxX - b, y: box.maxY), radius: b)
-        path.addLine(to: CGPoint(x: box.minX + b, y: box.maxY))
-        path.addArc(tangent1End: CGPoint(x: box.minX, y: box.maxY),
-                    tangent2End: CGPoint(x: box.minX, y: box.maxY - b), radius: b)
-        path.closeSubpath()
-        return path
-    }
-
-    func inset(by amount: CGFloat) -> DockedShape {
-        DockedShape(top: top, bottom: bottom, amount: self.amount + amount)
-    }
-
-    /// So the corners square up over the same 180 ms the window takes to move.
-    /// Without it the radii snap on the first frame of the morph, which reads
-    /// as the surface being swapped for a different one half way there.
-    var animatableData: AnimatablePair<CGFloat, CGFloat> {
-        get { AnimatablePair(top, bottom) }
-        set { top = newValue.first; bottom = newValue.second }
-    }
-}
-
 final class PillModel: ObservableObject {
     @Published var state: PillState = .recording(nil)
+    /// The effective `feedback.primary_color`, refreshed with config.yaml.
+    @Published var primaryColor = ContextIdentity.defaultPrimary
 
     /// Whether the panel is on screen. False unmounts the surface.
     ///
@@ -1472,8 +1422,7 @@ enum PillMetrics {
     /// descenders and nothing more.
     static let dockGap: CGFloat = 3
 
-    /// The corners a docked surface keeps. The other two go to zero — that
-    /// square edge is the one saying which line this is about.
+    /// Radius used by the tutorial's caret highlight around a docked pill.
     static let dockRadius: CGFloat = 4
 
     // MARK: The tab
@@ -1481,8 +1430,7 @@ enum PillMetrics {
     /// What the offer is before you ask for it.
     ///
     /// Small enough to sit under a line of body text without being part of it,
-    /// and no smaller: below this the bird stops being recognisable as the
-    /// bird, and what the tab is for is being recognised.
+    /// and no smaller: below this the voice mark stops being recognisable.
     ///
     /// A third larger than it was drawn. 46x20 was sized on a design board, at
     /// a comfortable zoom, on a ground chosen to show it off. On a real screen
@@ -1491,7 +1439,7 @@ enum PillMetrics {
     /// number here is the old one times four thirds, so the proportions are the
     /// ones that were agreed and only the scale moved.
     /// The margin is the second thing that was too tight. At 9pt of padding
-    /// round a 20pt bird in a 27pt box the two marks sat against the edges, so
+    /// round a 20pt mark in a 27pt box the two marks sat against the edges, so
     /// the tab read as a crop of something rather than as a small whole thing.
     /// The contents did not change; the box grew round them.
     /// One size, and it was two.
@@ -1503,10 +1451,9 @@ enum PillMetrics {
     /// object you learned to find grew and shrank under your eye, and a thing
     /// that changes size while it is doing nothing else reads as two things.
     ///
-    /// 27 is between them. The bird is smaller than it was while you speak and
+    /// 27 is between them. The mark is smaller than it was while you speak and
     /// larger than it was afterwards, and it never moves.
     static let tabHeight: CGFloat = 34
-    static let tabRadius: CGFloat = 4
     static let tabPadding: CGFloat = 10
     static let tabGap: CGFloat = 6
     static let tabMark: CGFloat = 18
@@ -1548,7 +1495,7 @@ enum PillMetrics {
     /// The app icon on a tab that hangs off nothing. See `tabWidth`.
     static let tabIcon: CGFloat = 20
 
-    /// The tab while the microphone is open: the bird, the icon when there is
+    /// The tab while the microphone is open: the voice mark, the icon when there is
     /// no line to say where the words are going, and whatever the hold is for
     /// when it is not dictation.
     static func tabWidth(label: String?, icon: Bool = false) -> CGFloat {
@@ -1575,7 +1522,7 @@ enum PillMetrics {
     static let tabDwell: TimeInterval = 0.12
 
     /// Transparent drawing margin between the surface and the window edge.
-    /// Seven points contains the modest shadow and bracket stroke without
+    /// Seven points contains the three-point hard shadow and outline without
     /// creating a broad invisible region that could swallow document clicks.
     static let bleed: CGFloat = 7
     static let dockBleed = bleed
@@ -1755,7 +1702,7 @@ enum PillMetrics {
             if case .alert(let markdown, let tone) = state {
                 return AlertContent.height(markdown: markdown, tone: tone, width: width)
             }
-            // The recording and the transcribing are the bird's own tab — see
+            // Recording and transcribing share the voice mark's tab — see
             // `RecordingContent`. A notice is not: it is a sentence, and a
             // sentence needs the height it has always had.
             if case .notice = state { return height }
@@ -1861,7 +1808,7 @@ enum PillMetrics {
         let icon = hasIcon && dock == .free
         switch state {
         case .recording(let label):
-            // The whole recording state is the bird — no dot, no bars. A label
+            // The whole recording state is the voice mark — no dot or loose bars. A label
             // still widens it, because tap-then-hold has to say what the hold
             // is for before you speak.
             return tabWidth(label: label, icon: icon)
@@ -2179,117 +2126,40 @@ enum PillMetrics {
     static let rowFit: CGFloat = 4
 }
 
-// MARK: - Context surface
-
-/// The approved platinum surface in light appearance and its charcoal
-/// counterpart in dark appearance.  Keeping the palette here prevents each
-/// state from inventing a slightly different neutral or accent.
-private struct PillTheme {
-    let scheme: ColorScheme
-
-    var dark: Bool { scheme == .dark }
-    var foreground: Color {
-        dark ? Color(red: 0.941, green: 0.937, blue: 0.922)
-             : Color(red: 0.188, green: 0.192, blue: 0.216)
-    }
-    var muted: Color {
-        dark ? Color(red: 0.741, green: 0.737, blue: 0.718)
-             : Color(red: 0.412, green: 0.416, blue: 0.431)
-    }
-    var surface: Color {
-        dark ? Color(red: 0.216, green: 0.220, blue: 0.231)
-             : Color(red: 0.910, green: 0.910, blue: 0.898)
-    }
-    var accent: Color {
-        dark ? Color(red: 0.710, green: 0.647, blue: 1.000)
-             : Color(red: 0.373, green: 0.275, blue: 0.792)
-    }
-    var inset: Color { dark ? .white.opacity(0.08) : .white.opacity(0.70) }
-    var edge: Color { foreground.opacity(0.48) }
-    var controlFill: Color { foreground.opacity(dark ? 0.045 : 0.025) }
-    var controlEdge: Color { foreground.opacity(0.50) }
-}
-
-/// Static context brackets.  Their short horizontal feet frame the surface
-/// without becoming a rim animation or an extra hit target.
-private struct ContextBrackets: Shape {
-    let scale: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let inset = 1 / max(scale, 1)
-        let left = rect.minX + inset
-        let right = rect.maxX - inset
-        let top = rect.minY + inset
-        let bottom = rect.maxY - inset
-        let foot: CGFloat = 5
-        path.move(to: CGPoint(x: left + foot, y: top))
-        path.addLine(to: CGPoint(x: left, y: top))
-        path.addLine(to: CGPoint(x: left, y: bottom))
-        path.addLine(to: CGPoint(x: left + foot, y: bottom))
-        path.move(to: CGPoint(x: right - foot, y: top))
-        path.addLine(to: CGPoint(x: right, y: top))
-        path.addLine(to: CGPoint(x: right, y: bottom))
-        path.addLine(to: CGPoint(x: right - foot, y: bottom))
-        return path
-    }
-}
-
 private struct ContextSurface<S: InsettableShape>: ViewModifier {
     let shape: S
-    let accent: Color
-    let theme: PillTheme
+    let border: Color
+    let theme: ContextTheme
     @Environment(\.displayScale) private var scale
 
     func body(content: Content) -> some View {
         content
             .background {
+                shape.fill(theme.hardShadow)
+                    .offset(x: ContextIdentity.shadowOffset, y: ContextIdentity.shadowOffset)
                 shape.fill(theme.surface)
-                    .overlay {
-                        shape.fill(LinearGradient(
-                            colors: [.white.opacity(theme.dark ? 0.035 : 0.24),
-                                     .clear, .black.opacity(0.035)],
-                            startPoint: .top, endPoint: .bottom
-                        ))
-                    }
             }
-            .overlay(shape.strokeBorder(theme.edge, lineWidth: 1 / scale))
-            .overlay(shape.inset(by: 1).strokeBorder(theme.inset, lineWidth: 1 / scale))
-            .overlay(ContextBrackets(scale: scale).stroke(accent, lineWidth: 2 / scale))
+            .overlay(shape.strokeBorder(border, lineWidth: 1 / scale))
     }
 }
 
 private extension View {
     func contextSurface<S: InsettableShape>(
-        _ shape: S, accent: Color, theme: PillTheme
+        _ shape: S, border: Color, theme: ContextTheme
     ) -> some View {
-        modifier(ContextSurface(shape: shape, accent: accent, theme: theme))
-    }
-}
-
-/// Four fine rules are the classic Mac window-heading cue.  They remain
-/// subordinate to modern system typography and disappear from accessibility.
-private struct PillTitleRules: View {
-    var body: some View {
-        VStack(spacing: 2) {
-            ForEach(0 ..< 4, id: \.self) { _ in
-                Rectangle().fill(.primary.opacity(0.27)).frame(height: 0.5)
-            }
-        }
-        .accessibilityHidden(true)
+        modifier(ContextSurface(shape: shape, border: border, theme: theme))
     }
 }
 
 private struct PillHeading: View {
     let title: String
     var detail: String?
-    let theme: PillTheme
+    let theme: ContextTheme
 
     var body: some View {
         HStack(spacing: 8) {
-            PillTitleRules().frame(width: 17)
-            Text(title).font(.system(size: 12, weight: .bold)).fixedSize()
-            PillTitleRules().padding(.horizontal, 5)
+            Text(title).font(.system(size: 12, weight: .semibold)).fixedSize()
+            Spacer(minLength: 8)
             if let detail {
                 Text(detail).font(.system(size: 10)).foregroundStyle(theme.muted)
             }
@@ -2354,7 +2224,7 @@ struct PillView: View {
         // clipped to the capsule instead — so a morph reads as the pill opening
         // with the chips arriving from under its rim, and the surface never
             // leaves the window. The clip stays inside the surface decoration,
-            // which draws the brackets and shadow outside the shape.
+            // whose hard shadow draws outside the shape.
         GeometryReader { geo in
             ZStack {
                 switch model.state {
@@ -2400,13 +2270,11 @@ struct PillView: View {
                 model.onHover?(inside)
             }
         }
-        // One quiet platinum/charcoal surface in every state. The brackets are
-        // static; warning offers retain amber/scarlet in their brackets and
-        // text rather than animating a rim around everything.
+        // One quiet platinum/charcoal surface in every state. Warning offers
+        // retain amber/scarlet in their outline and text.
         .foregroundStyle(theme.foreground)
-        .contextSurface(shape, accent: accent, theme: theme)
-        .shadow(color: .black.opacity(theme.dark ? 0.24 : 0.10), radius: 2, y: 2)
-        // The tight margin needed by the brackets and shadow. See
+        .contextSurface(shape, border: border, theme: theme)
+        // The tight margin needed by the hard-offset shadow. See
         // `PillMetrics.dockBleed`.
         //
         // The same number `PillMetrics.panelSize` added to the window, and it
@@ -2414,40 +2282,26 @@ struct PillView: View {
         // from here, so a disagreement is a surface drawn at the wrong size
         // inside a window of the right one.
         .padding(PillMetrics.bleed(for: model.state))
+        .environment(\.contextPrimaryColor, model.primaryColor)
         // State content is installed synchronously. AppKit animates the
         // surface frame; meter updates never acquire a layout animation.
         .transaction { $0.disablesAnimations = true }
     }
 
-    /// The radius of the free edge. The tab is a smaller object than the panel
-    /// and 12 on a 20pt-tall surface is most of its height, which reads as a
-    /// lozenge rather than as something cut off a larger shape.
-    private var hanging: CGFloat {
-        switch model.state {
-        case .offer(_, _, _, let open):
-            return open ? PillMetrics.dockRadius : PillMetrics.tabRadius
-        case .recording, .working: return PillMetrics.tabRadius
-        case .notice, .alert: return PillMetrics.dockRadius
-        }
+    private var theme: ContextTheme {
+        ContextTheme(scheme: colorScheme, primaryHex: model.primaryColor)
     }
 
-    private var theme: PillTheme { PillTheme(scheme: colorScheme) }
-
-    private var accent: Color {
+    private var border: Color {
         guard case .offer(_, _, let reading, _) = model.state,
-              reading.warning != nil else { return theme.accent }
+              reading.warning != nil else { return theme.edge }
         return reading.stopped ? Parrot.scarlet : Parrot.amber
     }
 
-    /// The surface's outline right now: squared along whichever edge is
-    /// touching the text, and rounded all round when it touches none.
-    private var shape: DockedShape {
-        switch model.docked {
-        case .below: return DockedShape(top: 0, bottom: hanging)
-        case .above: return DockedShape(top: hanging, bottom: 0)
-        // Attached to nothing, so no edge gets to claim a line.
-        case .free: return DockedShape(top: hanging, bottom: hanging)
-        }
+    /// Revision 08 uses one silhouette in every state so the visible surface,
+    /// outline and hard shadow resize as one object.
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: ContextIdentity.radius, style: .continuous)
     }
 }
 
@@ -2462,6 +2316,7 @@ private struct ContextMeter: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var scale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.contextPrimaryColor) private var primaryColor
 
     var body: some View {
         TimelineView(.animation(
@@ -2493,7 +2348,9 @@ private struct ContextMeter: View {
         .accessibilityLabel(working ? "Processing" : "Voice level")
     }
 
-    private var theme: PillTheme { PillTheme(scheme: colorScheme) }
+    private var theme: ContextTheme {
+        ContextTheme(scheme: colorScheme, primaryHex: primaryColor)
+    }
 }
 
 /// The offer before you ask for it: the meter, and the key that opens it.
@@ -2521,7 +2378,6 @@ private struct TabContent: View {
                 Circle()
                     .fill(Parrot.amber)
                     .frame(width: 7, height: 7)
-                    .shadow(color: Parrot.amber, radius: 4)
             }
             if !model.hotkey.isEmpty {
                 Text(model.shownHotkey)
@@ -2533,25 +2389,27 @@ private struct TabContent: View {
                         minHeight: PillMetrics.tabKeyHeight
                     )
                     .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
                             .fill(theme.controlFill)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 3)
-                                    .strokeBorder(theme.foreground.opacity(0.25), lineWidth: 0.5)
+                                    .strokeBorder(theme.controlEdge, lineWidth: 0.5)
                             )
                     )
             }
         }
         .padding(.horizontal, PillMetrics.tabPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // The whole tab, not the bird and the cap. `contentShape` is what makes
+        // The whole tab, not just the mark and keycap. `contentShape` is what makes
         // the gaps between them part of the target — the same reason the chips
         // carry one.
         .contentShape(Rectangle())
         .onTapGesture { model.onTab?() }
     }
 
-    private var theme: PillTheme { PillTheme(scheme: colorScheme) }
+    private var theme: ContextTheme {
+        ContextTheme(scheme: colorScheme, primaryHex: model.primaryColor)
+    }
 
 }
 
@@ -2563,12 +2421,13 @@ private struct RecordingContent: View {
     /// Which way the surface hangs. `.free` is the tab with no line under it.
     var dock: Dock
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.contextPrimaryColor) private var primaryColor
 
     /// The whole recording state, in the shape it ends in.
     ///
     /// A red dot, twelve bars and the target app's icon, replaced by one mark
     /// that fills. The dot said the microphone was open and the bars said it
-    /// was hearing you; the bird says both, because an empty bird is a
+    /// was hearing you; the voice mark says both, because an empty mark is a
     /// microphone waiting and a filling one is a microphone hearing something.
     /// The icon is gone and `blind` is what took its job — see `PlumageMeter`.
     var body: some View {
@@ -2601,13 +2460,15 @@ private struct RecordingContent: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
-    private var theme: PillTheme { PillTheme(scheme: colorScheme) }
+    private var theme: ContextTheme {
+        ContextTheme(scheme: colorScheme, primaryHex: primaryColor)
+    }
 }
 
 /// Where the words are going, on a tab with no line under it.
 ///
 /// Smaller than the 22 the pill used to draw it at: this sits in a 27pt tab
-/// beside an 18pt bird, and 22 filled it edge to edge.
+/// beside an 18pt voice mark, and 22 filled it edge to edge.
 private struct AppIconMark: View {
     let icon: NSImage
 
@@ -2619,9 +2480,9 @@ private struct AppIconMark: View {
     }
 }
 
-/// The bird standing full while the app works on what it heard.
+/// The voice mark standing full while the app works on what it heard.
 ///
-/// No sentence, because there is no room for one and none needed: a full bird
+/// No sentence, because there is no room for one and none needed: a full mark
 /// says the words are in and something is being done with them, which is the
 /// whole of what "Thinking…" said.
 private struct WorkingContent: View {
@@ -2864,10 +2725,6 @@ private struct OfferContent: View {
     /// What the decoder made of the dictation. See `Confidence.Reading`.
     var reading = Confidence.Reading()
 
-    /// The lit chip's lettering: leaf lightened almost to white, so the words
-    /// stay readable over a fill of the same colour.
-    private static let litText = Color.white
-
     /// Every other chip's lettering.
     ///
     /// `.secondary` was what this used to be, and on a dark capsule that is
@@ -2876,7 +2733,9 @@ private struct OfferContent: View {
     /// would be nothing left for the pointer to say.
     private var restingText: Color { theme.foreground }
 
-    private var theme: PillTheme { PillTheme(scheme: colorScheme) }
+    private var theme: ContextTheme {
+        ContextTheme(scheme: colorScheme, primaryHex: model.primaryColor)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: PillMetrics.blockGap) {
@@ -3070,22 +2929,16 @@ private struct OfferContent: View {
                 .lineLimit(1)
                 .fixedSize()
         }
-        .foregroundStyle(lit ? Self.litText : theme.foreground)
+        .foregroundStyle(theme.foreground)
         .padding(.horizontal, 7)
         .frame(height: PillMetrics.chooseChipHeight)
         .background {
             RoundedRectangle(cornerRadius: 4)
-                .fill(lit ? theme.accent : theme.controlFill)
+                .fill(lit ? theme.accent.opacity(0.17) : theme.controlFill)
                 .overlay {
                     RoundedRectangle(cornerRadius: 4).strokeBorder(
-                        lit ? theme.accent : theme.muted.opacity(0.35), lineWidth: 1
+                        lit ? theme.accent : theme.controlEdge, lineWidth: 1
                     )
-                }
-                .overlay {
-                    if lit {
-                        RoundedRectangle(cornerRadius: 7).inset(by: -3)
-                            .strokeBorder(theme.accent, lineWidth: 1.5)
-                    }
                 }
         }
         .contentShape(RoundedRectangle(cornerRadius: 4))
@@ -3281,12 +3134,12 @@ private struct OfferContent: View {
                 .lineLimit(1)
                 .fixedSize()
         }
-        .foregroundStyle(lit ? Self.litText : restingText)
+        .foregroundStyle(restingText)
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background {
             RoundedRectangle(cornerRadius: 4)
-                .fill(lit ? theme.accent : theme.controlFill)
+                .fill(lit ? theme.accent.opacity(0.17) : theme.controlFill)
                 .overlay {
                     RoundedRectangle(cornerRadius: 4).strokeBorder(
                         lit ? theme.accent : theme.controlEdge, lineWidth: 1
@@ -3296,20 +3149,13 @@ private struct OfferContent: View {
     }
 }
 
-/// The letter you can press, in a box with a light going round it.
-///
-/// The key is the only thing on the offer that is not obvious: the chips look
-/// like things to click, and a click is what people did — the letters were
-/// read as decoration and the offer timed out with the keyboard unused. A
-/// still border did not fix that, because everything else on the pill is still
-/// too. Movement is what the eye finds on a surface it is not looking at.
-///
-/// Slow and dim on purpose. One turn takes `turnSeconds`, so at a glance it is
-/// a border and only a border; what it does is make you glance.
+/// The keyboard equivalent inside an action. Static, outlined, and subordinate
+/// to the action label.
 private struct OfferKeyCap: View {
     let key: String
     let lit: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.contextPrimaryColor) private var primaryColor
     private static let radius: CGFloat = 4
 
     var body: some View {
@@ -3323,18 +3169,20 @@ private struct OfferKeyCap: View {
             .padding(.vertical, 2)
             .background {
                 RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
-                    .fill(lit ? Color.white.opacity(0.14) : theme.foreground.opacity(0.06))
+                    .fill(lit ? theme.accent.opacity(0.12) : theme.controlFill)
                     .overlay {
                         RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
                             .strokeBorder(
-                                lit ? Color.white.opacity(0.45) : theme.foreground.opacity(0.25),
+                                lit ? theme.accent.opacity(0.65) : theme.controlEdge,
                                 lineWidth: 0.5
                             )
                     }
             }
     }
 
-    private var theme: PillTheme { PillTheme(scheme: colorScheme) }
+    private var theme: ContextTheme {
+        ContextTheme(scheme: colorScheme, primaryHex: primaryColor)
+    }
 }
 
 /// The whole of the notice's colour, in nine points.

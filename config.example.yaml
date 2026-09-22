@@ -37,6 +37,11 @@ audio:
   # false to keep the 100ms. Needs speech_gate.
   second_opinion: true
 
+feedback:
+  # Primary Context colour for the pill and startup screen, as #RRGGBB. Dark
+  # appearance keeps the hue and lifts it when needed for contrast.
+  primary_color: "#5F46CA"
+
 logging:
   # One timeline per dictation in spans.jsonl, beside the recordings: every
   # step, every decode, what each cost. Rotates at 64 MB. `--trace-view` draws

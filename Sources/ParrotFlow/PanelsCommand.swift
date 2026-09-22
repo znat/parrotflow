@@ -1011,6 +1011,28 @@ enum PanelsCommand {
             .environmentObject(PermissionsModel.showingSetup(almostReady, espeak: .opening))
             .environmentObject(almostReady))
 
+        // Every honest startup outcome, built from the same download registry
+        // the live panel observes. Kept on the sheet in both appearances so a
+        // palette change cannot make a wait or a recovery unreadable.
+        func launchDownloads(_ state: ModelDownload.State) -> ModelDownloads {
+            let downloads = ModelDownloads()
+            downloads.expect(Transcriber.speechDownload)
+            downloads.update(Transcriber.speechDownload.id, to: state)
+            return downloads
+        }
+        let launchDownloading = LaunchModel(
+            downloads: launchDownloads(.downloading(percent: 43)), hotkey: "Right ⌥"
+        )
+        let launchLoading = LaunchModel(
+            downloads: launchDownloads(.loading), hotkey: "Right ⌥"
+        )
+        let launchReady = LaunchModel(
+            downloads: launchDownloads(.installed), hotkey: "Right ⌥"
+        )
+        let launchStuck = LaunchModel(
+            downloads: launchDownloads(.failed(.unreachable)), hotkey: "Right ⌥"
+        )
+
         // The third element is the appearance to draw in. Every floating
         // surface is dark whatever the system is set to — that is decided in
         // `adoptParrotAppearance` and is not a preference. The permissions
@@ -1051,6 +1073,16 @@ enum PanelsCommand {
             (didNotArrivePane, setupSize(didNotArrivePane), .light, false),
             (vadPane, setupSize(vadPane), .dark, false),
             (openingPane, setupSize(openingPane), .light, false),
+            (AnyView(LaunchView(onHide: {}).environmentObject(launchDownloading)),
+             LaunchMetrics.windowSize(listing: true), nil, true),
+            (AnyView(LaunchView(onHide: {}).environmentObject(launchLoading)),
+             LaunchMetrics.windowSize(listing: false), nil, true),
+            (AnyView(LaunchView(onHide: {}).environmentObject(launchReady)),
+             LaunchMetrics.windowSize(listing: false), nil, true),
+            (AnyView(LaunchView(onHide: {}).environmentObject(launchStuck)),
+             LaunchMetrics.windowSize(listing: false), nil, true),
+            (AnyView(ContextStatusMarkPreview(primaryHex: ContextIdentity.defaultPrimary)),
+             NSSize(width: 290, height: 64), nil, true),
             (AnyView(PillView().environmentObject(notice)),
              pillSize(notice), nil, true),
             (AnyView(PillView().environmentObject(caution)),
@@ -1494,8 +1526,10 @@ enum PanelsCommand {
         // was the one thing it got wrong.
         case "callout":
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-            item.button?.image = NSImage(named: "MenuBarParrotTemplate")
-            item.button?.image?.isTemplate = true
+            item.button?.image = ContextStatusMark.image(
+                state: .idle, primaryHex: ContextIdentity.defaultPrimary, dark: false
+            )
+            item.button?.setAccessibilityLabel(ContextStatusMark.State.idle.accessibilityLabel)
             calloutItem = item
             calloutPanel = MenuBarCallout()
             // After the menu bar has laid the item out. Asked on this turn of
