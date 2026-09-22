@@ -869,12 +869,11 @@ enum PanelsCommand {
             open: true
         ), docked: .below)
 
-        // The dictation, hanging off a line: the bird half full, then standing
-        // while it thinks. On the sheet because the whole recording state is
-        // one mark now, and whether it reads at 20pt is the question.
-        let listening = pill(.recording(nil), icon: sampleIcon(), level: 0.55, docked: .below)
-        let listeningQuiet = pill(.recording(nil), icon: sampleIcon(), level: 0.06, docked: .below)
-        let listeningBlind = pill(.recording(nil), level: 0.55, docked: .below)
+        // The same 112×34 listening state at silence, ordinary speech, and a
+        // strong excursion. Only the five bars may move between these rows.
+        let listeningQuiet = pill(.recording(nil), level: 0, docked: .below)
+        let listening = pill(.recording(nil), level: 0.45, docked: .below)
+        let listeningStrong = pill(.recording(nil), level: 0.9, docked: .below)
         // Tap-then-hold: the words about to be edited, shown rather than
         // described. On the sheet because the highlight has to read at 12pt on
         // a 27pt tab, and because a long selection has to truncate rather than
@@ -884,10 +883,8 @@ enum PanelsCommand {
             icon: sampleIcon(), level: 0.4, docked: .below
         )
         let thinkingDocked = pill(.working("Thinking…"), docked: .below)
-        // Free: no anchor, so no line under it to say where the words are
-        // going. The icon says it instead, which is the one difference between
-        // this and the tab above it.
-        let listeningFree = pill(.recording(nil), icon: sampleIcon(), level: 0.55, docked: .free)
+        // Free: no anchor, but still the same persistent listening surface.
+        let listeningFree = pill(.recording(nil), level: 0.45, docked: .free)
         let thinkingFree = pill(.working("Thinking…"), icon: sampleIcon(), docked: .free)
 
         // A row the spell check proposed, half filled in, and a row typed by
@@ -1095,8 +1092,8 @@ enum PanelsCommand {
              pillSize(listeningQuiet), nil, true),
             (AnyView(PillView().environmentObject(listening)),
              pillSize(listening), nil, true),
-            (AnyView(PillView().environmentObject(listeningBlind)),
-             pillSize(listeningBlind), nil, true),
+            (AnyView(PillView().environmentObject(listeningStrong)),
+             pillSize(listeningStrong), nil, true),
             (AnyView(PillView().environmentObject(editing)),
              pillSize(editing), nil, true),
             (AnyView(PillView().environmentObject(thinkingDocked)),

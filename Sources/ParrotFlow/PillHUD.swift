@@ -1457,6 +1457,8 @@ enum PillMetrics {
     static let tabPadding: CGFloat = 10
     static let tabGap: CGFloat = 6
     static let tabMark: CGFloat = 18
+    static let listeningWidth: CGFloat = 112
+    static let listeningGap: CGFloat = 9
 
     /// The tab, sized from what it holds.
     ///
@@ -1503,6 +1505,18 @@ enum PillMetrics {
         if icon { width += tabGap + tabIcon }
         guard let label else { return width }
         return width + tabGap + min(title(label), editWidth) + selectionFit
+    }
+
+    /// The mic meter and its persistent state label. A command-specific label
+    /// may add context, but silence and speech never change this width.
+    static func recordingWidth(label: String?) -> CGFloat {
+        guard let label else { return listeningWidth }
+        let listening = title("Listening")
+        return max(
+            listeningWidth,
+            tabPadding * 2 + tabMark + listeningGap + listening
+                + tabGap + min(title(label), editWidth) + selectionFit
+        )
     }
 
     /// Past this the words being edited are truncated rather than the tab
@@ -1808,10 +1822,11 @@ enum PillMetrics {
         let icon = hasIcon && dock == .free
         switch state {
         case .recording(let label):
-            // The whole recording state is the voice mark — no dot or loose bars. A label
-            // still widens it, because tap-then-hold has to say what the hold
-            // is for before you speak.
-            return tabWidth(label: label, icon: icon)
+            // A stable 112pt Listening surface whether the room is silent or
+            // speech is driving the bars. A command label can widen it, but an
+            // app icon cannot: the persistent state label is the information
+            // that must survive in peripheral vision.
+            return recordingWidth(label: label)
         case .working(let message):
             return tabWidth(label: message, icon: icon)
         case .notice(let message, _): return text(message)
@@ -2230,8 +2245,7 @@ struct PillView: View {
                 switch model.state {
                 case .recording(let label):
                     RecordingContent(
-                        level: model.level, icon: model.appIcon, label: label,
-                        dock: model.docked
+                        level: model.level, label: label
                     )
                     .transition(.opacity)
                 case .working(let message):
@@ -2306,12 +2320,11 @@ struct PillView: View {
 }
 
 /// The compact five-bar voice mark used by recording, processing, and the
-/// collapsed offer.  Its timeline exists only while work is active; real
-/// audio level updates do not animate or invalidate the surface layout.
+/// collapsed offer. Recording bars are driven only by the recorder's smoothed
+/// RMS level; the timeline exists solely for the distinct processing state.
 private struct ContextMeter: View {
     var level: Double
     var working = false
-    var blind = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var scale
@@ -2331,21 +2344,21 @@ private struct ContextMeter: View {
                     if working && !reduceMotion {
                         amplitude = 0.28 + 0.72 * (0.5 + 0.5 * sin(time * 4 - Double(index) * 0.7))
                     } else {
-                        let profile = [0.34, 0.58, 1.0, 0.58, 0.34][index]
-                        amplitude = max(0.24, min(1, level) * profile)
+                        let profile = [0.42, 0.72, 1.0, 0.72, 0.42][index]
+                        amplitude = min(1, max(0, level)) * profile
                     }
-                    let height = ((4 + 12 * amplitude) * scale).rounded() / scale
+                    let height = ((2 + 14 * amplitude) * scale).rounded() / scale
                     let y = (((size.height - height) / 2) * scale).rounded() / scale
                     let bar = CGRect(x: CGFloat(index) * 4, y: y, width: 2, height: height)
                     context.fill(
                         Path(roundedRect: bar, cornerRadius: 1),
-                        with: .color(blind ? theme.muted : theme.accent)
+                        with: .color(theme.accent)
                     )
                 }
             }
         }
         .frame(width: 18, height: 18)
-        .accessibilityLabel(working ? "Processing" : "Voice level")
+        .accessibilityLabel(working ? "Processing" : "Listening, voice level")
     }
 
     private var theme: ContextTheme {
@@ -2415,29 +2428,23 @@ private struct TabContent: View {
 
 private struct RecordingContent: View {
     let level: Float
-    let icon: NSImage?
     /// What this recording is for, when it is not dictation.
     var label: String?
-    /// Which way the surface hangs. `.free` is the tab with no line under it.
-    var dock: Dock
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.contextPrimaryColor) private var primaryColor
 
     /// The whole recording state, in the shape it ends in.
     ///
-    /// A red dot, twelve bars and the target app's icon, replaced by one mark
-    /// that fills. The dot said the microphone was open and the bars said it
-    /// was hearing you; the voice mark says both, because an empty mark is a
-    /// microphone waiting and a filling one is a microphone hearing something.
-    /// The icon is gone and `blind` is what took its job — see `PlumageMeter`.
+    /// The label stays put while the real microphone level moves only the five
+    /// bars. Silence therefore still reads as an active listening state, and
+    /// speech is visible as a change from its near-flat two-point baseline.
     var body: some View {
-        HStack(spacing: PillMetrics.tabGap) {
-            ContextMeter(level: Double(level), blind: icon == nil)
-            // Attached to a line, the line says where the words are going.
-            // Free it says nothing, so the icon comes back.
-            if dock == .free, let icon {
-                AppIconMark(icon: icon)
-            }
+        HStack(spacing: PillMetrics.listeningGap) {
+            ContextMeter(level: Double(level))
+            Text("Listening")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.foreground)
+                .fixedSize()
             if let label {
                 // In the highlight the offer uses for the same job, because it
                 // is the same claim: these words, the ones sitting in that
@@ -2457,7 +2464,7 @@ private struct RecordingContent: View {
             }
         }
         .padding(.horizontal, PillMetrics.tabPadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var theme: ContextTheme {

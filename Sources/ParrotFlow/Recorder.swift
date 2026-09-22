@@ -632,18 +632,31 @@ final class Recorder {
         return sqrt(sum / Float(frames))
     }
 
-    /// The meter's fast attack and slow release, as time constants.
+    /// The meter's fast attack and slower release, as time constants.
     ///
     /// They were 0.5 and 0.12 applied once per buffer, tuned when a buffer was
     /// 85 ms (4096 frames at 48 kHz). AVCapture delivers about 10 ms, which
     /// would make the same numbers eight times twitchier, so the coefficient is
     /// derived from each buffer's own length instead: τ = −0.0853 / ln(1 − α).
-    private static let attackSeconds: Double = 0.123
-    private static let releaseSeconds: Double = 0.667
+    ///
+    /// The earlier 667 ms release left the mark visibly excited well after a
+    /// word ended. Eighty milliseconds catches the front of speech without
+    /// following individual samples; 280 ms lets a syllable settle smoothly
+    /// back to the quiet baseline before the next phrase.
+    private static let attackSeconds: Double = 0.080
+    private static let releaseSeconds: Double = 0.280
+
+    /// Below this is room/device noise, not useful voice activity. Full scale
+    /// is deliberately below 0 dBFS: ordinary speech should use the meter's
+    /// range without somebody having to clip the microphone to reach the top.
+    private static let meterFloorDB: Float = -48
+    private static let meterCeilingDB: Float = -12
 
     private func publishLevel(_ rms: Float, seconds: Double) {
         let db = 20 * log10(max(rms, 1e-7))
-        let normalized = max(0, min(1, (db + 60) / 60))
+        let normalized = max(0, min(
+            1, (db - Self.meterFloorDB) / (Self.meterCeilingDB - Self.meterFloorDB)
+        ))
         let tau = normalized > smoothedLevel ? Self.attackSeconds : Self.releaseSeconds
         let coefficient = Float(1 - exp(-max(seconds, 0) / tau))
         smoothedLevel += (normalized - smoothedLevel) * coefficient
