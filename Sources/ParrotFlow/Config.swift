@@ -2753,6 +2753,23 @@ struct Config: Decodable, Equatable {
         /// Needs `correct_offer`. There is no offer to draw it on without one.
         var confidence: Bool = false
 
+        /// Appearance of the floating Context surfaces.
+        ///
+        /// Explicit dark/light are literal. System follows macOS. An invalid
+        /// value is retained for `problems()` while the safe system default is
+        /// used.
+        var theme: ContextAppearance = .system
+        var refusedTheme: String?
+
+        /// The Context UI's primary colour, written as `#RRGGBB`.
+        ///
+        /// This is the light-appearance colour. Dark appearance lifts the same
+        /// hue only as far as needed to stay visible on charcoal. An invalid
+        /// value is remembered for `problems()` and the safe Context indigo is
+        /// used instead, so a typo cannot make the controls disappear.
+        var primaryColor: String = ContextIdentity.defaultPrimary
+        var refusedPrimaryColor: String?
+
         /// When the offer says a dictation is worth a second look.
         ///
         /// On by default, unlike `confidence`, and for the opposite reason: it
@@ -2820,6 +2837,8 @@ struct Config: Decodable, Equatable {
             case overlay
             case correctOffer = "correct_offer"
             case confidence
+            case theme
+            case primaryColor = "primary_color"
             case lowConfidence = "low_confidence"
         }
 
@@ -2838,6 +2857,32 @@ struct Config: Decodable, Equatable {
             }
             if let shown = try c.decodeIfPresent(Bool.self, forKey: .confidence) {
                 self.confidence = shown
+            }
+            if c.contains(.theme) {
+                do {
+                    let value = try c.decode(String.self, forKey: .theme)
+                    let normalised = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .lowercased()
+                    if let theme = ContextAppearance(rawValue: normalised) {
+                        self.theme = theme
+                    } else {
+                        self.refusedTheme = "\"\(value)\""
+                    }
+                } catch {
+                    self.refusedTheme = "a non-string value"
+                }
+            }
+            if c.contains(.primaryColor) {
+                do {
+                    let value = try c.decode(String.self, forKey: .primaryColor)
+                    if let normalised = ContextIdentity.normalised(value) {
+                        self.primaryColor = normalised
+                    } else {
+                        self.refusedPrimaryColor = "\"\(value)\""
+                    }
+                } catch {
+                    self.refusedPrimaryColor = "a non-string value"
+                }
             }
             if let low = try c.decodeIfPresent(LowConfidence.self, forKey: .lowConfidence) {
                 self.lowConfidence = low
@@ -3049,6 +3094,14 @@ struct Config: Decodable, Equatable {
 
     func problems() -> [String] {
         var found: [String] = []
+        if let refused = feedback.refusedTheme {
+            found.append("feedback.theme: \(refused) is not valid — expected dark, light,"
+                + " or system; using system")
+        }
+        if let refused = feedback.refusedPrimaryColor {
+            found.append("feedback.primary_color: \(refused) is not valid — expected #RRGGBB;"
+                + " using \(ContextIdentity.defaultPrimary)")
+        }
         for key in retiredKeys.sorted() {
             found.append("\(key): \(Self.movedKeys[key] ?? "no longer does anything")")
         }

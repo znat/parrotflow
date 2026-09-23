@@ -58,6 +58,8 @@ feedback:
   sound: true
   overlay: true
   correct_offer: true
+  theme: system          # follows macOS; or force dark / light
+  primary_color: "#5F46CA"
 
 logging:
   text: true    # ~/Library/Logs/ParrotFlow.log
@@ -1121,6 +1123,34 @@ Read it knowing it barely moves. Of the dictations holding a word below the
 amber band, only 13% fall under its own p10. A sentence with one bad name in it
 still scores near 0.93 — the word colour catches that, and this number does
 not.
+
+`theme` chooses the appearance of the floating Context surfaces: the recording
+and feedback pill, the startup model panel, and the vocabulary editor. `dark`
+and `light` force those literal appearances. The default, `system`, follows the
+current macOS appearance. It updates when macOS changes appearance and when
+`config.yaml` is saved; no restart is needed.
+
+This does not sample or guess the background of whichever app is frontmost.
+The regular titled setup window continues to follow macOS so its native controls
+and permission guidance behave like a normal Mac window. Native permission
+dialogs remain macOS-owned, and the release menu-bar icon remains a template so
+macOS supplies its contrast automatically. The one-time blue menu callout keeps
+its fixed branded palette.
+
+Anything except `dark`, `light`, or `system` is reported by `--check-config`
+and falls back to `system`; the rest of `feedback` still loads.
+
+`primary_color` sets the Context accent used by the pill's voice meter,
+selected choices and actions, and by the startup screen. Write one six-digit
+sRGB colour as `#RRGGBB`; the default is Context indigo, `#5F46CA`. The light
+appearance uses that colour directly when it has enough contrast. The dark
+appearance keeps its hue and lifts it only as far as needed to remain visible
+on charcoal. Warning and error colours stay amber and scarlet, regardless of
+the primary colour.
+
+A malformed value is reported by `--check-config` and the app safely uses the
+default indigo. Saving `config.yaml` applies a valid replacement immediately;
+no restart is needed.
 
 A grey word is one with no reading at all: nothing the decoder said became it.
 That happens where a stage inserted a word — the question mark a punctuation

@@ -869,12 +869,11 @@ enum PanelsCommand {
             open: true
         ), docked: .below)
 
-        // The dictation, hanging off a line: the bird half full, then standing
-        // while it thinks. On the sheet because the whole recording state is
-        // one mark now, and whether it reads at 20pt is the question.
-        let listening = pill(.recording(nil), icon: sampleIcon(), level: 0.55, docked: .below)
-        let listeningQuiet = pill(.recording(nil), icon: sampleIcon(), level: 0.06, docked: .below)
-        let listeningBlind = pill(.recording(nil), level: 0.55, docked: .below)
+        // The same 112×34 listening state at silence, ordinary speech, and a
+        // strong excursion. Only the five bars may move between these rows.
+        let listeningQuiet = pill(.recording(nil), level: 0, docked: .below)
+        let listening = pill(.recording(nil), level: 0.45, docked: .below)
+        let listeningStrong = pill(.recording(nil), level: 0.9, docked: .below)
         // Tap-then-hold: the words about to be edited, shown rather than
         // described. On the sheet because the highlight has to read at 12pt on
         // a 27pt tab, and because a long selection has to truncate rather than
@@ -884,10 +883,8 @@ enum PanelsCommand {
             icon: sampleIcon(), level: 0.4, docked: .below
         )
         let thinkingDocked = pill(.working("Thinking…"), docked: .below)
-        // Free: no anchor, so no line under it to say where the words are
-        // going. The icon says it instead, which is the one difference between
-        // this and the tab above it.
-        let listeningFree = pill(.recording(nil), icon: sampleIcon(), level: 0.55, docked: .free)
+        // Free: no anchor, but still the same persistent listening surface.
+        let listeningFree = pill(.recording(nil), level: 0.45, docked: .free)
         let thinkingFree = pill(.working("Thinking…"), icon: sampleIcon(), docked: .free)
 
         // A row the spell check proposed, half filled in, and a row typed by
@@ -918,7 +915,9 @@ enum PanelsCommand {
         let asked = CorrectionModel()
         asked.load(
             rules: [(heard: "this fluency", corrected: "disfluency")],
-            over: "I wanna work on disfluency."
+            over: "I wanna work on disfluency while the vocabulary editor stays readable over"
+                + " a long terminal paragraph, keeps every field editable, and preserves the"
+                + " sentence that taught the correction."
         )
 
         // Both states of the microphone notice, because the disclosure is the
@@ -1011,13 +1010,39 @@ enum PanelsCommand {
             .environmentObject(PermissionsModel.showingSetup(almostReady, espeak: .opening))
             .environmentObject(almostReady))
 
+        // Every honest startup outcome, built from the same download registry
+        // the live panel observes. Kept on the sheet in both appearances so a
+        // palette change cannot make a wait or a recovery unreadable.
+        func launchDownloads(_ state: ModelDownload.State) -> ModelDownloads {
+            let downloads = ModelDownloads()
+            downloads.expect(Transcriber.speechDownload)
+            downloads.update(Transcriber.speechDownload.id, to: state)
+            return downloads
+        }
+        let launchDownloading = LaunchModel(
+            downloads: launchDownloads(.downloading(percent: 43)), hotkey: "Right ⌥"
+        )
+        let launchLoading = LaunchModel(
+            downloads: launchDownloads(.loading), hotkey: "Right ⌥"
+        )
+        let launchReady = LaunchModel(
+            downloads: launchDownloads(.installed), hotkey: "Right ⌥"
+        )
+        let launchStuck = LaunchModel(
+            downloads: launchDownloads(.failed(.unreachable)), hotkey: "Right ⌥"
+        )
+
         // The third element is the appearance to draw in. Every floating
         // surface is dark whatever the system is set to — that is decided in
         // `adoptParrotAppearance` and is not a preference. The permissions
         // window is the exception and the reason this is a column at all: it is
         // an ordinary titled window, it follows the system, and it has to be
         // legible both ways. So it appears twice, once each.
-        let surfaces: [(view: AnyView, size: NSSize, scheme: ColorScheme, drawn: Bool)] = [
+        // A nil scheme lets the surface apply its own policy to the column.
+        // Context surfaces use the default `feedback.theme: system`, so they
+        // follow it; older floating panels that still call
+        // `adoptParrotAppearance` remain explicitly dark.
+        let surfaces: [(view: AnyView, size: NSSize, scheme: ColorScheme?, drawn: Bool)] = [
             // The one real window the app has, and the first thing anyone sees.
             // On the sheet for the same reason as the rest: it is looked at,
             // not asserted on, and two screens that drift apart are obvious
@@ -1048,62 +1073,72 @@ enum PanelsCommand {
             (didNotArrivePane, setupSize(didNotArrivePane), .light, false),
             (vadPane, setupSize(vadPane), .dark, false),
             (openingPane, setupSize(openingPane), .light, false),
+            (AnyView(LaunchView(onHide: {}).environmentObject(launchDownloading)),
+             LaunchMetrics.windowSize(listing: true), nil, true),
+            (AnyView(LaunchView(onHide: {}).environmentObject(launchLoading)),
+             LaunchMetrics.windowSize(listing: false), nil, true),
+            (AnyView(LaunchView(onHide: {}).environmentObject(launchReady)),
+             LaunchMetrics.windowSize(listing: false), nil, true),
+            (AnyView(LaunchView(onHide: {}).environmentObject(launchStuck)),
+             LaunchMetrics.windowSize(listing: false), nil, true),
+            (AnyView(ContextStatusMarkPreview(primaryHex: ContextIdentity.defaultPrimary)),
+             NSSize(width: 290, height: 64), nil, true),
             (AnyView(PillView().environmentObject(notice)),
-             pillSize(notice), .dark, true),
+             pillSize(notice), nil, true),
             (AnyView(PillView().environmentObject(caution)),
-             pillSize(caution), .dark, true),
+             pillSize(caution), nil, true),
             // What every dictation now ends as, and what the rest of this
             // block is that surface opened. Next to the notices because that is
             // the comparison that matters: it has to not look like one, and at
             // 46pt it has to be findable at all.
             (AnyView(PillView().environmentObject(listeningQuiet)),
-             pillSize(listeningQuiet), .dark, true),
+             pillSize(listeningQuiet), nil, true),
             (AnyView(PillView().environmentObject(listening)),
-             pillSize(listening), .dark, true),
-            (AnyView(PillView().environmentObject(listeningBlind)),
-             pillSize(listeningBlind), .dark, true),
+             pillSize(listening), nil, true),
+            (AnyView(PillView().environmentObject(listeningStrong)),
+             pillSize(listeningStrong), nil, true),
             (AnyView(PillView().environmentObject(editing)),
-             pillSize(editing), .dark, true),
+             pillSize(editing), nil, true),
             (AnyView(PillView().environmentObject(thinkingDocked)),
-             pillSize(thinkingDocked), .dark, true),
+             pillSize(thinkingDocked), nil, true),
             (AnyView(PillView().environmentObject(listeningFree)),
-             pillSize(listeningFree), .dark, true),
+             pillSize(listeningFree), nil, true),
             (AnyView(PillView().environmentObject(thinkingFree)),
-             pillSize(thinkingFree), .dark, true),
+             pillSize(thinkingFree), nil, true),
             (AnyView(PillView().environmentObject(tab)),
-             pillSize(tab), .dark, true),
+             pillSize(tab), nil, true),
             (AnyView(PillView().environmentObject(tabWarned)),
-             pillSize(tabWarned), .dark, true),
+             pillSize(tabWarned), nil, true),
             (AnyView(PillView().environmentObject(offer)),
-             pillSize(offer), .dark, true),
+             pillSize(offer), nil, true),
             (AnyView(PillView().environmentObject(offerSelection)),
-             pillSize(offerSelection), .dark, true),
+             pillSize(offerSelection), nil, true),
             (AnyView(PillView().environmentObject(offerLearn)),
-             pillSize(offerLearn), .dark, true),
+             pillSize(offerLearn), nil, true),
             (AnyView(PillView().environmentObject(offerLearnShort)),
-             pillSize(offerLearnShort), .dark, true),
+             pillSize(offerLearnShort), nil, true),
             (AnyView(PillView().environmentObject(offerLearnLong)),
-             pillSize(offerLearnLong), .dark, true),
+             pillSize(offerLearnLong), nil, true),
             (AnyView(PillView().environmentObject(offerSelector)),
-             pillSize(offerSelector), .dark, true),
+             pillSize(offerSelector), nil, true),
             (AnyView(PillView().environmentObject(offerSelectorLong)),
-             pillSize(offerSelectorLong), .dark, true),
+             pillSize(offerSelectorLong), nil, true),
             (AnyView(PillView().environmentObject(offerSelectorTwo)),
-             pillSize(offerSelectorTwo), .dark, true),
+             pillSize(offerSelectorTwo), nil, true),
             (AnyView(PillView().environmentObject(offerCopied)),
-             pillSize(offerCopied), .dark, true),
+             pillSize(offerCopied), nil, true),
             // The same offer with `feedback.confidence` on: two rows instead of
             // one, and the only pill on the sheet that is not a lozenge.
             (AnyView(PillView().environmentObject(offerWarned)),
-             pillSize(offerWarned), .dark, true),
+             pillSize(offerWarned), nil, true),
             (AnyView(PillView().environmentObject(offerStopped)),
-             pillSize(offerStopped), .dark, true),
+             pillSize(offerStopped), nil, true),
             (AnyView(PillView().environmentObject(offerHeard)),
-             pillSize(offerHeard), .dark, true),
+             pillSize(offerHeard), nil, true),
             (AnyView(PillView().environmentObject(offerWrapped)),
-             pillSize(offerWrapped), .dark, true),
+             pillSize(offerWrapped), nil, true),
             (AnyView(PillView().environmentObject(offerHeardLong)),
-             pillSize(offerHeardLong), .dark, true),
+             pillSize(offerHeardLong), nil, true),
             // Not a pill state at all, and the only surface here that is
             // about the hardware rather than about the words. Next to the pill
             // because that is what it appears beside.
@@ -1122,13 +1157,15 @@ enum PanelsCommand {
              NSSize(width: KeyboardNoticeMetrics.width,
                     height: KeyboardNoticeMetrics.height(expanded: true)), .dark, true),
             (AnyView(CorrectionView().environmentObject(correction)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: correction.rows.count)), .dark, false),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: correction.rows.count)), nil, false),
             (AnyView(CorrectionView().environmentObject(rule)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: rule.rows.count)), .dark, false),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: rule.rows.count)), nil, false),
             (AnyView(CorrectionView().environmentObject(several)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: several.rows.count)), .dark, false),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: several.rows.count)), nil, false),
             (AnyView(CorrectionView().environmentObject(asked)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: asked.rows.count) + 44), .dark, false),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(
+                forRows: asked.rows.count, showsContext: true
+             )), nil, false),
             // The dictation panel is deliberately not here. Its field is an
             // `NSTextField` and its background is real Liquid Glass, and this
             // sheet can draw neither — it came out as a white block inside an
@@ -1156,8 +1193,9 @@ enum PanelsCommand {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: canvas)
 
-        // The surfaces are dark either way; the columns are the two kinds of app
-        // they land on top of.
+        // Context surfaces follow the two columns, as the default
+        // `feedback.theme: system` does in production. Fixed HUDs keep their
+        // own production appearance.
         for index in 0..<2 {
             let left = CGFloat(index) * column
             (index == 0 ? NSColor.white : NSColor(white: 0.13, alpha: 1)).setFill()
@@ -1165,6 +1203,7 @@ enum PanelsCommand {
 
             var top = size.height - margin
             for (view, natural, scheme, drawn) in surfaces {
+                let actualScheme = scheme ?? (index == 0 ? .light : .dark)
                 let box = NSRect(
                     x: left + (column - natural.width) / 2,
                     y: top - natural.height,
@@ -1190,7 +1229,7 @@ enum PanelsCommand {
                     let rendered = MainActor.assumeIsolated { () -> NSImage? in
                         let renderer = ImageRenderer(
                             content: view
-                                .environment(\.colorScheme, scheme)
+                                .environment(\.colorScheme, actualScheme)
                                 .frame(width: natural.width, height: natural.height)
                         )
                         renderer.scale = 2
@@ -1200,7 +1239,9 @@ enum PanelsCommand {
                     rendered?.draw(in: box)
                 } else {
                     let hosting = NSHostingView(rootView: view)
-                    hosting.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                    hosting.appearance = NSAppearance(
+                        named: actualScheme == .dark ? .darkAqua : .aqua
+                    )
                     hosting.frame = NSRect(origin: .zero, size: natural)
                     hosting.layoutSubtreeIfNeeded()
                     if let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) {
@@ -1406,15 +1447,13 @@ enum PanelsCommand {
             }
         case "offer":
             // The real call rather than a bare `set`. The offer is the one
-            // state that holds and then thins out, so a preview that only held
-            // would be a picture of a pill that never leaves. It gets the
+            // state that folds to its tab on a deadline, so it gets the same
             // duration the app gives it.
             pill.offer(offerChips, for: AppDelegate.offerSeconds)
             // The one state that takes the mouse, so the one worth being able
             // to hover. Nothing runs — this is the surface, not the app — but
             // the highlight and the hold behave the way they do there: park the
-            // pointer on the pill and it stops fading, which is also how you
-            // keep it on screen for as long as you want to look at it.
+            // pointer on the pill and it stops the fold deadline.
             pill.model.onHover = { inside in
                 if !inside { pill.model.selected = nil }
                 pill.hovering(inside)
@@ -1441,6 +1480,16 @@ enum PanelsCommand {
         case "rule":
             correction.show(rules: [(heard: "Ver Sal", corrected: "Vercel"),
                                     (heard: "Mick", corrected: "Mik")])
+        case "proposal", "proposal-light", "proposal-dark":
+            if surface == "proposal-light" { correction.theme = .light }
+            if surface == "proposal-dark" { correction.theme = .dark }
+            correction.show(
+                rules: [(heard: "Ver Sal", corrected: "Vercel"),
+                        (heard: "Tasmine", corrected: "Tasmeen")],
+                over: "We worked with Tasmine on the Ver Sal deployment while reviewing a long"
+                    + " context sentence that has to remain readable without covering the"
+                    + " document behind the editor."
+            )
         // The panel the pill's offer opens: one line, editable, over what was
         // just dictated. A different shape from the transform preview below —
         // short enough for a field rather than an area — and the one that is
@@ -1488,8 +1537,10 @@ enum PanelsCommand {
         // was the one thing it got wrong.
         case "callout":
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-            item.button?.image = NSImage(named: "MenuBarParrotTemplate")
-            item.button?.image?.isTemplate = true
+            item.button?.image = ContextStatusMark.image(
+                state: .idle, primaryHex: ContextIdentity.defaultPrimary, dark: false
+            )
+            item.button?.setAccessibilityLabel(ContextStatusMark.State.idle.accessibilityLabel)
             calloutItem = item
             calloutPanel = MenuBarCallout()
             // After the menu bar has laid the item out. Asked on this turn of
@@ -1612,6 +1663,7 @@ enum PanelsCommand {
                 (4.0, { pill.working("Grammar…") }),
                 (5.4, { pill.notice("Grammar applied", tone: .done, duration: nil) }),
                 (7.4, { pill.offer(offerChips, for: 3) }),
+                (8.0, { pill.open(true) }),
                 (11.4, { pill.recording(icon: nil) }),
                 (14.0, { pill.working("Transcribing…") }),
                 (15.4, { pill.notice("Nowhere to type — the transcription is on your clipboard",
@@ -1650,7 +1702,8 @@ enum PanelsCommand {
             setupWindow = preview
         default:
             print("usage: ParrotFlow --panels <notice|caution|failure|alert|thinking|offer"
-                + "|confidence|vocabulary|punctuation|rule|dictation|preview|microphone"
+                + "|confidence|vocabulary|punctuation|rule|proposal|proposal-light"
+                + "|proposal-dark|dictation|preview|microphone"
                 + "|keyboard|pill|learn|learn-long|selector|selector-long|selector-two"
                 + "|update|models|setup|launch|sequence|tutorial|names|slack|hack"
                 + "|downloads|ready|callout> [seconds]")

@@ -8,7 +8,8 @@ import SwiftUI
 /// spell check rather than typed from nothing — see
 /// `VocabularySuggest` for what it finds and what it cannot.
 ///
-/// Visually a sibling of the pill: near-black at 95%, the same plumage rim.
+/// Visually a sibling of the pill: the same opaque Context surface, theme and
+/// configurable accent, while remaining a key panel so its fields can edit.
 final class CorrectionPanel {
 
     private var panel: KeyPanel?
@@ -18,6 +19,12 @@ final class CorrectionPanel {
     /// (rules to save, the full corrected text to put back).
     var onSave: (([TaughtRule], String) -> Void)?
     var onCancel: (() -> Void)?
+    var primaryColor = ContextIdentity.defaultPrimary {
+        didSet { model.primaryColor = primaryColor }
+    }
+    var theme: ContextAppearance = .system {
+        didSet { model.theme = theme }
+    }
 
     func show(selection: String, language: String? = nil) {
         model.load(sentence: selection, language: language)
@@ -139,7 +146,6 @@ final class CorrectionPanel {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.adoptParrotAppearance()
         panel.onCancel = { [weak self] in self?.dismiss(cancelled: true) }
         self.panel = panel
     }
@@ -147,7 +153,10 @@ final class CorrectionPanel {
     /// Grows with the number of rows, up to a scrolling cap.
     private func resize() {
         guard let panel else { return }
-        let height = CorrectionMetrics.height(forRows: model.rows.count)
+        let height = CorrectionMetrics.height(
+            forRows: model.rows.count,
+            showsContext: model.proposed && !model.sentence.isEmpty
+        )
         panel.setContentSize(NSSize(width: CorrectionMetrics.width, height: height))
         panel.contentView?.frame = NSRect(
             x: 0, y: 0, width: CorrectionMetrics.width, height: height
@@ -170,16 +179,20 @@ final class CorrectionPanel {
 }
 
 enum CorrectionMetrics {
-    static let heardWidth: CGFloat = 165
-    static let arrowWidth: CGFloat = 12
-    static let correctedWidth: CGFloat = 185
+    static let bleed: CGFloat = 7
+    static let surfaceWidth: CGFloat = 526
+    static let contentPadding: CGFloat = 18
+    static let heardWidth: CGFloat = 190
+    static let arrowWidth: CGFloat = 14
+    static let correctedWidth: CGFloat = 218
     /// The two columns, the arrow, the ✕, and the gaps between them.
-    static let width: CGFloat = 482
-    static let rowHeight: CGFloat = 40
+    static let width: CGFloat = surfaceWidth + bleed * 2
+    static let rowHeight: CGFloat = 44
     static let maxRows = 7
-    /// Title, column labels, the add-a-word row, and the buttons. Measured
-    /// against the drawn panel, not derived from the fonts.
-    private static let chrome: CGFloat = 162
+    /// Opaque surface padding, title, labels, add row and action footer.
+    private static let chrome: CGFloat = 178
+    /// Heading plus up to three readable context lines.
+    private static let context: CGFloat = 66
 
     /// The scrolling area. Exactly the rows it shows, so a row is never drawn
     /// half over the edge of it.
@@ -187,8 +200,8 @@ enum CorrectionMetrics {
         rowHeight * CGFloat(max(1, min(rows, maxRows)))
     }
 
-    static func height(forRows rows: Int) -> CGFloat {
-        chrome + rowsHeight(rows)
+    static func height(forRows rows: Int, showsContext: Bool = false) -> CGFloat {
+        bleed * 2 + chrome + rowsHeight(rows) + (showsContext ? context : 0)
     }
 }
 

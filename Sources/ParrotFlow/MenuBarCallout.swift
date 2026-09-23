@@ -4,7 +4,7 @@ import SwiftUI
 /// The one thing said after the setup window closes: where the app went.
 ///
 /// A window that disappears takes the app with it as far as anybody watching is
-/// concerned. There is no dock icon and no window left — only a bird in the
+/// concerned. There is no dock icon and no window left — only a mark in the
 /// menu bar that was not there an hour ago — so this points at it once, names
 /// it, and says the key to hold.
 ///
@@ -216,10 +216,8 @@ private struct CalloutView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 7) {
-                // The drawing, not the menu bar bird: that one is a single
-                // colour and would be an orange shape on blue. `PlumageBird`
-                // is cut from `parrot.svg` and wears the plumage.
-                PlumageBird(size: 17)
+                ContextVoiceMark(color: .white)
+                    .frame(width: 17, height: 17)
                 Text("\(AppVariant.displayName) lives here")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
@@ -233,7 +231,7 @@ private struct CalloutView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.white)
             }
-            Text("Its menu is under the bird.")
+            Text("Its menu is under the voice mark.")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.white.opacity(0.72))
         }

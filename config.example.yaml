@@ -37,6 +37,15 @@ audio:
   # false to keep the 100ms. Needs speech_gate.
   second_opinion: true
 
+feedback:
+  # Floating Context surfaces follow macOS by default. Use dark or light to
+  # force one literally.
+  theme: system
+
+  # Primary Context colour for the pill, startup screen and vocabulary editor,
+  # as #RRGGBB. Dark appearance lifts the hue when needed for contrast.
+  primary_color: "#5F46CA"
+
 logging:
   # One timeline per dictation in spans.jsonl, beside the recordings: every
   # step, every decode, what each cost. Rotates at 64 MB. `--trace-view` draws

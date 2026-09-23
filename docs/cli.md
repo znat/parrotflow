@@ -43,7 +43,7 @@ config: /Users/you/.config/parrotflow/config.yaml
   ✓ sample rate       16000 Hz mono
   ✓ output dir        /Users/you/.config/parrotflow/recordings
   ✓ min duration      0.3s
-  · feedback          sound=true overlay=true
+  · feedback          sound=true overlay=true theme=system
   ✓ microphone        Granted
   ✓ input device      MacBook Pro Microphone
 ```

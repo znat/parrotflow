@@ -22,6 +22,10 @@ struct CorrectionRow: Identifiable, Equatable {
 
 final class CorrectionModel: ObservableObject {
     @Published var rows: [CorrectionRow] = []
+    /// The live Context appearance shared with the pill and launch panel.
+    @Published var theme: ContextAppearance = .system
+    /// The live `feedback.primary_color` used by fields and primary actions.
+    @Published var primaryColor = ContextIdentity.defaultPrimary
 
     /// The sentence the panel opened on, kept so the corrected text can be
     /// built by applying the rules to it. The rows are not the sentence — they

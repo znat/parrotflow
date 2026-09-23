@@ -32,8 +32,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var inputDeviceItem: NSMenuItem!
     private var permissionsItem: NSMenuItem!
 
-    /// The recording state the menu bar parrot was last tinted for.
-    private var shownRecording: Bool?
+    /// The Context mark currently installed in the status item. Appearance and
+    /// primary colour are part of the cache key because processing is coloured.
+    private var shownStatusState: ContextStatusMark.State?
+    private var shownStatusDark: Bool?
+    private var shownStatusPrimary: String?
 
     /// Shown only while `config.problems()` has something in it.
     private var configProblemsItem: NSMenuItem!
@@ -466,12 +469,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// an offer whose keys arrive late — a second dictation was still running —
     /// gets whatever is left of the moment rather than a fresh one.
     private var offerHoldsReturnUntil: Date?
-    /// Gives the keys back when the offer simply runs out.
+    /// Gives the keys back when the offer's expanded window runs out.
     ///
-    /// The pill fades itself off screen after `offerSeconds` and tells nobody,
-    /// so an offer that nobody answers ends with no call back into here. This
-    /// is that call. Without it the tap's own expiry would be the only thing
-    /// left to end it, and that is the backstop, not the way out.
+    /// The pill folds to its tab after `offerSeconds`; this matching deadline
+    /// keeps the keyboard claim in step even if the UI callback arrives late.
     ///
     /// It has a second job while the pointer is holding the offer open. See
     /// `offerDeadlinePassed`.
@@ -487,7 +488,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// See `holdTheOffer`.
     private var offerHeld = false
 
-    /// How long the offer stays up: the pill's own hold plus its fade.
+    /// How long the expanded offer stays up before folding to its tab.
     ///
     /// Read from `PillHUD` rather than chosen here, because the keys and the
     /// pill have to end together. A number of its own would mean letters still
@@ -943,6 +944,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // list now names a different device.
         recorder.preferredMicrophones = config.audio.microphones
         recorder.reevaluateInput()
+        pill.model.primaryColor = config.feedback.primaryColor
+        pill.model.theme = config.feedback.theme
+        launch.primaryColor = config.feedback.primaryColor
+        launch.theme = config.feedback.theme
+        correctionPanel.primaryColor = config.feedback.primaryColor
+        correctionPanel.theme = config.feedback.theme
 
         configProblems = config.problems()
         for problem in configProblems { Log.write("config: \(problem)") }
@@ -4003,7 +4010,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// `Edit` opens the panel for the case the question cannot settle: a word
     /// you typed wrong yourself, which no test tells from one the decoder got
-    /// wrong. No deadline — other offers decay because ignoring them is an
+    /// wrong. No deadline — other offers fold because ignoring them is an
     /// answer, and ignoring this one is not.
     private func askToLearn(_ worth: [EditWatch.Change], over sentence: String) {
         // Our own learn offer is replaceable. Keeping the first would leave
@@ -4635,9 +4642,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the time it takes to read that.
     ///
     /// The pill is raised again rather than edited in place: it is the same
-    /// offer with the same chips, and raising it restarts the fade, which is
-    /// the whole point — a warning that arrives with two seconds left on a
-    /// surface that is already half gone is a warning nobody reads.
+    /// offer with the same chips, and raising it restarts the fold deadline,
+    /// which is the whole point — a warning that arrives as the panel is about
+    /// to close is a warning nobody reads.
     ///
     /// The keys are re-armed from the same call the offer normally uses, which
     /// reads `offerReading` and finds the hold already spent. So the second
@@ -4707,9 +4714,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Take the offer down without running anything on it — Escape, Return, or
     /// a click outside it. `reason` is only for the log.
     ///
-    /// Not called by the deadline passing unanswered: the pill has already
-    /// faded itself out by then, on its own clock, and this would fade it a
-    /// second time. `offerDeadlinePassed` calls `endTheOffer` directly.
+    /// Not called by the deadline passing unanswered: the pill folds on its
+    /// own clock. `offerDeadlinePassed` updates the offer state directly.
     private func dismissOffer(reason: String) {
         // A selector dismissed is a question declined, and the words it was
         // holding are still owed. `writeTheChoice` takes the surface down
@@ -4760,8 +4766,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard offerHeld else {
             // Open, this is the panel's deadline and not the offer's: it folds
             // and the tab stays. `pill.open(false)` calls back through `onFold`
-            // to put the clock and the letters back, and the pill's own fade
-            // usually gets here first — both are idempotent.
+            // to put the clock and the letters back. Either matching deadline
+            // may get here first; both paths are idempotent.
             if pill.isOpen { pill.open(false) } else { endTheOffer() }
             return
         }
@@ -4776,14 +4782,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The pointer stops the offer's clock, and gives it back in full when it
     /// leaves.
     ///
-    /// Stopped rather than reset. A surface that went on thinning while you
-    /// were reaching for it would be arguing about whether you had finished,
-    /// and a pointer can rest for longer than any number chosen here. So while
+    /// Stopped rather than reset. A surface that folded while you were reaching
+    /// for it would be arguing about whether you had finished, and a pointer
+    /// can rest for longer than any number chosen here. So while
     /// it is inside the offer has no deadline at all, and leaving starts a
     /// whole new `offerSeconds`.
     ///
     /// Three clocks have to move together, or the pill and the keys disagree:
-    /// the pill's own fade, this deadline, and the tap's expiry. The tap's is
+    /// the pill's own fold, this deadline, and the tap's expiry. The tap's is
     /// a backstop against a tap that outlived its offer, and a pointer resting
     /// on the pill is the opposite of that — the offer is on screen, by
     /// definition. Every path that ends the offer still calls
@@ -5940,16 +5946,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Put the next question on the pill, or write the words if there is none.
     ///
     /// The pill is raised again for each question rather than edited, which is
-    /// what restarts the clock and the fade: a second question inheriting the
-    /// two seconds left on the first would be gone before it was read.
+    /// what restarts the clock: a second question inheriting the time left on
+    /// the first would fold before it was read.
     private func askTheNextWord() {
         guard let pending = pendingChoice else { return }
         guard let question = pending.run.next else {
             writeTheChoice(reason: "every place was answered")
             return
         }
-        // The learn question's clock, not the offer's. `offerSeconds` is six —
-        // four at full strength and two fading — which is right for a tab you
+        // The learn question's clock, not the offer's. `offerSeconds` is six,
+        // then the ordinary panel folds to its tab — right for an offer you
         // may ignore and wrong for a question holding your sentence. This is
         // the same shape the learn offer gets thirty seconds for: a sentence to
         // read and a word to decide.
@@ -6961,7 +6967,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = Self.idleParrot
+        statusItem.button?.image = ContextStatusMark.image(
+            state: .idle, primaryHex: config.feedback.primaryColor, dark: false
+        )
+        statusItem.button?.setAccessibilityLabel(ContextStatusMark.State.idle.accessibilityLabel)
 
         let menu = NSMenu()
 
@@ -7091,19 +7100,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateUI() {
         let recording = recorder.isRecording
 
-        // Only when it actually changes. updateUI runs on a 0.1s timer while
-        // recording, to redraw the elapsed clock, and the bird is the one thing
-        // in here that cannot change between two ticks of the same state.
-        //
-        // Swapping the whole image rather than tinting one. `contentTintColor`
-        // is the obvious way to turn a menu bar glyph red and it does not work:
-        // set it on a status button and AppKit stops treating the image as a
-        // template at all and draws its own pixels, which for a template is
-        // solid black. So the colour is baked into a second file and the button
-        // is handed whichever bird the state calls for.
-        if shownRecording != recording {
-            shownRecording = recording
-            statusItem.button?.image = recording ? Self.recordingParrot : Self.idleParrot
+        let processing = runsInFlight > 0 || {
+            switch transcriberStatus {
+            case .downloading, .loading: return true
+            case .idle, .ready, .failed: return false
+            }
+        }()
+        let failed = hotkeyError != nil || standingCaptureProblem != nil
+            || !configProblems.isEmpty || {
+                if case .failed = transcriberStatus { return true }
+                return false
+            }()
+        let statusState: ContextStatusMark.State = recording ? .recording
+            : processing ? .processing
+            : failed ? .failure
+            : .idle
+        let statusDark = statusItem.button?.effectiveAppearance.bestMatch(
+            from: [.darkAqua, .aqua]
+        ) == .darkAqua
+        let statusPrimary = config.feedback.primaryColor
+
+        // `updateUI` ticks while recording; redraw only for a real state,
+        // appearance, or config change. Idle release builds remain templates.
+        if shownStatusState != statusState || shownStatusDark != statusDark
+            || shownStatusPrimary != statusPrimary {
+            shownStatusState = statusState
+            shownStatusDark = statusDark
+            shownStatusPrimary = statusPrimary
+            statusItem.button?.image = ContextStatusMark.image(
+                state: statusState, primaryHex: statusPrimary, dark: statusDark
+            )
+            statusItem.button?.setAccessibilityLabel(statusState.accessibilityLabel)
+            statusItem.button?.toolTip = statusState.accessibilityLabel
         }
 
         let shortcut = hotKeys.binding?.displayName
@@ -7346,35 +7374,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set by name because `preferredImageVisibility` arrived in the macOS 27
     /// SDK and this builds against 26. `2` is `.hidden`; the check makes it a
     /// no-op on any system that predates the property.
-    /// The bird, flat, at the size the menu bar draws glyphs.
-    ///
-    /// A bird for the menu bar, by name.
-    ///
-    /// Built by scripts/make-icons.py from the same Resources/parrot.svg the app
-    /// icon comes from, at @1x/@2x/@3x — `NSImage(named:)` picks the rung that
-    /// matches the display, and reads the `Template` suffix to decide whether
-    /// the file is a mask to paint the menu bar's own colour through or an image
-    /// to draw as-drawn. That is why nothing here touches `isTemplate`: the file
-    /// name is the single place it is decided, and code that also sets it is one
-    /// more place for the two to disagree.
-    ///
-    /// Falls back to a microphone if a file is missing, which happens exactly
-    /// once — running the binary outside its bundle. A status item with no image
-    /// is a status item you cannot click, and losing the menu is a worse way to
-    /// find out than an unfamiliar glyph.
-    private static func menuBarParrot(_ name: String) -> NSImage? {
-        guard let image = NSImage(named: name) else {
-            let fallback = NSImage(systemSymbolName: "mic", accessibilityDescription: nil)
-            fallback?.isTemplate = true
-            return fallback
-        }
-        image.accessibilityDescription = AppVariant.displayName
-        return image
-    }
-
-    private static let idleParrot = menuBarParrot(AppVariant.menuBarIdleImage)
-    private static let recordingParrot = menuBarParrot(AppVariant.menuBarRecordingImage)
-
     private static func hideAutomaticImage(_ item: NSMenuItem) {
         guard item.responds(to: Selector(("setPreferredImageVisibility:"))) else { return }
         item.setValue(2, forKey: "preferredImageVisibility")

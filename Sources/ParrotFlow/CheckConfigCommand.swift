@@ -78,7 +78,9 @@ enum CheckConfigCommand {
         emit("  · feedback          sound=\(config.feedback.sound)"
               + " volume=\(config.feedback.soundVolume) overlay=\(config.feedback.overlay)"
               + " correct_offer=\(config.feedback.correctOffer)"
-              + " confidence=\(config.feedback.confidence)")
+              + " confidence=\(config.feedback.confidence)"
+              + " theme=\(config.feedback.theme.rawValue)"
+              + " primary_color=\(config.feedback.primaryColor)")
         emit("  · low confidence    sentence<\(config.feedback.lowConfidence.sentence)"
               + " AND word<\(config.feedback.lowConfidence.word)"
               + " hold_return=\(config.feedback.lowConfidence.holdReturn)"

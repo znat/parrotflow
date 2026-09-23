@@ -16,22 +16,29 @@ import SwiftUI
 /// offers nothing but the door. It says what the app is doing, in the app's own
 /// face, and goes.
 ///
-/// Glass rather than the near-black ground the other panels take. Every Mac
-/// that runs ParrotFlow is Apple silicon and every Apple silicon Mac runs
-/// macOS 26, so `ParrotGlass` is the platform material here rather than a
-/// fallback anybody sees. See `ParrotGlass.isPlatform`.
+/// Revision 08 uses the same adaptive Context surface as the pill: a six-point
+/// rounded box, one fine outline, and a crisp three-point hard shadow.
 final class LaunchPanel {
 
     private var panel: NSPanel?
     private var watch: AnyCancellable?
     /// Which of the two heights the window is currently built at.
     private var listing = false
+    private var model: LaunchModel?
 
     private let downloads: ModelDownloads
 
     /// What the ready line tells you to hold. Nil when nothing bound, and then
     /// the line is left out rather than naming a key that does nothing.
     var hotkey: String?
+    /// Updated with config reloads; a visible panel redraws immediately.
+    var primaryColor = ContextIdentity.defaultPrimary {
+        didSet { model?.primaryColor = primaryColor }
+    }
+    /// Updated with config reloads; the system choice also follows macOS live.
+    var theme: ContextAppearance = .system {
+        didSet { model?.theme = theme }
+    }
 
     init(downloads: ModelDownloads = .shared) {
         self.downloads = downloads
@@ -94,7 +101,8 @@ final class LaunchPanel {
         watch = nil
         guard let panel, panel.isVisible else { return }
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                ? 0 : 0.22
             panel.animator().alphaValue = 0
         } completionHandler: {
             panel.orderOut(nil)
@@ -103,7 +111,11 @@ final class LaunchPanel {
     }
 
     private func build() {
-        let model = LaunchModel(downloads: downloads, hotkey: hotkey)
+        let model = LaunchModel(
+            downloads: downloads, hotkey: hotkey, primaryColor: primaryColor,
+            theme: theme
+        )
+        self.model = model
         let hosting = NSHostingView(rootView: LaunchView(onHide: { [weak self] in
             self?.dismiss()
         }).environmentObject(model))
@@ -117,23 +129,16 @@ final class LaunchPanel {
             backing: .buffered,
             defer: false
         )
-        panel.contentView = ParrotGlass.container(
-            hosting, radius: Parrot.panelRadius, inset: LaunchMetrics.bleed,
-            // Lighter than the preview panel's. Nothing here is selected or
-            // read word by word — it is a name, a sentence and three numbers,
-            // and the material's own legibility pass carries them.
-            tint: NSColor.black.withAlphaComponent(0.12)
-        )
+        panel.contentView = hosting
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        // The bloom bleeds into the margin, so a window shadow would trace the
-        // blur rather than the panel. Same reason as every other surface here.
+        // The Context shadow is part of the SwiftUI surface and resizes with it.
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.adoptParrotAppearance()
+        panel.appearance = nil
         self.panel = panel
     }
 
@@ -177,11 +182,9 @@ enum LaunchMetrics {
     static func windowSize(listing: Bool) -> NSSize {
         NSSize(width: width + bleed * 2, height: height(listing: listing) + bleed * 2)
     }
-    /// Transparent room around the panel. It held the bloom, which has gone;
-    /// it is kept because the material casts its own shadow and a window with
-    /// no margin clips it square at the edge.
-    static let bleed: CGFloat = 34
-    static let bird: CGFloat = 76
+    /// Transparent room for the three-point shadow and one-point outline.
+    static let bleed: CGFloat = 7
+    static let mark: CGFloat = 54
 }
 
 /// What the panel is saying, worked out from the rows the fetches report into.
@@ -206,11 +209,19 @@ final class LaunchModel: ObservableObject {
 
     let downloads: ModelDownloads
     let hotkey: String?
+    @Published var primaryColor: String
+    @Published var theme: ContextAppearance
     private var watch: AnyCancellable?
 
-    init(downloads: ModelDownloads, hotkey: String? = nil) {
+    init(
+        downloads: ModelDownloads, hotkey: String? = nil,
+        primaryColor: String = ContextIdentity.defaultPrimary,
+        theme: ContextAppearance = .system
+    ) {
         self.downloads = downloads
         self.hotkey = hotkey
+        self.primaryColor = primaryColor
+        self.theme = theme
         watch = downloads.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
@@ -274,22 +285,29 @@ final class LaunchModel: ObservableObject {
 
 // MARK: - The panel
 
-private struct LaunchView: View {
+struct LaunchView: View {
     @EnvironmentObject private var model: LaunchModel
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var scale
     let onHide: () -> Void
+
+    private var theme: ContextTheme {
+        ContextTheme(scheme: effectiveColorScheme, primaryHex: model.primaryColor)
+    }
+
+    private var effectiveColorScheme: ColorScheme {
+        model.theme.resolved(against: colorScheme)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            PlumageBird(size: LaunchMetrics.bird)
+            ContextVoiceMark(color: theme.accent)
+                .frame(width: LaunchMetrics.mark, height: LaunchMetrics.mark)
 
-            // New York. The three the design pass left open were serif,
-            // rounded and wide caps; this is the one surface in the app that is
-            // only the app saying its own name, and nothing else here is set in
-            // a serif.
             Text(AppVariant.displayName)
-                .font(.system(size: 31, weight: .medium, design: .serif))
-                .foregroundStyle(.white.opacity(0.96))
-                .padding(.top, 16)
+                .font(.system(size: 25, weight: .semibold))
+                .foregroundStyle(theme.foreground)
+                .padding(.top, 14)
 
             switch model.moment {
             case .loading:
@@ -300,12 +318,12 @@ private struct LaunchView: View {
                 VStack(spacing: 18) {
                     Text("\(name) did not arrive. Open Setup… from the menu bar.")
                         .font(.system(size: 13))
-                        .foregroundStyle(Parrot.scarlet)
+                        .foregroundStyle(theme.failure)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 12)
                     Button("Got it", action: onHide)
-                        .buttonStyle(GlassPill(tinted: true))
+                        .buttonStyle(ContextLaunchButton(primary: true))
                 }
                 .padding(.top, 14)
             case .downloading:
@@ -318,31 +336,22 @@ private struct LaunchView: View {
                 - LaunchMetrics.padding * 2
         )
         .padding(LaunchMetrics.padding)
-        // Nothing is painted over the material: `parrotSurface` skips its own
-        // scrim and sheen where the platform has Liquid Glass.
-        //
-        // `rim: false`, which is the one place this surface parts company with
-        // the pill and the dialogs. The plumage rim is how a hand-drawn dark
-        // panel says where it ends and that it is the app's; Liquid Glass draws
-        // its own edge and lights it, so a turning rim on top is a second
-        // border arguing with the first. What is left is the plain hairline the
-        // rim carried on its inside anyway.
-        // `edge: .clear` as well, so nothing of ours is drawn on the boundary
-        // at all. The material has its own lit edge; a hairline of ours beside
-        // it is a second line a fraction away from the first, which is what a
-        // rendering glitch looks like.
-        //
-        // No bloom either. It is the rim's colours blurred and thrown past the
-        // edge, so with no rim it was a coloured fringe with nothing making it
-        // — warm on one corner, cool on the other, and reading as a halo the
-        // compositor had got wrong.
-        .parrotSurface(
-            RoundedRectangle(cornerRadius: Parrot.panelRadius, style: .continuous),
-            glass: true,
-            rim: false,
-            edge: .clear
-        )
+        .background {
+            let shape = RoundedRectangle(
+                cornerRadius: ContextIdentity.radius, style: .continuous
+            )
+            shape.fill(theme.hardShadow)
+                .offset(x: ContextIdentity.shadowOffset, y: ContextIdentity.shadowOffset)
+            shape.fill(theme.surface)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: ContextIdentity.radius, style: .continuous)
+                .strokeBorder(theme.edge, lineWidth: 1 / scale)
+        }
         .padding(LaunchMetrics.bleed)
+        .foregroundStyle(theme.foreground)
+        .environment(\.contextPrimaryColor, model.primaryColor)
+        .environment(\.colorScheme, effectiveColorScheme)
     }
 
     /// Without a bound key there is nothing to hold, so the line goes rather
@@ -355,32 +364,32 @@ private struct LaunchView: View {
                     Text("Hold")
                 Text(hotkey)
                     .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.96))
+                    .foregroundStyle(theme.foreground)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 2)
-                    .background(.white.opacity(0.14), in: RoundedRectangle(
-                        cornerRadius: Parrot.fieldRadius, style: .continuous
+                    .background(theme.accent.opacity(0.13), in: RoundedRectangle(
+                        cornerRadius: 4, style: .continuous
                     ))
                     .overlay {
-                        RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
-                            .strokeBorder(Parrot.action.opacity(0.6), lineWidth: 1.5)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(theme.accent.opacity(0.65), lineWidth: 1)
                     }
                     Text("to dictate")
                 }
                 .font(.system(size: 14))
-                .foregroundStyle(.white.opacity(0.72))
+                .foregroundStyle(theme.muted)
 
                 Button("Got it", action: onHide)
-                    .buttonStyle(GlassPill(tinted: true))
+                    .buttonStyle(ContextLaunchButton(primary: true))
             }
             .padding(.top, 15)
         } else {
             VStack(spacing: 18) {
                 Text("Ready")
                     .font(.system(size: 14))
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(theme.muted)
                 Button("Got it", action: onHide)
-                    .buttonStyle(GlassPill(tinted: true))
+                    .buttonStyle(ContextLaunchButton(primary: true))
             }
             .padding(.top, 15)
         }
@@ -395,24 +404,24 @@ private struct LaunchView: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(heading)
                 .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.62))
+                .foregroundStyle(theme.muted)
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 16)
 
             ForEach(model.shown) { row in
-                LaunchRow(row: row)
+                LaunchRow(row: row, theme: theme)
             }
 
             Text("These models improve your dictation by understanding what you meant.")
                 .font(.system(size: 12.5))
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(theme.muted)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 8)
 
             HStack {
                 Spacer()
                 Button("Hide", action: onHide)
-                    .buttonStyle(GlassPill())
+                    .buttonStyle(ContextLaunchButton())
             }
             .padding(.top, 15)
         }
@@ -430,26 +439,27 @@ private struct LaunchView: View {
 /// One model on its way, and how far it has got.
 private struct LaunchRow: View {
     let row: ModelDownload
+    let theme: ContextTheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(row.name)
                     .font(.system(size: 14))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(theme.foreground)
                 Spacer(minLength: 8)
                 if let note {
                     Text(note)
                         .font(.system(size: 12.5))
                         .monospacedDigit()
-                        .foregroundStyle(.white.opacity(row.state == .loading ? 0.6 : 0.85))
+                        .foregroundStyle(theme.muted.opacity(row.state == .loading ? 0.7 : 1))
                 }
             }
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.18))
+                    Capsule().fill(theme.foreground.opacity(0.12))
                     Capsule()
-                        .fill(Parrot.mix(Parrot.sky, .white, 0.35))
+                        .fill(theme.accent)
                         .frame(width: geometry.size.width * fraction)
                 }
             }
@@ -481,12 +491,14 @@ private struct LaunchRow: View {
 private struct Breath: View {
     let text: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.contextPrimaryColor) private var primaryColor
     @State private var lit = false
 
     var body: some View {
         Text(text)
             .font(.system(size: 14))
-            .foregroundStyle(.white.opacity(lit ? 1 : 0.6))
+            .foregroundStyle(theme.muted.opacity(lit || reduceMotion ? 1 : 0.65))
             .padding(.top, 14)
             .onAppear {
                 guard !reduceMotion else { return }
@@ -495,73 +507,37 @@ private struct Breath: View {
                 }
             }
     }
-}
 
-/// The bird at a size no menu bar drawing has.
-///
-/// `Resources/parrot.svg` is the drawing the icons are cut from, and AppKit
-/// renders SVG natively, so it is the one asset that is sharp at 76 points. The
-/// PNGs stop at 72 pixels — 24 points — and are the fallback for a build that
-/// did not copy the drawing in.
-struct PlumageBird: View {
-    var size: CGFloat = 76
-
-    var body: some View {
-        Group {
-            if let drawing {
-                Image(nsImage: drawing)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fit)
-            } else if let solid = NSImage(named: "ParrotSolid") {
-                LinearGradient(
-                    colors: [Parrot.scarlet, Parrot.amber, Parrot.leaf, Parrot.sky],
-                    startPoint: .topLeading, endPoint: .bottomTrailing
-                )
-                .mask {
-                    Image(nsImage: solid)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                }
-            }
-        }
-        .frame(width: size * 46 / 68, height: size)
-    }
-
-    private var drawing: NSImage? {
-        guard let url = Bundle.main.url(forResource: "parrot", withExtension: "svg")
-        else { return nil }
-        return NSImage(contentsOf: url)
+    private var theme: ContextTheme {
+        ContextTheme(scheme: colorScheme, primaryHex: primaryColor)
     }
 }
 
-/// What `.buttonStyle(.glass)` gives on macOS 26, spelled out here because the
-/// deployment target is 14 and the style is not available below it.
-private struct GlassPill: ButtonStyle {
-    /// The one button on the panel that is being asked for, rather than
-    /// offered. `Glass.regular.tint(_)` is the same idea on macOS 26.
-    var tinted = false
+private struct ContextLaunchButton: ButtonStyle {
+    var primary = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.contextPrimaryColor) private var primaryColor
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: tinted ? 13 : 12, weight: tinted ? .medium : .regular))
-            .foregroundStyle(.white.opacity(configuration.isPressed ? 0.6 : 0.92))
-            .padding(.horizontal, tinted ? 20 : 13)
-            .padding(.vertical, tinted ? 7 : 5)
-            .background(fill(pressed: configuration.isPressed), in: Capsule())
+            .font(.system(size: primary ? 13 : 12, weight: primary ? .medium : .regular))
+            .foregroundStyle(theme.foreground.opacity(configuration.isPressed ? 0.65 : 1))
+            .padding(.horizontal, primary ? 20 : 13)
+            .padding(.vertical, primary ? 7 : 5)
+            .background(
+                primary ? theme.accent.opacity(configuration.isPressed ? 0.12 : 0.18)
+                    : theme.controlFill,
+                in: RoundedRectangle(cornerRadius: 4)
+            )
             .overlay {
-                Capsule().strokeBorder(
-                    tinted ? Parrot.action.opacity(0.5) : .white.opacity(0.14),
-                    lineWidth: tinted ? 1 : 0.5
+                RoundedRectangle(cornerRadius: 4).strokeBorder(
+                    primary ? theme.accent : theme.controlEdge,
+                    lineWidth: primary ? 1 : 0.5
                 )
             }
     }
 
-    private func fill(pressed: Bool) -> AnyShapeStyle {
-        guard tinted else {
-            return AnyShapeStyle(Color.white.opacity(pressed ? 0.06 : 0.12))
-        }
-        return AnyShapeStyle(Parrot.action.opacity(pressed ? 0.22 : 0.38))
+    private var theme: ContextTheme {
+        ContextTheme(scheme: colorScheme, primaryHex: primaryColor)
     }
 }
