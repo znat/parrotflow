@@ -1051,9 +1051,6 @@ class Loop:
             return "the app refused to press it"
         if reply.get("error") == "redirected":
             return redirected(reply.get("text") or "")
-        if reply.get("error") == "covered":
-            self.log(f"planner: not clicked — {reply.get('text')}")
-            return reply.get("text") or "the target is covered"
         if reply.get("error") and reply.get("said"):
             raise Stop(reply.get("text") or reply["error"])
         if reply.get("error"):
@@ -1320,8 +1317,6 @@ class Loop:
         reply = self.call(do, **args)
         if reply.get("error") == "redirected":
             raise Stop(redirected(reply.get("text") or ""))
-        if reply.get("error") == "covered":
-            raise Stop(reply.get("text") or "the target is covered")
         if reply.get("error"):
             raise Stop(reply.get("text") or reply["error"], broke=True)
         return reply

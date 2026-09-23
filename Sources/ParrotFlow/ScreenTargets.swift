@@ -558,58 +558,6 @@ enum ScreenTargets {
         return found
     }
 
-    /// What covers a target at its centre, as `hit(at:)` gives it, or nil.
-    /// Not covered: the hit lands on the target, on something inside it, or
-    /// on something that holds it. A target with no size, a point nothing
-    /// answers for, and our own windows are not checked.
-    static func cover(of target: Item) -> [String: Any]? {
-        guard target.w > 1, target.h > 1 else { return nil }
-        var hit: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(
-            AXUIElementCreateSystemWide(), Float(target.x), Float(target.y), &hit
-        ) == .success, let element = hit else { return nil }
-        var pid: pid_t = 0
-        AXUIElementGetPid(element, &pid)
-        if pid == getpid() { return nil }
-        let box = CGRect(x: Double(target.x) - Double(target.w) / 2,
-                         y: Double(target.y) - Double(target.h) / 2,
-                         width: Double(target.w), height: Double(target.h))
-        func isTarget(_ candidate: AXUIElement) -> Bool {
-            guard let seen = frame(of: candidate) else { return false }
-            if abs(seen.minX - box.minX) <= 2, abs(seen.minY - box.minY) <= 2,
-               abs(seen.maxX - box.maxX) <= 2, abs(seen.maxY - box.maxY) <= 2 { return true }
-            guard !target.name.isEmpty, seen.intersects(box),
-                  string(candidate, kAXRoleAttribute) == target.role else { return false }
-            return [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute]
-                .contains { string(candidate, $0) == target.name }
-        }
-        // A part of the target: text in a row, the row under another name.
-        // Seen 09-23 in Slack: "covered by StaticText" and "covered by
-        // MenuItem" on the suggestion rows, and every pick was refused.
-        if let part = frame(of: element), box.insetBy(dx: -4, dy: -4).contains(part) { return nil }
-        var current = element
-        for _ in 0..<12 {
-            if isTarget(current) { return nil }
-            guard let parent = attribute(current, kAXParentAttribute) else { break }
-            current = parent as! AXUIElement
-        }
-        if let outer = frame(of: element), outer.insetBy(dx: -2, dy: -2).contains(box) {
-            // Something that holds the target has it among its descendants. A
-            // search cut short by the budget is taken as holding it.
-            var queue = attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
-            var budget = 400
-            while !queue.isEmpty {
-                budget -= 1
-                if budget == 0 { return nil }
-                let next = queue.removeFirst()
-                if isTarget(next) { return nil }
-                if let inner = frame(of: next), !inner.intersects(box) { continue }
-                queue.append(contentsOf: attribute(next, kAXChildrenAttribute) as? [AXUIElement] ?? [])
-            }
-        }
-        return self.hit(at: target.point)
-    }
-
     /// The focused element's role, or nil.
     static func focusRole(ofApp name: String) -> String? {
         guard let running = NSWorkspace.shared.runningApplications.first(where: {

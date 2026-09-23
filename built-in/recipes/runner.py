@@ -39,11 +39,6 @@ or silence is no; other words steer. The app's own guards (Return, never_press)
 then reply {"error": "redirected", "text": "<the words>"}, not said: the step
 is not done and the run goes on.
 
-A `click` or a `press` that ends in a real click first checks what is under
-the point. When something else covers the target, the app presses Escape once
-and looks again. Still covered, it does not click and replies
-{"error": "covered", "text": "\"End time\" is covered by <role> \"<name>\""}.
-
 `focus` replies {"point": [x, y] | null, "described": "..", "role": "AXTextField" | null}.
 
     runner  {"do": "progress", "title": "<utterance>", "activity": ".." | null,

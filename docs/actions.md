@@ -241,7 +241,7 @@ recipe steps.
 | Step | What the app does |
 | --- | --- |
 | `snapshot {at, app}` | reads the window: the app's front window, or the one under `at` when `app` is null. Items come back with ids, `cm`, `actions` and the app's verdicts |
-| `press {id, click}` | the accessibility press, or a real click when `click` is true or the press is refused. Says `pressed`. A real click first checks that the target is not covered (see below) |
+| `press {id, click}` | the accessibility press, or a real click when `click` is true or the press is refused. Says `pressed` |
 | `look {x, y, w, h}` | the text in that part of the screen, from its pixels: `{"lines": [{text, x, y, w, h, p}]}`, frames as for items, or `{"error": …}`. Needs Screen Recording |
 | `click_at {x, y, name}` | a real click at a point. `name`, when given, is checked against `never_press` too |
 | `scroll {x, y, down, turns}` | wheel turns over a point |
@@ -375,19 +375,7 @@ first. In a text field, a combo box or a search field, ⌘A selects only what
 the field holds, so it runs without a question. Anywhere else, a text area
 included, it asks.
 
-**A covered target.** Before a real click (`click`, a `press` that ends in a
-click, the click that puts the caret in a field for `type`, and `ready`), the
-app hit-tests the target's centre. The element it finds must be the target,
-inside it (up its `AXParent` chain, matched by frame within 2 pt, or by role
-and name), or hold it (its frame holds the target's, and the target is among
-its descendants, searched up to 400 elements). Otherwise the app presses
-Escape once, marked as its own so the Escape watch ignores it, waits 250 ms
-and tests again. Still covered, it does not click and replies
-`{"error": "covered", "text": "\"End time\" is covered by Group \"…\""}`.
-The step fails with that text; the run goes on. The app log has a line for
-each. A seen line (`click_at`) has no element and is not checked.
-
-**An open list.** The hit test does not see a web pop-up. Seen 09-23 in
+**An open list.** A web pop-up can lie over the target. Seen 09-23 in
 Teams: Start time's list lay over End time, the hit test named End time, and
 the click picked "18:30" in Start time, which became "18:3018:30". So before
 a click or a type, if an item in the newest read is a combo box, a pop-up

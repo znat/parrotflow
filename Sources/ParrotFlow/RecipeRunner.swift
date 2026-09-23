@@ -674,7 +674,6 @@ private final class RecipeSession {
             let pressed = ScreenAction.pressWithoutPointer(
                 target, clickRatherThanPress: r["click"] as? Bool ?? false)
             if !pressed {
-                if let covered = await uncovered(target) { return covered }
                 Log.write("action: clicking at \(target.x),\(target.y)")
                 ScreenAction.click(at: target.point)
             }
@@ -774,7 +773,6 @@ private final class RecipeSession {
             // missed 2 of 2, with it the click took 3 of 3. Why is not known.
             let hit = config.record ? ScreenTargets.hit(at: target.point) : nil
             let under = hit?["name"] as? String ?? ScreenTargets.name(at: target.point)
-            if let covered = await uncovered(target) { return covered }
             Log.write("recipe: click at \(target.x),\(target.y) on \u{201c}\(under)\u{201d}")
             ScreenAction.click(at: target.point)
             return ["ok": true, "at": [target.x, target.y], "under": hit ?? NSNull()]
@@ -831,7 +829,6 @@ private final class RecipeSession {
 
         case "ready":
             guard let target = items[r["id"] as? Int ?? 0] else { return ["error": "no such element"] }
-            if let covered = await uncovered(target) { return covered }
             ScreenAction.click(at: target.point)
             let what = target.name.isEmpty ? "the field" : "the \(target.name.lowercased())"
             say("step       caret in \(what) — ready to dictate")
@@ -898,41 +895,6 @@ private final class RecipeSession {
         say("✗ refused to press \u{201c}\(target.name.prefix(30))\u{201d}: \u{201c}\(word)\u{201d} is on never_press")
         return ["error": "refused", "said": true,
                 "text": "Won't press \"\(target.name.prefix(30))\" — that is yours to do"]
-    }
-
-    /// A real click must land on its target. Something drawn over it, such as
-    /// a picker left open, gets one Escape, marked as ours; still there after
-    /// 250 ms, there is no click.
-    private func uncovered(_ target: ScreenTargets.Item) async -> [String: Any]? {
-        // Off. The hit test gave three false covers on Slack's suggestion
-        // rows on 09-23 and cannot see the one real cover seen (Teams' time
-        // list over End time). Python's OCR check covers that case.
-        guard Self.hitTestCovers else { return nil }
-        let start = Date()
-        let cover = ScreenTargets.cover(of: target)
-        let ms = Int(Date().timeIntervalSince(start) * 1000)
-        if ms >= 20 { Log.write("action: the cover check took \(ms) ms") }
-        guard let cover else { return nil }
-        // An unnamed group is the target's own wrapper more often than a
-        // cover. Seen 09-23 in Slack: "covered by Group", Escape closed the
-        // suggestion list, and the click opened what lay under the row.
-        if (cover["name"] as? String ?? "").isEmpty, (cover["role"] as? String) == kAXGroupRole {
-            return nil
-        }
-        let line = Self.covered(target, by: cover)
-        Log.write("action: not clicked — \(line)")
-        return ["error": "covered", "text": line]
-    }
-
-    static let hitTestCovers = false
-
-    private static func covered(_ target: ScreenTargets.Item, by cover: [String: Any]) -> String {
-        func called(_ role: String, _ name: String) -> String {
-            let kind = role.hasPrefix("AX") ? String(role.dropFirst(2)) : role
-            return name.isEmpty ? (kind.isEmpty ? "something" : kind) : "\(kind) \"\(name.prefix(40))\""
-        }
-        let what = target.name.isEmpty ? called(target.role, "") : "\"\(target.name.prefix(40))\""
-        return "\(what) is covered by \(called(cover["role"] as? String ?? "", cover["name"] as? String ?? ""))"
     }
 
     private func confirm(_ question: String, near: CGRect?) async -> Confirm.Verdict {

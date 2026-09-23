@@ -1118,17 +1118,6 @@ def agent_checks(runner, stderr_path, trace_path):
           "This exact batch already ran and did the same thing" in got
           and "already ran" not in (results(1)[-1] if len(planner_bodies) > 1 else "x"), got[:300])
 
-    covered = {("press", 1): {"error": "covered",
-                              "text": '"End time" is covered by Group "Date picker"'}}
-    end, fake, report, asked = run(
-        "set the end time", [home] * 3,
-        [[act({"do": "click", "id": 2})], [("done", {"summary": "ok"})]], covered)
-    got = results(1)[-1] if len(planner_bodies) > 1 else ""
-    check("agent: a covered target is a failed step the model reads, and the run goes on",
-          'failed: "End time" is covered by Group "Date picker"' in got
-          and len(planner_bodies) == 2 and end["end"] == "done"
-          and any("not clicked" in line for line in fake.logs), (got, report))
-
     end, fake, report, asked = run(
         "write to Peter", [draft("")] * 12,
         [[act({"do": "type", "id": 1, "value": "Peter"})],
@@ -1334,7 +1323,7 @@ def agent_checks(runner, stderr_path, trace_path):
     check("agent: covered with a list open: Return first, then read again and act",
           acted == [("key", "return"), ("press", 102), ("type", None)], acted)
 
-    covered_once = {("press", 1): {"error": "covered", "text": '"To" is covered by MenuItem'}}
+    covered_once = {("press", 1): {"error": "refused"}}
     end, fake, report, asked = run(
         "write to Peter", [draft("")] * 8,
         [[act({"do": "type", "id": 1, "value": "Peter"})],
@@ -1373,7 +1362,7 @@ def agent_checks(runner, stderr_path, trace_path):
           and len(planner_bodies) == 5 and end["end"] == "done" and report["stopped"] == "Done"
           and report["shown"] == ["Clicked Settings", "Clicked General"], (refused, report))
 
-    covered = '"Settings" is covered by Seen "18:30"'
+    covered = "the app refused to press it"
     end, fake, report, asked = run(
         "mute this channel", [home, home, menu, muted],
         [[("write_plan", {"items": [
@@ -1384,7 +1373,7 @@ def agent_checks(runner, stderr_path, trace_path):
          [("update_task_status", {"task_id": "a", "status": "completed"})],
          [("update_task_status", {"task_id": "b", "status": "completed"})],
          [("done", {"summary": "ok"})]],
-        {("press", 1): {"error": "covered", "text": covered}})
+        {("press", 1): {"error": "refused"}})
     shown = runner.progress
     statuses = [[t["status"] for t in p["plan"]] for p in shown if p.get("plan")]
     first_press = next((n for n, m in enumerate(runner.order) if m.get("do") == "press"), 0)
@@ -1429,7 +1418,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 158 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 156 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
