@@ -122,7 +122,8 @@ def choice(chosen, probabilities):
 
 class FakePlanner(http.server.BaseHTTPRequestHandler):
     """Chat completions: the next plan in `planner_plans`, a list of steps.
-    A string is sent back as a 401 body, a number as that status."""
+    A string is sent back as a 401 body, a number as that status. Responses:
+    the agent's next turn in `agent_turns`, as function calls."""
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -139,19 +140,21 @@ class FakePlanner(http.server.BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         planner_bodies.append(body)
-        if "tools" in body:
+        if self.path.endswith("/responses"):
             turn = agent_turns.pop(0) if agent_turns else [("stuck", {"why": "no turn left"})]
-            calls = [{"id": f"call_{len(planner_bodies)}_{n}", "type": "function",
-                      "function": {"name": name, "arguments": json.dumps(args)}}
-                     for n, (name, args) in enumerate(turn)]
-            # The fields Pydantic AI's model checks a chat completion for.
-            data = json.dumps({"id": f"fake-{len(planner_bodies)}", "object": "chat.completion",
-                               "created": 1, "model": body["model"],
-                               "choices": [{"index": 0, "finish_reason": "tool_calls",
-                                            "message": {"role": "assistant", "content": None,
-                                                        "tool_calls": calls}}],
-                               "usage": {"prompt_tokens": 100, "completion_tokens": 20,
-                                         "total_tokens": 120}}).encode()
+            k = len(planner_bodies)
+            output = [{"type": "function_call", "id": f"fc_{k}_{n}", "call_id": f"call_{k}_{n}",
+                       "name": name, "arguments": json.dumps(args), "status": "completed"}
+                      for n, (name, args) in enumerate(turn)]
+            data = json.dumps({"id": f"resp_{k}", "object": "response", "created_at": 1,
+                               "model": body["model"], "status": "completed", "output": output,
+                               "parallel_tool_calls": False, "tool_choice": "required",
+                               "tools": [],
+                               "usage": {"input_tokens": 100, "output_tokens": 20,
+                                         "total_tokens": 120,
+                                         "input_tokens_details": {"cached_tokens": 0},
+                                         "output_tokens_details": {"reasoning_tokens": 0}}}
+                              ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
@@ -885,6 +888,22 @@ def planner_checks(runner, stderr_path):
           printed[-300:])
 
 
+def messages(body):
+    """What a request sent, as chat messages: the plan path's own, or the
+    agent's Responses instructions and input items."""
+    if "messages" in body:
+        return body["messages"]
+    out = [{"role": "system", "content": body.get("instructions") or ""}]
+    for item in body.get("input") or ():
+        if item.get("type") == "function_call_output":
+            out.append({"role": "tool", "content": item["output"]})
+        elif item.get("type") == "function_call":
+            out.append({"role": "assistant", "content": None, "tool_calls": [item]})
+        else:
+            out.append(item)
+    return out
+
+
 def text(message):
     """A message's content as text: Pydantic AI sends some as a list of parts."""
     content = message.get("content")
@@ -909,7 +928,7 @@ def agent_checks(runner, stderr_path, trace_path):
 
     def results(n):
         """The tool messages of the nth call to the model."""
-        return [m["content"] for m in planner_bodies[n]["messages"] if m["role"] == "tool"]
+        return [m["content"] for m in messages(planner_bodies[n]) if m["role"] == "tool"]
 
     home = panel("Home", ["General", "Settings", "Leave"])
     menu = panel("Home", ["General", "Settings", "Leave", "Mute channel"])
@@ -925,22 +944,21 @@ def agent_checks(runner, stderr_path, trace_path):
     check("agent: a model ID maps to the runner's item, found again in the next read",
           [s["id"] for s in fake.steps if s["do"] == "press"] == [102, 105], fake.steps)
     body = planner_bodies[0]
-    names = [t["function"]["name"] for t in body["tools"]]
-    check("agent: tools, strict, required, no parallel calls, reasoning none",
+    names = [t["name"] for t in body["tools"]]
+    check("agent: tools, strict, required, no parallel calls, reasoning none, on /v1/responses",
           names[:4] == ["act", "read", "look", "ask"] and names[-2:] == ["done", "stuck"]
           and set(names[4:-2]) == PLAN_TOOLS
-          and all(t["function"]["strict"] for t in body["tools"] if t["function"]["name"]
-                  not in PLAN_TOOLS)
+          and all(t["strict"] for t in body["tools"] if t["name"] not in PLAN_TOOLS)
           and body["tool_choice"] == "required" and body["parallel_tool_calls"] is False
-          and body["reasoning_effort"] == "none", names)
+          and body["reasoning"] == {"effort": "none"} and "input" in body, names)
     schema_checks(body["tools"])
     check("agent: the screen is sent as numbered lines",
-          '[2] Button "Settings"' in body["messages"][1]["content"]
-          and "Request: mute this channel" in body["messages"][1]["content"],
-          body["messages"][1]["content"])
+          '[2] Button "Settings"' in messages(body)[1]["content"]
+          and "Request: mute this channel" in messages(body)[1]["content"],
+          messages(body)[1]["content"])
     check("agent: Jev is never asked", asked == [], asked)
     check("agent: the first message says today's date",
-          "\nNow: " in body["messages"][1]["content"], body["messages"][1]["content"][:200])
+          "\nNow: " in messages(body)[1]["content"], messages(body)[1]["content"][:200])
 
     end, fake, report, asked = run(
         "write to Peter", [draft("")] * 12,
@@ -1141,7 +1159,7 @@ def agent_checks(runner, stderr_path, trace_path):
     check("agent: the call limit stops the run",
           len(planner_bodies) == 50 and report["stopped"] == "Stopped after 50 model calls"
           and end["end"] == "stopped", (report, len(planner_bodies)))
-    last = [m.get("content") or "" for m in planner_bodies[-1]["messages"]]
+    last = [m.get("content") or "" for m in messages(planner_bodies[-1])]
     check("agent: only the newest screen goes in full",
           sum("earlier ones no longer work" in c for c in last) == 1
           and "earlier ones no longer work" in last[-1]
@@ -1170,7 +1188,7 @@ def agent_checks(runner, stderr_path, trace_path):
 
     end, fake, report, asked = run(
         "write to Peter", [draft("Peter"), draft("Peter")], [[("done", {"summary": "ok"})]])
-    first = planner_bodies[0]["messages"][1]["content"]
+    first = messages(planner_bodies[0])[1]["content"]
     check("agent: a field's value is on its line, and an empty one is not",
           'TextField "To" = "Peter"' in first and "TextArea (no name)\n" in first + "\n"
           and "= \"\"" not in first, first)
@@ -1350,10 +1368,10 @@ def agent_checks(runner, stderr_path, trace_path):
          [act({"do": "click", "id": 2}, {"do": "click", "id": 1})], [("done", {"summary": "ok"})],
          [plan(("Open the settings", "completed"), ("Mute the channel", "completed"))],
          [("done", {"summary": "ok"})]])
-    first, second = (planner_bodies + [{"messages": []}] * 2)[:2]
-    reminder = text(second["messages"][-1]) if second["messages"] else ""
+    first, second = (planner_bodies + [{"input": []}] * 2)[:2]
+    reminder = text(messages(second)[-1]) if messages(second) else ""
     check("agent: a plan written on the first call is shown at the end of the next request",
-          "<plan-reminder>" not in json.dumps(first) and second["messages"][-1]["role"] == "user"
+          "<plan-reminder>" not in json.dumps(first) and messages(second)[-1]["role"] == "user"
           and "1. [~] Open the settings\n2. [ ] Mute the channel" in reminder, reminder)
     refused = results(3)[-1] if len(planner_bodies) > 3 else ""
     check("agent: done with a task open is refused, the model is asked again, and done then passes",
@@ -1401,7 +1419,7 @@ def agent_checks(runner, stderr_path, trace_path):
         "mute this channel", [home] * 3,
         [[plan(("Mute the channel", "in_progress"))], [("read", {})], [("read", {})],
          [("stuck", {"why": "no mute here"})]])
-    last = [text(m) for m in planner_bodies[-1]["messages"]]
+    last = [text(m) for m in messages(planner_bodies[-1])]
     check("agent: with a plan, only the newest screen goes in full and the plan is never cut",
           sum("earlier ones no longer work" in c for c in last) == 1
           and "earlier ones no longer work" in last[-2] and "<plan-reminder>" in last[-1]
@@ -1468,8 +1486,8 @@ def schema_checks(tools):
     sys.path.insert(0, os.path.join(ROOT, "built-in", "recipes"))
     import planner
 
-    ours = {t["function"]["name"]: t["function"] for t in tools
-            if t["function"]["name"] in ("act", "read", "look", "ask", "done", "stuck")}
+    ours = {t["name"]: t for t in tools
+            if t["name"] in ("act", "read", "look", "ask", "done", "stuck")}
     errors = {name: strict_errors(inline(f["parameters"])) for name, f in ours.items()}
     errors["plan"] = strict_errors(planner.SCHEMA)
     check("schema: every tool and the plan pass strict mode's rules",
@@ -1814,10 +1832,11 @@ class Pictured(Screen):
 
 
 def pictures(body):
-    """The image parts of a request, as (detail, message index)."""
-    return [(part["image_url"].get("detail"), n) for n, m in enumerate(body["messages"])
-            if isinstance(m.get("content"), list)
-            for part in m["content"] if part.get("type") == "image_url"]
+    """The image parts of a request, as (detail, message index). The agent
+    sends Responses parts; grounding sends chat completions parts."""
+    return [(part.get("detail") or part["image_url"].get("detail"), n)
+            for n, m in enumerate(messages(body)) if isinstance(m.get("content"), list)
+            for part in m["content"] if part.get("type") in ("input_image", "image_url")]
 
 
 def grounding_checks(url, user, plans_url):
@@ -1846,11 +1865,11 @@ def grounding_checks(url, user, plans_url):
         return end, fake, end.get("loop") or {}
 
     def results(n):
-        return [m["content"] for m in planner_bodies[n]["messages"] if m["role"] == "tool"] \
+        return [m["content"] for m in messages(planner_bodies[n]) if m["role"] == "tool"] \
             if len(planner_bodies) > n else []
 
     def names(n):
-        return [t["function"]["name"] for t in planner_bodies[n]["tools"]]
+        return [t["name"] for t in planner_bodies[n]["tools"]]
 
     tiny = start("tinyclick", runs=root)
     end, fake, report = run(tiny, [draft("")] * 4, [
@@ -1862,8 +1881,8 @@ def grounding_checks(url, user, plans_url):
     with open(asked) as handle:
         crops = [json.loads(line)["crop"] for line in handle]
     check("ground: the tool is offered, and says how to use it, when the setting is on",
-          "ground" in names(0) and "call `ground`" in json.dumps(planner_bodies[0]["messages"]),
-          [(m["role"], text(m)[-120:]) for m in planner_bodies[0]["messages"]])
+          "ground" in names(0) and "call `ground`" in json.dumps(messages(planner_bodies[0])),
+          [(m["role"], text(m)[-120:]) for m in messages(planner_bodies[0])])
     check("ground: a point comes back as an ID, and clicking it sends click_at at that point",
           got == ['[101] point for "Peter Holm" (from pixels)']
           and [(s["x"], s["y"], s["name"]) for s in clicked] == [(470, 310, "Peter Holm")]
@@ -1891,10 +1910,9 @@ def grounding_checks(url, user, plans_url):
     counts = [len(pictures(body)) for body in planner_bodies]
     detail = pictures(planner_bodies[2]) if len(planner_bodies) > 2 else []
     check("stuck: a picture goes with the request after the same batch ran twice, and only that "
-          "one; with no `thinking` set, its reasoning stays none",
+          "one",
           counts == [0, 0, 1, 0] and detail[0][0] == "low"
-          and planner_bodies[2]["reasoning_effort"] == "none"
-          and "Stuck: this exact batch already ran" in text(planner_bodies[2]["messages"][-1]),
+          and "Stuck: this exact batch already ran" in text(messages(planner_bodies[2])[-1]),
           (counts, detail))
     call = read_json(os.path.join(root, recorded(root)[-1]), "calls", "03.json")
     kept = json.dumps(call["messages"])
@@ -1941,8 +1959,8 @@ def grounding_checks(url, user, plans_url):
 
 
 def surprise_checks(url, user, plans_url):
-    """`expect`, the loss check, the thinking turn and the ask after a second
-    surprise, with a picture helper and a recording."""
+    """`expect`, the loss check, the picture after a surprise and the ask after
+    a second surprise, with a picture helper and a recording."""
     folder = tempfile.mkdtemp()
     helper = os.path.join(folder, "fake_ground.py")
     with open(helper, "w") as handle:
@@ -1950,7 +1968,7 @@ def surprise_checks(url, user, plans_url):
     root, trace = tempfile.mkdtemp(), os.path.join(folder, "agent.jsonl")
     runner = Runner(url, user, extra=planner_env(
         plans_url, PARROTFLOW_PLANNER_LOOP="agent", PARROTFLOW_PLANNER_TRACE=trace,
-        PARROTFLOW_PLANNER_THINKING="low", PARROTFLOW_GROUND="tinyclick", PARROTFLOW_GROUND_PYTHON=sys.executable,
+        PARROTFLOW_PLANNER_REASONING="low", PARROTFLOW_GROUND="tinyclick", PARROTFLOW_GROUND_PYTHON=sys.executable,
         PARROTFLOW_GROUND_SERVER=helper, PARROTFLOW_GROUND_MODEL=folder,
         FAKE_GROUND_LOG=os.path.join(folder, "asked.jsonl"), PARROTFLOW_RUNS=root))
 
@@ -1965,12 +1983,13 @@ def surprise_checks(url, user, plans_url):
         return end, fake, end.get("loop") or {}
 
     def result(n):
-        tools = [m["content"] for m in planner_bodies[n]["messages"] if m["role"] == "tool"] \
+        tools = [m["content"] for m in messages(planner_bodies[n]) if m["role"] == "tool"] \
             if len(planner_bodies) > n else []
         return tools[-1] if tools else ""
 
     def efforts():
-        return [(b.get("reasoning_effort"), len(pictures(b))) for b in planner_bodies]
+        return [((b.get("reasoning") or {}).get("effort"), len(pictures(b)))
+                for b in planner_bodies]
 
     def plan(*tasks):
         return ("write_plan", {"items": [{"id": str(n), "content": content, "status": status}
@@ -1984,8 +2003,8 @@ def surprise_checks(url, user, plans_url):
                             [0.9])
     step = read_json(root, recorded(root)[-1], "steps", "01.json")
     sent = visible_bodies[0] if visible_bodies else {}
-    check("expect: a true expect says nothing, and the next request does not think",
-          "not what happened" not in result(2) and efforts()[2] == ("none", 0)
+    check("expect: a true expect says nothing, and the next request has no picture",
+          "not what happened" not in result(2) and efforts()[2] == ("low", 0)
           and end["end"] == "done", (result(2), efforts()))
     check("expect: Jev is asked about it with the fields' values, and the step records it",
           sent.get("questions", {}).get("visible", {}).get("instructions")
@@ -2003,13 +2022,8 @@ def surprise_checks(url, user, plans_url):
           f'type “To” = “Alex” — "To" now holds "Alex" — expected "{expect}", not what happened'
           in got and any(f'expected "{expect}", not what happened' in " ".join(t["notes"])
                          for p in runner.progress for t in p.get("plan") or ()), got)
-    check("expect: the next request thinks at low and has a picture, the one after does not",
-          efforts()[:4] == [("none", 0), ("none", 0), ("low", 1), ("none", 0)], efforts())
-    call = read_json(root, recorded(root)[-1], "calls", "03.json")
-    check("expect: the recording says the call's reasoning was raised",
-          call["reasoning"] == "low"
-          and read_json(root, recorded(root)[-1], "calls", "02.json")["reasoning"] == "",
-          call["reasoning"])
+    check("expect: every request reasons at low; the next one has a picture, the one after not",
+          efforts()[:4] == [("low", 0), ("low", 0), ("low", 1), ("low", 0)], efforts())
 
     slack = "\u00a0 Alex Moreau \u00a0 \u00a0"
     end, fake, report = run([draft(slack), draft("\u00a0 Antonio \u00a0")] * 3,
@@ -2018,15 +2032,15 @@ def surprise_checks(url, user, plans_url):
                              [plan(("Add Antonio", "completed"))], [("done", {"summary": "ok"})]])
     got = result(2)
     step = read_json(root, recorded(root)[-1], "steps", "01.json")
-    check("lost: a step that took a name out of its field says so, and the next request thinks",
-          'this step removed "Alex Moreau" from "To"' in got and efforts()[2][0] == "low"
+    check("lost: a step that took a name out of its field says so, and the next request has a picture",
+          'this step removed "Alex Moreau" from "To"' in got and efforts()[2][1] == 1
           and step["lost"] == '"Alex Moreau"', (got, efforts(), step.get("lost")))
     end, fake, report = run([draft("Alex"), draft("Alex, Antonio")] * 3,
                             [[plan(("Add Antonio", "in_progress"))],
                              [act({"do": "type", "id": 1, "value": "Antonio"})], [("read", {})],
                              [plan(("Add Antonio", "completed"))], [("done", {"summary": "ok"})]])
     check("lost: a name added after another loses nothing",
-          "removed" not in result(2) and efforts()[2][0] == "none", (result(2), efforts()))
+          "removed" not in result(2) and efforts()[2][1] == 0, (result(2), efforts()))
 
     both = "To holds Alex Moreau and Antonio"
     end, fake, report = run(

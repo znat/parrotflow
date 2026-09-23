@@ -83,7 +83,6 @@ class Call(BaseModel):
     steps: List[int] = Field(default_factory=list)
     error: str = ""
     plan: List[Any] = Field(default_factory=list)   # the agent's tasks after the call
-    reasoning: str = ""             # the reasoning effort sent, when it was raised
 
 
 class Step(BaseModel):
@@ -434,7 +433,7 @@ class Recorder:
         return out
 
     def call(self, began, kind, messages, tool_calls=(), results=(), reply=None, ms=0,
-             usage=None, screen=None, error="", plan=None, reasoning=""):
+             usage=None, screen=None, error="", plan=None):
         if self.dead or began is None:
             return
         try:
@@ -458,7 +457,7 @@ class Recorder:
                           tree=screen.get("tree"), ids=screen.get("ids") or {},
                           seen=screen.get("seen") or {},
                           steps=[s for s, c in self.step_calls.items() if c == self.calling],
-                          error=error, plan=list(plan or ()), reasoning=reasoning)
+                          error=error, plan=list(plan or ()))
             self._write(f"calls/{n:02d}.json", record)
             self._save_run()
         except Exception as failure:

@@ -301,24 +301,21 @@ def base_url(endpoint):
 
 class Planner:
     def __init__(self, url, key, model, reasoning="none", timeout=15.0, source="",
-                 loop="plan", trace="", thinking=""):
+                 loop="plan", trace=""):
         self.url = urllib.parse.urlsplit(url)
         self.loop = loop
         self.trace = trace
         self.key = key
         self.model = model
         self.reasoning = reasoning
-        # The agent's effort after a surprise; empty keeps `reasoning`. On
-        # /v1/chat/completions gpt-6-luna answers 400 to any effort but none
-        # when tools are sent (09-23); /v1/responses takes low.
-        self.thinking = thinking
         self.timeout = timeout
         self.source = source
         self.recorder = recording.OFF
         self._client = None
-        self._chat_model = None
+        self._agent_model = None
         self._events = None
         # The last request body the agent's client sent: what the model got.
+        # The agent's calls go to /v1/responses; `chat` stays on chat completions.
         self.sent = None
 
     @classmethod
@@ -336,7 +333,6 @@ class Planner:
             env.get("PARROTFLOW_PLANNER_LOOP", "plan").strip() or "plan",
             env.get("PARROTFLOW_PLANNER_TRACE", "")
             or os.path.expanduser("~/Library/Logs/ParrotFlow-agent.jsonl"),
-            env.get("PARROTFLOW_PLANNER_THINKING", "").strip(),
         )
 
     @property
@@ -358,11 +354,13 @@ class Planner:
         return self._client
 
     @property
-    def chat_model(self):
-        """The agent's model: the same endpoint, key, timeout and retries,
-        through Pydantic AI and the SDK's async client."""
-        if self._chat_model is None:
-            from pydantic_ai.models.openai import OpenAIChatModel
+    def agent_model(self):
+        """The agent's model: the same host, key, timeout and retries, on the
+        Responses API, through Pydantic AI and the SDK's async client. On
+        /v1/chat/completions gpt-6-luna answers 400 to any reasoning effort
+        but none when tools are sent (09-23)."""
+        if self._agent_model is None:
+            from pydantic_ai.models.openai import OpenAIResponsesModel
             from pydantic_ai.providers.openai import OpenAIProvider
 
             async def keep(request):
@@ -377,9 +375,9 @@ class Planner:
                 timeout=self.timeout, max_retries=RETRIES, default_query=query or None,
                 default_headers=PLAIN,
                 http_client=openai.DefaultAsyncHttpxClient(event_hooks={"request": [keep]}))
-            self._chat_model = OpenAIChatModel(self.model,
-                                               provider=OpenAIProvider(openai_client=client))
-        return self._chat_model
+            self._agent_model = OpenAIResponsesModel(
+                self.model, provider=OpenAIProvider(openai_client=client))
+        return self._agent_model
 
     def run(self, coroutine):
         """Runs a coroutine on the runner's one event loop: the async client's

@@ -20,21 +20,30 @@ const frame = (item) => item && item.x != null
 
 const pretty = (value) => (typeof value === "string" ? value : JSON.stringify(value, null, 1));
 
-// Pydantic AI sends some contents as a list of text parts.
+// Pydantic AI sends some contents as a list of parts. A picture is its file.
 const textOf = (content) => (Array.isArray(content)
-  ? content.map((part) => part?.text ?? "").join("") : String(content ?? ""));
+  ? content.map((part) => part?.text ?? part?.image_url?.url ?? part?.image_url ?? "").join("")
+  : String(content ?? ""));
+
+// A chat message (older runs), or a Responses input item: [label, text].
+function said(m) {
+  if (m.type === "function_call") return [`call ${m.name}`, m.arguments ?? ""];
+  if (m.type === "function_call_output") return ["result", textOf(m.output)];
+  if (m.type === "reasoning") return ["reasoning", textOf(m.summary)];
+  return [m.role, m.content != null ? textOf(m.content) : m.tool_calls ? pretty(m.tool_calls) : ""];
+}
 
 const MARKS = { pending: "[ ]", in_progress: "[~]", completed: "[x]", cancelled: "[-]", blocked: "[!]" };
 
 function Messages({ messages }) {
   // The newest screen is the last message that lists [ID] lines.
   let newest = -1;
-  messages.forEach((m, i) => { if (/^\[\d+\] /m.test(textOf(m.content))) newest = i; });
+  messages.forEach((m, i) => { if (/^\[\d+\] /m.test(said(m)[1])) newest = i; });
   return html`<div class="messages">
     ${messages.map((m, i) => {
-      const text = m.content != null ? textOf(m.content) : m.tool_calls ? pretty(m.tool_calls) : "";
+      const [label, text] = said(m);
       return html`<details key=${i} open=${i === newest}>
-        <summary><b>${m.role}</b> <span class="muted">${text.split("\n")[0].slice(0, 120)}</span>
+        <summary><b>${label}</b> <span class="muted">${text.split("\n")[0].slice(0, 120)}</span>
           <span class="muted small"> · ${text.length} chars</span></summary>
         <pre>${text}</pre>
       </details>`;
@@ -50,7 +59,7 @@ export function CallPanel({ call, tree }) {
     return item ? describe(item) : "";
   };
   return html`<section class="panel">
-    <h3>Call ${call.n} <span class="muted small">· ${call.kind} · ${call.ms} ms ·${call.reasoning ? ` reasoning ${call.reasoning} ·` : ""}
+    <h3>Call ${call.n} <span class="muted small">· ${call.kind} · ${call.ms} ms ·
       ${call.tokens?.in ?? 0} tokens in, ${call.tokens?.out ?? 0} out · screen from tree ${call.tree ?? "—"}</span></h3>
     ${call.error && html`<p class="error">${call.error}</p>`}
     ${call.plan?.length > 0 && html`<details open><summary>plan after the call</summary>

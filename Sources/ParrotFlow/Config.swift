@@ -3120,7 +3120,9 @@ struct Config: Decodable, Equatable {
             var model: String = "gpt-5.6-luna"
             var endpoint: String = "https://api.openai.com/v1/chat/completions"
             var apiKey: KeySource = KeySource(written: "file:~/.openai_api_key")
-            /// `reasoning_effort`. "none" measured 1.0-4.2 s a plan; empty leaves it out.
+            /// The reasoning effort, on every call. The agent's calls go to
+            /// /v1/responses, where gpt-6-luna takes `low` with tools. "none"
+            /// measured 1.0-4.2 s a plan; empty leaves it out.
             var reasoning: String = "none"
             /// Per attempt. The runner's `openai` client tries twice more.
             var timeoutSeconds: Double = 15

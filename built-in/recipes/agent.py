@@ -39,10 +39,8 @@ drops the one before. Off, no pictures.
 
 A surprise: a step failed, the same batch ran twice, `done` was refused, a
 step's `expect` is not true after it (Jev, about 0.3 s, no model call), or a
-step took a name or words out of the field it acted in (`loop.lost`). The
-next request thinks: the planner's `thinking` effort instead of
-`reasoning`, for that request only, when `thinking` is set. A second
-surprise on the same plan task tells the model to `ask` the user; if its
+step took a name or words out of the field it acted in (`loop.lost`). A
+second surprise on the same plan task tells the model to `ask` the user; if its
 next call is not `ask` or `read`, the runner asks instead: what surprised,
 and "What should I do?".
 
@@ -251,9 +249,6 @@ class Agent:
         self.opened = []
         self.asked_when_stuck = False
         self.tried = {}
-        # The next request thinks; the effort the request being sent got.
-        self.think = False
-        self.raised = ""
         # The task in progress at the last surprise, and how many it had.
         self.surprised = (None, 0)
         # The surprise the model was told to ask about.
@@ -337,8 +332,8 @@ class Agent:
         lp, recorder = self.loop, self.loop.recorder
         turn, calls = None, 0
         try:
-            async with AGENT.iter(self.prompt, model=self.planner.chat_model, deps=self,
-                                  model_settings=self._settings,
+            async with AGENT.iter(self.prompt, model=self.planner.agent_model, deps=self,
+                                  model_settings=self._settings(),
                                   usage_limits=pai.UsageLimits(request_limit=MAX_CALLS)) as run:
                 async for node in run:
                     if turn is not None and not isinstance(node, pai.CallToolsNode):
@@ -359,17 +354,14 @@ class Agent:
                             return None
                         calls += 1
                         self.ran = 0
-                        self.raised = self.planner.thinking if self.think else ""
-                        self.think = False
                         self.planner.sent = None
                         self.sent_image = None
                         turn = {"n": calls, "screen": recorder.screen(self.snapshot, self.ids),
-                                "began": recorder.begin_call(calls), "at": time.monotonic(),
-                                "reasoning": self.raised}
+                                "began": recorder.begin_call(calls), "at": time.monotonic()}
                     elif isinstance(node, pai.CallToolsNode):
                         turn["ms"] = int((time.monotonic() - turn["at"]) * 1000)
                         turn["response"] = node.model_response
-                        turn["sent"] = self._redact((self.planner.sent or {}).get("messages", []))
+                        turn["sent"] = self._sent()
                         if not lp.execute and self._planned_only(turn, report):
                             await self._record(turn, [])
                             turn = None
@@ -381,17 +373,14 @@ class Agent:
             if turn is not None and "response" in turn:
                 await self._record(turn, [])
             elif turn is not None:
-                recorder.call(turn["began"], "agent",
-                              self._redact((self.planner.sent or {}).get("messages", [])),
-                              screen=turn["screen"], error=self.planner._clean(str(error)))
+                recorder.call(turn["began"], "agent", self._sent(), screen=turn["screen"],
+                              error=self.planner._clean(str(error)))
             raise
 
-    def _settings(self, ctx):
-        """Per request: a surprise raises the reasoning of the next one."""
+    def _settings(self):
         settings = {"parallel_tool_calls": False}
-        effort = self.raised or self.planner.reasoning
-        if effort:
-            settings["openai_reasoning_effort"] = effort
+        if self.planner.reasoning:
+            settings["openai_reasoning_effort"] = self.planner.reasoning
         return settings
 
     def _over(self, report):
@@ -451,13 +440,11 @@ class Agent:
         usage = {"prompt_tokens": response.usage.input_tokens,
                  "completion_tokens": response.usage.output_tokens}
         plan = [{"content": i.content, "status": i.status.value} for i in await self.plan.get_items()]
-        raised = f", reasoning {turn['reasoning']}" if turn.get("reasoning") else ""
         lp.log(f"agent: call {turn['n']} · {', '.join(self._said(c) for c in calls) or 'no tool'}"
-               f" · {turn['ms']} ms, {usage['prompt_tokens']} tokens in{raised}")
+               f" · {turn['ms']} ms, {usage['prompt_tokens']} tokens in")
         self._trace(turn["n"], turn["sent"], wire, results, turn["ms"], usage, plan)
         lp.recorder.call(turn["began"], "agent", turn["sent"], wire, results, ms=turn["ms"],
-                         usage=usage, screen=turn["screen"], plan=plan,
-                         reasoning=turn.get("reasoning", ""))
+                         usage=usage, screen=turn["screen"], plan=plan)
 
     def _tool(self, name, args):
         """A screen tool, run for the model: its result, and the result cut
@@ -702,11 +689,10 @@ class Agent:
 
     def _surprise(self, why, note=None):
         """Something did not go as the model expected. The next request
-        thinks, with a picture when there is one. A second surprise on the
-        same task: the instruction to ask the user, else ""."""
+        gets a picture when there is one. A second surprise on the same
+        task: the instruction to ask the user, else ""."""
         if note is not False:
             self._note(note or why)
-        self.think = True
         self._stuck(why)
         task = self._task()
         if task is None:
@@ -957,21 +943,23 @@ class Agent:
                                     "shot": shot.get("file", ""), "what": what})
         return True
 
-    def _redact(self, messages):
-        """The request as recorded: a picture is its file in the run folder,
-        not its bytes."""
+    def _sent(self):
+        """The request as recorded: the instructions as a system message, then
+        the Responses input. A picture is its file in the run folder, not its
+        bytes."""
+        body = self.planner.sent or {}
+        head = [{"role": "system", "content": body["instructions"]}] \
+            if body.get("instructions") else []
+
         def clean(node):
             if isinstance(node, list):
                 return [clean(n) for n in node]
             if not isinstance(node, dict):
                 return node
-            if node.get("type") == "image_url":
-                url = (node.get("image_url") or {})
-                return {"type": "image_url", "image_url": {
-                    "url": f"[picture: {self.sent_image or 'not kept'}]",
-                    "detail": url.get("detail")}}
+            if node.get("type") == "input_image":
+                return dict(node, image_url=f"[picture: {self.sent_image or 'not kept'}]")
             return {k: clean(v) for k, v in node.items()}
-        return clean(messages)
+        return clean(head + list(body.get("input") or []))
 
     def _ask(self, args, report):
         lp = self.loop

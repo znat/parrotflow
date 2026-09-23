@@ -296,13 +296,18 @@ actions:
     model: gpt-5.6-luna
     endpoint: https://api.openai.com/v1/chat/completions
     api_key: file:~/.openai_api_key
-    reasoning: none          # reasoning_effort; empty leaves it out
+    reasoning: low           # the reasoning effort; empty leaves it out
     timeout_seconds: 15      # per attempt
 ```
 
 **The call.** The runner uses the official `openai` package (3.19), one
 client per runner, so the connection is kept. The agent loop uses the SDK's
-async client, with the same settings, through Pydantic AI. Both ask for gzip
+async client, with the same settings, through Pydantic AI, on the Responses
+API (`<base>/responses`): every call sends `reasoning: {effort: <reasoning>}`.
+On `/v1/chat/completions`, gpt-6-luna answers 400 to any effort but `none`
+when tools are sent (09-23); `/v1/responses` takes `low` with strict tools.
+The plan path (`loop: plan`) and grounding stay on chat completions, with
+`reasoning_effort`. Both clients ask for gzip
 only: httpx2 2.13 cannot read a brotli answer with brotli 1.1, and every call
 failed with a `TypeError` (09-23). Its base URL is `endpoint`
 without the trailing `/chat/completions`: `https://api.openai.com/v1`. An
@@ -570,11 +575,7 @@ without a model call:
   and each time a recipient had been removed.
 
 A surprise ends the batch and is a note under the task in progress. The next
-request carries the stuck picture (below) and, when `PARROTFLOW_PLANNER_THINKING`
-is set, that reasoning effort instead of `reasoning`, for that one request.
-There is no config key for it yet, and the app does not pass it, so it is
-empty: on `/v1/chat/completions`, gpt-6-luna answers 400 to any effort but
-`none` when tools are sent (09-23). `/v1/responses` takes `low` with tools.
+request carries the stuck picture (below).
 
 A second surprise on the same task adds to the result: "Two steps surprised
 you on this task. Call `ask` now: …". If the model's next tool is not `ask` or
@@ -585,7 +586,8 @@ plan, nothing is counted.
 
 Each model call writes one JSON line to
 `~/Library/Logs/ParrotFlow-Dev-agent.jsonl` (`ParrotFlow-agent.jsonl` for
-the release app): the messages as sent, plan reminder included, the tool
+the release app): the instructions as a system message, then the Responses
+`input` as sent, plan reminder included, the tool
 calls, the results, ms, tokens and the plan after the call. Never the key. With `actions.record` on, the run is also recorded
 for the run viewer: see [Recording a run](#recording-a-run). The app log gets
 one line per call:
@@ -797,7 +799,7 @@ A run's folder, written by `built-in/recipes/runlog.py`:
 | File | What |
 | --- | --- |
 | `run.json` | The request, the app, the loop (agent, plan, loop or recipe), the model, the settings, start and end, the outcome and the steps shown. Rewritten as the run goes. |
-| `calls/NN.json` | One model call: the messages exactly as sent, the tool calls with `why`, the results, ms, tokens, the agent's plan after the call, and `reasoning` when a surprise raised it. `ids` maps each `[ID]` the model saw to the item's id in `tree`, as the agent numbered them. They are recorded, not recomputed. A line `look` saw is in `seen`, whole. |
+| `calls/NN.json` | One model call: the messages exactly as sent (for the agent, the instructions as a system message, then the Responses `input` items), the tool calls with `why`, the results, ms, tokens, and the agent's plan after the call. `ids` maps each `[ID]` the model saw to the item's id in `tree`, as the agent numbered them. They are recorded, not recomputed. A line `look` saw is in `seen`, whole. |
 | `steps/NN.json` | One step: what was asked, the target item, the point, an accessibility press or a real click, `under` (what the hit test found at the point before), the trees before and after, the change and its sentence, a guard's question and answer, the verbs sent to the app and their replies, errors and ms. The agent adds `expect`, Jev's `expect_p` and `expect_ms`, and `lost`, what the step took out of its field. |
 | `trees/NN.json` | Every read of the window, raw: all items, not only those shown, with the window frame. `shot` is the screenshot's file, its frame in screen points (top left and size), its scale in pixels per point and its size in pixels. `seen` is every line of text read from it, and `seen_ms` the time; a step's `change.seen` and `change.still` are the lines it reported. |
 | `shots/NN.jpg` | The screenshot of that read, cut to the window, JPEG at 0.7. Taken right after the walk, without ParrotFlow's own panels. Without Screen Recording there is none: `shot` is null and `shot_error` says why. |
