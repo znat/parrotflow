@@ -265,6 +265,11 @@ enum PanelsCommand {
             TutorialSlack.landsAt + TutorialSlack.Beat.shimmering.rawValue + 0.3
         ),
         ("panel", TutorialSlack.landsAt + TutorialSlack.Beat.opening.rawValue + 0.4),
+        ("folded", TutorialSlack.landsAt + TutorialSlack.Beat.folded.rawValue + 0.4),
+        (
+            "reopened",
+            TutorialSlack.landsAt + TutorialSlack.Beat.reopening.rawValue + 0.3
+        ),
         ("clicked", TutorialSlack.landsAt + TutorialSlack.Beat.clicking.rawValue + 0.4),
         ("handled", TutorialSlack.landsAt + TutorialSlack.Beat.handled.rawValue + 0.3),
         ("sent", TutorialSlack.landsAt + TutorialSlack.Beat.sending.rawValue + 0.2),

@@ -1314,6 +1314,17 @@ struct TourPill: View {
     let state: PillState
     let level: Double
     let clicked: Int?
+    /// The state this one is growing or shrinking from, when the tour is
+    /// showing the same frame morph as the live HUD.
+    var morphFrom: PillState?
+    /// The other end of the frame morph when the visible contents deliberately
+    /// remain the source until it has finished contracting.
+    var morphTo: PillState?
+    /// How far that morph has travelled. One is the ordinary resting state.
+    var morphProgress: Double = 1
+    /// A fold contracts the whole expanded surface before replacing its
+    /// contents with the compact tab. Opening uses the HUD's clipped reveal.
+    var scalesMorphSource = false
     /// 0 as the tab arrives, 1 once it has settled. See `TutorialRun.landing`.
     var landing: Double = 1
     /// The box the surface is laid out in whatever state it is in, so that a
@@ -1340,6 +1351,9 @@ struct TourPill: View {
     /// of six recording pills would say nothing about any of them.
     init(
         state: PillState, level: Double, clicked: Int?, landing: Double = 1,
+        morphFrom: PillState? = nil, morphTo: PillState? = nil,
+        morphProgress: Double = 1,
+        scalesMorphSource: Bool = false,
         reserved: NSSize = Tutorial.reservedPanel, sheen: Double = 0,
         hangsAt: CGFloat? = nil, lit: Bool = false
     ) {
@@ -1347,6 +1361,10 @@ struct TourPill: View {
         self.level = level
         self.clicked = clicked
         self.landing = landing
+        self.morphFrom = morphFrom
+        self.morphTo = morphTo
+        self.morphProgress = morphProgress
+        self.scalesMorphSource = scalesMorphSource
         self.reserved = reserved
         self.sheen = sheen
         self.hangsAt = hangsAt
@@ -1378,7 +1396,7 @@ struct TourPill: View {
     var body: some View {
         PillView()
             .environmentObject(model)
-            .frame(width: size.width, height: size.height)
+            .frame(width: drawnSize.width, height: drawnSize.height)
             // Where the drawn surface is: this frame, less the transparent
             // margin the bloom is carried in. On the surface's own frame and
             // not on the reserved box below — the box is the whole stage, and
@@ -1396,6 +1414,15 @@ struct TourPill: View {
                         .padding(PillMetrics.bleed(for: state))
                 }
             }
+            // The live HUD folds its AppKit window around the same surface.
+            // Here there is no window, so scale that source surface into the
+            // interpolated frame before replacing it with the compact tab.
+            .scaleEffect(
+                x: size.width / max(1, drawnSize.width),
+                y: size.height / max(1, drawnSize.height),
+                anchor: .topLeading
+            )
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
             // The reserved box, top-aligned so the surface keeps hanging off the
             // line where it did when it was smaller.
             .frame(
@@ -1412,6 +1439,7 @@ struct TourPill: View {
             .opacity(landing)
             .overlay(alignment: .topLeading) { keySheen }
             .onChange(of: state) { _, _ in apply() }
+            .onChange(of: morphProgress) { _, _ in apply() }
             .onChange(of: level) { _, _ in apply() }
             .onChange(of: clicked) { _, _ in apply() }
     }
@@ -1478,7 +1506,25 @@ struct TourPill: View {
     }
 
     private var size: NSSize {
-        PillMetrics.panelSize(
+        let target = PillMetrics.panelSize(
+            for: morphTo ?? state, hasIcon: model.appIcon != nil, hotkey: model.hotkey,
+            dock: model.docked
+        )
+        guard let morphFrom else { return target }
+        let source = PillMetrics.panelSize(
+            for: morphFrom, hasIcon: model.appIcon != nil, hotkey: model.hotkey,
+            dock: model.docked
+        )
+        let progress = CGFloat(min(1, max(0, morphProgress)))
+        return NSSize(
+            width: source.width + (target.width - source.width) * progress,
+            height: source.height + (target.height - source.height) * progress
+        )
+    }
+
+    private var drawnSize: NSSize {
+        guard scalesMorphSource else { return size }
+        return PillMetrics.panelSize(
             for: state, hasIcon: model.appIcon != nil, hotkey: model.hotkey,
             dock: model.docked
         )

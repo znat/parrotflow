@@ -432,6 +432,12 @@ struct ChatStage<Channel: View>: View {
     let level: Double
     /// Which chip the pointer is on, if any.
     var clicked: Int?
+    /// The other end of a live pill frame morph, and how far the tour has
+    /// travelled from it. Nil/one is an ordinary resting surface.
+    var pillMorphFrom: PillState?
+    var pillMorphTo: PillState?
+    var pillMorphProgress: Double = 1
+    var pillScalesMorphSource = false
     /// How much light is crossing the key on the pill, 0 for none.
     ///
     /// Drawn here and not by the pill. The pill is the app's own surface and the
@@ -478,10 +484,24 @@ struct ChatStage<Channel: View>: View {
     /// puts the tab a long way in from the composer's edge instead of under the
     /// caret. Taken back out here rather than in `TourPill`, where the
     /// vocabulary tour wants the centring.
-    private func slack(for state: PillState) -> CGFloat {
-        let size = PillMetrics.panelSize(
-            for: state, hasIcon: true, hotkey: Tutorial.hotkey, dock: .below
+    private func pillSize(for state: PillState) -> NSSize {
+        let target = PillMetrics.panelSize(
+            for: pillMorphTo ?? state, hasIcon: true,
+            hotkey: Tutorial.hotkey, dock: .below
         )
+        guard let pillMorphFrom else { return target }
+        let source = PillMetrics.panelSize(
+            for: pillMorphFrom, hasIcon: true, hotkey: Tutorial.hotkey, dock: .below
+        )
+        let progress = CGFloat(min(1, max(0, pillMorphProgress)))
+        return NSSize(
+            width: source.width + (target.width - source.width) * progress,
+            height: source.height + (target.height - source.height) * progress
+        )
+    }
+
+    private func slack(for state: PillState) -> CGFloat {
+        let size = pillSize(for: state)
         return max(0, (reserved.width - size.width) / 2)
     }
 
@@ -621,6 +641,10 @@ struct ChatStage<Channel: View>: View {
             if let state = pill {
                 TourPill(
                     state: state, level: level, clicked: clicked,
+                    morphFrom: pillMorphFrom,
+                    morphTo: pillMorphTo,
+                    morphProgress: pillMorphProgress,
+                    scalesMorphSource: pillScalesMorphSource,
                     reserved: reserved, sheen: shimmer, lit: litSurface
                 )
                 // Every state hangs from the same corner: the surface's own

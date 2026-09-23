@@ -39,20 +39,27 @@ enum TutorialSlack {
         case shimmering = 4.66
         /// The tab is the panel.
         case opening = 6.06
+        /// Left alone, the expanded panel contracts into the same live tab.
+        case folding = 7.36
+        /// The tab waits without fading away, and its key shows how to get the
+        /// post-dictation actions back.
+        case folded = 7.54
+        /// The tab opens again before the example takes one of its actions.
+        case reopening = 8.94
         /// The pointer goes down on *Slack mentions*, and stays there. Long
         /// enough to read both chips and to see which one is being taken,
         /// because that choice is the lesson.
-        case clicking = 6.86
+        case clicking = 9.12
         /// The name is a handle.
-        case handled = 8.26
+        case handled = 10.52
         /// The pointer goes down on *Send*. It has to be seen to be pressed —
         /// the message arriving on its own would say the app sent it.
-        case sending = 9.46
+        case sending = 11.72
         /// The composer is empty and the message is in the channel above it,
         /// with the repository's preview under it. One beat and not two: the
         /// preview is Slack's answer to a message that was just sent, and it
         /// arrives with it.
-        case posted = 9.96
+        case posted = 12.22
 
         /// Which step a time inside the example falls in.
         static func at(_ local: TimeInterval) -> Beat {
@@ -69,7 +76,7 @@ enum TutorialSlack {
 
     /// The whole example, and then a beat to read the preview before the loop
     /// starts again.
-    static let example: TimeInterval = 12.5
+    static let example: TimeInterval = 14.8
     static var total: TimeInterval { landsAt + example }
 
     /// How long the preview takes to arrive. It starts with the message: the
@@ -229,9 +236,13 @@ struct TutorialSlackRun: Equatable {
     /// leaves, and nothing before or after the second it takes.
     var keyShimmer: Double {
         guard let local else { return 0 }
-        let from = local - TutorialSlack.Beat.shimmering.rawValue
-        guard from >= 0, from < TutorialSlack.shimmering else { return 0 }
-        return from / TutorialSlack.shimmering
+        for starts in [TutorialSlack.Beat.shimmering, .folded] {
+            let from = local - starts.rawValue
+            if from >= 0, from < TutorialSlack.shimmering {
+                return from / TutorialSlack.shimmering
+            }
+        }
+        return 0
     }
 
     var anchor: ChatAnchor? {
@@ -297,6 +308,44 @@ struct TutorialSlackRun: Equatable {
 
     private var beat: TutorialSlack.Beat? { local.map(TutorialSlack.Beat.at) }
 
+    /// The source state and progress for the frame morphs the tour shows: the
+    /// first open, the automatic fold and the deliberate reopen. They use the
+    /// HUD's own duration so the demonstration and the product move at the
+    /// same pace.
+    var pillMorphFrom: PillState? {
+        switch beat {
+        case .opening: return offer(open: false)
+        case .folding: return offer(open: true)
+        case .reopening: return offer(open: false)
+        default: return nil
+        }
+    }
+
+    var pillMorphTo: PillState? {
+        beat == .folding ? offer(open: false) : nil
+    }
+
+    var pillMorphProgress: Double {
+        guard let local else { return 1 }
+        let began: TimeInterval
+        switch beat {
+        case .opening: began = TutorialSlack.Beat.opening.rawValue
+        case .folding: began = TutorialSlack.Beat.folding.rawValue
+        case .reopening: began = TutorialSlack.Beat.reopening.rawValue
+        default: return 1
+        }
+        let linear = min(1, max(0, (local - began) / PillHUD.motion))
+        return 0.5 - cos(.pi * linear) / 2
+    }
+
+    var pillScalesMorphSource: Bool { beat == .folding }
+
+    private func offer(open: Bool) -> PillState {
+        .offer(
+            TutorialSlack.chips, nil, Confidence.Reading(), open: open
+        )
+    }
+
     /// The words are still in the composer. False before they land, because an
     /// empty composer with a caret in it is the state the key is held in.
     private var composing: Bool {
@@ -343,16 +392,17 @@ struct TutorialSlackRun: Equatable {
     /// screen shows it.
     var pill: PillState? {
         if let beat {
-            let panel = PillState.offer(
-                TutorialSlack.chips, nil, Confidence.Reading(),
-                open: beat.rawValue >= TutorialSlack.Beat.opening.rawValue
-            )
             switch beat {
-            case .landed, .captioned, .shimmering,
-                 .opening, .clicking:
+            case .landed, .captioned, .shimmering:
                 // The offer is up from the moment the words land, which is what
                 // the app does after every dictation.
-                return panel
+                return offer(open: false)
+            case .opening, .folding, .clicking:
+                return offer(open: true)
+            case .folded:
+                return offer(open: false)
+            case .reopening:
+                return offer(open: true)
             case .handled, .sending, .posted:
                 // Taken, and gone: a command that has run closes the offer.
                 return nil
@@ -464,6 +514,10 @@ struct TutorialSlackPane: View {
         ChatStage(
             lines: run.lines, caret: run.caret, sending: run.sending,
             pill: run.pill, level: run.level, clicked: run.clicked,
+            pillMorphFrom: run.pillMorphFrom,
+            pillMorphTo: run.pillMorphTo,
+            pillMorphProgress: run.pillMorphProgress,
+            pillScalesMorphSource: run.pillScalesMorphSource,
             shimmer: run.keyShimmer,
             channelHeight: Chat.channel,
             reserved: TutorialSlack.reserved,
