@@ -891,7 +891,7 @@ enum PanelsCommand {
         // hand — the two shapes the panel exists for, side by side.
         let correction = CorrectionModel()
         correction.load(sentence: "I work with Tasmin and Mick")
-        correction.rows[0].corrected = "Tasmeen"
+        correction.rows[0].corrected = "Tamsin"
 
         // A name the decoder split in two. It arrives as no row at all — both
         // halves are ordinary words — so the left field is typed over. This is
@@ -1327,7 +1327,178 @@ enum PanelsCommand {
         return window
     }
 
-    static func run(surface: String, seconds: Double) -> Int32 {
+    /// The two-Matthews question, or a guard's Yes/No, next to `at` (AX
+    /// coordinates, top-left origin) or a made-up field and list. Each answer
+    /// is printed and the question comes back.
+    @MainActor private static func question(confirm: Bool, at: CGRect?) -> NSPanel {
+        let screen = NSScreen.main?.frame ?? .zero
+        let near = at ?? CGRect(x: screen.midX - 160, y: screen.midY - 150, width: 320, height: 130)
+        let outline = anchorOutline(near)
+        let panel = QuestionPanel.shared
+        panel.hotkey = "Left ⌃"
+        panel.onPlaced = { frame, side in
+            let flipped = QuestionPlacement.flipped(frame)
+            print("near \(describe(near)) → panel \(describe(flipped)), \(side)")
+            fflush(stdout)
+        }
+        let steps = ["Opened Calendar", "New event, title “Meeting”, Wed 23 Sep",
+                     "Typed “Matthew” in attendees"]
+        Task { @MainActor in
+            while true {
+                let answer = await panel.ask(
+                    title: "Schedule a meeting with Matthieu", steps: steps,
+                    question: confirm ? "Press “Send”? It matches never_press “send”."
+                        : "Two people match. Which one?",
+                    options: confirm ? [Confirm.yes, "No"]
+                        : ["Matthieu Laurent · cAI", "Matthew Crane · Senior Director"],
+                    near: near
+                )
+                print("answer: \(answer.text.map { "“\($0)”" } ?? "none") via \(answer.via)")
+                fflush(stdout)
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+            }
+        }
+        return outline
+    }
+
+    /// The run panel with a made-up plan, going through a run: tasks
+    /// complete, the activity changes, a step fails, a question comes and
+    /// goes, and the run ends. Then again. `onlyAsk` holds it on the
+    /// question, asked again after each answer. `at` is the question's anchor
+    /// (AX coordinates); without it the question stays where the panel is.
+    @MainActor private static func runDemo(onlyAsk: Bool, at: CGRect?) {
+        let panel = QuestionPanel.shared
+        panel.hotkey = "Left ⌃"
+        panel.onPlaced = { frame, side in
+            print("panel \(describe(QuestionPlacement.flipped(frame))), \(side)")
+            fflush(stdout)
+        }
+        let tasks = ["Open a new event", "Title “October on site”", "Add attendee Peter",
+                     "Book a room", "Start 18:00, end 18:30, today", "Leave it ready, not sent"]
+        func plan(_ statuses: String, notes: [Int: [String]] = [:]) -> [[String: Any]] {
+            let names = ["d": "completed", "p": "in_progress", "c": "cancelled", "-": "pending"]
+            return zip(tasks.indices, statuses).map { index, code in
+                ["content": tasks[index], "status": names[String(code)] ?? "pending",
+                 "notes": notes[index] ?? []]
+            }
+        }
+        let covered = ["“Invite attendees” is covered by text seen on screen: “18:30”"]
+        func pause(_ seconds: Double) async {
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        }
+        func ask() async {
+            let answer = await panel.ask(
+                title: "", steps: [], question: "Two people match. Which one?",
+                options: ["Peter Holm · Design", "Peter Smith · Sales"], near: at
+            )
+            print("answer: \(answer.text.map { "“\($0)”" } ?? "none") via \(answer.via)")
+            fflush(stdout)
+        }
+        Task { @MainActor in
+            while true {
+                panel.begin(title: "Meeting with Peter at 6 pm", window: nil, aim: nil)
+                panel.update(["plan": NSNull(), "activity": "reading the screen…"])
+                await pause(1)
+                panel.update(["plan": plan("p-----"), "activity": "thinking…"])
+                await pause(1.5)
+                panel.update(["activity": "pressing cmd+n…"])
+                await pause(1.5)
+                panel.update(["plan": plan("dp----"), "activity": "typing “October on site” in Title…"])
+                await pause(1.5)
+                panel.update(["plan": plan("ddp---"), "activity": "typing “Peter” in Invite attendees…"])
+                await pause(1.5)
+                panel.update(["plan": plan("ddp---", notes: [2: covered]), "activity": "thinking…"])
+                await pause(1.5)
+                panel.update(["activity": "asking you…"])
+                repeat { await ask() } while onlyAsk
+                panel.update(["plan": plan("ddp---", notes: [2: covered]),
+                              "activity": "clicking “Peter Smith”…"])
+                await pause(1.5)
+                panel.update(["plan": plan("dddcp-", notes: [2: covered]),
+                              "activity": "typing “18:00” in Start time…"])
+                await pause(1.5)
+                panel.update(["plan": plan("dddcdp", notes: [2: covered]), "activity": "thinking…"])
+                await pause(1.5)
+                panel.update(["plan": plan("dddcdd", notes: [2: covered]), "activity": NSNull(),
+                              "outcome": "Done"])
+                panel.end(outcome: "Done")
+                await pause(6)
+            }
+        }
+    }
+
+    /// A dashed box where the question's anchor is, so placement can be seen.
+    @MainActor private static func anchorOutline(_ ax: CGRect) -> NSPanel {
+        let frame = QuestionPlacement.flipped(ax)
+        let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.level = .floating
+        let box = NSView(frame: NSRect(origin: .zero, size: frame.size))
+        box.wantsLayer = true
+        let dashes = CAShapeLayer()
+        dashes.path = CGPath(rect: box.bounds.insetBy(dx: 1, dy: 1), transform: nil)
+        dashes.fillColor = NSColor.systemOrange.withAlphaComponent(0.08).cgColor
+        dashes.strokeColor = NSColor.systemOrange.cgColor
+        dashes.lineWidth = 2
+        dashes.lineDashPattern = [6, 4]
+        box.layer?.addSublayer(dashes)
+        panel.contentView = box
+        panel.orderFrontRegardless()
+        return panel
+    }
+
+    private static func describe(_ rect: CGRect) -> String {
+        "x \(Int(rect.minX)) y \(Int(rect.minY)) w \(Int(rect.width)) h \(Int(rect.height))"
+    }
+
+    /// Placement on a made-up 1440x900 screen, checked. No window is drawn.
+    static func questionPlacementCheck() -> Int32 {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 875)
+        let size = CGSize(width: 394, height: 300)
+        let cases: [(String, CGRect?, String)] = [
+            ("field in the middle", CGRect(x: 600, y: 500, width: 240, height: 30), "below"),
+            ("field near the bottom", CGRect(x: 600, y: 100, width: 240, height: 30), "above"),
+            ("tall list on the left", CGRect(x: 40, y: 20, width: 300, height: 840), "right"),
+            ("tall list on the right", CGRect(x: 1100, y: 20, width: 300, height: 840), "left"),
+            ("nearly the whole screen", CGRect(x: 80, y: 120, width: 1280, height: 700), "below, cut off"),
+            ("no anchor", nil, "centre"),
+        ]
+        var failed = 0
+        for (name, near, want) in cases {
+            let (frame, side) = QuestionPlacement.place(size, near: near, on: screen)
+            let covers = near.map { frame.intersects($0) } ?? false
+            let ok = side == want && !covers
+            if !ok { failed += 1 }
+            print("\(ok ? "ok  " : "FAIL") \(name): \(side) at \(describe(frame))"
+                + (covers ? " — covers the anchor" : "") + (ok ? "" : ", wanted \(want)"))
+        }
+        let run = CGSize(width: 462, height: 320)
+        let runs: [(String, CGRect?, CGPoint?, String)] = [
+            ("run, window with room on its right", CGRect(x: 40, y: 60, width: 800, height: 700), nil,
+             "right of the window"),
+            ("run, window with room on its left", CGRect(x: 600, y: 60, width: 800, height: 700), nil,
+             "left of the window"),
+            ("run, whole-screen window, looking top left", CGRect(x: 0, y: 0, width: 1440, height: 875),
+             CGPoint(x: 300, y: 700), "bottom right"),
+            ("run, whole-screen window, looking bottom right", CGRect(x: 0, y: 0, width: 1440, height: 875),
+             CGPoint(x: 1200, y: 100), "top left"),
+        ]
+        for (name, window, aim, want) in runs {
+            let (frame, side, _) = QuestionPlacement.aside(run, window: window, aim: aim, on: screen)
+            let covers = aim.map { frame.contains($0) } ?? false
+            let ok = side == want && screen.contains(frame) && !covers
+            if !ok { failed += 1 }
+            print("\(ok ? "ok  " : "FAIL") \(name): \(side) at \(describe(frame))"
+                + (ok ? "" : ", wanted \(want)"))
+        }
+        return failed == 0 ? 0 : 1
+    }
+
+    static func run(surface: String, seconds: Double, at: CGRect? = nil) -> Int32 {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
 
@@ -1347,8 +1518,16 @@ enum PanelsCommand {
         var launchPanel: LaunchPanel?
         var calloutPanel: MenuBarCallout?
         var calloutItem: NSStatusItem?
+        var anchor: NSPanel?
 
         switch surface {
+        case "question", "question-confirm":
+            anchor = MainActor.assumeIsolated { question(confirm: surface == "question-confirm", at: at) }
+        case "question-place":
+            return questionPlacementCheck()
+        case "run", "run-ask":
+            MainActor.assumeIsolated { runDemo(onlyAsk: surface == "run-ask", at: at) }
+            anchor = at.map { rect in MainActor.assumeIsolated { anchorOutline(rect) } }
         case "notice":
             pill.notice("Grammar applied", tone: .done, duration: nil)
         case "caution":
@@ -1485,7 +1664,7 @@ enum PanelsCommand {
             if surface == "proposal-dark" { correction.theme = .dark }
             correction.show(
                 rules: [(heard: "Ver Sal", corrected: "Vercel"),
-                        (heard: "Tasmine", corrected: "Tasmeen")],
+                        (heard: "Tasmine", corrected: "Tamsin")],
                 over: "We worked with Tasmine on the Ver Sal deployment while reviewing a long"
                     + " context sentence that has to remain readable without covering the"
                     + " document behind the editor."
@@ -1706,7 +1885,8 @@ enum PanelsCommand {
                 + "|proposal-dark|dictation|preview|microphone"
                 + "|keyboard|pill|learn|learn-long|selector|selector-long|selector-two"
                 + "|update|models|setup|launch|sequence|tutorial|names|slack|hack"
-                + "|downloads|ready|callout> [seconds]")
+                + "|downloads|ready|callout|question|question-confirm|question-place|run|run-ask> [seconds]"
+            + " [--at x y w h]")
             return 2
         }
 
@@ -1714,6 +1894,7 @@ enum PanelsCommand {
             ticker?.invalidate()
             setupWindow?.close()
             launchPanel?.dismiss()
+            anchor?.orderOut(nil)
             exit(0)
         }
         app.run()

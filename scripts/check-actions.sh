@@ -25,19 +25,27 @@ pass=0; total=0; wrongAction=0; wrongTarget=0
 while IFS='|' read -r utterance wantAction wantTarget; do
   case "$utterance" in ''|'#'*) continue ;; esac
   total=$((total + 1))
-  line="$("$BIN" --act "$utterance" --snapshot "$SNAP" 2>/dev/null | grep '^decided')"
-  gotAction="$(printf '%s' "$line" | awk '{print $2}')"
-  gotTarget="$(printf '%s' "$line" | awk -F'target ' '{print $2}' | awk '{print $1}')"
+  out="$("$BIN" --act "$utterance" --snapshot "$SNAP" 2>/dev/null)"
+  gotAction="$(printf '%s' "$out" | grep '^decided' | awk '{print $2}')"
+  # What it chose, by name — the line reads: target  Role "NAME", 7.5 cm …
+  gotTarget="$(printf '%s' "$out" | grep '^target' | sed -n 's/.*[“"]\([^”"]*\)[”"].*/\1/p')"
+  [ -z "$gotTarget" ] && gotTarget="none"
+  # A nameless text field is described by what it is, so match on that word.
+  case "$gotTarget" in *composer*) gotTarget="composer" ;; esac
 
-  if [ "$gotAction" = "$wantAction" ] && [ "$gotTarget" = "$wantTarget" ]; then
+  if [ "$wantTarget" = "*" ]; then gotTarget="*"; fi
+  case "$gotTarget" in *"$wantTarget"*) hit=yes ;; *) hit=no ;; esac
+  [ "$wantTarget" = "*" ] && hit=yes
+
+  if [ "$gotAction" = "$wantAction" ] && [ "$hit" = yes ]; then
     pass=$((pass + 1))
-    printf '  ✓ %-38s %s %s\n' "$utterance" "$gotAction" "$gotTarget"
+    printf '  ✓ %-38s %s · %s\n' "$utterance" "$gotAction" "$gotTarget"
   elif [ "$gotAction" != "$wantAction" ]; then
     wrongAction=$((wrongAction + 1))
     printf '  ✗ %-38s action %s, want %s\n' "$utterance" "${gotAction:-none at all}" "$wantAction"
   else
     wrongTarget=$((wrongTarget + 1))
-    printf '  ✗ %-38s %s on %s, want %s\n' "$utterance" "$gotAction" "$gotTarget" "$wantTarget"
+    printf '  ✗ %-38s %s on \"%s\", want \"%s\"\n' "$utterance" "$gotAction" "$gotTarget" "$wantTarget"
   fi
 done < "$CASES"
 

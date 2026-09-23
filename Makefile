@@ -15,7 +15,7 @@ V := . scripts/variant.sh &&
 
 .PHONY: app run install uninstall uninstall-dev uninstall-release stop clean \
         reset-permissions fresh-setup logs dev-certificate release release-certificate \
-        try-install which hooks test
+        try-install which hooks test trace-viewer
 
 ## Build the app bundle into .build/
 app:
@@ -93,7 +93,7 @@ CHECKS := replacements pipeline pipeline-config wake split dates keyed \
           profiles span-rule clipboard default-config vocabulary-config learn \
           signing-identity no-voice sound slot-tokenizer sentence-case term-uses \
           edit-diff sentence-open invented-tail sentence-window lowercase-refused \
-          selector sound-group trace-edits
+          selector sound-group trace-edits recipe-runner
 
 ## A shipped transform keeps its case set in its own folder and scores it with
 ## a script beside it, not with scripts/check-<name>.sh.
@@ -174,6 +174,11 @@ reset-permissions:
 logs:
 	@$(V) touch "$(HOME)/Library/Logs/$$LOG_NAME" \
 	  && tail -f "$(HOME)/Library/Logs/$$LOG_NAME"
+
+## Step through recorded action runs in the browser (127.0.0.1 only)
+trace-viewer:
+	@$(V) python3 scripts/trace-viewer/serve.py \
+	  --runs "$(HOME)/Library/Logs/$${LOG_NAME%.log}-runs"
 
 clean: stop
 	@rm -rf .build dist

@@ -2956,7 +2956,21 @@ struct Config: Decodable, Equatable {
         /// dot at exactly the point being asked about, so a hit test there
         /// finds the overlay rather than the window under it.
         var ignoreApps: [String] = ["GazeOverlay"]
+        /// Seconds to outline the offered targets on screen before each step
+        /// is taken. 0 is off, and off is the default: it is a way of seeing
+        /// what the model was asked, not part of the answer.
+        var spotlight: Double = 0
+        /// Try the hard-coded recipe for a message to several people before
+        /// the loop. An experiment, off by default: it exists to find out
+        /// whether recipes beat the loop on the one case the loop fails.
+        var recipes = false
+        /// Lines to scroll when the gaze crosses the top or bottom of a list.
+        /// 0 is off, and off is the default.
+        var gazeScroll = 0
         var decider: Decider = Decider()
+        /// A chat model that writes the steps when no recipe fits. Absent is
+        /// off, and the loop asks Jev for one step at a time as before.
+        var planner: Planner?
         /// Targets this will not press, whatever the model picks.
         ///
         /// A guarantee rather than a request. The model is not asked to avoid
@@ -2972,18 +2986,43 @@ struct Config: Decodable, Equatable {
             "leave", "leave channel", "unsubscribe", "deactivate", "discard", "clear",
             "envoyer", "supprimer", "quitter", "archiver", "effacer",
         ]
+        /// How many letters of a name go into a field that looks people up.
+        ///
+        /// Two is enough to cut a list of a few hundred down to a handful,
+        /// and it cannot mis-spell what it only half-types: the name heard
+        /// was "Mik" and the name in the workspace is "Mick" often enough
+        /// that typing the whole thing finds nothing. The list does the rest.
+        /// 0 types the name in full.
+        var lookupLetters: Int = 2
         /// How many steps one request may take before it gives up.
         ///
         /// The backstop, not the guard: a loop is stopped by the request
         /// being carried out, or by two steps in a row changing nothing.
         /// This is for the loop that keeps making progress in the wrong
         /// direction. 0 runs a single step and no loop at all.
-        var maxSteps: Int = 15
+        var maxSteps: Int = 30
         /// Whether Return is pressed after a message is typed. Off: the words
         /// land in the composer and you send them yourself. A wrong target
         /// that types is a mess to clear up; a wrong target that sends cannot
         /// be taken back.
         var send: Bool = false
+        /// Whether each run is recorded for `scripts/trace-viewer`: the model
+        /// calls, the steps, every read of the window and its screenshot, in
+        /// `~/Library/Logs/<app>-runs`. On for the dev build, off for release.
+        var record: Bool = AppVariant.isDev
+        /// Whether each read of the window during a run also reads its text
+        /// from the pixels, for what the accessibility tree misses: Teams'
+        /// attendee suggestions, a web list over a field. Needs Screen
+        /// Recording; without it the run goes on from the tree alone.
+        var see: Bool = AppVariant.isDev
+        /// How the agent finds a target the tree has no ID for, in the
+        /// window's pixels: "tinyclick" runs TinyClick on this Mac
+        /// (`scripts/setup-vision.sh`), "luna" sends a crop to the planner's
+        /// model, "off" does neither. Unless off, a stuck turn also sends the
+        /// planner a small picture of the area. Without TinyClick set up,
+        /// "tinyclick" works as "luna".
+        var ground: String = AppVariant.isDev ? "tinyclick" : "off"
+        static let groundMethods = ["tinyclick", "luna", "off"]
 
         struct Key: Codable, Equatable {
             var key: String = ""
@@ -3074,17 +3113,69 @@ struct Config: Decodable, Equatable {
             }
         }
 
+        /// The planner: the request and the names of the controls on screen go
+        /// to `endpoint`, and a list of steps comes back. OpenAI's chat
+        /// completions shape, with a strict JSON schema.
+        struct Planner: Codable, Equatable {
+            var model: String = "gpt-5.6-luna"
+            var endpoint: String = "https://api.openai.com/v1/chat/completions"
+            var apiKey: KeySource = KeySource(written: "file:~/.openai_api_key")
+            /// `reasoning_effort`. "none" measured 1.0-4.2 s a plan; empty leaves it out.
+            var reasoning: String = "none"
+            /// Per attempt. The runner's `openai` client tries twice more.
+            var timeoutSeconds: Double = 15
+            /// "plan": one plan, Jev finds each target. "agent": the model calls
+            /// tools and sees the screen after each batch (`agent.py`).
+            var loop: String = "plan"
+
+            var host: String { URL(string: endpoint)?.host ?? endpoint }
+
+            enum CodingKeys: String, CodingKey {
+                case model, endpoint, reasoning, loop
+                case apiKey = "api_key"
+                case timeoutSeconds = "timeout_seconds"
+            }
+
+            init() {}
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                self.init()
+                if let v = try c.decodeIfPresent(String.self, forKey: .model) { model = v }
+                if let v = try c.decodeIfPresent(String.self, forKey: .endpoint) { endpoint = v }
+                if let v = try c.decodeIfPresent(String.self, forKey: .apiKey) {
+                    apiKey = KeySource(written: v)
+                }
+                if let v = try c.decodeIfPresent(String.self, forKey: .reasoning) { reasoning = v }
+                if let v = try c.decodeIfPresent(String.self, forKey: .loop) { loop = v }
+                if let v = try c.decodeIfPresent(Double.self, forKey: .timeoutSeconds) {
+                    timeoutSeconds = v
+                }
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(model, forKey: .model)
+                try c.encode(endpoint, forKey: .endpoint)
+                try c.encode(reasoning, forKey: .reasoning)
+                try c.encode(loop, forKey: .loop)
+                try c.encode(timeoutSeconds, forKey: .timeoutSeconds)
+            }
+        }
+
         /// Whether a key was configured as well as the feature turned on.
         /// Without one there is no way to start an instruction, so nothing is
         /// registered and `--check-config` says why.
         var isUsable: Bool { enabled && hotkey.isSet }
 
         enum CodingKeys: String, CodingKey {
-            case enabled, hotkey, decider, send
+            case enabled, hotkey, decider, planner, send, spotlight, recipes, record, see, ground
+            case gazeScroll = "gaze_scroll"
             case gazeFile = "gaze"
             case ignoreApps = "ignore_apps"
             case neverPress = "never_press"
             case maxSteps = "max_steps"
+            case lookupLetters = "lookup_letters"
         }
 
         init() {}
@@ -3096,9 +3187,30 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(Key.self, forKey: .hotkey) { hotkey = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .gazeFile) { gazeFile = v }
             if let v = try c.decodeIfPresent([String].self, forKey: .ignoreApps) { ignoreApps = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .recipes) { recipes = v }
+            if let v = try c.decodeIfPresent(Int.self, forKey: .gazeScroll) {
+                gazeScroll = max(0, min(v, 20))
+            }
+            if let v = try c.decodeIfPresent(Double.self, forKey: .spotlight) {
+                spotlight = max(0, min(v, 10))
+            }
             if let v = try c.decodeIfPresent(Decider.self, forKey: .decider) { decider = v }
+            planner = try c.decodeIfPresent(Planner.self, forKey: .planner)
             if let v = try c.decodeIfPresent(Bool.self, forKey: .send) { send = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .record) { record = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .see) { see = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .ground) {
+                guard Self.groundMethods.contains(v) else {
+                    throw ConfigError.invalidValue(
+                        key: "actions.ground", value: v, expected: "tinyclick, luna or off"
+                    )
+                }
+                ground = v
+            }
             if let v = try c.decodeIfPresent([String].self, forKey: .neverPress) { neverPress = v }
+            if let v = try c.decodeIfPresent(Int.self, forKey: .lookupLetters) {
+                lookupLetters = max(0, min(v, 40))
+            }
             if let v = try c.decodeIfPresent(Int.self, forKey: .maxSteps) {
                 guard v >= 0, v <= 50 else {
                     throw ConfigError.invalidValue(

@@ -979,6 +979,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         launch.theme = config.feedback.theme
         correctionPanel.primaryColor = config.feedback.primaryColor
         correctionPanel.theme = config.feedback.theme
+        let feedback = config.feedback
+        MainActor.assumeIsolated {
+            QuestionPanel.shared.primaryColor = feedback.primaryColor
+            QuestionPanel.shared.theme = feedback.theme
+        }
 
         configProblems = config.problems()
         for problem in configProblems { Log.write("config: \(problem)") }
@@ -1029,6 +1034,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         actionKeys.onRelease = { [weak self] in self?.handleHotKeyRelease() }
         actionKeys.onAbort = { [weak self] in self?.cancelDictation(.notTheHotkey) }
         actionKeys.unregister()
+        MainActor.assumeIsolated { QuestionPanel.shared.hotkey = nil }
         if config.actions.isUsable {
             do {
                 let binding = try actionKeys.register(
@@ -1037,11 +1043,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     pressDelay: config.actions.hotkey.pressDelaySeconds
                 )
                 Log.write("actions: \(binding.displayName) acts on what is on screen")
+                let name = binding.displayName
+                MainActor.assumeIsolated { QuestionPanel.shared.hotkey = name }
             } catch {
                 Log.write("actions: hotkey registration FAILED: \(error.localizedDescription)")
             }
         } else if config.actions.enabled {
             Log.write("actions: on, but actions.hotkey.key names no key — nothing registered")
+        }
+        // The runner holds the loop too, so it runs whether or not recipes are on.
+        if config.actions.isUsable {
+            let settings = config.actions
+            Task.detached { await RecipeProcess.shared.warm(settings) }
+        } else {
+            RecipeProcess.shared.stop()
+        }
+        let scrollLines = config.actions.enabled ? config.actions.gazeScroll : 0
+        let scrollFile = config.actions.gazeFile
+        MainActor.assumeIsolated {
+            if scrollLines > 0 {
+                GazeScroll.shared.start(file: scrollFile, lines: scrollLines)
+            } else {
+                GazeScroll.shared.stop()
+            }
         }
 
         // Before the setup window is built, because that is where the tour
@@ -2847,12 +2871,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
 
-            // One request, as many steps as it takes — see `ActionLoop`. A
-            // request is rarely one step: a conversation below the fold has
-            // to be scrolled to before it exists to be clicked.
-            let report = await ActionLoop.run(
-                utterance: instruction, from: point, config: settings
+            // The runner decides: a recipe when one fits, the loop otherwise.
+            // The app name is only needed to find the recipes, and reading it
+            // costs a walk of the window (~0.4 s on Slack).
+            let app = settings.recipes
+                ? (try? ScreenTargets.snapshot(at: point, ignoring: Set(settings.ignoreApps)))?.app ?? ""
+                : ""
+            // The run panel carries the progress and the outcome once it is up.
+            let shownBefore = await MainActor.run { () -> Int in
+                QuestionPanel.shared.onRunShown = { self?.endProgress(token: token) }
+                return QuestionPanel.shared.runsShown
+            }
+            let run = await Recipes.run(
+                utterance: instruction, app: app, config: settings, at: point
             )
+            let panelShown = await MainActor.run { () -> Bool in
+                QuestionPanel.shared.onRunShown = nil
+                return QuestionPanel.shared.runsShown != shownBefore
+            }
+            if panelShown {
+                Log.write("action: \(run.loop?.stopped ?? (run.ok ? "done" : "stopped")) — in the run panel")
+                await MainActor.run { self?.endProgress(token: token) }
+                return
+            }
+            guard let report = run.loop else {
+                let text = (["Recipe — " + (run.ok ? "done" : "stopped")] + run.lines)
+                    .joined(separator: "\n")
+                await MainActor.run {
+                    guard let self else { return }
+                    self.endProgress(token: token)
+                    self.alert(text, tone: run.ok ? .plain : .caution)
+                }
+                return
+            }
+            // Every step, when there was more than one. A loop that did four
+            // things and names only the fourth is asking to be taken on
+            // trust about the other three.
+            if let markdown = report.markdown {
+                Log.write("action: \(report.shown.count) steps — \(report.stopped)")
+                await MainActor.run {
+                    guard let self else { return }
+                    self.endProgress(token: token)
+                    self.alert(markdown, tone: report.acted ? .plain : .caution)
+                }
+                return
+            }
             await give(up: report.said, report.acted ? .plain : .caution)
         }
     }
@@ -5921,8 +5984,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 updateUI()
                 return
             }
+            // A run is waiting on a question: the words are its answer.
+            let answered = MainActor.assumeIsolated { () -> Bool in
+                guard QuestionPanel.shared.isAsking else { return false }
+                QuestionPanel.shared.answer(voice: trimmed)
+                return true
+            }
+            if answered {
+                Log.write("action: answered the question — \"\(trimmed)\"")
+                updateUI()
+                return
+            }
             Log.write("action: \"\(trimmed)\"")
             act(on: trimmed, for: press)
+            updateUI()
+            return
+        }
+        if !trimmed.isEmpty, MainActor.assumeIsolated({ QuestionPanel.shared.dictate(trimmed) }) {
+            Log.write("dictation: went into the question's answer field")
+            dictationEnded(press.run)
             updateUI()
             return
         }

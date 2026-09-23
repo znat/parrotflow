@@ -58,21 +58,73 @@ and left there for you to send. On, Return is pressed.
 2. **You speak, you let go, it decodes.** The same recorder, the same model,
    the same vocabulary as a dictation — names matter here more than anywhere.
 
-3. **The window is read.** `ScreenTargets` walks the window under the gaze and
-   comes back with everything worth naming: buttons, rows, labels, text
-   fields, each with its distance from where you were looking. About 0.4 s on
-   a Slack window of 224 targets.
+3. **The runner takes the request.** The app sends what you said to
+   `built-in/recipes/runner.py`, one Python process that does all the
+   deciding. A recipe runs if one fits. Otherwise the loop runs, in the same
+   process (`loop.py`).
 
-4. **One question, four answers.** The 40 nearest targets, plus any whose name
-   matches a word of what you said, go to the decider with the utterance. It
-   answers: which action, which target, does the utterance carry the words to
-   type, and does it point rather than name. About 0.65 s.
+4. **The window is read.** The runner asks the app for it. `ScreenTargets`
+   walks the window under the gaze and comes back with everything worth
+   naming: buttons, rows, labels, text fields, each with its distance from
+   where you were looking. About 0.4 s on a Slack window of 224 targets.
 
-5. **It happens.** A click, a paste, a key. Never a keystroke per character:
-   the paste is the app's own, the same one dictation uses.
+5. **One question, four answers.** The 40 nearest targets, plus any whose name
+   matches a word of what you said, go to Jev with the utterance
+   (`decider.py`). It answers: which action, which target, does the utterance
+   carry the words to type, and does it point rather than name. About 0.3 s
+   on a kept-open connection, 0.65-0.8 s on a new one.
+
+6. **It happens.** The runner turns the answer into steps, and the app does
+   each one: a click, a paste, a key. Never a keystroke per character: the
+   paste is the app's own, the same one dictation uses. Then the window is
+   read again, until the request is carried out or a stop rule fires.
 
 Anything that fails — no window under the gaze, no key, the decider times out
 — leaves the screen exactly as it was and says why on the pill.
+
+## What a read holds, and what a step changed
+
+**What opened since the first read.** At the run's first read the app's
+top-level parts are listed: its windows, and the app element's children
+(pop-ups, menus, sheets). Only the list, no walk. Each later read walks the
+front window, plus every part that was not on that first list. A window that
+was already open is never walked. Items from such a part carry `"in"`:
+`pop-up`, `menu`, `dialog`, `sheet` or `window`. Outlook's suggestion list is
+one: it is outside the compose window. Its rows (cells, rows, menu items, and
+in a pop-up a bare text) take a real click, like a menu item, and are always offered to Jev and to the planner, however far from
+the gaze. All the new parts together get 3,000 elements and 1 s at most.
+
+**Wide elements.** A list, table or outline gives only the rows on screen. Any
+other element with more than 20 children (`ScreenTargets.wideChildren`) gives
+its visible children if it lists them. Otherwise its first 20 are read, plus 3
+each side of the child under the pointer or the caret, or, when either is
+outside it, its last 7: Slack's newest messages are the last children. The rest becomes one item of kind `more`,
+"and 3,140 more". It is never offered and never counts as a change. The log
+says each time: `actions: capped 1 wide element(s) at 20 children — AXGroup 23`.
+
+**Values.** Text fields, combo boxes and search fields carry their value, cut
+at 100 characters. A text area's value is never read: Outlook's message body
+measured 395,489 characters.
+
+**What changed.** `loop.changes(before, after)` returns it as data:
+
+    {"appeared": [{"kind": "pop-up", "near": "To", "rows": ["Peter Holm", "Peter Smith"]}],
+     "values": {"To": "Peter"}, "new": ["Send"], "gone": 3, "window": "Untitled"}
+
+`difference()` says it in one sentence, which goes to Jev as `changed` and to
+the planner under each step taken: `a pop-up opened near "To": "Peter
+Holm", "Peter Smith"; "To" now holds "Pe"`. Typing is a change, so a step
+that only typed is not "nothing changed". On a re-plan the planner also gets
+`Just opened:` and `Now in "To":` lines, and the rows are listed as
+`Cell "Peter Smith" (in the pop-up)`. The expect check lists the rows too.
+
+When the read after the step has seen lines, the change also holds `seen`, text
+on screen that the tree lacks, `[{"near": "To", "lines": [{"text", "x", "y",
+"w", "h", "p"}]}]`, and `still`, controls that left the tree and are still on
+screen. See [The agent loop](#the-agent-loop).
+
+`--act … --app X --look --parts` reads every other window and pop-up of the
+app as if it had just opened. It only reads.
 
 ## Who decides what
 
@@ -87,11 +139,625 @@ The split is the whole design, and it was measured rather than assumed.
 | Where the search field is | code | Slack's is not a text field in the accessibility API, so it can never be offered — `search` is mapped to ⌘G |
 | Opening a new message | code | the picker is a shortcut, not a target, so `new_message` is mapped to ⌘N. Who it is to is a second step, over the window the picker draws |
 
+Everything in this table is Python, in `built-in/recipes/`. The app holds
+only what talks to the Mac: the accessibility walk and what it concludes about
+an item (`lookup`, `in_list`, `clickable`, `refused`), the events, the
+spotlight, Escape, and the checks at the moment of acting.
+
+| Python decides | The app does and checks |
+| --- | --- |
+| which recipe, or the loop | the accessibility walk, and each item's kind |
+| the loop's question to Jev, and reading the answer | clicks, presses, keys, paste, wheel, drag |
+| the stop rules, what changed, what goes in `done` | `never_press`, refused by name at the moment of acting |
+| the per-app notes in `apps/<app>.md` | the front-app check before a key or a click |
+| which step each action becomes (⌘N, ⌘G, the composer) | Return refused in a message box when `send` is off |
+| whether a name is on the recipient line | Escape, and the outlines |
+
 The gaze only overrides a target the model could not use — a label, or none at
 all. It used to override every deictic, and on the twelve measured utterances
 that cost two of them: "reply here: on it, thanks" and "reply to this message:
 sounds good" both reach the composer through the model, and both were dragged
 onto a pressable group 0.7 cm nearer.
+
+## Recipes
+
+A recipe is a fixed sequence for a request the loop gets wrong, such as a
+message to two people. It is a Python function. The model picks the recipe from
+what you said, or says none, and none goes to the loop as before.
+`actions: recipes: true` turns it on; it is off by default.
+
+One Python process does the deciding: `built-in/recipes/runner.py`. The app
+starts it at launch and restarts it if it dies. It imports the recipe files,
+asks Jev which recipe fits and what was said, and runs the recipe. It imports
+the files again on every request, so an edit counts on the next press. A file
+that fails to import is logged and skipped. The app does only the steps that
+touch the screen.
+
+The runner needs pydantic, openai, Pydantic AI with its TypeSafe model, and
+its harness in the `python3` it runs with: `python3 -m pip install pydantic
+openai 'pydantic-ai-slim[openai,typesafe]' pydantic-ai-harness`. Every
+question to Jev goes through Pydantic AI's `TypeSafeModel`
+(`built-in/recipes/judge.py`): one question per field of the output type. Without one of them, the
+runner still starts, and every action ends with that line and the missing
+package's name. Importing them costs 330-520 ms, once per runner start. How a
+release build ships them is an open question.
+
+Recipes live in two places. A recipe in the second with the same name and app
+replaces the first.
+
+- `built-in/recipes/` in the app: the shipped recipes, one folder per app,
+  with `runner.py` and `parrotflow.py`, which defines `@recipe` and what a
+  recipe gets.
+- `recipes/` in the config folder, for your own, for example
+  `~/.config/parrotflow-dev/recipes/outlook/message_people.py`.
+
+A recipe is a function declared with `@recipe`. A file can hold several:
+
+```python
+from parrotflow import recipe
+
+
+@recipe(app="com.microsoft.Outlook", says="write an email to one or more people", needs=["who"])
+def message_people(app, ask):
+    app.key("cmd+n", wait=1200)
+    for name in ask.who:
+        to = app.lookup_field()
+        since = app.mark()
+        app.type(name[:ask.letters])
+        rows = app.rows(since=since, under=to, outside_window=True)
+        row = app.choose(f"Which of these rows is the person called “{name}”?", rows)
+        app.click(row)
+    app.ready(app.find(kind="text", name="subject")[0])
+```
+
+- `app` is the app's bundle ID, or its name as macOS shows it. The bundle ID
+  does not change with the system language: `osascript -e 'id of app "Slack"'`.
+- `says` is what the model matches the sentence against, by meaning.
+- `needs` is `who`, `what`, or both. The model reads them out of the sentence
+  only when a recipe needs them.
+- `allows` takes words off `never_press` for this recipe's clicks. The Notion
+  recipe that deletes a table has `allows=["delete"]`.
+- `name` defaults to the function's name. It is what a user recipe replaces.
+
+The recipe never touches the screen. The app sends the runner one line,
+`{"run": "<what you said>", "app": …, "bundle": …, "gaze": …, "execute": …,
+"recipes": …, "read_app": …, "loop": {…}}`. The runner answers with one
+`{"do": …}` line per step, the app replies to each, and the runner ends with
+`{"end": "planned|ready|done|stopped|failed"}`. When no recipe fits, or
+`recipes` is false, the runner runs the loop and the end line also carries
+`"loop"`: the report the pill or the alert shows (`said`, `markdown`,
+`acted`, `stopped`, `steps`, `shown`). The top of `runner.py` has the details.
+The app does the reading, typing and clicking, so Escape still stops the run,
+and a click on anything on `never_press` is refused. `ready`, `done` and
+`stop` end the run. `choose` asks Jev from the runner and never reaches the
+app. `print()` goes to the log as `recipe: py:`. `parrotflow.py` lists every
+call.
+
+### The steps the loop asks for
+
+Each is a thin wrapper over existing Swift, with the same checks as the
+recipe steps.
+
+| Step | What the app does |
+| --- | --- |
+| `snapshot {at, app}` | reads the window: the app's front window, or the one under `at` when `app` is null. Items come back with ids, `cm`, `actions` and the app's verdicts |
+| `press {id, click}` | the accessibility press, or a real click when `click` is true or the press is refused. Says `pressed`. A real click first checks that the target is not covered (see below) |
+| `look {x, y, w, h}` | the text in that part of the screen, from its pixels: `{"lines": [{text, x, y, w, h, p}]}`, frames as for items, or `{"error": …}`. Needs Screen Recording |
+| `click_at {x, y, name}` | a real click at a point. `name`, when given, is checked against `never_press` too |
+| `scroll {x, y, down, turns}` | wheel turns over a point |
+| `select {id}` | drags across the item's text |
+| `show_menu {id}` or `{x, y}` | the item's own menu, else a right-click |
+| `front` | brings the app forward, for a chord |
+| `focus`, `ready_for_words` | where the caret is, its `role`, and whether it waits in an empty box |
+| `spotlight {snapshot, offers, aim, chosen, seconds}`, `spotlight_dismiss` | the outlines |
+| `watch` | starts watching for Escape |
+| `log {text, plain}` | a log line; `plain` leaves out the `recipe:` prefix |
+
+`--act … --snapshot` sends `{"decide": …, "snapshot": …, "mode": …}` instead:
+one decision on a window the app hands over, and no step asked for.
+
+### Send is off: Return is refused in a message box
+
+With `send: false` the app refuses a `key` step for Return, with or without
+modifiers, when the caret is in a message box: a text area, or a text field in
+the bottom fifth of its window. A field that narrows a list is not one, so the
+Slack search recipe's Return still goes through. It asks first. "Yes, go ahead" presses it. "No" fails the step with
+`said: true`, and the run stops with "Won't press Return in the message box —
+send is off". Other words fail it with `{"error": "redirected", "text": …}`
+and the run goes on: see [The question panel](#the-question-panel). The loop itself never asks for Return with `send` off; this is
+the check that holds if something does.
+
+`python3 tests/recipe-runner.py` runs the runner against a fake app and a fake
+Jev: no screen, no network. It covers the recipes and the loop's stop rules.
+
+`type` sends real keystrokes, for a field that filters a list as you type.
+`paste` goes through the clipboard, for anything longer. Slack's recipient
+field needs the first. Slack's search box needs the second.
+
+Run one without the hotkey. `--execute` brings the app to the front and does
+the steps. Without it, the command only says which recipe it would run.
+
+```sh
+PARROTFLOW_CONFIG_DIR=<a copy of the config folder> \
+  $PF --recipe-probe "write an email to Peter and Antonio" --app "Microsoft Outlook" --execute
+```
+
+## Planner
+
+A planner is a remote chat model that knows how apps work. It is off unless
+`actions: planner:` is set. When it is set and no recipe fits, the loop asks it
+for a plan instead of asking Jev "what now" at every step. Jev scores 0.95-0.99
+on "which of these is X" and 0.32-0.52 on "what now", so the planner takes the
+wide question and Jev keeps the narrow one.
+
+```yaml
+actions:
+  planner:
+    model: gpt-5.6-luna
+    endpoint: https://api.openai.com/v1/chat/completions
+    api_key: file:~/.openai_api_key
+    reasoning: none          # reasoning_effort; empty leaves it out
+    timeout_seconds: 15      # per attempt
+```
+
+**The call.** The runner uses the official `openai` package (3.19), one
+client per runner, so the connection is kept. The agent loop uses the SDK's
+async client, with the same settings, through Pydantic AI. Both ask for gzip
+only: httpx2 2.13 cannot read a brotli answer with brotli 1.1, and every call
+failed with a `TypeError` (09-23). Its base URL is `endpoint`
+without the trailing `/chat/completions`: `https://api.openai.com/v1`. An
+endpoint that does not end that way is used as the base as it is. The key
+comes from `api_key`, as before.
+
+`timeout_seconds` is per attempt. The SDK gives it to httpx for each phase:
+the connection, the upload, and each wait for bytes of the answer. The
+answer is not streamed, so in practice it bounds the wait for the whole
+answer. A failed attempt is tried twice more (`max_retries=2`): on a
+connection error, a timeout, 408, 409, 429 and 5xx. The waits between tries
+are about 0.5 s and 1 s, or the server's `Retry-After` when it gives one of
+60 s or less. So with the default, an endpoint that never answers fails after about
+47 s: 3 × 15 s plus 1.5 s. A refused connection fails in about 1.5 s. A
+`Retry-After` of 60 s on each try would make it 165 s; the app's 120 s
+silence limit ends the run first. A 401 or 400 is not tried again. The errors read as
+before: "The planner answered 500: …", with the key cut out of the body,
+and "The planner timed out after 3 tries."
+
+**What leaves the Mac.** The request, the app name and bundle ID, the window
+title, the item you look at, and the names of the controls Jev is offered: the
+40 nearest and any further one whose name shares a word with the request.
+Names only, as `Role "name"` lines. Field values are not sent. A row's name can
+hold the first words of a message, because Slack names its rows that way.
+Per-app notes go too. `--check-config` prints the host.
+
+**What it answers.** At most 8 steps, each `{do, target, value, expect}`.
+`do` is `click`, `pick`, `type`, `write`, `key` or `scroll`. Strict JSON
+schema, from the `PlanReply` model in `planner.py`, so the answer always
+parses.
+
+**How a step is done.** Jev finds the target with one question, "which of
+these is `<target>`?", over the same offered items plus any that share a word
+with the target. `click` and `pick` press it. A press that changes nothing is
+tried once more as a real click. `type` presses the field, then types into a
+lookup field or pastes into any other. `write` presses the box and pastes the
+planner's text. Neither presses Return. A `key` step needs no target. After
+the step the window is read again, and Jev answers "is `<expect>` on screen
+now?".
+
+**When it asks again.** Any of these:
+
+- Jev picks none of the items, and the target's words are somewhere in the window;
+- a pick below 0.8;
+- the target is on `never_press`, or the app refused the press;
+- two steps in a row changed nothing (`type` and `write` do not count);
+- the same step three times;
+- `expect` answered below 0.5;
+- a `type` step with a word the user did not say, or a `cmd+a` outside a
+  one-line field (see below);
+- the user answered a guard's question with other words. The reason is
+  `Not done — the user said: "…"`, so the new plan reads them.
+
+It asks once, with the window as it is now, each step taken and what it
+changed, and why it stalled. The answer replaces the steps left. **One re-plan
+per request.** A second stall stops the run, and the alert names the step:
+`Stopped at “click General” — expected “a menu” and it is not on screen`.
+
+**A seeing failure stops at once.** When Jev picks none and no word of the
+target is anywhere in the window, the target was never read. Asking again
+would not help. The log says
+
+    planner: target not in the tree: "Mute channel" — Slack “general”, 241 items
+
+and the run stops with "Could not find … on screen". So a grep for `not in the
+tree` finds the walk's gaps, apart from the planner's mistakes.
+
+**⌘A.** The select-all guard asks the app for the focused element's role
+first. In a text field, a combo box or a search field, ⌘A selects only what
+the field holds, so it runs without a question. Anywhere else, a text area
+included, it asks.
+
+**A covered target.** Before a real click (`click`, a `press` that ends in a
+click, the click that puts the caret in a field for `type`, and `ready`), the
+app hit-tests the target's centre. The element it finds must be the target,
+inside it (up its `AXParent` chain, matched by frame within 2 pt, or by role
+and name), or hold it (its frame holds the target's, and the target is among
+its descendants, searched up to 400 elements). Otherwise the app presses
+Escape once, marked as its own so the Escape watch ignores it, waits 250 ms
+and tests again. Still covered, it does not click and replies
+`{"error": "covered", "text": "\"End time\" is covered by Group \"…\""}`.
+The step fails with that text; the run goes on. The app log has a line for
+each. A seen line (`click_at`) has no element and is not checked.
+
+**An open list.** The hit test does not see a web pop-up. Seen 09-23 in
+Teams: Start time's list lay over End time, the hit test named End time, and
+the click picked "18:30" in Start time, which became "18:3018:30". So before
+a click or a type, if an item in the newest read is a combo box, a pop-up
+button or a text field marked `expanded`, and it is not the target, the loop
+presses Return. Return commits the value and closes the list; Escape reverted
+the time in that run. The window is read again, and the step's result starts
+with `closed the open list of "Start time" first`. Not for a row of that list
+or a seen line: that Return would close the list the click is for. The
+Return is marked as the app's own. The send guard does not fire on it, since
+a combo box is not a message box.
+
+**Plan only.** `--recipe-probe "<request>" --app X` without `--execute` prints
+the plan, and which item Jev would pick for the first step. Nothing is done.
+
+**Measured 09-22**, 20 requests over Slack, Outlook, Notion, Chrome, Finder
+and Spotify: 1.0-4.2 s per plan, median 1.7 s, 850-1,850 input tokens. The
+first call of a run took 1.8, 3.3 and 10.2 s in three runs. Keeping the
+connection open did not show: 5 calls each, 1.17 s median on a fresh
+connection, 1.25 s on a kept one. It still invents: a "Friday"
+entry in Slack's "Clear after" menu, and once it rewrote a Notion page after
+⌘A. The ⌘A and unsaid-words guards exist because of that second one.
+
+**Live, Outlook, once:** "write an email to Peter with the subject test".
+"New Email" was found at 0.98 and opened the draft, but "is New message window
+on screen" came back 0.49, so it asked again. The new plan clicked "To
+Recipients" (0.96) and typed Peter. Outlook's suggestion list is not inside
+the window, so "Peter recipient suggestion" scored 0.04 and the run stopped,
+as the one-re-plan rule says. Vague `expect` text ("… active", "… focused")
+is the weak part. The expect question now also carries what the step changed:
+0.50 to 0.66 on that window, one case.
+
+### The agent loop
+
+`loop: agent` under `actions: planner:` replaces the plan with a model that
+calls tools. The default is `plan`.
+
+```yaml
+actions:
+  planner:
+    model: gpt-5.6-luna
+    loop: agent              # agent | plan
+```
+
+The model gets the request, the app, its notes, and the screen as
+`[ID] Role "name"` lines: the items Jev would be offered, every item in a
+pop-up, and the focused one. A text field, combo box or search field that
+holds something shows it: `[20] ComboBox "Start time" = "16:00"`, cut to 60
+characters. IDs belong to one read. It has seven tools, and the plan tools:
+
+- `act(why, steps)`: steps `{do, id, value, expect}` run in order, `do` as for
+  the plan. `why` is what the batch is for, in a few words. It goes in the app
+  log line and the trace. A call without it still runs. `expect`, optional,
+  is what should be true after the step, such as "To holds Alex Moreau and
+  Antonio Ruiz". See [Surprises](#surprises).
+  Each step goes through the same code and guards as a planned step. The
+  batch stops at the first surprise: a step failed, a step changed nothing
+  (`type` and `write` do not count, as in the plan path), a step's `expect`
+  is not true, a step took a name out of its field, or something opened
+  that the next step does not target. The result says which steps
+  ran, why it stopped, what changed (as `changes()` gives it), and the new
+  screen with new IDs.
+- `read()`: the screen again, nothing done.
+- `look(id, side)` or `look(x, y, w, h)`: the text in a part of the screen,
+  read from its pixels with Vision (fast level, en-US and fr-FR). `side` is
+  below, above, right, left or around; below is the item's width plus 40 pt,
+  at least 400 pt wide, and 400 pt down. The region is cut to the screen, not
+  the window: Outlook draws its suggestions outside the window. Each line
+  gets an ID after the screen's (101, 201…). `act` can click one: a real
+  click at its centre, checked against `never_press` by its text and by what
+  is under the point. A seen line cannot be typed into.
+- `ground(description, id, side)` or `ground(description, x, y, w, h)`: a
+  point for a target the screen lines have no ID for, found in the pixels.
+  See [Finding a target in the pixels](#finding-a-target-in-the-pixels).
+  Absent with `actions.ground: off`.
+- `ask(question, options)`: a question for the user, with at most 4 options.
+  The prompt allows it in three cases: several items could be what the user
+  meant, the next step would send, delete, start a call or invite people, or
+  the model cannot go on. The result is "The user answered: …". No answer
+  ends the run.
+- `done(summary)` and `stuck(why)` end the run. They are the run's output
+  tools. `done` is refused while a plan step is pending or in progress: the
+  model gets "Not done: '<step>' is still open. Finish it, or cancel it with
+  a reason." and tries again. `stuck` asks the user once first; an answer
+  other than Stop goes back to the model.
+- `write_plan`, `read_plan`, `add_task`, `update_task_status`,
+  `update_task_statuses`, `remove_task`: the task list of `Planning`, from
+  pydantic-ai-harness. The prompt asks for `write_plan` on the first call;
+  nothing enforces it. The plan is shown at the end of every request after
+  it, and is never cut. Each plan call is a model call, and counts toward the
+  15.
+
+The loop is Pydantic AI's (`pydantic-ai-slim` 2.48, `pydantic-ai-harness`
+0.34): the calls, the tool calls, argument checks, retries and the call
+limit. Each tool takes a Pydantic model in `agent.py`. Its docstring is the
+tool's description, and its JSON schema, made strict, is what the model gets.
+Arguments that do not fit the model run nothing: the tool result is Pydantic
+AI's list of wrong fields, and the model tries again. `agent.py` keeps what
+is ours: the steps, the reading, the IDs, the history cut, the trace and the
+recording.
+
+Every read during a run also reads the window's text from its pixels
+(`actions.see`, on in the dev build), from the screenshot's own capture: one
+capture, not two. The reply carries the lines as `seen`, and `seen_ms`. The
+app log gets a line when that takes over 80 ms. `loop.changes` keeps only
+what the tree lacks:
+
+- It drops a line whose text a tree item's name or value holds. Case, spaces,
+  accents and punctuation do not count. The line may be part of the tree
+  text: Vision cuts long labels. The tree text may be part of the line only
+  as whole words and 60% of it, so a row "Peter Holm" is not hidden by a
+  field that holds "Peter". At the same place, a looser match also counts:
+  70% of the line's characters in order, for lines of six or more. Vision
+  reads "23/09/26" as "23109126".
+- It drops a line seen at the same place in the read before (12 pt, or half
+  the smaller box), 1–2 characters, and lines with no run of two letters or
+  digits. After a new window title it reports none: the tree has the page.
+- What is left is grouped into blocks: lines stacked less than 40 pt apart,
+  with left edges within 40 pt. Each block is `near` the field that changed,
+  else the focused field, else the nearest one.
+- A line that matches a control of the read before, at its place, and no
+  item of this read, is reported apart: the control left the tree and is
+  still on screen. Seen 09-23: Teams' date panel hid the rest of the form
+  from the tree, and the model said there was no attendee field.
+
+The step's result then says `text appeared near "<field>" (seen, not in the
+tree): [101] "…"` and `still on screen, no longer in the tree (a panel may be
+hiding them): [105] ComboBox "…"`. The IDs click at the line's centre with
+`click_at`, until the next read. Text that appeared ends the batch when the
+next step does not click one of its lines, as a pop-up does; a control still
+on screen does not. The plan path re-plans on it (`_surprise`). Seen 09-23 in
+Teams: the attendee suggestions were on screen and not in the tree, and the
+next step clicked the date.
+
+Before a click or a type on a tree item a line high (60 pt or less), the
+seen lines over it that are not its own text and not in the tree mean
+something covers it. The app's hit test cannot see a web pop-up: it named
+End time under Start time's open list. An open list is closed with Return
+first, as above. Still covered, the step fails with `"End time" is covered by
+text seen on screen: "18:30"`, and the run goes on. An empty field's one line
+is taken for its placeholder.
+
+Without `seen` (the setting off, or no Screen Recording), a `type` into a
+lookup field (`lookup`, a combo box, a search field, or a name like To or
+attendees) looks below the field before the typing. If the tree then shows
+no change, it looks again, and lines that were not there before come back as
+`a list opened near "<field>" (seen, not from the tree): [101] "…"`.
+
+`scripts/see-run.py <run folder> <tree> …` runs the reading and the filter on
+a recorded run, offline: the blocks, the controls still on screen, and
+whether the step taken from that tree was covered. It prints to the terminal
+only. Measured 09-23 on two Teams runs: 40–67 ms per window from the JPEG,
+warm. On the attendee read it gives the suggestion list and nothing else.
+
+`look` needs **Screen Recording** for ParrotFlow (System Settings → Privacy &
+Security → Screen & System Audio Recording). Without it, the first look adds
+the app to that list, and `look` answers "screen recording is not granted"
+as a tool result. The run goes on without it. Like Accessibility, it cannot
+be checked from a terminal: macOS credits the shell.
+
+`--look-image <png> [x y w h] [--scale 2]` runs the same reading on a saved
+image, with no capture and no permission. The region is centre and size in
+the image's pixels; lines print in points. Measured 09-23 on a 3448×1998
+screenshot, warm: 7 ms for the 201×181 pt list under a Teams time field,
+15 ms for 400×400 pt, 45 ms for the whole screen.
+
+A guard refusal (never_press, words not said, `cmd+a`) comes back as a tool
+result, and so does a covered target. Words the user gave a guard instead of
+yes or no come back as the step's result, `Not done — the user said: "…"`,
+and the run goes on. Escape, the front-app check and the send rule's no end
+the run, as they do on the plan path. Limits: 25 model calls, `max_steps`
+steps (30 by default), 120 s, not counting the time the user takes to answer.
+Only the newest screen is sent in full; earlier tool results are cut to the
+steps that ran. There is no re-plan: the model decides each move from what
+came back.
+
+### Surprises
+
+A surprise is a step that failed, the same batch run twice, a refused
+`done`, a step whose `expect` is not true, or a step that took a name or
+words out of its field. The last two are checked after every step that ran,
+without a model call:
+
+- `expect`: Jev is asked "Is this true now: <expect>?" about the window, the
+  change sentence and what each text field holds. Below 0.5, the step's line
+  ends with `— expected "<expect>", not what happened`. About 0.3 s, added to
+  the step's ms.
+- Loss (`loop.lost`): the text the target field held, split into names, and
+  the items drawn inside its frame. A part with two letters or more that is
+  gone after the step is reported: `— this step removed "Alex Moreau" from
+  "To:"`. Numbers and the field's own name (a placeholder) do not count, nor
+  do other fields. Over 72 recorded steps with a target, it fired 3 times,
+  and each time a recipient had been removed.
+
+A surprise ends the batch and is a note under the task in progress. The next
+request carries the stuck picture (below) and, when `PARROTFLOW_PLANNER_THINKING`
+is set, that reasoning effort instead of `reasoning`, for that one request.
+There is no config key for it yet, and the app does not pass it, so it is
+empty: on `/v1/chat/completions`, gpt-6-luna answers 400 to any effort but
+`none` when tools are sent (09-23). `/v1/responses` takes `low` with tools.
+
+A second surprise on the same task adds to the result: "Two steps surprised
+you on this task. Call `ask` now: …". If the model's next tool is not `ask` or
+`read`, the runner asks instead: the surprise and "What should I do?", with
+Stop. Stop ends the run; other words go back as the tool result. The count
+starts again when the task in progress changes, or after a question. With no
+plan, nothing is counted.
+
+Each model call writes one JSON line to
+`~/Library/Logs/ParrotFlow-Dev-agent.jsonl` (`ParrotFlow-agent.jsonl` for
+the release app): the messages as sent, plan reminder included, the tool
+calls, the results, ms, tokens and the plan after the call. Never the key. With `actions.record` on, the run is also recorded
+for the run viewer: see [Recording a run](#recording-a-run). The app log gets
+one line per call:
+
+    agent: call 1 · act (reply in the thread) click [7]; write [7] I'll be there at three · 2578 ms, 1309 tokens in
+
+**Measured 09-22, plan only**, gpt-5.6-luna, `reasoning_effort: none`, strict
+tools: 3 of 3 calls came back as valid `act` calls, 1.5-2.6 s, 1,300-1,850
+tokens in, 28-44 out. On Notion, "open the page menu" clicked the page title:
+the "•••" button was not among the items offered.
+
+**Measured 09-23, through Pydantic AI**, gpt-6-luna, reasoning off, on a
+recorded Teams calendar read ("schedule a meeting at 6 pm with Peter"), with
+`act` stubbed: call 1 was `write_plan` (2 steps), call 2 a valid `act` with
+the plan reminder at the end of the request, call 3 `stuck`, which ended the
+run as its output. 2.1-2.5 s per call, 3,400-3,650 tokens in. Plan only, the
+plan tools run and the first call that is not one is printed.
+
+### Finding a target in the pixels
+
+`actions.ground` (`tinyclick` in the dev build, `off` in release) gives the
+agent a `ground` tool, for a target the screen lines have no ID for: a row of
+a list that opened, an icon with no name. The prompt says to call it before
+trying another way.
+
+```yaml
+actions:
+  ground: tinyclick          # tinyclick | luna | off
+```
+
+`ground` takes the target's description and a place: next to item `id`
+(`side`, around by default, as for `look`), a region x, y, w, h in points, or
+nothing, for the list or pop-up that opened last. It crops the newest read's
+screenshot there, to 600×400 points at most, and never the whole window. The
+answer is a point ID, `[101] point for "Peter Holm" (from pixels)`, that
+`act` clicks with `click_at`, as a seen line. Nothing found comes back as
+`Not found: …`.
+
+- `tinyclick`: TinyClick (Florence-2-base, 0.27 B, MIT), on MLX, in a helper
+  process with its own Python, `built-in/recipes/ground_server.py`. The runner
+  starts it on the first `ground` call (1.1-3 s, the model load) and it exits
+  after 5 idle minutes. Each call has 3 s. It answers the crop's exact centre,
+  `<loc_499><loc_499>`, when it finds nothing: that is taken as not found.
+  Without the helper set up, or when it does not answer, the call goes to
+  `luna`, and the app log says so once.
+- `luna`: the planner's model, with its key and endpoint. The crop goes as a
+  JPEG of 512 px on its long side, `detail: low`, and the answer is
+  `{found, x, y}` in a strict schema.
+
+Set up TinyClick once:
+
+```sh
+scripts/setup-vision.sh     # --release for the release build's folder
+```
+
+It makes `~/Library/Application Support/ParrotFlow Dev/vision-venv` (Python
+3.11 with mlx 0.32.2, mlx-vlm 0.1.23, transformers 4.49 and pillow; 332 MB)
+and puts the model in `models/tinyclick-mlx` next to it (522 MB), with a
+README that says where it came from. Nothing goes into any other Python. The
+helper takes about 1 GB while it is up.
+
+**Measured 09-23** on 42 targets from recorded Teams, Slack and Outlook runs,
+13 of them with no ID in the tree, through `ground.py` and the helper:
+
+| | Hits | No ID in the tree | Time |
+| --- | --- | --- | --- |
+| TinyClick, 600×400 pt crop | 35/42 | 13/13 | 1.3 s cold, 227 ms warm, 262 ms with the 128 MB buffer cap |
+| TinyClick, the whole window | 20/42 | | |
+| gpt-6-luna, 512 px, `detail: low` | 39/42 (10/12 through `ground.py`) | 13/13 | 1.1-2.2 s, ~300 tokens in |
+
+Numbered boxes drawn on the picture (set-of-marks) did worse for Luna, 28/42
+at 512 px, so it is asked for a point.
+
+**A stuck turn gets a picture.** Unless `ground` is off, the request after a
+stuck signal carries a picture of the area around the last target, or of
+the list that opened: 512 px on its long side, `detail: low`, with a line
+that says what it shows and that the model may answer with `ground`, by
+description, or by `image_x` and `image_y` in the picture. The signals: a
+[surprise](#surprises), or the first `stuck`, which then goes back to the
+model with the picture before the user is asked. One picture per request at most, and none on other turns.
+
+No automatic `ground` call. An `act` step names its target by ID only, so a
+step aimed at something with no ID carries no words to look for. A step on
+an ID that is not on the screen says to call `ground` instead.
+
+With recording on, each grounding is in `grounds/NN.json`: the method, the
+crop, the description, the point or not found, ms, and Luna's tokens. The
+JPEG Luna got is `grounds/NN.jpg`, and a recorded request names that file
+instead of carrying the picture. Without recording, the runner still asks
+for each read's screenshot, into one file in the temp folder that each read
+overwrites.
+
+### The question panel
+
+A question, from the agent's `ask` or from a guard, is the protocol verb
+`ask`. The app shows it in a panel next to `near`: the frame of the item the
+last step acted on, plus the pop-up rows that step opened. For the Return
+guard it is the focused element; for never_press, the button. The panel goes
+below `near`, then above, right or left, whichever fits with a 12 pt gap. It
+never covers `near`. With no `near` it is centred on the target window's
+screen.
+
+The panel shows the request, the last 4 steps, the question and numbered
+options. "Something else…" is always last and opens a text field. Answers:
+
+- click an option, or press its number;
+- "Something else…", then type and press Return. Only this takes keyboard
+  focus from the target app. Teams may close its suggestion list then;
+- hold the action key and speak: the words are the answer, not a new request;
+- Escape stops the run. 60 s with no answer is no answer.
+
+A guard asks "Yes, go ahead" or "No". The first, or a plain yes ("yes",
+"ok", "sure", "go ahead"…), is yes. "No", a plain no ("nope", "cancel",
+"stop"…), Escape or silence is no, as before. Any other words steer: the step
+is not done, the run does not stop, and the words go to the model as the
+step's result, `Not done — the user said: "move on to the next step"`. On
+the plan path they are the reason for a new plan. The same rule is in Swift
+(`Confirm.verdict`, for the Return and never_press questions) and in Python
+(`loop.verdict`, for the runner's own guards).
+
+    ParrotFlow --panels question [seconds] [--at x y w h]
+    ParrotFlow --panels question-confirm [seconds] [--at x y w h]
+    ParrotFlow --panels question-place
+
+The first two put the panel up next to a dashed box, at `--at` (top-left
+corner and size, in screen points from the top-left of the main screen) or
+at a made-up field. Each answer is printed and the question comes back.
+`question-place` checks the placement rule on a made-up screen.
+
+### The run panel
+
+The question panel is also the run's panel. It comes up when a run starts,
+in place of the pill's "Looking…", and shows:
+
+- the request, shortened;
+- the agent's plan as a checklist: ✓ completed, ▸ in progress, ☐ pending,
+  ✗ cancelled. Under a task, the last one or two things that went wrong
+  while it was in progress: a failed step ("is covered by…", "Not done — the
+  user said…"), a repeated batch, a refused `done`, why the run stopped.
+  These are our own texts; the model writes nothing extra;
+- one line for what the run does now: the step, "thinking…" or
+  "asking you…". The plan path and recipes have no checklist, only this line.
+
+A question appears in the same panel, under the checklist, next to what it is
+about. After the answer the panel goes back to its place. That place is
+chosen once per run: beside the app's window when there is room, else the
+screen corner farthest from where you looked. It then only grows or shrinks.
+
+When the run ends, the line says how ("Done", "Stopped — …"), and the panel
+stays until ✕ or Escape. Escape during a run stops it; ✕ stops it and closes.
+The runner sends the state with the `progress` verb (see `runner.py`).
+
+    ParrotFlow --panels run [seconds] [--at x y w h]
+    ParrotFlow --panels run-ask [seconds] [--at x y w h]
+
+`run` goes through a made-up run: tasks complete, a step fails, a question
+comes and is answered, the run ends, then again. `run-ask` stops on the
+question and asks it again after each answer. `--at` is the question's
+anchor; without it the question stays where the panel is. Each placement is
+printed.
 
 ## Measuring it
 
@@ -112,7 +778,75 @@ $PF --act "clique sur Antonio" --snapshot slack.json
 
 # The live path, with the click.
 $PF --act "open the thread with Ian" --gaze --execute
+
+# Outline what the model would be offered, on the window itself, for 6 s.
+$PF --act "" --app Slack --look --show 6
 ```
+
+## Recording a run
+
+With `actions.record: true`, every run is recorded in its own folder under
+`~/Library/Logs/ParrotFlow-Dev-runs` (`ParrotFlow-runs` for release). It is on
+by default in the dev build and off in release. To step through the runs:
+
+```sh
+make trace-viewer                  # the dev runs; VARIANT=release for release
+python3 scripts/trace-viewer/serve.py --runs <folder>
+```
+
+The server listens on 127.0.0.1 only, on a free port, and opens the browser.
+It serves the runs read-only. Pick a run, then a row: a model call or a step.
+The picture is the screenshot of that read with the tree drawn over it, in
+layers you can switch off: every item, the items shown to the model with
+their `[ID]`, the target and the click point, what the hit test found there,
+pop-ups, the lines `look` read, the lines seen at the read (the ones the
+step reported in full, the rest faint), and what changed since the read before. Up and down
+arrows move through the rows. `live` follows a run as it happens; it is on
+when the newest run has not ended and its `run.json` moved in the last 2 min.
+
+A run's folder, written by `built-in/recipes/runlog.py`:
+
+| File | What |
+| --- | --- |
+| `run.json` | The request, the app, the loop (agent, plan, loop or recipe), the model, the settings, start and end, the outcome and the steps shown. Rewritten as the run goes. |
+| `calls/NN.json` | One model call: the messages exactly as sent, the tool calls with `why`, the results, ms, tokens, the agent's plan after the call, and `reasoning` when a surprise raised it. `ids` maps each `[ID]` the model saw to the item's id in `tree`, as the agent numbered them. They are recorded, not recomputed. A line `look` saw is in `seen`, whole. |
+| `steps/NN.json` | One step: what was asked, the target item, the point, an accessibility press or a real click, `under` (what the hit test found at the point before), the trees before and after, the change and its sentence, a guard's question and answer, the verbs sent to the app and their replies, errors and ms. The agent adds `expect`, Jev's `expect_p` and `expect_ms`, and `lost`, what the step took out of its field. |
+| `trees/NN.json` | Every read of the window, raw: all items, not only those shown, with the window frame. `shot` is the screenshot's file, its frame in screen points (top left and size), its scale in pixels per point and its size in pixels. `seen` is every line of text read from it, and `seen_ms` the time; a step's `change.seen` and `change.still` are the lines it reported. |
+| `shots/NN.jpg` | The screenshot of that read, cut to the window, JPEG at 0.7. Taken right after the walk, without ParrotFlow's own panels. Without Screen Recording there is none: `shot` is null and `shot_error` says why. |
+| `looks/NN.json` | A `look`: the region and the lines read. |
+| `grounds/NN.json` | A `ground` call or a stuck turn's picture: the method (`tinyclick`, `luna`, or `image`), the description, the region in points, the crop in the shot's pixels, the point or null, ms, and Luna's tokens. |
+| `grounds/NN.jpg` | The JPEG the model got for it. |
+
+The agent records everything. The plan path records its call, its steps and
+its trees. A recipe and the Jev loop record the run, the trees and one step
+per verb that touches the screen. The one-line trace in
+`ParrotFlow-Dev-agent.jsonl` is still written.
+
+**Private.** A recording holds what was on screen: names, messages, mail. It
+stays in `~/Library/Logs`, never in the repository. The keys are replaced by
+`[key]` before anything is written, the folder name too. The last 50 runs are
+kept; older folders are deleted when a run starts. A recording that fails (a
+full disk, a folder that cannot be made) is logged once and the run goes on.
+
+**Cost.** Each read is also a screenshot, and a step reads the window one to
+five times. The capture time is in each tree, `shot.ms`, and the reading
+of its text in `seen_ms`. With recording on,
+`press`, `click` and `click_at` also do one hit test before acting, for `under`.
+
+## Seeing what it was offered
+
+`spotlight: 1.5` in the `actions:` block outlines every offered target on the
+window it came from, numbered `t0`, `t1`, …, with the aim as a pink dot — while
+the model is being asked, then again with its choice filled in green, held for
+that many seconds before the step happens. Text fields are teal: they are in the
+list whatever their distance, so their presence is not explained by the aim.
+
+That list is the whole answer to "why did it pick that". A target missing from
+the outlines could never have been chosen; one outlined at 12 cm is competing
+with one at 2 cm. The log prints three lines of forty-odd, and `--look` prints
+twelve.
+
+`0` is off, and off is the default. On, it costs those seconds per step.
 
 A saved snapshot is a window frozen, and it is the only thing that makes this
 measurable: the same file and the same utterance have to produce the same
@@ -136,13 +870,13 @@ Twelve of twelve, on the model's own choice:
 | # | utterance | action | target |
 | --- | --- | --- | --- |
 | 1 | send a message to john | send_message | t25 Button "John Bledsoe", 7.5 cm |
-| 2 | click on antonio | click | t40 Group "Antonio Nava, …", 12 cm |
+| 2 | click on antonio | click | t40 Group "Antonio Ruiz, …", 12 cm |
 | 3 | search for "media" | search | t2 composer — and the target is ignored, ⌘G |
 | 4 | reply here: on it, thanks | send_message | t2 composer |
 | 5 | open this one | click | t0, by the gaze — the model chose a label |
 | 6 | reply to this message: sounds good | send_message | t2 composer |
 | 7 | envoie un message à John | send_message | t25 Button "John Bledsoe" |
-| 8 | clique sur Antonio | click | t40 Group "Antonio Nava, …" |
+| 8 | clique sur Antonio | click | t40 Group "Antonio Ruiz, …" |
 | 9 | what time is it | none | — |
 | 10 | open the thread with Ian | click | t4 Group "Ian Macomber: …", 2.6 cm |
 | 11 | scroll down | scroll | none |
@@ -168,7 +902,7 @@ Measured, or seen once and not yet measured. None of it is fixed.
   "Send a message to Antonio and Peter" from an open DM has no right one-step
   answer: it picks one of the two and drops the other. From the new-message
   picker it is right in one click, because Slack offers the existing "Antonio
-  Nava, Peter Bohnert" conversation as a single target, chosen at 0.91. So the
+  Nava, Peter Holm" conversation as a single target, chosen at 0.91. So the
   two-recipient case mostly collapses rather than needing a sequence.
   `--act --done "<step>"` puts what has already happened into the state and it
   does move the answer on — Peter goes from 0.47 to 0.93 once Antonio is in
@@ -193,7 +927,17 @@ Measured, or seen once and not yet measured. None of it is fixed.
 | --- | --- |
 | The gaze file, and the mouse when it is stale | `Gaze.swift` |
 | The accessibility walk | `ScreenTargets.swift` |
-| The questions, and what the answers mean | `ActionDecider.swift` |
+| Reading text from the pixels, `--look-image` | `ScreenText.swift` |
+| The question to Jev, and what the answers mean | `built-in/recipes/decider.py` |
+| Asking Jev: Pydantic AI's TypeSafe model, the connection | `built-in/recipes/judge.py` |
+| The loop: steps, what changed, the stop rules | `built-in/recipes/loop.py` |
+| Per-app notes, `apps/<app>.md` in the config folder | `built-in/recipes/decider.py` |
 | Clicks, keys and the paste | `ScreenAction.swift` |
 | `--act` | `ActCommand.swift` |
 | The second hotkey | `HotKeyManager.swift`, `AppDelegate.act(on:for:)` |
+| Recipes: loading, picking, running one | `built-in/recipes/runner.py` |
+| The process, the steps, Escape, the send check | `RecipeRunner.swift`, `Recipes.swift` |
+| What a recipe gets | `built-in/recipes/parrotflow.py` |
+| The planner: context, prompt, the call | `built-in/recipes/planner.py` |
+| Following a plan, the re-plan triggers | `built-in/recipes/loop.py` (`_planned`) |
+| Recording a run, the run viewer | `built-in/recipes/runlog.py`, `scripts/trace-viewer/` |

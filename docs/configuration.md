@@ -828,6 +828,13 @@ actions:
     api_key: file:~/.typesafe_api_key
     timeout_seconds: 10
   send: false
+  never_press: [Send, Delete]
+  max_steps: 30
+  lookup_letters: 2
+  spotlight: 0
+  record: true              # dev build only by default
+  see: true                 # dev build only by default
+  ground: tinyclick         # tinyclick | luna | off; off in release
 ```
 
 **This sends the window you are looking at off this Mac** — its buttons, its
@@ -844,6 +851,13 @@ twice before turning on.
 | `ignore_apps` | Apps whose windows are never the target. A tracker draws its dot at the point being asked about, so a hit test there finds the tracker. ParrotFlow always ignores itself. |
 | `decider.*` | What picks the action and the target. Not a `models:` entry — it answers questions with probabilities rather than writing text — but `api_key:` takes the same `file:`, `env:` and literal forms. The Keychain is per model name, so it does not apply here. |
 | `send` | Whether Return is pressed after a message is typed. Off by default: the words land in the composer and you send them. |
+| `never_press` | Names this will not click, whatever the model picks. A guarantee, not a request: the model is never asked to avoid them. |
+| `max_steps` | How many steps one request may take before it stops on its own. 30 by default. The backstop, not the guard — a step that changes nothing stops it sooner. |
+| `lookup_letters` | How many letters it may type into a field that narrows a list, to make the name appear. It is picking from the list, not writing. |
+| `record` | Record each run for the run viewer: model calls, steps, every read of the window and its screenshot, in `~/Library/Logs/ParrotFlow-Dev-runs` (`ParrotFlow-runs` for release). The last 50 runs are kept. On by default in the dev build, off in release. See [Recording a run](actions.md#recording-a-run). |
+| `see` | Read the window's text from its pixels at every read of a run, for what the accessibility tree misses: a web list over a field, suggestions that are not in the tree. Needs Screen Recording; without it the run goes on from the tree. On by default in the dev build, off in release. See [The agent loop](actions.md#the-agent-loop). |
+| `ground` | How the agent finds a target the tree has no ID for, in the window's pixels. `tinyclick` runs TinyClick on this Mac: set it up with `scripts/setup-vision.sh`, or it works as `luna`. `luna` sends a 512 px crop of the screen to the planner's model. `off`: no `ground` tool and no pictures. Unless off, a stuck turn also sends the planner a 512 px picture of that area. `tinyclick` by default in the dev build, `off` in release. See [Finding a target in the pixels](actions.md#finding-a-target-in-the-pixels). |
+| `spotlight` | Seconds to outline every offered target on the window, numbered as the model sees them, with its choice filled in, before each step happens. `0` is off. This is how you see why it picked what it picked. |
 
 `enabled: true` with no `hotkey.key` registers nothing, and `--check-config`
 fails with the reason. Everything else about it — the order it happens in,

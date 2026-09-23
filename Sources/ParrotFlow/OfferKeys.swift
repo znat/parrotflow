@@ -78,6 +78,9 @@ final class OfferKeys {
     /// Bare only. A Return with a modifier is somebody who knows what they are
     /// doing — ⌘↩ sends in most chat apps — and is left alone.
     private var holdReturnUntil = Date.distantPast
+    /// Keys that are neither Escape nor claimed go through without a word to
+    /// the handler. The question panel stays up while you type elsewhere.
+    private var onlyClaimed = false
 
     var isRunning: Bool { tap != nil }
 
@@ -104,11 +107,12 @@ final class OfferKeys {
     /// lowercase entry here would claim a letter and then never match it.
     func start(
         until: Date, letters: Set<String>, holdingReturnUntil: Date? = nil,
-        onKey: @escaping (Key) -> Void
+        onlyClaimed: Bool = false, onKey: @escaping (Key) -> Void
     ) {
         stop()
         self.letters = letters
         self.holdReturnUntil = holdingReturnUntil ?? .distantPast
+        self.onlyClaimed = onlyClaimed
         guard AXIsProcessTrusted() else {
             Log.write("offer keys: accessibility is not granted; the keys are not taken")
             return
@@ -190,6 +194,7 @@ final class OfferKeys {
         handler = nil
         letters = []
         holdReturnUntil = .distantPast
+        onlyClaimed = false
         expiry = .distantPast
     }
 
@@ -248,6 +253,8 @@ final class OfferKeys {
                   let typed = NSEvent(cgEvent: event)?.charactersIgnoringModifiers?.uppercased(),
                   letters.contains(typed) {
             key = .letter(typed)
+        } else if onlyClaimed {
+            return Unmanaged.passUnretained(event)
         } else {
             key = .dismiss
             take = false

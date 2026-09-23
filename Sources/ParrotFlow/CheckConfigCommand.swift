@@ -278,6 +278,22 @@ enum CheckConfigCommand {
                 ? "the mouse pointer — no actions.gaze file named"
                 : actions.gazeFile + " (the mouse when it is stale)"
             emit("      gaze from       \(gaze)")
+            // Whether it is tracking *now*. The only other way to find out is
+            // to act on something and read the log afterwards, by which time
+            // the answer no longer matters.
+            if !actions.gazeFile.isEmpty {
+                let point = Gaze.now(file: actions.gazeFile)
+                switch point.source {
+                case .tracker:
+                    emit(String(
+                        format: "      tracking now    yes — %d,%d, %.1f s old",
+                        Int(point.location.x), Int(point.location.y), point.age ?? 0
+                    ))
+                case .mouse:
+                    emit("      tracking now    no — the file is missing or stale,"
+                         + " so the mouse pointer is the aim")
+                }
+            }
             // The disclosure. `models:` says a cloud model sends your text;
             // this sends more than your text, and the difference is the whole
             // reason it gets a line of its own rather than joining that list.
@@ -288,7 +304,36 @@ enum CheckConfigCommand {
                 emit("  ✗ actions           no key, so nothing can be decided")
                 ok = false
             }
+            if let planner = actions.planner {
+                emit("      ⚠︎ sends the request and the names of visible controls to \(planner.host)"
+                     + " — planner \(planner.model), key from \(planner.apiKey.described)")
+                emit("      planner loop    \(planner.loop)")
+                if planner.loop == "agent" {
+                    // Same as Accessibility below: macOS credits this check to the shell.
+                    emit("  · screen recording  needed for the agent's look, but not checkable from a terminal")
+                    groundLines(actions, planner: planner, emit: emit)
+                }
+                if planner.apiKey.resolve() == nil {
+                    emit("  ✗ actions.planner   no key, so no plan can be asked for")
+                    ok = false
+                }
+                if !["plan", "agent"].contains(planner.loop) {
+                    emit("  ✗ actions.planner   loop is \"\(planner.loop)\"; it is plan or agent")
+                    ok = false
+                }
+            }
             emit("      sends messages  \(actions.send ? "yes — Return is pressed" : "no — typed, not sent")")
+            if actions.spotlight > 0 {
+                emit("      spotlight       outlines what it was offered for"
+                     + " \(actions.spotlight) s before each step")
+            }
+            if actions.record {
+                emit("      records runs    \(RecipeProcess.runsFolder.path), the last 50,"
+                     + " with screenshots")
+            }
+            if actions.see {
+                emit("      reads text      from the window's pixels at every read of a run")
+            }
         }
 
         // A transform with no description cannot be routed to, so it is not in
@@ -436,6 +481,30 @@ enum CheckConfigCommand {
     /// that matches nothing attached is invisible in the file and decides
     /// nothing — so every entry says whether it is here, and the winner is
     /// named.
+    /// `actions.ground`: where the agent's crops of the screen go.
+    private static func groundLines(_ actions: Config.Actions, planner: Config.Actions.Planner,
+                                    emit: (String) -> Void) {
+        let support = AppVariant.supportDirectory
+        let python = support.appendingPathComponent("vision-venv/bin/python").path
+        let model = support.appendingPathComponent("models/tinyclick-mlx").path
+        let ready = FileManager.default.isExecutableFile(atPath: python)
+            && FileManager.default.fileExists(atPath: model)
+        switch actions.ground {
+        case "off":
+            emit("      ground          off — no pixels leave this Mac")
+            return
+        case "tinyclick" where ready:
+            emit("      ground          TinyClick, on this Mac (\(shortened(model)))")
+        case "tinyclick":
+            emit("  · ground            TinyClick is not set up, so luna does it —"
+                 + " run scripts/setup-vision.sh")
+            emit("      ⚠︎ sends crops of the screen, 512 px, to \(planner.host) — \(planner.model)")
+        default:
+            emit("      ⚠︎ ground sends crops of the screen, 512 px, to \(planner.host) — \(planner.model)")
+        }
+        emit("      ⚠︎ a stuck turn sends a 512 px picture of part of the screen to \(planner.host)")
+    }
+
     private static func emitMicrophones(_ config: Config, _ emit: (String) -> Void) {
         let entries = config.audio.microphones
         guard !entries.isEmpty else {

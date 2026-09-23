@@ -176,6 +176,12 @@ models:
 #   # the point being asked about, so a hit test there finds the tracker.
 #   ignore_apps: [GazeOverlay]
 #
+#   # Outline every target the model is offered, on the window they are in,
+#   # for this many seconds before each step is taken. 0 is off. This is how
+#   # you see why it picked what it picked: a target missing from the outlines
+#   # could never have been chosen.
+#   spotlight: 0
+#
 #   # What picks the action and the target. Not a `models:` entry: it answers
 #   # questions with probabilities rather than writing text.
 #   decider:
@@ -187,6 +193,25 @@ models:
 #   # Whether Return is pressed after a message is typed. Off: the words land
 #   # in the composer and you send them yourself.
 #   send: false
+#
+#   # Record each run for `make trace-viewer`: the model calls, the steps,
+#   # every read of the window and a screenshot of it, in
+#   # ~/Library/Logs/ParrotFlow-Dev-runs. The last 50 runs are kept. On by
+#   # default in the dev build, off in the release build.
+#   record: true
+#
+#   # Read the window's text from its pixels at every read of a run, for what
+#   # the accessibility tree misses. Needs Screen Recording. On by default in
+#   # the dev build, off in the release build.
+#   see: true
+#
+#   # How the agent finds a target that has no ID in the tree, such as a row
+#   # of a list that opened: tinyclick runs TinyClick on this Mac (set it up
+#   # with scripts/setup-vision.sh), luna sends a 512 px crop of the screen to
+#   # the planner's model, off does neither. Unless off, a turn where the
+#   # agent is stuck also sends the planner a small picture of that area.
+#   # tinyclick by default in the dev build, off in the release build.
+#   ground: tinyclick
 
 # What "hey parrot, …" can reach, and which model runs each part. Each falls
 # back to the default model above.

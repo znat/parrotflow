@@ -90,6 +90,11 @@ if let index = arguments.firstIndex(of: "--tour-film") {
     )
 }
 
+// Above the config, like the sheets: it reads an image file and nothing else.
+if let index = arguments.firstIndex(of: "--look-image") {
+    exit(ScreenText.lookImage(Array(arguments[(index + 1)...])))
+}
+
 // Where `trace.jsonl` goes, for every command below that writes one. The app
 // sets this again from `applyConfig`, which is the copy that follows a live
 // edit of `output_dir`; this is only so a terminal command has somewhere to
@@ -169,7 +174,8 @@ let appArgument: String? = arguments.firstIndex(of: "--app").flatMap { index in
 /// `--act "<what you'd say>"` — the on-screen action path, without a mic.
 /// `--at x y` a point, `--gaze` the tracker's, `--snapshot` a saved window,
 /// `--save` writes the window it read, `--look` stops before the decision,
-/// `--execute` actually does it.
+/// `--show [s]` outlines what the model would be offered, `--execute` does it.
+/// `--parts` with `--app` also reads the app's other windows and pop-ups.
 if let index = arguments.firstIndex(of: "--act") {
     func value(_ flag: String) -> String? {
         arguments.firstIndex(of: flag).flatMap {
@@ -179,7 +185,7 @@ if let index = arguments.firstIndex(of: "--act") {
     }
     guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
         print("usage: --act \"click on Antonio\" [--at x y | --gaze | --snapshot f.json]"
-              + " [--app Name] [--save f.json] [--execute]")
+              + " [--app Name] [--save f.json] [--show 3] [--execute]")
         exit(2)
     }
     var point: CGPoint?
@@ -196,8 +202,72 @@ if let index = arguments.firstIndex(of: "--act") {
         done: arguments.indices.filter { arguments[$0] == "--done" }.compactMap {
             arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
         },
-        loop: arguments.contains("--loop")
+        loop: arguments.contains("--loop"),
+        request: value("--request"),
+        // `--show [seconds]`: outline the offered targets on screen.
+        show: arguments.contains("--show") ? (value("--show").flatMap(Double.init) ?? 3) : nil,
+        parts: arguments.contains("--parts")
     ))
+}
+
+/// `--gaze-dot` — draw a dot where ParrotFlow reads the gaze, until ⌃C.
+/// Pink while the tracker answers, grey when it has gone stale and the mouse
+/// is standing in.
+if arguments.contains("--gaze-dot") {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    app.finishLaunching()
+    let config = (try? ConfigStore.load())?.actions ?? Config.Actions()
+    let file = config.gazeFile
+    print("watching    \(file.isEmpty ? "(no gaze file — the mouse)" : file)")
+    print("pink = the tracker · grey = stale, using the mouse · ⌃C to stop")
+    GazeDot.show(file: file)
+    app.run()
+    exit(0)
+}
+
+/// `--recipe-probe "<utterance>" --app Slack [--execute]` — which recipe, and
+/// what it would use from what was said; when none fits, the loop's first
+/// decision on the app's window. `--execute` brings the app forward and runs
+/// it, keystrokes and all.
+if let index = arguments.firstIndex(of: "--recipe-probe") {
+    guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
+        print("usage: --recipe-probe \"message Peter and Antonio\" --app Slack [--execute]")
+        exit(2)
+    }
+    let settings = ((try? ConfigStore.load()) ?? Config()).actions
+    let app = appArgument ?? "Slack"
+    let execute = arguments.contains("--execute")
+    if execute {
+        guard let running = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == app }) else {
+            print("\(app) is not running")
+            exit(2)
+        }
+        running.activate()
+        RunLoop.main.run(until: Date().addingTimeInterval(1.0))
+    }
+    var finished = false
+    var run = Recipes.Run()
+    Task {
+        run = await Recipes.run(
+            utterance: arguments[index + 1], app: app,
+            config: settings, execute: execute, readApp: app
+        )
+        finished = true
+    }
+    while !finished { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    print(run.ran ? run.lines.joined(separator: "\n") : "no recipe — the loop would take it")
+    exit(0)
+}
+
+/// `--tree-check <app>` — our walk against System Events, to find targets a
+/// filter is eating.
+if let index = arguments.firstIndex(of: "--tree-check") {
+    guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
+        print("usage: --tree-check \"Spotify\"")
+        exit(2)
+    }
+    exit(TreeCheckCommand.run(app: arguments[index + 1]))
 }
 
 if let index = arguments.firstIndex(of: "--record") {
@@ -923,11 +993,19 @@ if let index = arguments.firstIndex(of: "--phonemes") {
 
 if let index = arguments.firstIndex(of: "--panels") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --panels <notice|caution|failure|alert|thinking|offer|confidence|learn|learn-long|selector|selector-long|selector-two|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|update|models|setup|launch|sequence|tutorial|names|slack|hack|downloads|ready> [seconds]")
+        print("usage: ParrotFlow --panels <notice|caution|failure|alert|thinking|offer|confidence|learn|learn-long|selector|selector-long|selector-two|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|update|models|setup|launch|sequence|tutorial|names|slack|hack|downloads|ready|question|question-confirm|question-place|run|run-ask> [seconds] [--at x y w h]")
         exit(2)
     }
     let seconds = arguments.indices.contains(index + 2) ? Double(arguments[index + 2]) : nil
-    exit(PanelsCommand.run(surface: arguments[index + 1], seconds: seconds ?? 20))
+    // `--at x y w h`: the question's anchor, in accessibility coordinates.
+    var at: CGRect?
+    if let flag = arguments.firstIndex(of: "--at"), arguments.count > flag + 4 {
+        let numbers = arguments[(flag + 1) ... (flag + 4)].compactMap(Double.init)
+        if numbers.count == 4 {
+            at = CGRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3])
+        }
+    }
+    exit(PanelsCommand.run(surface: arguments[index + 1], seconds: seconds ?? 20, at: at))
 }
 
 if arguments.contains("--update-install") {

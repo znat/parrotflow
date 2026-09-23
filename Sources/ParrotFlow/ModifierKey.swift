@@ -520,6 +520,8 @@ final class ModifierKeyMonitor {
             // and treating it as one would abort a dictation started right
             // after scrolling a page.
             guard event.type != .scrollWheel || event.momentumPhase.isEmpty else { return }
+            guard event.cgEvent?.getIntegerValueField(.eventSourceUserData) != GazeScroll.mark
+            else { return }
             self?.somethingElseHappened("\(Self.name(of: event)) arrived while it was held")
         }
         // The global monitor sees events while another app is in front, which
