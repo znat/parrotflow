@@ -43,6 +43,9 @@ struct Config: Decodable, Equatable {
     var retiredKeys: [String] = []
     var updates: UpdatePolicy = UpdatePolicy()
     var logging: Logging = Logging()
+
+    /// Acting on what is on screen instead of writing text — see `Config.Actions`.
+    var actions: Actions = Actions()
     /// Everything nameable: `transforms:`, plus anything still written under
     /// the older `prompts:`.
     var transforms: [Transform] = []
@@ -123,7 +126,7 @@ struct Config: Decodable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case hotkey, audio, feedback, transcription, llm, models, commands
-        case transforms, prompts, updates, logging
+        case transforms, prompts, updates, logging, actions
         case freeForm = "free_form"
         case lists
     }
@@ -2928,6 +2931,186 @@ struct Config: Decodable, Equatable {
         }
     }
 
+
+    /// Saying what to do instead of what to write.
+    ///
+    /// Hold the action key, look at something, say "click on Antonio". What is
+    /// around the gaze is read out of the accessibility API, a model picks the
+    /// action and the target, and the click is posted. Off unless this block
+    /// turns it on, and it registers nothing at all while it is off.
+    ///
+    /// It is the one feature here that sends what is *on your screen* rather
+    /// than what you said: the names and visible text of the window you are
+    /// looking at go to the decider. `--check-config` says so in those words.
+    struct Actions: Codable, Equatable {
+        var enabled: Bool = false
+        /// A second hotkey, separate from the dictation one. Push-to-talk
+        /// only, which is why this is not a `Hotkey`: toggle would need every
+        /// release backstop in `AppDelegate` to know which key it is judging.
+        var hotkey: Key = Key()
+        /// Where the gaze tracker writes its position — one line, `x y ms`,
+        /// in screen coordinates. Older than `Gaze.maxAge`, unreadable, or
+        /// empty, and the mouse is used instead. Empty means never look.
+        var gazeFile: String = ""
+        /// Apps whose windows are never what you meant. The tracker draws its
+        /// dot at exactly the point being asked about, so a hit test there
+        /// finds the overlay rather than the window under it.
+        var ignoreApps: [String] = ["GazeOverlay"]
+        var decider: Decider = Decider()
+        /// Targets this will not press, whatever the model picks.
+        ///
+        /// A guarantee rather than a request. The model is not asked to avoid
+        /// these — asking is a preference that holds until the one time it
+        /// does not, and the failure is a message sent to the wrong person.
+        /// The step is refused at the moment of acting, by the name of the
+        /// thing being acted on.
+        ///
+        /// Matched as whole words, case-insensitively, against the target's
+        /// name. Writing this replaces the list rather than adding to it.
+        var neverPress: [String] = [
+            "send", "send now", "delete", "delete for everyone", "remove", "archive",
+            "leave", "leave channel", "unsubscribe", "deactivate", "discard", "clear",
+            "envoyer", "supprimer", "quitter", "archiver", "effacer",
+        ]
+        /// How many steps one request may take before it gives up.
+        ///
+        /// The backstop, not the guard: a loop is stopped by the request
+        /// being carried out, or by two steps in a row changing nothing.
+        /// This is for the loop that keeps making progress in the wrong
+        /// direction. 0 runs a single step and no loop at all.
+        var maxSteps: Int = 15
+        /// Whether Return is pressed after a message is typed. Off: the words
+        /// land in the composer and you send them yourself. A wrong target
+        /// that types is a mess to clear up; a wrong target that sends cannot
+        /// be taken back.
+        var send: Bool = false
+
+        struct Key: Codable, Equatable {
+            var key: String = ""
+            var modifiers: [String] = []
+            /// How long a bare modifier is held alone before it counts, as in
+            /// `hotkey.press_delay_seconds`.
+            var pressDelaySeconds: Double = 0.18
+            /// How long the mic stays open after the key comes up.
+            var releaseTailSeconds: Double = 0.3
+
+            var isSet: Bool { !key.isEmpty }
+
+            enum CodingKeys: String, CodingKey {
+                case key, modifiers
+                case pressDelaySeconds = "press_delay_seconds"
+                case releaseTailSeconds = "release_tail_seconds"
+            }
+
+            init() {}
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                self.init()
+                if let v = try c.decodeIfPresent(String.self, forKey: .key) { key = v }
+                if let v = try c.decodeIfPresent([String].self, forKey: .modifiers) { modifiers = v }
+                if let v = try c.decodeIfPresent(Double.self, forKey: .pressDelaySeconds) {
+                    pressDelaySeconds = v
+                }
+                if let v = try c.decodeIfPresent(Double.self, forKey: .releaseTailSeconds) {
+                    guard v >= 0, v <= 5 else {
+                        throw ConfigError.invalidValue(
+                            key: "actions.hotkey.release_tail_seconds", value: String(v),
+                            expected: "a delay between 0 and 5 seconds"
+                        )
+                    }
+                    releaseTailSeconds = v
+                }
+            }
+        }
+
+        /// What picks the action and the target.
+        ///
+        /// Not an entry in `models:` and not a `ModelSpec`. Nothing here is a
+        /// chat completion: one request carries the state and four questions
+        /// and comes back with a choice and its probabilities. It borrows
+        /// `KeySource` and nothing else, so `file:`, `env:` and a literal key
+        /// behave exactly as they do for a model — `keychain` resolves to
+        /// nothing here, because the keychain flow is per model name.
+        struct Decider: Codable, Equatable {
+            var model: String = "jev-latest"
+            var endpoint: String = "https://api.typesafe.ai/v1/systemone"
+            var apiKey: KeySource = KeySource(written: "file:~/.typesafe_api_key")
+            var timeoutSeconds: Double = 10
+
+            var url: URL {
+                URL(string: endpoint) ?? URL(string: "https://api.typesafe.ai/v1/systemone")!
+            }
+
+            /// The host the window's contents go to, for `--check-config`.
+            var host: String { url.host ?? endpoint }
+
+            enum CodingKeys: String, CodingKey {
+                case model, endpoint
+                case apiKey = "api_key"
+                case timeoutSeconds = "timeout_seconds"
+            }
+
+            init() {}
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                self.init()
+                if let v = try c.decodeIfPresent(String.self, forKey: .model) { model = v }
+                if let v = try c.decodeIfPresent(String.self, forKey: .endpoint) { endpoint = v }
+                if let v = try c.decodeIfPresent(String.self, forKey: .apiKey) {
+                    apiKey = KeySource(written: v)
+                }
+                if let v = try c.decodeIfPresent(Double.self, forKey: .timeoutSeconds) {
+                    timeoutSeconds = v
+                }
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(model, forKey: .model)
+                try c.encode(endpoint, forKey: .endpoint)
+                try c.encode(timeoutSeconds, forKey: .timeoutSeconds)
+            }
+        }
+
+        /// Whether a key was configured as well as the feature turned on.
+        /// Without one there is no way to start an instruction, so nothing is
+        /// registered and `--check-config` says why.
+        var isUsable: Bool { enabled && hotkey.isSet }
+
+        enum CodingKeys: String, CodingKey {
+            case enabled, hotkey, decider, send
+            case gazeFile = "gaze"
+            case ignoreApps = "ignore_apps"
+            case neverPress = "never_press"
+            case maxSteps = "max_steps"
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init()
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
+            if let v = try c.decodeIfPresent(Key.self, forKey: .hotkey) { hotkey = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .gazeFile) { gazeFile = v }
+            if let v = try c.decodeIfPresent([String].self, forKey: .ignoreApps) { ignoreApps = v }
+            if let v = try c.decodeIfPresent(Decider.self, forKey: .decider) { decider = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .send) { send = v }
+            if let v = try c.decodeIfPresent([String].self, forKey: .neverPress) { neverPress = v }
+            if let v = try c.decodeIfPresent(Int.self, forKey: .maxSteps) {
+                guard v >= 0, v <= 50 else {
+                    throw ConfigError.invalidValue(
+                        key: "actions.max_steps", value: String(v),
+                        expected: "a number of steps between 0 and 50"
+                    )
+                }
+                maxSteps = v
+            }
+        }
+    }
+
     init() {}
 
     /// Hand-rolled so a partial config.yaml is valid: anything you leave out
@@ -2960,6 +3143,7 @@ struct Config: Decodable, Equatable {
             self.updates = updates
         }
         if let logging = try c.decodeIfPresent(Logging.self, forKey: .logging) { self.logging = logging }
+        if let actions = try c.decodeIfPresent(Actions.self, forKey: .actions) { self.actions = actions }
         // `transforms:` first, then anything still under `prompts:`. Both are
         // read: `prompts:` is what every config written before this existed
         // says, and a rename that silently empties the section is the one
