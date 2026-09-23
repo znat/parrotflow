@@ -1,6 +1,32 @@
 # Configuration
 
-Every setting, what it does, and what happens when it is wrong.
+Make ParrotFlow fit how you work. Start with your hotkey and languages, then
+add transforms when you have a specific change in mind. You do not need to
+replace the whole configuration to change one behavior.
+
+## Start with one change
+
+1. Open **Settings → Edit Config…** from the menu bar.
+2. Change the relevant setting in your existing file. Keep unrelated settings.
+3. Save. The app reloads the file without a restart.
+4. Validate what the app actually accepts:
+
+```sh
+/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --check-config
+```
+
+| Change | Go to |
+| --- | --- |
+| The key you hold to dictate | [Hotkey](#hotkey) |
+| Your dictation languages | [Languages](#transcriptionlanguages) |
+| Where your files live | [Files and folders](#where-things-live) |
+| A replacement, script, or prompt | [Build a transform](authoring.md) |
+| When a transform runs | [Pipelines](pipelines.md) |
+| Local or remote prompt models | [Models](#models) |
+| Sounds, colors, and the floating pill | [Feedback](#feedback) |
+| What is recorded or logged | [Logging](#logging) |
+
+## Configuration reference
 
 `~/.config/parrotflow/config.yaml`, created on first launch. Save the file and
 the app picks it up immediately — no restart. `config.example.yaml` in the repo
@@ -10,6 +36,10 @@ not.
 
 **Validate before you trust it:** `--check-config` prints what the app would
 actually use, and names anything it had to ignore. See [cli.md](cli.md).
+
+The following is a map of the main settings, **not a paste-ready config**:
+the `…` entries stand for sections explained in the reference. Start from your
+existing file or [config.example.yaml](../config.example.yaml).
 
 ```yaml
 hotkey:

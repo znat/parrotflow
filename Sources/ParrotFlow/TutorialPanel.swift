@@ -907,6 +907,7 @@ struct TourSpotlight: ViewModifier {
         content.overlayPreferenceValue(TourSpot.self) { spots in
             if amount > 0, !spots.isEmpty {
                 GeometryReader { space in
+                    let boxes = TourSpotlight.boxes(spots, in: space)
                     Color.black.opacity(Tutorial.dimmed * amount)
                         .mask {
                             // The dim, with the lit boxes taken out of its own
@@ -917,8 +918,15 @@ struct TourSpotlight: ViewModifier {
                                 .fill(Color.white)
                                 .overlay {
                                     ZStack {
-                                        ForEach(spots.indices, id: \.self) { at in
-                                            TourSpotlight.hole(spots[at], in: space)
+                                        ForEach(boxes.indices, id: \.self) { at in
+                                            TourSpotlight.hole(boxes[at].box, soft: boxes[at].soft)
+                                                // Only the YAML focus expands between
+                                                // related states. A new pop-up changes
+                                                // spot ordering; animating the whole
+                                                // collection moves a speech hole there.
+                                                .animation(boxes[at].group == "yaml-block"
+                                                    ? .easeInOut(duration: 0.5) : nil,
+                                                    value: boxes[at].box)
                                         }
                                     }
                                     .compositingGroup()
@@ -940,17 +948,40 @@ struct TourSpotlight: ViewModifier {
     /// out so a corner radius that does not match cannot dim one of its
     /// corners. Blurred, that edge only smears the edge the surface already
     /// has.
-    static func hole(_ spot: TourSpot.Lit, in space: GeometryProxy) -> some View {
-        let box = space[spot.box]
-        let out: CGFloat = spot.soft ? 5 : 1.5
-        let down: CGFloat = spot.soft ? 3 : 1.5
-        let radius: CGFloat = spot.soft ? 7 : PillMetrics.dockRadius + 1.5
+    private struct Box: Equatable {
+        var box: CGRect
+        let soft: Bool
+        let group: String?
+    }
+
+    /// Join adjacent terms on the same line, but never bridge wrapped lines
+    /// or unrelated highlighted phrases. Legacy tour spots remain unchanged.
+    private static func boxes(_ spots: [TourSpot.Lit], in space: GeometryProxy) -> [Box] {
+        var result: [Box] = []
+        for spot in spots {
+            let box = space[spot.box]
+            if let group = spot.group, let index = result.lastIndex(where: {
+                $0.group == group && (group == "yaml-block" || (abs($0.box.midY - box.midY) < 2
+                    && box.minX >= $0.box.minX && box.minX - $0.box.maxX <= 8))
+            }) {
+                result[index].box = result[index].box.union(box)
+            } else {
+                result.append(Box(box: box, soft: spot.soft, group: spot.group))
+            }
+        }
+        return result
+    }
+
+    static func hole(_ box: CGRect, soft: Bool) -> some View {
+        let out: CGFloat = soft ? 5 : 1.5
+        let down: CGFloat = soft ? 3 : 1.5
+        let radius: CGFloat = soft ? 7 : PillMetrics.dockRadius + 1.5
         let lit = box.insetBy(dx: -out, dy: -down)
         return RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(Color.black)
             .frame(width: lit.width, height: lit.height)
             .position(x: lit.midX, y: lit.midY)
-            .blur(radius: spot.soft ? 7 : 0)
+            .blur(radius: soft ? 7 : 0)
     }
 }
 
@@ -972,6 +1003,7 @@ struct TourSpot: PreferenceKey {
     struct Lit: Equatable {
         let box: Anchor<CGRect>
         let soft: Bool
+        var group: String? = nil
     }
 
     static let defaultValue: [Lit] = []
@@ -1314,6 +1346,17 @@ struct TourPill: View {
     let state: PillState
     let level: Double
     let clicked: Int?
+    /// The state this one is growing or shrinking from, when the tour is
+    /// showing the same frame morph as the live HUD.
+    var morphFrom: PillState?
+    /// The other end of the frame morph when the visible contents deliberately
+    /// remain the source until it has finished contracting.
+    var morphTo: PillState?
+    /// How far that morph has travelled. One is the ordinary resting state.
+    var morphProgress: Double = 1
+    /// A fold contracts the whole expanded surface before replacing its
+    /// contents with the compact tab. Opening uses the HUD's clipped reveal.
+    var scalesMorphSource = false
     /// 0 as the tab arrives, 1 once it has settled. See `TutorialRun.landing`.
     var landing: Double = 1
     /// The box the surface is laid out in whatever state it is in, so that a
@@ -1340,6 +1383,9 @@ struct TourPill: View {
     /// of six recording pills would say nothing about any of them.
     init(
         state: PillState, level: Double, clicked: Int?, landing: Double = 1,
+        morphFrom: PillState? = nil, morphTo: PillState? = nil,
+        morphProgress: Double = 1,
+        scalesMorphSource: Bool = false,
         reserved: NSSize = Tutorial.reservedPanel, sheen: Double = 0,
         hangsAt: CGFloat? = nil, lit: Bool = false
     ) {
@@ -1347,6 +1393,10 @@ struct TourPill: View {
         self.level = level
         self.clicked = clicked
         self.landing = landing
+        self.morphFrom = morphFrom
+        self.morphTo = morphTo
+        self.morphProgress = morphProgress
+        self.scalesMorphSource = scalesMorphSource
         self.reserved = reserved
         self.sheen = sheen
         self.hangsAt = hangsAt
@@ -1378,7 +1428,7 @@ struct TourPill: View {
     var body: some View {
         PillView()
             .environmentObject(model)
-            .frame(width: size.width, height: size.height)
+            .frame(width: drawnSize.width, height: drawnSize.height)
             // Where the drawn surface is: this frame, less the transparent
             // margin the bloom is carried in. On the surface's own frame and
             // not on the reserved box below — the box is the whole stage, and
@@ -1396,6 +1446,15 @@ struct TourPill: View {
                         .padding(PillMetrics.bleed(for: state))
                 }
             }
+            // The live HUD folds its AppKit window around the same surface.
+            // Here there is no window, so scale that source surface into the
+            // interpolated frame before replacing it with the compact tab.
+            .scaleEffect(
+                x: size.width / max(1, drawnSize.width),
+                y: size.height / max(1, drawnSize.height),
+                anchor: .topLeading
+            )
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
             // The reserved box, top-aligned so the surface keeps hanging off the
             // line where it did when it was smaller.
             .frame(
@@ -1412,6 +1471,7 @@ struct TourPill: View {
             .opacity(landing)
             .overlay(alignment: .topLeading) { keySheen }
             .onChange(of: state) { _, _ in apply() }
+            .onChange(of: morphProgress) { _, _ in apply() }
             .onChange(of: level) { _, _ in apply() }
             .onChange(of: clicked) { _, _ in apply() }
     }
@@ -1478,7 +1538,25 @@ struct TourPill: View {
     }
 
     private var size: NSSize {
-        PillMetrics.panelSize(
+        let target = PillMetrics.panelSize(
+            for: morphTo ?? state, hasIcon: model.appIcon != nil, hotkey: model.hotkey,
+            dock: model.docked
+        )
+        guard let morphFrom else { return target }
+        let source = PillMetrics.panelSize(
+            for: morphFrom, hasIcon: model.appIcon != nil, hotkey: model.hotkey,
+            dock: model.docked
+        )
+        let progress = CGFloat(min(1, max(0, morphProgress)))
+        return NSSize(
+            width: source.width + (target.width - source.width) * progress,
+            height: source.height + (target.height - source.height) * progress
+        )
+    }
+
+    private var drawnSize: NSSize {
+        guard scalesMorphSource else { return size }
+        return PillMetrics.panelSize(
             for: state, hasIcon: model.appIcon != nil, hotkey: model.hotkey,
             dock: model.docked
         )

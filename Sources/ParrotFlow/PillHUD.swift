@@ -2583,6 +2583,7 @@ private struct AlertCode: View {
 /// about something that already happened — it is a thing you can still do — and
 /// that difference has to be visible before the words are read.
 private struct OfferContent: View {
+    @Environment(\.tourHighlightedCommand) private var tourHighlightedCommand
     @EnvironmentObject private var model: PillModel
     @Environment(\.colorScheme) private var colorScheme
     let commands: [OfferedCommand]
@@ -2966,6 +2967,7 @@ private struct OfferContent: View {
                         // being lit at all. `contentShape` is what makes the
                         // whole capsule the target and not just the glyphs.
                         chip(commands[index], lit: model.selected == index)
+                            .tourFocus(tourHighlightedCommand == index)
                             .contentShape(Capsule())
                             .onTapGesture { model.onPick?(index) }
                             // Light what the pointer is over, so the letter on

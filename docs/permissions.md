@@ -1,5 +1,28 @@
 # Permissions
 
+ParrotFlow asks for access to hear your speech, insert text, and handle offered
+keyboard shortcuts. Grant permissions through macOS yourself; a script or coding
+agent cannot approve them for you.
+
+## During setup
+
+Open ParrotFlow and follow the permission screens. They explain each request
+before opening the macOS prompt or settings. Once the required permissions are
+granted, setup continues to models and the native tour. Skipping the tour does
+not skip the required permission checks.
+
+| Permission | What it enables | When to expect it |
+| --- | --- | --- |
+| Microphone | Recording your dictation | First-time setup |
+| Accessibility | Inserting text and reading a selection for correction | First-time setup |
+| Input Monitoring | Catching a letter such as S or G on the floating offer | When an offer first needs it |
+
+If text is not landing, check Accessibility. If a shortcut letter types into
+your document instead of activating the offer, check Input Monitoring. See
+[Checking them](#checking-them) before resetting anything.
+
+## What each permission allows
+
 **Microphone** — required. Requested on first launch.
 
 **Accessibility** — required for `insert_mode: paste` (the default) and for

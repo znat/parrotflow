@@ -1,5 +1,24 @@
 # How it works
 
+ParrotFlow separates speech recognition from the changes you choose to make
+afterward. This lets you extend dictation without rebuilding the audio path or
+asking a language model to rewrite every sentence.
+
+## Follow one dictation
+
+1. The hotkey starts capture from the selected microphone.
+2. Releasing it finishes the clip; the local speech model transcribes it.
+3. Fixed sentence-repair and vocabulary passes process the decoder's output.
+4. Your pipeline runs its transforms in order, checking their conditions.
+5. The result is inserted or copied. Offered actions let you request a further
+   transform without making it part of every dictation.
+
+To extend behavior, start with [transforms](authoring.md) and
+[pipelines](pipelines.md). To change the app itself, use the source map below
+and the [development guide](development.md).
+
+## Source map
+
 | Piece | Where | Note |
 | --- | --- | --- |
 | Global hotkey | `HotKeyManager.swift` | Carbon `RegisterEventHotKey` — no Accessibility permission needed, and it swallows the keystroke so it doesn't leak into the app you're typing in |
@@ -8,7 +27,7 @@
 | Transcription | `Transcriber.swift` | Parakeet TDT v3 via [FluidAudio](https://github.com/FluidInference/FluidAudio), CoreML on the Neural Engine |
 | The pipeline | `Pipeline.swift` | Stages, conditions, app gating — [pipelines.md](pipelines.md) |
 | Replacements | `Replacements.swift` | Literal, regex and fuzzy substitution |
-| Transforms | `PromptRunner.swift`, `CommandRunner.swift` | A prompt to the local model, or a program of yours on stdin/stdout |
+| Transforms | `PromptRunner.swift`, `CommandRunner.swift` | A prompt to the configured model backend, or a program of yours on stdin/stdout |
 | Routing | `Router.swift`, `FreeForm.swift` | Which transform an instruction reaches, and what happens when none does |
 | Spoken commands | `LLM.swift`, `LocalLLM.swift` | One call, three protocols — `ollama`, `openai`, `anthropic`. `ModelSpec.swift` is what a config resolves to; every failure degrades to "unavailable" rather than costing the transcript |
 | Config | `Config.swift` | Yams + a `DispatchSource` file watcher for live reload |
@@ -191,9 +210,11 @@ stage be skipped on the text as it stands at that point.
 **It does not learn anything on its own.** Every rule in your config got there
 because you put it there, or confirmed a panel that proposed it.
 
-**It ships no model weights and no inference engine.** Parakeet is fetched once
-by FluidAudio; the language model is Ollama's, on localhost. Every LLM feature
-degrades to "not available" rather than failing.
+**Local dictation does not require a remote provider.** Models are downloaded
+for local processing. Prompt transforms can use the model backend you configure;
+choosing a remote provider sends that transform's input to it. See
+[model configuration](configuration.md#models). A failed transform must preserve
+its input rather than lose the transcript.
 
 ## See also
 

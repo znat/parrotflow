@@ -265,6 +265,11 @@ enum PanelsCommand {
             TutorialSlack.landsAt + TutorialSlack.Beat.shimmering.rawValue + 0.3
         ),
         ("panel", TutorialSlack.landsAt + TutorialSlack.Beat.opening.rawValue + 0.4),
+        ("folded", TutorialSlack.landsAt + TutorialSlack.Beat.folded.rawValue + 0.4),
+        (
+            "reopened",
+            TutorialSlack.landsAt + TutorialSlack.Beat.reopening.rawValue + PillHUD.motion / 2
+        ),
         ("clicked", TutorialSlack.landsAt + TutorialSlack.Beat.clicking.rawValue + 0.4),
         ("handled", TutorialSlack.landsAt + TutorialSlack.Beat.handled.rawValue + 0.3),
         ("sent", TutorialSlack.landsAt + TutorialSlack.Beat.sending.rawValue + 0.2),
@@ -437,6 +442,48 @@ enum PanelsCommand {
         var name: String {
             guard let pages else { return screen.rawValue }
             return "\(screen.rawValue) (\(pages) of \(screen.pages.count) pages)"
+        }
+    }
+
+    /// Native AppKit capture keeps real controls, unlike ImageRenderer's
+    /// unsupported-control placeholders. Reuse one host so keypress and mask
+    /// animations retain their state. This captures no desktop or user data.
+    static func onboardingFilm(to dir: String, fps: Double, highlights: Bool = false) -> Int32 {
+        guard fps.isFinite, fps >= 1, fps <= 60 else { return 2 }
+        do {
+            try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            guard try FileManager.default.contentsOfDirectory(atPath: dir).isEmpty else {
+                print("Output directory must be empty.")
+                return 2
+            }
+            let hosting = NSHostingView(rootView: NativeOnboardingView(elapsed: 0, showsControls: false))
+            hosting.appearance = NSAppearance(named: .darkAqua)
+            hosting.frame = NSRect(x: 0, y: 0, width: NativeOnboardingView.width, height: NativeOnboardingView.filmHeight)
+            let duration = highlights ? OnboardingTour.highlightsTotal : OnboardingTour.total
+            let count = Int(ceil(duration * fps))
+            for frame in 0..<count {
+                try autoreleasepool {
+                    let elapsed = Double(frame) / fps
+                    let tourTime = highlights ? OnboardingTour.highlightTime(elapsed) : elapsed
+                    hosting.rootView = NativeOnboardingView(elapsed: tourTime, showsControls: false)
+                    hosting.layoutSubtreeIfNeeded()
+                    RunLoop.current.run(until: Date().addingTimeInterval(1 / fps))
+                    guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+                        throw NSError(domain: "OnboardingFilm", code: 1)
+                    }
+                    hosting.cacheDisplay(in: hosting.bounds, to: rep)
+                    guard let png = rep.representation(using: .png, properties: [:]) else {
+                        throw NSError(domain: "OnboardingFilm", code: 2)
+                    }
+                    try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent(String(format: "frame-%04d.png", frame)))
+                }
+                if frame % Int(fps * 5) == 0 { print("Rendered \(frame)/\(count)"); fflush(stdout) }
+            }
+            print("Wrote \(count) native frames at \(fps) fps to \(dir)")
+            return 0
+        } catch {
+            print("✗ \(error.localizedDescription)")
+            return 1
         }
     }
 
@@ -621,14 +668,20 @@ enum PanelsCommand {
     /// buttons are the real ones.
     static func tutorialSheet(to path: String, stage: String) -> Int32 {
         let walk = stage == "walk"
-        guard walk || TourScreen(rawValue: stage) != nil else { return 2 }
+        let native = stage == "onboarding" || stage.hasPrefix("onboarding:") || walk
+        let requestedFrame = stage.split(separator: ":").dropFirst().first.flatMap { Int($0) }
+        if stage.hasPrefix("onboarding:") && (requestedFrame == nil || !OnboardingTour.examples.indices.contains(requestedFrame!)) { return 2 }
+        guard walk || native || TourScreen(rawValue: stage) != nil else { return 2 }
         let screen = TourScreen(rawValue: stage) ?? .names
         // No foot on a screen's own beats: `ImageRenderer` cannot draw an
         // AppKit-backed button and puts a yellow placeholder where one is,
         // which would be sixteen of them down the sheet. The buttons do not
         // change beat to beat, and `walk` is where they are looked at.
         let beats = walk ? [] : beats(of: screen)
-        let views: [AnyView] = walk
+        let frames = requestedFrame.map { [$0] } ?? [0, 3, 4, 5, 10, OnboardingTour.examples.count - 1]
+        let views: [AnyView] = native ? frames.map { index in
+            AnyView(NativeOnboardingView(elapsed: OnboardingTour.starts[index] + ((index == 0 ? 5.5 : 4.7) + OnboardingTour.examples[index].addedDelay) / OnboardingTour.examples[index].speed, progress: 0.42))
+        } : walk
             ? TourWalk.screens.map(walkFrame)
             : beats.map { beat in
                 switch screen {
@@ -688,7 +741,7 @@ enum PanelsCommand {
             let box = NSRect(
                 x: margin, y: top - size.height, width: size.width, height: size.height
             )
-            if walk {
+            if walk || native {
                 // The other way round from the beats: `cacheDisplay` is the
                 // only one that draws a real button, and the foot is what this
                 // sheet is for. The cost is the pill, which comes back in a
@@ -1032,12 +1085,10 @@ enum PanelsCommand {
             downloads: launchDownloads(.failed(.unreachable)), hotkey: "Right ⌥"
         )
 
-        // The third element is the appearance to draw in. Every floating
-        // surface is dark whatever the system is set to — that is decided in
-        // `adoptParrotAppearance` and is not a preference. The permissions
-        // window is the exception and the reason this is a column at all: it is
-        // an ordinary titled window, it follows the system, and it has to be
-        // legible both ways. So it appears twice, once each.
+        // The third element is the appearance to draw in. Every onboarding
+        // surface is dark by design, including the titled permissions window;
+        // it now shares the tour's fixed lavender Context surface. The sheet
+        // still includes distinct steps and states, not duplicate appearances.
         // A nil scheme lets the surface apply its own policy to the column.
         // Context surfaces use the default `feedback.theme: system`, so they
         // follow it; older floating panels that still call
@@ -1313,13 +1364,18 @@ enum PanelsCommand {
         )
     }
 
-    /// An ordinary titled window. The setup screen is the one surface that is
-    /// a window rather than a panel over somebody's words.
+    /// Match the live setup's borderless, keyboard-focusable container.
     private static func window(for view: AnyView, size: NSSize) -> NSWindow {
         let hosting = NSHostingController(rootView: view)
-        let window = NSWindow(contentViewController: hosting)
+        let window = SetupWindow(contentRect: .zero, styleMask: .borderless,
+                                 backing: .buffered, defer: false)
+        window.contentViewController = hosting
         window.title = "\(AppVariant.displayName) Setup"
-        window.styleMask = [.titled, .closable]
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.isMovableByWindowBackground = true
+        window.appearance = NSAppearance(named: .darkAqua)
         window.setContentSize(size)
         window.center()
         NSApp.activate(ignoringOtherApps: true)
@@ -1678,11 +1734,12 @@ enum PanelsCommand {
         // The tour the setup window plays, on its own clock. `tutorial` plays
         // every screen of it one after the other; a name plays one on its own,
         // which is what you want while editing one.
-        case "tutorial", "names", "slack", "hack", "downloads", "ready":
+        case "tutorial", "onboarding", "names", "slack", "hack", "downloads", "ready":
             // `TourWalk.screens` and not every case: the dots count what is
             // playing, so a list with `ready` in it — which the setup window
             // never plays — shows five dots for a four-screen walk.
-            let screens: [TourScreen] = surface == "tutorial"
+            let native = surface == "tutorial" || surface == "onboarding"
+            let screens: [TourScreen] = native
                 ? TourWalk.screens
                 : TourScreen.allCases.filter { $0.rawValue == surface }
             // The window follows the screen, which is what the setup window
@@ -1691,11 +1748,11 @@ enum PanelsCommand {
             let sizer = TourWindowSizer()
             let preview = window(
                 for: AnyView(
-                    TourPreview(screens: screens, onHeight: sizer.fit)
+                    TourPreview(screens: screens, native: native, onHeight: sizer.fit)
                 ),
                 size: NSSize(
-                    width: PermissionMetrics.setupWidth,
-                    height: screens.first?.height ?? 0
+                    width: native ? NativeOnboardingView.width : PermissionMetrics.setupWidth,
+                    height: native ? NativeOnboardingView.height : screens.first?.height ?? 0
                 )
             )
             sizer.window = preview
@@ -1746,19 +1803,30 @@ private final class TourWindowSizer {
 /// A dot at the bottom moves the clock, the way it does in the setup window.
 private struct TourPreview: View {
     let screens: [TourScreen]
+    var native = false
     /// The tour wants another height, once a frame while a cut is easing.
     var onHeight: (CGFloat) -> Void = { _ in }
 
     @State private var started = Date()
     /// What a dot has moved the clock by.
     @State private var skew: TimeInterval = 0
+    @State private var pausedAt: TimeInterval?
 
     var body: some View {
         TimelineView(.periodic(from: started, by: 1.0 / 60)) { context in
             let ran = context.date.timeIntervalSince(started)
-            let elapsed = ran + skew
-            let height = TourWalk.height(at: elapsed, in: screens)
-            SetupTour(
+            let elapsed = pausedAt ?? (ran + skew)
+            let height = native ? NativeOnboardingView.height : TourWalk.height(at: elapsed, in: screens)
+            if native {
+                NativeOnboardingView(elapsed: elapsed, progress: min(0.9, 0.05 + elapsed / 180),
+                    paused: pausedAt != nil,
+                    seek: { if pausedAt != nil { pausedAt = $0 }; skew = $0 - ran },
+                    togglePause: {
+                        if let at = pausedAt { skew = at - ran; pausedAt = nil }
+                        else { pausedAt = elapsed }
+                    }, finish: { NSApp.stop(nil) })
+            } else {
+                SetupTour(
                 elapsed: elapsed,
                 // Nothing here downloads anything, so the bar is the clock: a
                 // slow climb, capped short of full, which from the outside is
@@ -1772,6 +1840,7 @@ private struct TourPreview: View {
                 seek: { skew = $0 - ran }
             )
             .onChange(of: height) { _, _ in onHeight(height) }
+            }
         }
     }
 }

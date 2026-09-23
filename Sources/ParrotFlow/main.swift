@@ -53,17 +53,27 @@ if let index = arguments.firstIndex(of: "--panel-sheet") {
 
 if let index = arguments.firstIndex(of: "--tutorial-sheet") {
     let usage = "usage: ParrotFlow --tutorial-sheet <out.png>"
-        + " [names|slack|hack|downloads|ready|walk]"
+        + " [onboarding|names|slack|hack|downloads|ready|walk]"
     guard arguments.indices.contains(index + 1) else {
         print(usage)
         exit(2)
     }
     let stage = arguments.indices.contains(index + 2) ? arguments[index + 2] : "names"
-    guard stage == "walk" || TourScreen(rawValue: stage) != nil else {
+    guard stage == "walk" || stage == "onboarding" || stage.hasPrefix("onboarding:") || TourScreen(rawValue: stage) != nil else {
         print(usage)
         exit(2)
     }
     exit(PanelsCommand.tutorialSheet(to: arguments[index + 1], stage: stage))
+}
+
+if let index = arguments.firstIndex(of: "--onboarding-film") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --onboarding-film <empty-directory> [fps] [--highlights]")
+        exit(2)
+    }
+    let fps = arguments.indices.contains(index + 2) ? Double(arguments[index + 2]) ?? 20 : 20
+    exit(PanelsCommand.onboardingFilm(to: arguments[index + 1], fps: fps,
+                                     highlights: arguments.contains("--highlights")))
 }
 
 if let index = arguments.firstIndex(of: "--tour-film") {

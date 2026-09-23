@@ -1,11 +1,26 @@
 # Writing a transform, and proving it works
 
-How to add a rewrite to ParrotFlow — a substitution, a prompt, or a program of
-your own — and how to know you improved it rather than moved the failure.
+Start with one thing you keep correcting by hand: a project name, an identifier,
+a link, or a message format. Turn that behavior into a replacement, script, or
+prompt, then test it against both sentences it should change and ones it should
+leave alone.
 
-Written to be followed start to finish, by a person or by an agent. The
-reference for what the pieces mean is [pipelines.md](pipelines.md); this is the
-procedure.
+You can follow this guide yourself or give it to your coding agent. No app
+rebuild is needed to add a transform.
+
+## Choose your starting point
+
+| You know the change you want | Start here |
+| --- | --- |
+| A fixed phrase or text pattern | [Replacement](#recipe-a-substitution) |
+| A lookup, calculation, or custom logic | [Script](#recipe-a-program) |
+| A rewrite that needs language judgment | [Prompt](#recipe-a-prompt) |
+| A transform that publishes values for later stages | [Structured script output](#recipe-a-program-that-reports-what-it-did) |
+
+Keep experiments in a separate pipeline fixture rather than replacing your
+working config. Follow the test loop below before enabling a change in everyday
+dictation. The [pipeline reference](pipelines.md) explains the available fields;
+the [CLI reference](cli.md#testing-a-rewrite) shows how to run your tests.
 
 ## The one decision that matters
 

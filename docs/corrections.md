@@ -1,8 +1,26 @@
 # Teaching it a word
 
-The part that matters if you dictate library names, CLI tools and your
-colleagues' names all day. A rule you teach once is written to your
-`config.yaml` and applied to every transcript afterwards.
+Your vocabulary includes names a general speech model may not know: teammates,
+projects, libraries, and tools. Teach ParrotFlow the spelling you want, then let
+the vocabulary pass evaluate it in the context of future sentences.
+
+Confirmed vocabulary is saved in `vocabulary.yaml` beside your config. It is
+not a blind replacement of every similar-sounding word. For the matching and
+context rules, see [the vocabulary pass](pipelines.md#the-name-stage).
+
+## Start with a correction
+
+1. Select the misheard text in the destination app.
+2. Hold your dictation hotkey and say **“hey parrot.”**
+3. Check the proposed spelling and save it.
+
+Opening this panel does not require a language model. Describing a correction
+in natural language does; see [what it needs](#what-it-needs).
+
+Jump to [spoken spelling](#saying-the-spelling-instead),
+[correcting without speaking](#without-speaking), or [undoing a rule](#taking-it-back).
+
+## Review before saving
 
 When a name comes out wrong, select it in whatever app you're in, hold the
 hotkey and say **"hey parrot"**. A panel opens with a row for each word that

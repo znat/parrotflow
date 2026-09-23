@@ -1,53 +1,68 @@
 # ParrotFlow documentation
 
-Start from the question you have.
+Use dictation as it ships, then make it fit your vocabulary and workflow.
+Start with a focused guide. Open the technical references when you need the
+complete contract, an edge case, or the implementation details.
 
-## Getting it running
+## Get to your first useful result
 
-| | |
-|---|---|
-| [setup.md](setup.md) | The guided install, written to be handed to an agent. Permissions, Ollama, model sizing, and a check that transcription works. |
-| [permissions.md](permissions.md) | Microphone, Accessibility, and Input Monitoring: what needs which, and what a rebuild does to the grants. |
-| [configuration.md](configuration.md) | Every setting in `config.yaml`, what it does, and what happens when it is wrong. |
+1. [Install and start dictating](guides/setup.md) — requirements, permissions,
+   downloads, the tour, and your first sentence.
+2. [Teach your vocabulary](guides/vocabulary.md) — correct a name, understand
+   context, and recover from an unwanted edit.
+3. [Explore extensions](guides/extensions.md) — what ships enabled, what needs
+   setup, and how PR links, Slack mentions, and grammar work.
 
-## Using it
+## Make it yours
 
-| | |
-|---|---|
-| [corrections.md](corrections.md) | Teach it a name — by panel, by spelling it out, or by description. |
-| [pipelines.md](pipelines.md) | What a transcript goes through: stages, transforms, conditions, per-app and per-language gates on a step. |
-| [cli.md](cli.md) | Every terminal flag. Test a config change without a microphone. |
+| Your next task | Guide |
+| --- | --- |
+| Change a hotkey, language, model, or logging setting | [Configuration](guides/configuration.md) |
+| Write a replacement, script, or prompt | [Build your first transform](guides/transforms.md) |
+| Choose when transforms run and in what order | [Compose a pipeline](guides/pipelines.md) |
+| Test a sentence or diagnose a problem | [Command-line tools](guides/cli.md) |
+| Understand the architecture and find the code | [How it fits together](guides/architecture.md) |
 
-## Changing it
+A good first extension solves one correction you keep making by hand.
+Test sentences it should change and sentences it should leave alone before
+enabling it in everyday dictation.
 
-| | |
-|---|---|
-| [authoring.md](authoring.md) | **Start here to write a prompt, a table or a script.** The procedure, and the measurement loop that scores it. |
-| [development.md](development.md) | Dev and released builds are separate apps. Building, the Makefile, and how to cut a release. |
-| [../CONTRIBUTING.md](../CONTRIBUTING.md) | Sending a change: `make test`, the commit subject rules, and the sign-off. |
-| [architecture.md](architecture.md) | What each file is for, where the time goes, and what the app does not do. |
-| [transcription.md](transcription.md) | The speech model, its limits, the stages that cover them, and what was measured and rejected. |
-| [distribution.md](distribution.md) | How the app ships, how it is signed, and how updates work. |
-| [repo-settings.md](repo-settings.md) | GitHub's own settings for the repository, kept in `settings/repo.yml` and applied from one script. |
+## Build and contribute
 
----
+The development app has its own identity and configuration so you can keep
+using the release while changing the source.
 
-## If you are an agent
+[Build the dev app](development.md) · [Contribute a change](../CONTRIBUTING.md) ·
+[Ask a question](https://github.com/znat/parrotflow/discussions)
 
-You configure this for someone, or you change a rewrite for them:
+## Technical references
 
-1. **Read [authoring.md](authoring.md) first** if the task is a prompt, a
-   pipeline, a substitution or a script. It holds the first decision — whether
-   the job needs a model at all — and the loop that scores the change.
-2. **Validate with the binary, not by reading.** `--check-config` reports what
-   the app uses. `--pipeline <file.yaml> "<text>" --app <name>` runs a stage
-   against a sentence without a microphone. Both are in [cli.md](cli.md).
-3. **Score every change to a prompt or a pattern.** Each rewrite has a case set
-   in `tests/` and a runner in `scripts/`. Record the number before and after.
-4. **Fail open.** A stage that fails must leave the transcript as it arrived.
-   To check this, stop Ollama and run the pipeline again.
-5. **Say what a `command:` transform runs.** Config that executes code needs a
-   clear statement to the person who owns the machine.
+These pages retain the detailed settings, protocols, diagnostics, and measured
+behavior. They are references to consult, not a sequence to read before using
+the app.
 
-If you install rather than configure, read [setup.md](setup.md). It is written
-for you, and you must follow it in order.
+- [Configuration reference](configuration.md) — every setting and its behavior.
+- [Pipeline reference](pipelines.md) — stages, conditions, variables, and transform contracts.
+- [CLI reference](cli.md) — flags, evaluation, tracing, and insertion diagnostics.
+- [Authoring procedure](authoring.md) — the scoring loop and detailed recipes.
+- [Correction reference](corrections.md) — vocabulary teaching and editing edge cases.
+- [Permissions](permissions.md) — access checks, signing, and rebuilds.
+- [Architecture reference](architecture.md) — source map, insertion safeguards, and timings.
+- [Transcription](transcription.md) — recognition, vocabulary matching, and evaluation.
+- [Development](development.md) — builds, native previews, and the README animation.
+- [Distribution](distribution.md) — signing, installation, and updates.
+- [Repository settings](repo-settings.md) — how repository configuration is maintained.
+
+## Working with a coding agent
+
+Start the agent at [AGENTS.md](../AGENTS.md). Give it a concrete behavior and
+examples, including cases that must not change.
+
+The agent should validate with the actual binary, score an existing rewrite
+before and after changing it, and test failure behavior. A `command:` transform
+executes a program; it should explain what that program runs before enabling it.
+
+For an agent-assisted installation, use [the setup procedure](setup.md).
+Permission approvals and the final spoken dictation test still need you.
+
+[Back to ParrotFlow](../README.md)
