@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""Builds the two icons the app ships from the one drawing it has.
+"""Build the app icon from the current logo and retain legacy bird assets.
 
     scripts/make-icons.py
 
-Reads Resources/parrot.svg and writes:
+Reads Resources/logo.svg for the app icon and Resources/parrot.svg for legacy assets:
 
-    Resources/AppIcon.icns        the colour bird on a dark tile
+    Resources/AppIcon.icns        the purple voice mark on a dark tile
     Resources/MenuBarParrot.png   the same bird as a flat silhouette, @1x/@2x/@3x
 
 Both outputs are committed. This runs when the drawing changes, not on every
 build, so nothing here can stop the app from compiling.
 
-One source rather than three: the tile and the silhouette are the same five
-paths. Maintained separately, they drift — and the drift shows up as a bird
-whose wing is one shape in the Dock and another in the menu bar.
+The app icon shares its geometry with the README logo. Legacy bird resources
+remain available to older UI components; the current status mark is drawn natively.
 
 Rasterising is done by scripts/rasterize.swift, which draws the SVG through
 AppKit onto a background of nothing. No Homebrew: everything here ships with
@@ -32,6 +31,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "Resources" / "parrot.svg"
+LOGO = ROOT / "Resources" / "logo.svg"
 RASTERIZE = ROOT / "scripts" / "rasterize.swift"
 ICNS = ROOT / "Resources" / "AppIcon.icns"
 # Three birds for the menu bar, because a status button cannot be tinted.
@@ -60,17 +60,17 @@ MENU_BAR_VARIANTS = {
 
 # The tile. Dark because every surface this app puts on screen is dark glass —
 # an icon lit the other way is the same app introducing itself twice.
-TILE_TOP = "#262B34"
-TILE_BOTTOM = "#101218"
+TILE_TOP = "#302C40"
+TILE_BOTTOM = "#211E2D"
 
 # Apple's icon grid: a 1024 canvas with the tile inset to 824, leaving the
 # margin the system's shadow and the neighbouring icons expect.
 CANVAS = 1024
 TILE = 824
 
-# How much of the tile's height the bird stands in. Higher and the feet crowd
-# the corner radius; lower and it reads as a sticker on a large black square.
-BIRD_ON_TILE = 0.72
+# Use the same voice-mark geometry, lifted for contrast on the dark tile.
+MARK_ON_TILE = 0.78
+MARK_COLOR = "#9B87E7"
 
 # The menu bar draws into an 18pt square. The bird takes most of that height and
 # the rest is the breathing room every other glyph up there has.
@@ -115,24 +115,24 @@ ICONSET = [
 ]
 
 
-def read_source() -> tuple[str, tuple[float, float, float, float], list[str]]:
+def read_source(source: Path = SOURCE) -> tuple[str, tuple[float, float, float, float], list[str]]:
     """The source's inner markup, its viewBox, and its path data on its own."""
-    svg = SOURCE.read_text()
+    svg = source.read_text()
 
     view_box = re.search(r'viewBox="([^"]+)"', svg)
     if not view_box:
-        sys.exit(f"error: {SOURCE} has no viewBox")
+        sys.exit(f"error: {source} has no viewBox")
     box = tuple(float(number) for number in view_box.group(1).split())
     if len(box) != 4:
-        sys.exit(f"error: {SOURCE} has a malformed viewBox")
+        sys.exit(f"error: {source} has a malformed viewBox")
 
     inner = re.search(r"<svg[^>]*>(.*)</svg>", svg, re.S)
     if not inner:
-        sys.exit(f"error: {SOURCE} is not a single <svg> element")
+        sys.exit(f"error: {source} is not a single <svg> element")
 
     paths = re.findall(r'\sd="([^"]+)"', svg)
     if not paths:
-        sys.exit(f"error: {SOURCE} has no paths")
+        sys.exit(f"error: {source} has no paths")
 
     return inner.group(1), box, paths  # type: ignore[return-value]
 
@@ -179,7 +179,7 @@ def squircle(centre: float, half: float, exponent: float = 5.0, steps: int = 720
 def build_icns(inner: str, box: tuple[float, float, float, float]) -> None:
     box_x, box_y, box_width, box_height = box
 
-    height = TILE * BIRD_ON_TILE
+    height = TILE * MARK_ON_TILE
     scale = height / box_height
     width = box_width * scale
     offset_x = (CANVAS - width) / 2 - box_x * scale
@@ -295,8 +295,9 @@ viewBox="{origin_x:.4f} {origin_y:.4f} {side:.4f} {side:.4f}">"""
 
 
 def main() -> None:
-    inner, box, paths = read_source()
-    build_icns(inner, box)
+    logo, logo_box, _ = read_source(LOGO)
+    build_icns(logo.replace("#5F46CA", MARK_COLOR), logo_box)
+    _, box, paths = read_source()
     build_menu_bar(paths, box)
     build_meter(paths, box)
     print(f"==> {ICNS.relative_to(ROOT)}")

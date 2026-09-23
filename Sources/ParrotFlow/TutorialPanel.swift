@@ -907,6 +907,7 @@ struct TourSpotlight: ViewModifier {
         content.overlayPreferenceValue(TourSpot.self) { spots in
             if amount > 0, !spots.isEmpty {
                 GeometryReader { space in
+                    let boxes = TourSpotlight.boxes(spots, in: space)
                     Color.black.opacity(Tutorial.dimmed * amount)
                         .mask {
                             // The dim, with the lit boxes taken out of its own
@@ -917,8 +918,15 @@ struct TourSpotlight: ViewModifier {
                                 .fill(Color.white)
                                 .overlay {
                                     ZStack {
-                                        ForEach(spots.indices, id: \.self) { at in
-                                            TourSpotlight.hole(spots[at], in: space)
+                                        ForEach(boxes.indices, id: \.self) { at in
+                                            TourSpotlight.hole(boxes[at].box, soft: boxes[at].soft)
+                                                // Only the YAML focus expands between
+                                                // related states. A new pop-up changes
+                                                // spot ordering; animating the whole
+                                                // collection moves a speech hole there.
+                                                .animation(boxes[at].group == "yaml-block"
+                                                    ? .easeInOut(duration: 0.5) : nil,
+                                                    value: boxes[at].box)
                                         }
                                     }
                                     .compositingGroup()
@@ -940,17 +948,40 @@ struct TourSpotlight: ViewModifier {
     /// out so a corner radius that does not match cannot dim one of its
     /// corners. Blurred, that edge only smears the edge the surface already
     /// has.
-    static func hole(_ spot: TourSpot.Lit, in space: GeometryProxy) -> some View {
-        let box = space[spot.box]
-        let out: CGFloat = spot.soft ? 5 : 1.5
-        let down: CGFloat = spot.soft ? 3 : 1.5
-        let radius: CGFloat = spot.soft ? 7 : PillMetrics.dockRadius + 1.5
+    private struct Box: Equatable {
+        var box: CGRect
+        let soft: Bool
+        let group: String?
+    }
+
+    /// Join adjacent terms on the same line, but never bridge wrapped lines
+    /// or unrelated highlighted phrases. Legacy tour spots remain unchanged.
+    private static func boxes(_ spots: [TourSpot.Lit], in space: GeometryProxy) -> [Box] {
+        var result: [Box] = []
+        for spot in spots {
+            let box = space[spot.box]
+            if let group = spot.group, let index = result.lastIndex(where: {
+                $0.group == group && (group == "yaml-block" || (abs($0.box.midY - box.midY) < 2
+                    && box.minX >= $0.box.minX && box.minX - $0.box.maxX <= 8))
+            }) {
+                result[index].box = result[index].box.union(box)
+            } else {
+                result.append(Box(box: box, soft: spot.soft, group: spot.group))
+            }
+        }
+        return result
+    }
+
+    static func hole(_ box: CGRect, soft: Bool) -> some View {
+        let out: CGFloat = soft ? 5 : 1.5
+        let down: CGFloat = soft ? 3 : 1.5
+        let radius: CGFloat = soft ? 7 : PillMetrics.dockRadius + 1.5
         let lit = box.insetBy(dx: -out, dy: -down)
         return RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(Color.black)
             .frame(width: lit.width, height: lit.height)
             .position(x: lit.midX, y: lit.midY)
-            .blur(radius: spot.soft ? 7 : 0)
+            .blur(radius: soft ? 7 : 0)
     }
 }
 
@@ -972,6 +1003,7 @@ struct TourSpot: PreferenceKey {
     struct Lit: Equatable {
         let box: Anchor<CGRect>
         let soft: Bool
+        var group: String? = nil
     }
 
     static let defaultValue: [Lit] = []

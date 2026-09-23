@@ -92,7 +92,7 @@ enum SetupStep: Equatable {
     /// wait on.
     case espeak
     /// The demonstration of what the app does, played while the models
-    /// download. See `TourWalk`.
+    /// download. See `NativeOnboardingView`.
     case tour
     case setup
 }
@@ -176,11 +176,10 @@ final class PermissionsModel: ObservableObject {
         // says what is about to be downloaded, which is news once. Opening the
         // window from the menu bar a week later, it is a screen to click past.
         //
-        // The tour goes with it, on the same condition and for the same reason:
-        // it is what the wait for those downloads is spent on, and there is no
-        // wait on a revisit.
-        if context == .installing, !downloads.rows.isEmpty {
-            steps.append(.models)
+        // The tour belongs to installation, not to whether a download list
+        // happens to be populated. Cached models must not skip onboarding.
+        if context == .installing {
+            if !downloads.rows.isEmpty { steps.append(.models) }
             if espeak != .found { steps.append(.espeak) }
             steps.append(.tour)
         }
@@ -189,6 +188,7 @@ final class PermissionsModel: ObservableObject {
         asked = false
         tourStartedAt = nil
         tourSkew = 0
+        tourPausedAt = nil
     }
 
     func markAsked() { asked = true }
@@ -205,23 +205,34 @@ final class PermissionsModel: ObservableObject {
     /// A start put in the past drifts by however long the sheet spends
     /// measuring and drawing, which is enough to land on the next screen.
     @Published private(set) var tourFrozenAt: TimeInterval?
-    /// What the dots at the bottom have moved the clock by. See
-    /// `TourWalk.pages`.
+    /// What navigation and replay have moved the clock by.
     @Published private(set) var tourSkew: TimeInterval = 0
+    @Published private(set) var tourPausedAt: TimeInterval?
+
+    func toggleTourPause() {
+        if let at = tourPausedAt {
+            tourPausedAt = nil
+            seekTour(to: at)
+        } else {
+            tourPausedAt = tourElapsed()
+        }
+    }
 
     func startTour() {
         guard tourStartedAt == nil else { return }
         tourStartedAt = Date()
     }
 
-    /// Play from `at` seconds into the walk. A dot has been clicked.
+    /// Play from an example boundary, keeping a paused tour paused.
     func seekTour(to at: TimeInterval) {
         guard let tourStartedAt else { return }
+        if tourPausedAt != nil { tourPausedAt = at }
         tourSkew = at - max(0, Date().timeIntervalSince(tourStartedAt))
     }
 
     func tourElapsed(at moment: Date = Date()) -> TimeInterval {
         if let tourFrozenAt { return tourFrozenAt }
+        if let tourPausedAt { return tourPausedAt }
         guard let tourStartedAt else { return 0 }
         return max(0, moment.timeIntervalSince(tourStartedAt) + tourSkew)
     }
@@ -386,9 +397,6 @@ final class PermissionsWindowController {
         model.begin(context: context)
 
         if window == nil { build() }
-        // Set per showing, not at build: the same window is both, and which
-        // one it is now decides whether the title bar offers a third way out.
-        window?.styleMask = context == .installing ? [.titled] : [.titled, .closable]
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
         stepSettled()
@@ -448,39 +456,15 @@ final class PermissionsWindowController {
         advanceItself()
     }
 
-    /// The tour loops for as long as the models take, so something has to end
-    /// it.
-    ///
-    /// A failure nobody can wait out ends it at once: the last screen is the
-    /// only one that names the row and offers the retry. Otherwise two things
-    /// have to be true, and then it ends wherever it is — mid-screen included.
-    /// It used to wait for the next cut so no demonstration was cut in half,
-    /// and that is a demonstration held in front of somebody whose app is
-    /// ready.
-    ///
-    /// The first is that it has been watched once through.
-    ///
-    /// The downloads start at launch and the tour starts after the
-    /// permissions, so the wait is mostly spent in System Settings: measured
-    /// here, every model was in 95 seconds after launch, which is about how
-    /// long granting accessibility takes. Without this the tour was reached
-    /// with nothing left to wait for and skipped before it drew a frame, which
-    /// is what it did on two runs of a real install.
-    ///
-    /// The second is that the download is over. Not that the speech model is
-    /// in: that one lands first and about a gigabyte of language models
-    /// follows it.
-
+    /// Hold the final example until downloads finish. A paused tour stays put;
+    /// an unrecoverable download failure goes to the existing retry screen.
     private func leaveTourIfDone() {
         guard model.current == .tour else { return }
-        if model.downloads.blockingFailure != nil { advanceItself(); return }
-        // Time on screen for the pass, the drawn clock for the cut: a click on
-        // a dot moves the second one and must not count as having watched it.
-        guard model.tourOnScreen() >= TourWalk.total(of: TourWalk.screens) else {
-            return
-        }
-        guard model.downloads.everythingIsIn else { return }
-        advanceItself()
+        if OnboardingTour.shouldFinishSetupTour(
+            elapsed: model.tourElapsed(), paused: model.tourPausedAt != nil,
+            downloadsReady: model.downloads.rows.isEmpty || model.downloads.everythingIsIn,
+            blockingFailure: model.downloads.blockingFailure != nil
+        ) { advanceItself() }
     }
 
     /// The walk moving on by itself, which is not a step to bring the window
@@ -519,13 +503,10 @@ final class PermissionsWindowController {
     private static let terminalGiveUpSeconds: TimeInterval = 300
 
     private func build() {
-        // Measured once, here. Read first from the body of the screen the tour
-        // cuts to, it would lay panes out in the middle of an update.
-        for screen in TourWalk.screens { _ = screen.height }
-
         let view = PermissionsView(
             onAsk: { [weak self] step in self?.ask(step) },
             onDecline: { [weak self] in self?.decline() },
+            onDismiss: { [weak self] in self?.window?.close() },
             onClose: { [weak self] in self?.finish() },
             onRetry: { [weak self] in self?.onRetryDownloads?() },
             onInstallEspeak: { [weak self] in self?.installEspeak() },
@@ -535,9 +516,15 @@ final class PermissionsWindowController {
         .environmentObject(model.downloads)
 
         let hosting = NSHostingController(rootView: view)
-        let window = NSWindow(contentViewController: hosting)
+        let window = SetupWindow(
+            contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false
+        )
+        window.contentViewController = hosting
         window.title = "\(AppVariant.displayName) Setup"
-        window.styleMask = [.titled]
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         self.window = window
         resizeToContent()
@@ -651,18 +638,17 @@ final class PermissionsWindowController {
     /// back afterwards, because `setContentSize` keeps the bottom-left corner
     /// and a window that grows upward moves its own title bar out from under
     /// the pointer.
-    /// The window takes the shape and the shade of whatever screen is on it.
+    /// The window carries the onboarding's dark Context surface throughout the
+    /// walk. Keeping the chrome stable makes the changing setup states read as
+    /// one uninterrupted flow rather than a series of unrelated dialogs.
     private func stepSettled() {
-        // The tour is drawn in whites over dark glass, and it is the one screen
-        // in the walk that is. The others are drawn in whatever the Mac is set
-        // to.
-        //
         // Only on a change. This runs on every download report, and every
         // assignment makes the whole tree work out its appearance again.
-        let wanted: NSAppearance.Name? = model.current == .tour ? .darkAqua : nil
+        let wanted: NSAppearance.Name = .darkAqua
         if window?.appearance?.name != wanted {
-            window?.appearance = wanted.map { NSAppearance(named: $0) } ?? nil
+            window?.appearance = NSAppearance(named: wanted)
         }
+        window?.backgroundColor = .clear
         resizeToContent()
     }
 
@@ -673,13 +659,20 @@ final class PermissionsWindowController {
         let wanted = NSSize(
             width: PermissionMetrics.width(for: model.current), height: fitting.height
         )
-        guard abs(window.contentLayoutRect.height - wanted.height) > 0.5 else { return }
+        guard abs(window.contentLayoutRect.height - wanted.height) > 0.5
+            || abs(window.contentLayoutRect.width - wanted.width) > 0.5 else { return }
 
         let top = window.frame.maxY
+        let centerX = window.frame.midX
         window.setContentSize(wanted)
         guard centred else { return }
         var frame = window.frame
+        frame.origin.x = centerX - frame.width / 2
         frame.origin.y = top - frame.height
+        if let bounds = window.screen?.visibleFrame {
+            frame.origin.x = max(bounds.minX, min(frame.origin.x, bounds.maxX - frame.width))
+            frame.origin.y = max(bounds.minY, min(frame.origin.y, bounds.maxY - frame.height))
+        }
         window.setFrame(frame, display: true)
     }
 
@@ -722,8 +715,9 @@ enum PermissionMetrics {
     static func width(for step: SetupStep) -> CGFloat {
         switch step {
         case .permission: return width
-        // The tour is drawn at the same width, from its own `Pane.width`.
-        case .models, .espeak, .tour, .setup: return setupWidth
+        // The native tour has its own stable, side-by-side window width.
+        case .tour: return NativeOnboardingView.width
+        case .models, .espeak, .setup: return setupWidth
         }
     }
 
@@ -748,18 +742,27 @@ enum PermissionMetrics {
     static func height(for step: SetupStep) -> CGFloat? {
         switch step {
         case .permission: return height
-        // The tour is measured, like the other two. Every screen in it has its
-        // own height and it says so as it cuts — see `SetupTourPane`.
-        case .models, .espeak, .tour, .setup: return nil
+        case .tour: return NativeOnboardingView.height
+        case .models, .espeak, .setup: return nil
         }
     }
 }
 
+/// Borderless chrome must still accept keyboard focus and default actions.
+final class SetupWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 struct PermissionsView: View {
     @EnvironmentObject private var model: PermissionsModel
+    @Environment(\.contextPrimaryColor) private var primary
+
+    private var theme: ContextTheme { .init(scheme: .dark, primaryHex: primary) }
 
     var onAsk: (PermissionStep) -> Void = { _ in }
     var onDecline: () -> Void = {}
+    var onDismiss: () -> Void = {}
     var onClose: () -> Void = {}
     var onRetry: () -> Void = {}
     var onInstallEspeak: () -> Void = {}
@@ -787,18 +790,28 @@ struct PermissionsView: View {
     private var walk: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: header(8)) {
-                PlumageMark(size: header(13))
-                Text(AppVariant.displayName.uppercased())
-                    .foregroundStyle(Parrot.action)
+                ContextVoiceMark(color: theme.accent)
+                    .frame(width: header(16), height: header(16))
+                Text(AppVariant.displayName)
+                    .foregroundStyle(theme.foreground)
                 Spacer()
                 if model.steps.count > 1,
                    let position = model.steps.firstIndex(of: model.current) {
-                    Text("\(position + 1) of \(model.steps.count)".uppercased())
-                        .foregroundStyle(.tertiary)
+                    Text("\(position + 1) / \(model.steps.count)")
+                        .foregroundStyle(theme.muted)
+                }
+                if model.context == .revisiting {
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.muted)
+                    .accessibilityLabel("Close setup")
+                    .keyboardShortcut("w", modifiers: .command)
                 }
             }
-            .font(.system(size: header(9), weight: .semibold, design: .rounded))
-            .kerning(header(0.9))
+            .font(.system(size: header(11), weight: .medium))
 
             switch model.current {
             case .permission(let step):
@@ -838,13 +851,20 @@ struct PermissionsView: View {
             }
         }
         .padding(PermissionMetrics.padding(for: model.current))
-        .frame(width: PermissionMetrics.width(for: model.current))
-        .frame(height: PermissionMetrics.height(for: model.current))
-        // Stated rather than inherited. In the app this is the window's own
-        // background and setting it changes nothing; drawn on `--panel-sheet`
-        // there is no window to inherit from, and without this the pane came
-        // out with light chrome and white text on it.
-        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(width: PermissionMetrics.width(for: model.current) - ContextIdentity.shadowOffset)
+        .frame(height: PermissionMetrics.height(for: model.current).map { $0 - ContextIdentity.shadowOffset })
+        .foregroundStyle(theme.foreground)
+        .contextSurface(
+            RoundedRectangle(cornerRadius: ContextIdentity.radius, style: .continuous),
+            border: theme.edge, theme: theme
+        )
+        // The offset shape must fit inside the hosting view's bounds; without
+        // this gutter, AppKit clips the shadow at the right and bottom edges.
+        .padding(.trailing, ContextIdentity.shadowOffset)
+        .padding(.bottom, ContextIdentity.shadowOffset)
+        // The setup flow has an intentional appearance, including its static
+        // panels. The native window supplies the same appearance at runtime.
+        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -859,11 +879,18 @@ struct PermissionsView: View {
 /// size it will really be.
 private struct Instrument: View {
     let step: PermissionStep
+    @Environment(\.contextPrimaryColor) private var primary
+
+    private var theme: ContextTheme { .init(scheme: .dark, primaryHex: primary) }
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(Color.primary.opacity(0.045))
+            RoundedRectangle(cornerRadius: ContextIdentity.radius, style: .continuous)
+                .fill(theme.controlFill)
+                .overlay {
+                    RoundedRectangle(cornerRadius: ContextIdentity.radius, style: .continuous)
+                        .strokeBorder(theme.controlEdge)
+                }
 
             switch step {
             case .microphone:
@@ -927,7 +954,7 @@ private struct SettingsRowMock: View {
     /// by path rather than `NSImage(named:)`: a loose `AppIcon.icns` with no
     /// asset-catalog entry doesn't reliably resolve by name, and silently
     /// drawing the wrong mark is worse than a fallback that says so by being
-    /// visibly different. `PlumageMark` falls back only if that ever fails —
+    /// visibly different. `ContextVoiceMark` falls back only if that ever fails —
     /// running the bare binary outside any bundle, mainly.
     @ViewBuilder
     private var appIcon: some View {
@@ -940,7 +967,9 @@ private struct SettingsRowMock: View {
                 .frame(width: 24, height: 24)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         } else {
-            PlumageMark(size: 20)
+            ContextVoiceMark(color: ContextTheme(
+                scheme: .dark, primaryHex: ContextIdentity.defaultPrimary
+            ).accent)
                 .frame(width: 24, height: 24)
         }
     }
@@ -952,10 +981,13 @@ private struct SettingsRowMock: View {
 /// clicked invites clicking it, and clicking this one would do nothing.
 private struct MockToggle: View {
     let isOn: Bool
+    @Environment(\.contextPrimaryColor) private var primary
+
+    private var theme: ContextTheme { .init(scheme: .dark, primaryHex: primary) }
 
     var body: some View {
         Capsule()
-            .fill(isOn ? Parrot.action : Color.primary.opacity(0.18))
+            .fill(isOn ? theme.accent : theme.foreground.opacity(0.18))
             .frame(width: 34, height: 20)
             .overlay(alignment: isOn ? .trailing : .leading) {
                 Circle()
@@ -976,6 +1008,9 @@ private struct StepPane: View {
     let blocker: String?
     let onAsk: () -> Void
     let onDecline: () -> Void
+    @Environment(\.contextPrimaryColor) private var primary
+
+    private var theme: ContextTheme { .init(scheme: .dark, primaryHex: primary) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -989,12 +1024,9 @@ private struct StepPane: View {
             // window with a picture on it is owed the word "permission" before
             // they are asked to press anything.
             //
-            // Amber, which is what a permission that is not granted already
-            // wears on the last screen. One colour, one meaning, both places.
             Text(eyebrow)
-                .font(.system(size: 9, weight: .semibold, design: .rounded))
-                .kerning(0.9)
-                .foregroundStyle(status == .denied ? Parrot.scarlet : Parrot.amber)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(status == .denied ? theme.failure : theme.accent)
                 .padding(.bottom, 6)
 
             Text(step.title)
@@ -1003,7 +1035,7 @@ private struct StepPane: View {
 
             Text(step.reason)
                 .font(.system(size: 14))
-                .foregroundStyle(.primary)
+                .foregroundStyle(theme.foreground)
                 .fixedSize(horizontal: false, vertical: true)
                 .lineSpacing(2)
 
@@ -1015,7 +1047,7 @@ private struct StepPane: View {
                     .font(.system(size: 11))
                     .foregroundStyle(
                         status == .denied
-                            ? AnyShapeStyle(Parrot.amber) : AnyShapeStyle(.tertiary)
+                            ? AnyShapeStyle(theme.caution) : AnyShapeStyle(theme.muted)
                     )
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
@@ -1024,7 +1056,7 @@ private struct StepPane: View {
             if asked, let blocker {
                 Text(blocker)
                     .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(theme.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
             }
@@ -1041,13 +1073,14 @@ private struct StepPane: View {
                 if context != .installing {
                     Button(step.declineTitle(in: context), action: onDecline)
                         .buttonStyle(.plain)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(theme.muted)
                         .font(.system(size: 12))
                 }
 
                 Spacer()
 
                 Button(actionTitle, action: onAsk)
+                    .buttonStyle(ContextSetupButton(primary: true))
                     .keyboardShortcut(.defaultAction)
             }
         }
@@ -1098,8 +1131,8 @@ enum SetupMetrics {
     static var gap: CGFloat { at(9) }
     static var indent: CGFloat { glyph + gap }
     /// The corner the card and the code field are cut with.
-    static var radius: CGFloat { at(9) }
-    static var fieldRadius: CGFloat { at(Parrot.fieldRadius) }
+    static var radius: CGFloat { ContextIdentity.radius }
+    static var fieldRadius: CGFloat { 4 }
 }
 
 /// Screen one: every model this launch is about to fetch, and what it costs.
@@ -1111,6 +1144,9 @@ private struct ModelsPane: View {
     let onNext: () -> Void
 
     @EnvironmentObject private var downloads: ModelDownloads
+    @Environment(\.contextPrimaryColor) private var primary
+
+    private var theme: ContextTheme { .init(scheme: .dark, primaryHex: primary) }
 
     private func at(_ points: CGFloat) -> CGFloat { SetupMetrics.at(points) }
 
@@ -1164,7 +1200,7 @@ private struct ModelsPane: View {
                         Text(row.sizeLabel)
                             .font(.system(size: at(11)))
                             .monospacedDigit()
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(theme.muted)
                     }
                     .padding(.vertical, at(6))
                 }
@@ -1201,6 +1237,9 @@ private struct SetupPane: View {
     var asking = false
 
     @EnvironmentObject private var downloads: ModelDownloads
+    @Environment(\.contextPrimaryColor) private var primary
+
+    private var theme: ContextTheme { .init(scheme: .dark, primaryHex: primary) }
 
     private func at(_ points: CGFloat) -> CGFloat { SetupMetrics.at(points) }
 
@@ -1321,7 +1360,7 @@ private struct SetupPane: View {
                     Text(after)
                 }
                 .font(.system(size: at(12)))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(theme.muted)
             }
         }
         .padding(.bottom, at(4))
@@ -1332,8 +1371,8 @@ private struct SetupPane: View {
     /// the library is for, which is the whole of what there is to decide.
     private var leadColour: Color {
         switch moment {
-        case .espeak, .permissionLost, .somethingDidNotArrive: return .primary
-        case .dictationOff, .almostReady, .ready: return .secondary
+        case .espeak, .permissionLost, .somethingDidNotArrive: return theme.foreground
+        case .dictationOff, .almostReady, .ready: return theme.muted
         }
     }
 
@@ -1425,20 +1464,22 @@ private struct SetupGroup<Content: View>: View {
     let name: String
     var blurb: String?
     @ViewBuilder var lines: Content
+    @Environment(\.contextPrimaryColor) private var primary
+
+    private var theme: ContextTheme { .init(scheme: .dark, primaryHex: primary) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(name.uppercased())
-                .font(.system(size: SetupMetrics.at(9), weight: .semibold, design: .rounded))
-                .kerning(SetupMetrics.at(0.9))
-                .foregroundStyle(.tertiary)
+            Text(name)
+                .font(.system(size: SetupMetrics.at(10), weight: .medium, design: .monospaced))
+                .foregroundStyle(theme.accent)
                 .padding(.bottom, SetupMetrics.at(4))
             // The group carries the explanation, so the lines are bare: a name
             // and a size.
             if let blurb {
                 Text(blurb)
                     .font(.system(size: SetupMetrics.at(11)))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.bottom, SetupMetrics.at(5))
             }
@@ -1470,10 +1511,11 @@ private struct SetupFoot: View {
             Group {
                 if prominent, !disabled {
                     Button(title, action: action)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(ContextSetupButton(primary: true))
                         .keyboardShortcut(.defaultAction)
                 } else {
                     Button(title, action: action)
+                        .buttonStyle(ContextSetupButton())
                 }
             }
             .controlSize(.large)
@@ -1492,13 +1534,16 @@ private struct SetupFoot: View {
 /// the moment the connection does.
 private struct DownloadBar: View {
     let fraction: Double
+    @Environment(\.contextPrimaryColor) private var primary
+
+    private var theme: ContextTheme { .init(scheme: .dark, primaryHex: primary) }
 
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.primary.opacity(0.12))
+                Capsule().fill(theme.foreground.opacity(0.12))
                 Capsule()
-                    .fill(Parrot.action)
+                    .fill(theme.accent)
                     .frame(width: geometry.size.width * min(max(fraction, 0), 1))
             }
         }
@@ -1516,12 +1561,15 @@ private struct EspeakCard: View {
     let onInstall: () -> Void
 
     @State private var copied = false
+    @Environment(\.contextPrimaryColor) private var primary
+
+    private var theme: ContextTheme { .init(scheme: .dark, primaryHex: primary) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: SetupMetrics.at(5)) {
             Text("Run the following command to install")
                 .font(.system(size: SetupMetrics.at(12), weight: .semibold))
-                .foregroundStyle(Parrot.amber)
+                .foregroundStyle(theme.accent)
                 .fixedSize(horizontal: false, vertical: true)
 
             // With no Homebrew the chained one-liner is 140 characters. Inside
@@ -1535,7 +1583,7 @@ private struct EspeakCard: View {
                 .padding(.horizontal, SetupMetrics.at(8))
                 .padding(.vertical, SetupMetrics.at(7))
                 .background(
-                    Color.primary.opacity(0.08),
+                    theme.controlFill,
                     in: RoundedRectangle(
                         cornerRadius: SetupMetrics.fieldRadius, style: .continuous
                     )
@@ -1544,11 +1592,12 @@ private struct EspeakCard: View {
 
             HStack(spacing: SetupMetrics.at(10)) {
                 Button("Install with Terminal", action: onInstall)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(ContextSetupButton(primary: true))
                 Button(copied ? "Copied" : "Copy the command") {
                     EspeakInstall.copyCommand()
                     copied = true
                 }
+                .buttonStyle(ContextSetupButton())
             }
             .padding(.top, SetupMetrics.at(2))
         }
@@ -1556,12 +1605,12 @@ private struct EspeakCard: View {
         .padding(.top, SetupMetrics.at(9))
         .padding(.bottom, SetupMetrics.at(10))
         .background(
-            Parrot.amber.opacity(0.11),
+            theme.caution.opacity(0.12),
             in: RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)
         )
         .overlay {
             RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)
-                .strokeBorder(Parrot.amber.opacity(0.38), lineWidth: SetupMetrics.at(1))
+                .strokeBorder(theme.caution.opacity(0.6), lineWidth: SetupMetrics.at(1))
         }
     }
 }
@@ -1577,6 +1626,9 @@ private struct EspeakCard: View {
 /// and the retry, because without it nothing transcribes at all.
 private struct QuietFailureNote: View {
     let rows: [ModelDownload]
+    @Environment(\.contextPrimaryColor) private var primary
+
+    private var theme: ContextTheme { .init(scheme: .dark, primaryHex: primary) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: SetupMetrics.at(5)) {
@@ -1592,17 +1644,17 @@ private struct QuietFailureNote: View {
                 .font(.system(size: SetupMetrics.at(11)))
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundStyle(Parrot.amber)
+        .foregroundStyle(theme.caution)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, SetupMetrics.at(11))
         .padding(.vertical, SetupMetrics.at(10))
         .background(
-            Parrot.amber.opacity(0.11),
+            theme.caution.opacity(0.12),
             in: RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)
         )
         .overlay {
             RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)
-                .strokeBorder(Parrot.amber.opacity(0.38), lineWidth: SetupMetrics.at(1))
+                .strokeBorder(theme.caution.opacity(0.6), lineWidth: SetupMetrics.at(1))
         }
     }
 }
@@ -1613,13 +1665,16 @@ private struct QuietFailureNote: View {
 /// ticked checkbox, so an install in Terminal lands on this screen by itself.
 private struct EspeakWaitingCard: View {
     @State private var spinning = false
+    @Environment(\.contextPrimaryColor) private var primary
+
+    private var theme: ContextTheme { .init(scheme: .dark, primaryHex: primary) }
 
     var body: some View {
         HStack(alignment: .top, spacing: SetupMetrics.gap) {
             Circle()
                 .trim(from: 0, to: 0.72)
                 .stroke(
-                    Parrot.action,
+                    theme.accent,
                     style: StrokeStyle(lineWidth: SetupMetrics.at(1.6), lineCap: .round)
                 )
                 .frame(width: SetupMetrics.at(10), height: SetupMetrics.at(10))
@@ -1642,7 +1697,7 @@ private struct EspeakWaitingCard: View {
                     + " it lands.")
                     .font(.system(size: SetupMetrics.at(11)))
             }
-            .foregroundStyle(Parrot.amber)
+            .foregroundStyle(theme.caution)
             .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: 0)
@@ -1650,12 +1705,12 @@ private struct EspeakWaitingCard: View {
         .padding(.horizontal, SetupMetrics.at(11))
         .padding(.vertical, SetupMetrics.at(10))
         .background(
-            Parrot.amber.opacity(0.11),
+            theme.caution.opacity(0.12),
             in: RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)
         )
         .overlay {
             RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)
-                .strokeBorder(Parrot.amber.opacity(0.38), lineWidth: SetupMetrics.at(1))
+                .strokeBorder(theme.caution.opacity(0.6), lineWidth: SetupMetrics.at(1))
         }
     }
 }
@@ -1664,20 +1719,51 @@ private struct EspeakWaitingCard: View {
 /// — one mark for "this is a key you press," not two.
 private struct HotkeyBadge: View {
     let text: String
+    @Environment(\.contextPrimaryColor) private var primary
+
+    private var theme: ContextTheme { .init(scheme: .dark, primaryHex: primary) }
 
     var body: some View {
         Text(text)
             .font(.system(size: SetupMetrics.at(12), weight: .medium, design: .rounded))
-            .foregroundStyle(.primary)
+            .foregroundStyle(theme.foreground)
             .padding(.horizontal, SetupMetrics.at(8))
             .padding(.vertical, SetupMetrics.at(2))
             .background(
-                Color.primary.opacity(0.07),
+                theme.accent.opacity(0.13),
                 in: RoundedRectangle(cornerRadius: SetupMetrics.fieldRadius, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: SetupMetrics.fieldRadius, style: .continuous)
-                    .strokeBorder(Parrot.action.opacity(0.55), lineWidth: SetupMetrics.at(1.5))
+                    .strokeBorder(theme.accent.opacity(0.7), lineWidth: SetupMetrics.at(1))
             }
+    }
+}
+
+/// The compact outlined control used by the tour-adjacent setup screens. It
+/// keeps the primary action present without importing AppKit's blue button
+/// into the fixed lavender surface.
+private struct ContextSetupButton: ButtonStyle {
+    var primary = false
+    @Environment(\.contextPrimaryColor) private var primaryColor
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let theme = ContextTheme(scheme: .dark, primaryHex: primaryColor)
+        configuration.label
+            .font(.system(size: primary ? 13 : 12, weight: primary ? .medium : .regular))
+            .foregroundStyle(theme.foreground.opacity(configuration.isPressed ? 0.65 : 1))
+            .padding(.horizontal, primary ? 16 : 12)
+            .padding(.vertical, primary ? 7 : 5)
+            .background(
+                primary ? theme.accent.opacity(configuration.isPressed ? 0.12 : 0.18)
+                    : theme.controlFill,
+                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(primary ? theme.accent : theme.controlEdge, lineWidth: 1)
+            }
+            .opacity(isEnabled ? 1 : 0.4)
     }
 }

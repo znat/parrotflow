@@ -1,6 +1,26 @@
 # Pipelines
 
-Everything a finished transcript goes through, in order:
+A pipeline is the ordered list of transforms that runs on a finished
+transcript. Use it to make your everyday formatting automatic. Keep actions
+you want to choose each time—such as turning a name into a Slack mention—on
+the post-dictation offer instead.
+
+## Build the behavior you want
+
+- **Create a transform:** start with [the authoring guide](authoring.md).
+- **Run it after every dictation:** add a named step to `transcription.pipeline`.
+- **Limit where it runs:** use [conditions](#conditions) or [app filters](#apps).
+- **Run it on demand:** use [offer and key](#offer-and-key-or-getting-on-the-pill)
+  or [a spoken instruction](#say--what-to-call-it-out-loud).
+- **Check it without recording:** use [the pipeline CLI](cli.md#testing-a-rewrite).
+
+A transform defines **what** changes. Its pipeline step or offered action
+defines **when** it runs. Adding a definition alone does not make it automatic.
+
+## Read a pipeline
+
+For example, these steps format dates and numbers, remove disfluencies, then
+apply the `slack` transform only in Slack:
 
 ```yaml
 transcription:
@@ -11,6 +31,9 @@ transcription:
     - transform: slack
       app: /slack/
 ```
+
+This is an excerpt, not the complete default pipeline. Keep your other steps
+when adding or reordering transforms.
 
 `sentence_repair` and `vocabulary` are not in this list. They read the
 decoder's own output, so they cannot be ordered — each has a settings block and

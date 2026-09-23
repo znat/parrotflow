@@ -1,0 +1,9 @@
+# Onboarding example only; does not change the user's configured transforms.
+transforms:
+  - name: priorities
+    replace:
+      P0: ['/\bP\s+zero\b/']
+      P1: ['/\bP\s+one\b/']
+      P2: ['/\bP\s+two\b/']
+pipeline:
+  - transform: priorities

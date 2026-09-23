@@ -65,7 +65,7 @@ cp "$BIN" "$APP/Contents/MacOS/$EXECUTABLE_NAME"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-# The icons are committed, not built here: they come out of Resources/parrot.svg
+# The icons are committed, not built here: the app icon uses Resources/logo.svg
 # via scripts/make-icons.py, which only needs running when the drawing changes.
 # Rebuilding them on every `make run` would put a rasteriser between you and a
 # working app for no gain.

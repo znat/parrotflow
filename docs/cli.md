@@ -1,13 +1,23 @@
 # The command line
 
-Every flag the app takes, and what it answers. This is how a change to
-`config.yaml` gets tested without speaking into a microphone, which makes it
-the page to read if you are an agent configuring this for someone.
+Test a configuration, run a transform on a sentence, and inspect what happened—
+without recording a new dictation. The same commands work for you, your coding
+agent, and automated checks.
+
+Choose the binary you want to test. For the released app:
 
 ```sh
-PF=/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow          # released
-PF=/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow       # dev build
+PF=/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow
 ```
+
+For a development build, use
+`/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow` instead. Do not
+assign both paths: the second assignment would replace the first.
+
+Start with `$PF --check-config`. Then choose a task below. Configuration checks
+and fixture-based pipeline tests are different from commands such as
+`--seed-config` or teaching vocabulary, which can write files; read the command's
+section before running it.
 
 Each flag runs and exits; nothing here launches the menu bar app. **Exit code 0
 means it did what it says**, so these compose into scripts — which is what

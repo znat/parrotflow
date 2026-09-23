@@ -69,11 +69,59 @@ copies once that has finished.
 `AppVariant.swift` is where the app derives its own paths from the identifier it
 was built with.
 
+## Checking the native onboarding tour
+
+`bash scripts/check-onboarding.sh` checks scene boundaries, vocabulary learning,
+Slack's offered action, and every date/time and currency example against the
+shipped scripts. It does not record audio, write configuration, or save vocabulary.
+
+Run the built binary with `--panels onboarding 120` to preview the native tour
+without resetting permissions or downloading models. `--tutorial-sheet
+/tmp/onboarding.png onboarding` renders representative native frames for review.
+Use `onboarding:5` instead of `onboarding` for a single zero-based example.
+The setup tour advances automatically, supports Pause/Replay/Back, and stops on
+the final example while downloads finish. Skip tour goes to the existing setup
+status screen; it does not bypass permissions or cancel downloads. Reduced Motion
+starts paused and shows completed examples, navigable with Continue.
+
+First-time setup embeds this same native view after required permissions and
+the model/eSpeak steps, before the final setup status screen. It also runs when
+models are already cached or there are no download rows. A later Finish Setup
+revisit does not repeat the tour. The tour uses a fixed 940 × 700 content area;
+model progress remains live while its playback is paused. A blocking download
+failure routes directly to the existing retry screen, including while paused.
+The onboarding check covers the completion/pause/download-failure decision matrix.
+
+### README animation
+
+Export the real native tour without download progress or the interactive footer
+(no desktop capture or permission reset). Use an empty temporary directory;
+the exporter refuses to overwrite existing frames. It renders at the tour's
+actual playback speed.
+
+```sh
+frames=$(mktemp -d /private/tmp/parrotflow-readme-XXXXXX)
+.build/out/Products/Release/ParrotFlow --onboarding-film "$frames" 20 --highlights
+ffmpeg -framerate 20 -i "$frames/frame-%04d.png" -vf scale=940:-1:flags=lanczos \
+  -c:v libwebp_anim -quality 75 -compression_level 3 -loop 0 Resources/hero.webp
+```
+
+Inspect representative frames before replacing the tracked asset. The WebP loops
+about 32 seconds of vocabulary, PR links, Slack mentions, and grammar at 940 × 620
+so the side-by-side YAML stays readable. Omit `--highlights` to export the full
+tour. The app's interactive tour keeps its controls and its original
+940 × 700 window.
+
 ## The icons
 
-`Resources/parrot.svg` is the drawing and the only place a colour is decided.
-The outline is by Md Moniruzzaman, from the Noun Project under CC BY; the
-plumage is the wheel of `ParrotStyle.swift` run head to tail.
+`Resources/logo.svg` supplies the app icon's voice mark, matching the README
+and native `ContextVoiceMark`. The generator places it in lighter lavender on
+a dark purple macOS tile and creates every required icon size.
+
+Legacy bird assets still use `Resources/parrot.svg`. Its outline is by
+Md Moniruzzaman, from the Noun Project under CC BY; the plumage is the wheel
+of `ParrotStyle.swift` run head to tail. The current menu-bar mark is drawn
+natively rather than using those legacy images.
 
 ```sh
 python3 scripts/make-icons.py   # only when the drawing changes

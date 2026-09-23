@@ -147,88 +147,30 @@ binary landing by itself. *Continue* moves on whether or not it is here.
 It comes before the tour on purpose: it is the one step with a person in it, so
 it is done while there is still a download to wait on.
 
-**The tour.** Then the window plays a demonstration of what the app does, for as
-long as the models take: correcting a name and having it remembered, a sentence
-in Slack, and the kinds of transform. It turns its own pages.
+**The tour.** After permissions and the model/eSpeak steps, first-time setup
+plays the native onboarding tour. It uses the same purple surfaces, dictation
+pill, composer, and keyboard-highlighted action buttons as the app.
 
-Three things say what it is. The first screen says it in words, once — and only
-once: the loop that follows leaves it out, because coming back to a screen that
-says the download is starting says the download has started again. Every
-screen carries a small "WHILE YOU WAIT" at the right of the header, because the
-tour loops and somebody who looks away lands in the middle of one. And a row of
-dots at the bottom says they are pages of one walk.
+It starts with contextual vocabulary, then shows YAML beside its effect on a
+message: PR links, Slack mentions, two date/time examples, two currency examples,
+priority replacements, and a grammar prompt. The dictated sentence stays visible
+in grey for comparison. It is a demonstration only: no microphone recording,
+messages, vocabulary changes, or configuration edits happen during the tour.
 
-Each screen keeps the height of its own tallest beat, so none of them ends in a
-band of nothing, and the window eases between the two heights over about six
-tenths of a second rather than jumping at the cut. That long because the
-distance is long: the opening screen is 286 points tall and the one after it is
-578.
+Examples advance automatically. Pause, Replay, Back, and Continue control the
+playback. Reduced Motion starts paused and shows completed examples. Skip tour
+and Finish move to the setup status screen; neither bypasses permissions,
+cancels downloads, nor closes the installer.
 
-Both chat screens dim round what they are about. A whole sentence at full
-brightness reads before the one word in it that changed does, and that word is
-the screen. The rest goes down to a third for as long as it takes.
+The window keeps a stable size throughout. Live model progress remains in its
+header, even when playback is paused. The tour still appears if models are
+already cached or no download rows are present. Opening Finish Setup later does
+not replay it.
 
-The vocabulary screen does it three times. Over each correction, the name in the
-field and the surface asking whether to keep the change are lit. At the end,
-where the line holds both names and nobody was asked about either, they are the
-two lit things.
-
-The Slack screen does it twice, once for each thing it teaches. First the link,
-with the callout that says what happened to it — a sentence about the link is no
-use dimmed. Then the mention, from the drag over the name to the send: the name,
-and the surface offering to rewrite it.
-
-A word gets a soft edge and a surface a hard one, on its own rim. A rectangle
-round one word of a sentence reads as a box someone drew on the words; soft, it
-reads as light. A surface already has a drawn edge, and blurring the dim only
-smears it. The callout is soft too, because its box is the bubble plus the tail
-under it, and a hard edge there draws a rectangle a little below a triangle.
-
-The lit boxes are the views' own, reported up by the words, the pill and the
-callout rather than written down here. They were numbers measured off a render
-once, and taking one line off a screen moved every one of them.
-
-The dots are the only thing on the tour to press. Clicking one plays from there,
-which is the way back to a page that went past too quickly. They count pages and
-not screens: the last screen is four config examples one after another, so there
-are seven dots. A click cannot end the tour early — how long it has played
-through is measured on how long it has been on screen, not on the clock a dot
-moves.
-
-The download sits above a divider, so the top of the window is this install and
-the rest of it is the app. It is a bar, a shimmer over the filled part, the
-percentage at the end, and on the left the model being fetched — "2 of 6 ·
-Parakeet TDT 0.6B v3". The name is there because the bar was not enough to
-watch: Parakeet is 461 MB of the 1.5 GB and FluidAudio reports it one file at a
-time rather than one byte at a time, so the figure sat at 15% for a minute or
-two and then stepped to 31%. A name that changes six times is something
-happening on a bar that looks stopped.
-
-The figure also fills its own gaps. The bar gains a point every three seconds on
-its own, and the real figure wins whenever it is further on. It is a guess
-between two known points and a slow one — a point every three seconds is 300
-seconds for the whole download, and 1.5 GB has taken about two minutes on every
-install measured here — so the truth is almost always ahead of it. It stops one
-point short of full: a hundred is the download ending, and only the download
-says that.
-
-On the whole bar, not on the rows, which is where it was first. A row stops one
-point short too, and Parakeet is 31% of the download, so a crawl that filled
-Parakeet's row took the bar to 30% and parked it there. The figure is the downloader's own, weighted by the size
-of each model, and it never reads 100%: a hundred is what ends the tour, so a
-screen still up saying it has arrived would be contradicting itself.
-
-It ends by itself once it has played through once **and** every model is in. It
-ends wherever it is, mid-screen included: it used to wait for the next cut so no
-demonstration was cut in half, and that is a demonstration held in front of
-somebody whose app is ready. It also ends at once if a fetch a dictation waits
-on fails. Both
-conditions earn their place. The downloads start at launch and the tour starts
-after the permissions, so most of the wait is spent in System Settings granting
-accessibility: without the first condition the tour is reached with nothing left
-to wait for and skipped before it draws a frame. And the second is every model
-rather than the speech model, because that one lands first with about a gigabyte
-still behind it.
+At the end it holds the final example until downloads finish, then moves to
+Ready. A paused tour stays put. A blocking download failure goes directly to the
+existing retry screen, even while paused. Completion follows the playback clock,
+so replaying or going back does not end the tour unexpectedly.
 
 **Ready.** The last screen. The title is the state: "Almost ready" while a model
 a dictation waits on is still coming, then "Ready" with the key to hold, and one

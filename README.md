@@ -1,98 +1,89 @@
 <div align="center">
 
-<img src="Resources/parrot.svg" width="56" alt="">
+<img src="Resources/logo.svg" width="88" height="88" alt="ParrotFlow logo">
 
 # ParrotFlow
 
-## Local and extensible dictation for macOS
+## Dictation for builders
 
-[![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
-![macOS 15+](https://img.shields.io/badge/macOS-15%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
-![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-0c8c7c)
+Local dictation you can extend with rules, prompts, and code.
 
-**[Install](#install)** · [Documentation](docs/README.md)
+Small, specialized models keep dictation fast, accurate, and on your Mac.
+No LLM cleanup required—unless you want it.
 
+**[Install ParrotFlow](#install)** · [Explore the extensions](docs/guides/extensions.md) · [Read the docs](docs/README.md)
 
-<img src="Resources/hero.webp" width="500" alt="Four dictations into one field.
-Mick is corrected to Mik and the app offers to remember it, then Mik to Mick;
-the last two sentences name both people and both are written right. Then one
-Slack message: PR 478 arrives as a link, and Siobhan becomes @Sio. Then the
-two config.yaml rules that did it.">
+<sub>Apple silicon · macOS 15+ · Open source · GPL-3.0</sub>
 
 </div>
 
-> [!TIP]
->   PR links and Slack mentions are NOT features — they are extensions configured in `yaml`!
->   You can hack them and add more in minutes with your coding agent!
->
->   Some built-in extensions you can use and play with:
->
->   🔇 **Hesitations, repeats and false starts** — `um` and `uh`, a word said twice, a phrase begun again.
->   *"so uh in the ter in the terminal run the the tests"* → *"so in the terminal run the tests"*
->
->   🔢 **Numbers, dates and times** — written as digits, English and French.
->   *"March third at quarter past nine"* → *"March 3 at 9:15"* &nbsp;·&nbsp; *"two hundred forty three tests, ninety seven percent"* → *"243 tests, 97%"*
-
-
-
-<br>
-
-## Truly local and extensible
-
-**ParrotFlow uses very small models**, such as mmBERT, the Qwen3 0.6B family and spaCy, to understand what you mean, use your vocabulary in context, correct hesitations and repair raw ASR output without relying on a powerful LLM to rewrite what you said.
-
-
-<table>
-<thead>
-<tr><th></th><th>ParrotFlow</th><th>Local<sup>1</sup></th><th>Cloud<sup>2</sup></th></tr>
-</thead>
-<tbody>
-<tr><td>🔒 <b>Truly local</b></td><td align="center">✅</td><td align="center">✅</td><td align="center">❌</td></tr>
-<tr><td>✍️ <b>Keeps your wording</b><sup>3</sup> — no LLM rewrites it</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
-<tr><td>📖 <b>Knows your vocabulary</b> — and where it belongs</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
-<tr><td>🧩 <b>Extensible</b> — your own rules, prompts and scripts</td><td align="center">✅</td><td align="center">❌</td><td align="center">❌</td></tr>
-<tr><td>🔑 <b>No cloud key</b> — for any built-in step</td><td align="center">✅</td><td align="center">❌<sup>4</sup></td><td align="center">❌</td></tr>
-</tbody>
-</table>
-
-<sub><sup>1</sup> Handy, VoiceInk, MacWhisper, FluidVoice. &nbsp;<sup>2</sup> Wispr Flow, Aqua, Willow. &nbsp;<sup>3</sup> Built-in steps never rewrite. A prompt step that does is yours to add. &nbsp;<sup>4</sup> FluidVoice bundles a local rewrite model.</sub>
-
-<br>
-
 ## Install
-
-ParrotFlow needs Apple silicon and macOS 15+. It uses about 3 GB of disk and 1 GB of memory.
 
 ```sh
 brew install znat/tap/parrotflow
 ```
 
+Local dictation needs no cloud account or API key. Models download during setup;
+optional prompt transforms may need additional models or a provider you configure.
+
 <details>
-<summary>Not using <a href="https://brew.sh">Homebrew</a>?</summary>
+<summary>Install without Homebrew</summary>
 
-<br>
-
-The script installs the same app, in the same place.
+The installer script downloads the app and starts setup:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
 ```
 
+[Releases](https://github.com/znat/parrotflow/releases) · [Setup and permissions](docs/guides/setup.md)
+
 </details>
 
 <br>
 
-## Extend with rules, prompts and scripts
+<div align="center">
 
-> [!TIP]
-> These examples show how the demo features are made.
+<img src="Resources/hero.webp" width="940" alt="Highlights from ParrotFlow's native onboarding tour:
+contextual vocabulary distinguishes Mik and Mick. Side-by-side YAML examples
+turn dictation into PR links, Slack mentions, and corrected grammar.">
 
-What makes ParrotFlow truly unique is that you can fully customize it with regular expressions, prompts or scripts.
-All you have to do is point your coding agent to your `config.yaml` file and ask what you need.
+<sub>The native app, in motion. Configuration on the left. What it changes on the right.</sub>
 
-<br>
+</div>
 
-**Example: add PR links to your dictations**
+## Useful from the first dictation
+
+**The right term in the right context.** Your teammate Mik writes code.
+Your friend Mick plays guitar. Teach ParrotFlow your vocabulary and the context
+that distinguishes one name from another.
+
+**Less cleanup after you speak.** Turn “the the prompt” into “the prompt,”
+“nine fifteen AM” into “9:15 AM,” and “forty nine dollars and ninety nine cents”
+into “$49.99.”
+
+**Your wording, with the changes you choose.** Built-in cleanup uses targeted
+rules and small local models. A broader rewrite—grammar, tone, or structure—is
+a prompt transform you control.
+
+[How vocabulary works](docs/guides/vocabulary.md) · [See the built-in transforms](docs/guides/extensions.md#what-works-out-of-the-box)
+
+## Make it yours
+
+The PR links and Slack mentions in the demo are examples of what you can build.
+They use the same extension points available to you.
+
+| When you want to… | Reach for… |
+| --- | --- |
+| Replace a phrase or recognize a pattern | A YAML replacement, with optional regex |
+| Look up a handle or apply your own logic | A script: text in, text out |
+| Fix grammar or reshape a message | A prompt, using a model you choose |
+
+Run a transform automatically, offer it after dictation, or invoke it with a key
+or your voice. Scope it to an app, a language, or a condition on the text.
+
+### A spoken PR number becomes a link
+
+This replacement turns `PR 478` into `#478`, linked to your repository:
 
 ```yaml
 transforms:
@@ -103,163 +94,104 @@ transforms:
         ['/\b(?:pull request|PR)\s*(?:(?:number|nr|no|hash)\s+)?#?(\d+)\b/']
 ```
 
-> *"merged P R one two three, ready to ship"* → *"merged **#123**, ready to ship"*, where #123 links straight to the pull request.
+Set `OWNER/REPO` to your repository and add `github_refs` to your transcription
+pipeline. The existing number-normalization stage can run before it.
 
-<br>
+That same approach can link your issue tracker, normalize project terminology,
+or format the identifiers you say every day.
 
-**Example: Automatically add Slack mentions.**
+<details>
+<summary><strong>Give a script a keyboard shortcut</strong></summary>
+
+The shipped Slack transform offers an **S** action after dictation:
 
 ```yaml
 transforms:
   - name: slack_mentions
     description: turn people's names into Slack mentions
-    display: Slack Mentions          # what the menu bar says while it runs
-    offer: true                      # a chip on the pill after each dictation
-    key: s                           # press S to run it
-    say: [slack mentions, mentions]  # hold the hotkey and say either one
+    display: Slack Mentions
+    offer: true
+    key: s
+    say: [slack mentions, mentions]
     command: slack_mentions.py
 ```
 
-`offer`, `key` and `say` are three ways to run a transform on demand: a chip
-on the pill, a letter, or your voice. A transform that should run on every
-dictation goes in the pipeline instead.
+Fill the roster in `transforms/slack_mentions/slack_mentions.py` beside your
+config. Dictate a name, then press **S** to replace it with the configured handle.
+It changes the text; it does not send the message.
 
-Where `slack_mentions.py` is:
+A `command:` transform runs a program on your Mac. Use scripts you trust.
 
-```python
-#!/usr/bin/env python3
-import re, sys
+[Write your own script transform](docs/guides/transforms.md#scripts)
 
-ROSTER = {"Ada": "@ada.lovelace"}
-text = sys.stdin.read()
+</details>
 
-for name, handle in ROSTER.items():
-    # Skip a name already written as a handle. Case-sensitive, so
-    # "mark it as done" is not Mark.
-    text = re.sub(rf"(?<![@\w.]){re.escape(name)}\b", handle, text)
+<details>
+<summary><strong>Compose transforms into a pipeline</strong></summary>
 
-sys.stdout.write(text)
-```
-
-This one ships. Open `transforms/slack_mentions/slack_mentions.py` beside your
-config and fill the roster.
-
-<br>
-
-**Combine transforms in a pipeline**
+Order matters: normalize spoken numbers before turning them into PR links.
 
 ```yaml
 transcription:
   pipeline:
-    - transform: numbers_en   # "one two three" -> 123, so github_refs has digits
+    - transform: numbers_en
     - transform: github_refs
-    - transform: slack_mentions
 ```
+
+This is an excerpt, not a replacement for your whole pipeline. Keep the existing
+vocabulary and cleanup stages you want.
+
+Conditions let you apply a transform only where it belongs—for example, a grammar
+prompt in chat and mail, but not in your coding agent.
+
+[Explore pipelines and conditions](docs/guides/pipelines.md)
+
+</details>
+
+<details>
+<summary><strong>Add a prompt when the job needs a language model</strong></summary>
+
+Grammar, an email draft, a shorter message, or a list: prompt transforms handle
+changes that need more than a replacement or a script.
+
+Choose a local model through Ollama, or configure a remote provider. A remote
+prompt sends the text it processes to that provider; local dictation does not
+require that choice.
+
+The shipped [grammar transform](docs/guides/extensions.md#grammar) is a starting point,
+with its own test cases.
+
+[Configure models](docs/guides/configuration.md#models-and-privacy) · [Write a prompt transform](docs/guides/transforms.md#prompts)
+
+</details>
 
 <br>
 
-## Use language models only when they're needed
+## Bring your coding agent
 
-You can use LLMs for prompt transforms, for example fixing grammar, formatting your dictation as an email, bulletizing an enumeration, anything.
-> Note: An LLM is not required to benefit from all the features above.
+Point your agent at [AGENTS.md](AGENTS.md), describe the behavior you want, and
+ask it to implement and test a transform. The repository includes authoring
+instructions, command-line checks, and evaluation cases.
 
-```yaml
-models:
-  gemma:               # on your Mac, through Ollama
-    api: ollama
-    model: gemma4:e4b-mlx
-    default: true      # what a transform runs on when it names no model
-  gpt:                 # remote, for the harder jobs
-    api: openai
-    model: gpt-5.6-luna
-```
+Start with one small thing you keep correcting by hand.
 
-<br>
+## Go deeper
 
-**A small local model** does quick, solid rewrites on your Mac: grammar, tone,
-structure. Gemma through [Ollama](https://ollama.com/download) is the one this
-example names.
+[Configure ParrotFlow](docs/guides/configuration.md) ·
+[Write a transform](docs/guides/transforms.md) ·
+[Use the CLI](docs/guides/cli.md) ·
+[Understand the architecture](docs/guides/architecture.md)
 
-```yaml
-transforms:
-  - name: grammar
-    description: fix grammar and punctuation
-    model: gemma       # stays on your Mac
-    offer: true        # put a chip on the pill after every dictation
-    key: g             # press G to run it
-    say: [Fix grammar] # Hold the hotkey, say "Fix grammar"
-    prompt: Fix grammar and punctuation...
-```
-
-> See [built-in/transforms/grammar](built-in/transforms/grammar) for a more elaborate version.
-<br>
-Or you can run the grammar fix in chat and mail apps (but not in coding agents, for instance) for all dictations:
-
-```yaml
-transcription:
-  pipeline:
-    - transform: grammar
-      app: /slack|outlook/    # Grammar only checked in Slack and Outlook
-```
-
-You can define very granular conditions for pipeline stages — on the text so
-far, on the app being dictated into, or on your own variables. See
-[Conditions](docs/pipelines.md#conditions) and [Apps](docs/pipelines.md#apps).
-
-### More examples
-
-Each with its own test cases, in [built-in/transforms](built-in/transforms).
-`fillers`, `dates`, `numbers` and `disfluency` are in the pipeline a new install
-gets; the rest ship with no step — see [What ships
-unwired](docs/pipelines.md#what-ships-unwired).
-
-- [numbers](built-in/transforms/numbers) — spoken numbers as digits, one
-  script per language: *"two hundred forty-three"* → `243`,
-  *"soixante-quinze pour cent"* → `75%`.
-- [disfluency](built-in/transforms/disfluency) — what you did not mean to say,
-  taken out: a word said twice, *"the the prompt"* → *"the prompt"*; a phrase
-  begun again, *"in the ter in the terminal"*; and a marker that carries
-  nothing, *"so use like you know five"* → *"so use five"*. Only that last one
-  wants a parse; the rest are string work.
-- [dates](built-in/transforms/dates) — a dictated date or time in the shape it
-  was said, *"at ten fifteen"* → *"at 10:15"*. One script per language, above
-  the numbers step; English is in the pipeline and French is two lines of
-  config away.
-
-[Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md) ·
-[Where the time goes](docs/architecture.md#where-the-time-goes)
-
-<br>
-
-## Documentation
-
-> [!TIP]
-> Point your coding agent at this
-> repo and say what you want. It can edit `config.yaml`, write a transform's
-> prompt or script, and harden it against real test cases before you trust
-> it — start at [AGENTS.md](AGENTS.md).
-
-**[docs/README.md](docs/README.md)** — configuration, pipelines, transforms, the
-command line, permissions, architecture.
-
-**[CONTRIBUTING.md](CONTRIBUTING.md)** — build it, test it, send a change.
-Questions that are not bugs go to
-[Discussions](https://github.com/znat/parrotflow/discussions).
+[All documentation](docs/README.md) ·
+[Contribute](CONTRIBUTING.md) ·
+[Ask a question](https://github.com/znat/parrotflow/discussions)
 
 ---
 
-## License
-
-[GPL-3.0](LICENSE). Use it, change it, share it. If you ship something built on
-this code, that has to be under the GPL too.
-
-The parrot is by Md Moniruzzaman, from the [Noun
-Project](https://thenounproject.com), used under CC BY. The outline is his; the
-plumage is ours — see [docs/development.md](docs/development.md#the-icons).
-
 <div align="center">
 
-macOS dictation · offline speech to text · local voice typing · open source
-Wispr Flow alternative · privacy-first transcription · Parakeet · Ollama
+**Make dictation part of your toolkit.**
+
+[Install ParrotFlow](#install) · [Build your first extension](docs/guides/transforms.md)
 
 </div>

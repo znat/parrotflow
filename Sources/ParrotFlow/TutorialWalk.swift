@@ -324,6 +324,7 @@ struct SetupTourPane: View {
 
     @EnvironmentObject private var model: PermissionsModel
     @EnvironmentObject private var downloads: ModelDownloads
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // `.periodic` and not `.animation`. Both hand the view a date, and the
@@ -334,18 +335,23 @@ struct SetupTourPane: View {
         // which is a tour frozen at whatever frame it was on.
         TimelineView(.periodic(from: model.tourStartedAt ?? Date(), by: 1.0 / 60)) { context in
             let elapsed = model.tourElapsed(at: context.date)
-            let height = TourWalk.height(at: elapsed)
-            SetupTour(
+            NativeOnboardingView(
                 elapsed: elapsed,
                 // The downloader's own number, size-weighted across the six
                 // models, and the same one the corner's figure is drawn from.
                 progress: downloads.shown,
                 fetching: fetching,
-                seek: { model.seekTour(to: $0) }
+                paused: model.tourPausedAt != nil,
+                seek: { model.seekTour(to: $0) },
+                togglePause: { model.toggleTourPause() },
+                finish: { model.advance() }
             )
-            .onChange(of: height) { _, _ in onHeightChange() }
         }
-        .onAppear { model.startTour() }
+        .onAppear {
+            model.startTour()
+            if reduceMotion && model.tourPausedAt == nil { model.toggleTourPause() }
+            onHeightChange()
+        }
     }
 
     /// The name of the model being fetched, and where it is in the queue.

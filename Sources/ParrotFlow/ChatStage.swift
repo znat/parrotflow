@@ -192,6 +192,8 @@ struct ChatRun: Equatable {
 /// Slack one with small words in it.
 struct ChatComposerFrame<Content: View>: View {
     var size: CGFloat = Chat.text
+    /// The onboarding uses the Context palette, without changing legacy films.
+    var contextTheme: ContextTheme? = nil
     /// The pointer is down on *Send*.
     var sending = false
     @ViewBuilder var content: Content
@@ -217,12 +219,12 @@ struct ChatComposerFrame<Content: View>: View {
         .padding(.vertical, s(9))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            Color.white.opacity(0.06),
-            in: RoundedRectangle(cornerRadius: s(9), style: .continuous)
+            contextTheme?.surface ?? Color.white.opacity(0.06),
+            in: RoundedRectangle(cornerRadius: contextTheme == nil ? s(9) : 5, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: s(9), style: .continuous)
-                .strokeBorder(Color.white.opacity(0.13), lineWidth: 1)
+            RoundedRectangle(cornerRadius: contextTheme == nil ? s(9) : 5, style: .continuous)
+                .strokeBorder(contextTheme?.controlEdge ?? Color.white.opacity(0.13), lineWidth: 1)
         }
     }
 

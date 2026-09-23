@@ -1,80 +1,89 @@
-# Contributing
+# Contribute to ParrotFlow
 
-Thanks for being here. This page is short on purpose: it says where to start,
-how to check your change, and what a commit has to carry.
+Bring a workflow you want to improve, a reproducible bug, or an extension others
+can reuse. Small changes with clear evidence are easier to review and safer to
+ship.
 
-ParrotFlow is [GPL-3.0](LICENSE). A change you send goes in under the same
-terms — that is what signing off certifies.
+## Pick a starting point
 
-## Where to start
+| You want to… | Start here |
+| --- | --- |
+| Share a replacement, script, or prompt | [Build a transform](docs/guides/transforms.md) |
+| Fix or extend the native app | [Development setup](docs/development.md) |
+| Understand where a behavior lives | [Architecture guide](docs/guides/architecture.md) |
+| Work with a coding agent | [Agent instructions](AGENTS.md) |
+| Ask about a workflow before implementing it | [Discussions](https://github.com/znat/parrotflow/discussions) |
 
-| You want to | Read |
-|---|---|
-| Build the app and run it | [docs/development.md](docs/development.md) |
-| Write or change a prompt, a table or a script | [docs/authoring.md](docs/authoring.md) |
-| Understand what a transcript goes through | [docs/pipelines.md](docs/pipelines.md) |
-| Point a coding agent at this repo | [AGENTS.md](AGENTS.md) |
+A transform with a focused case set makes a useful first contribution. Keep
+the implementation and its examples together so another builder can understand
+and adapt it.
 
-The best first contribution is a transform. One folder under
-`built-in/transforms/`, with its cases next to it. It is small, it is testable,
-and it is what other people copy.
+## Build a separate development app
 
-## Build and test
-
-```sh
-git clone https://github.com/znat/parrotflow && cd parrotflow
-make dev-certificate    # once, so permissions survive rebuilds
-make hooks              # once, so commit subjects can cut releases
-make install            # builds and installs ParrotFlow Dev, a separate app
-make test               # every check that needs no model, mic or screen
-```
-
-Needs Apple silicon, macOS 15 or later, and the Xcode command line tools.
-
-`make test` runs the same scripts CI runs. It does not run the sets that need
-Ollama (`check-grammar`, `check-routing`, `check-spelling`) or a real screen
-(`check-inplace`). If you touched a prompt, run those too — on a machine with
-the model — and put the numbers in the pull request.
-
-**Never change a prompt or a pattern without scoring it.** Every rewrite has a
-case set and a runner. Get the number before, change one thing, get it after.
-The rule and the loop are in [AGENTS.md](AGENTS.md).
-
-## Commits
-
-**The subject decides the release.** Releases and the changelog are computed
-from merged subjects, so a subject with no type ships nothing:
-
-```
-feat:  a capability that was not there before   -> bumps the minor
-fix:   behaviour that was wrong is now right    -> bumps the patch
-perf:  same behaviour, measurably faster        -> bumps the patch
-docs: refactor: test: build: ci: chore:         -> no release
-```
-
-`make hooks` checks this at `git commit`. The pull request title is checked
-again on GitHub, because a squash merge takes its subject from the title.
-
-**Sign off every commit.** Add `-s`:
+You need Apple silicon, macOS 15 or later, and the Xcode command line tools.
+The default build installs **ParrotFlow Dev**, separate from the released app.
 
 ```sh
-git commit -s -m "fix: a dictation the decoder returned nothing for is decoded again"
+git clone https://github.com/znat/parrotflow
+cd parrotflow
+make dev-certificate
+make hooks
+make install
+make test
 ```
 
-That appends one line, `Signed-off-by: Your Name <your@email>`. It means you
-certify the [DCO](DCO): the code is yours to give, under this project's
-license. A check on every pull request enforces it. Forgot it? Fix the whole
-branch with:
+`make dev-certificate` creates a local signing certificate and may ask for your
+password. It helps permission grants survive rebuilds. `make install` builds
+and installs the dev app; grant that app's permissions separately.
+
+Read [the development guide](docs/development.md) before using reset or
+fresh-setup commands. They are not routine prerequisites.
+
+## Test the behavior you changed
+
+`make test` runs the checks that do not need a model, microphone, or screen.
+Some checks need additional resources; a passing default suite does not replace
+them.
+
+For a prompt or pattern, record the score **before and after** against the same
+case set. Include examples that must remain unchanged. Test unavailable models,
+script errors, and timeouts: a failure must preserve the transcript.
+
+For UI changes, show the relevant states and transitions. For a bug fix, include
+a reproduction and a regression check where practical.
+
+[Authoring and evaluation procedure](docs/authoring.md) · [CLI guide](docs/guides/cli.md)
+
+## Prepare the pull request
+
+Keep the request focused. Explain the behavior, why it should change, and how
+you checked it. Include evaluation results for rewrites and screenshots or a
+short recording for visual changes. Put lengthy evidence in an expandable
+section.
+
+Use a typed commit subject and PR title. The squash-merge title controls release
+generation:
+
+| Prefix | Release effect |
+| --- | --- |
+| `feat:` | Minor release |
+| `fix:` or `perf:` | Patch release |
+| `docs:`, `refactor:`, `test:`, `build:`, `ci:`, `chore:` | No release |
+
+Sign off each commit:
 
 ```sh
-git rebase --signoff main
+git commit -s -m "fix: describe the behavior being corrected"
 ```
 
-## Pull requests
+The sign-off certifies the [Developer Certificate of Origin](DCO). Contributions
+are made under the project's [GPL-3.0 license](LICENSE). The local hooks and PR
+checks enforce the commit conventions.
 
-Keep it to one change. Say what a reviewer should check, and put the numbers in
-if you touched a rewrite. Long evidence goes in a `<details>` block, so the
-first screen stays readable.
+## Not ready to send code?
 
-Questions that are not bugs belong in
-[Discussions](https://github.com/znat/parrotflow/discussions).
+A minimal reproduction, a clearer guide, or a realistic keep case for a
+transform is useful work too. Use [Discussions](https://github.com/znat/parrotflow/discussions)
+for questions that are not bug reports.
+
+[Back to the documentation](docs/README.md)
