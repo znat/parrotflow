@@ -27,7 +27,7 @@ and the [development guide](development.md).
 | Transcription | `Transcriber.swift` | Parakeet TDT v3 via [FluidAudio](https://github.com/FluidInference/FluidAudio), CoreML on the Neural Engine |
 | The pipeline | `Pipeline.swift` | Stages, conditions, app gating — [pipelines.md](pipelines.md) |
 | Replacements | `Replacements.swift` | Literal, regex and fuzzy substitution |
-| Transforms | `PromptRunner.swift`, `CommandRunner.swift` | A prompt to the local model, or a program of yours on stdin/stdout |
+| Transforms | `PromptRunner.swift`, `CommandRunner.swift` | A prompt to the configured model backend, or a program of yours on stdin/stdout |
 | Routing | `Router.swift`, `FreeForm.swift` | Which transform an instruction reaches, and what happens when none does |
 | Spoken commands | `LLM.swift`, `LocalLLM.swift` | One call, three protocols — `ollama`, `openai`, `anthropic`. `ModelSpec.swift` is what a config resolves to; every failure degrades to "unavailable" rather than costing the transcript |
 | Config | `Config.swift` | Yams + a `DispatchSource` file watcher for live reload |

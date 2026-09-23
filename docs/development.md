@@ -127,9 +127,11 @@ natively rather than using those legacy images.
 python3 scripts/make-icons.py   # only when the drawing changes
 ```
 
-That writes `AppIcon.icns` and the three menu bar birds, all committed. It is
-not part of the build: an app that cannot compile without a rasteriser working
-is an app with one more way to fail.
+That writes `AppIcon.icns` and the legacy menu-bar bird assets, all committed.
+The live menu-bar icon is assigned by `AppDelegate` with
+`ContextStatusMark.image` for its current state. Icon generation is not part of
+the build: an app that cannot compile without a rasteriser working is an app
+with one more way to fail.
 
 Two things in there were measured rather than assumed, and both will look like
 mistakes until you hit them yourself.
@@ -140,13 +142,16 @@ menu bar is a white tile with a bird cut out of it. `scripts/rasterize.swift`
 draws through AppKit into a bitmap it allocates, so the background is one we
 choose, and it is none.
 
-**A status button cannot be tinted.** `contentTintColor` looks like the way to
+**Historical notes for the legacy bird assets.** These explain the generated
+PNG files, not the current `ContextStatusMark` implementation.
+
+`contentTintColor` looked like the way to
 colour a menu bar glyph; set it and AppKit stops applying the template treatment
 altogether and draws the image's own pixels, which for a template is solid
-black. So each colour is baked into its own file — the released app takes the
-`Template` one and follows the bar into light and dark, the dev build takes sky,
-and an open microphone takes orange. Reach for a tint here and you will get a
-black bird and no error.
+black. The old bird implementation therefore baked each colour into its own
+file: a template for release, sky for development, and orange for recording.
+To change the current menu-bar mark, edit `ContextIdentity.swift`, not these
+legacy PNGs.
 
 Colours are chosen from what the menu bar renders, not from what they are: it
 washes and lifts everything it is handed, and scarlet came out of it at 7° of

@@ -81,9 +81,10 @@ They use the same extension points available to you.
 Run a transform automatically, offer it after dictation, or invoke it with a key
 or your voice. Scope it to an app, a language, or a condition on the text.
 
-### A spoken PR number becomes a link
+### A spoken PR number becomes a link where formatted text is supported
 
-This replacement turns `PR 478` into `#478`, linked to your repository:
+This replacement turns `PR 478` into `#478`, linked to your repository in
+destinations that accept formatted text:
 
 ```yaml
 transforms:

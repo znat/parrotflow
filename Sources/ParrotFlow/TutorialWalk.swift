@@ -333,13 +333,19 @@ struct SetupTourPane: View {
         // display link stops when the window is not being drawn — behind
         // another window, on another space, with the app in the background —
         // which is a tour frozen at whatever frame it was on.
-        TimelineView(.periodic(from: model.tourStartedAt ?? Date(), by: 1.0 / 60)) { context in
+        // A paused tour has no changing clock, so it does not need display-rate
+        // redraws. `downloads` remains an environment object, so its progress
+        // still invalidates this view as each model reports.
+        TimelineView(.periodic(
+            from: model.tourStartedAt ?? Date(),
+            by: model.tourPausedAt == nil ? 1.0 / 60 : 1.0
+        )) { context in
             let elapsed = model.tourElapsed(at: context.date)
             NativeOnboardingView(
                 elapsed: elapsed,
                 // The downloader's own number, size-weighted across the six
                 // models, and the same one the corner's figure is drawn from.
-                progress: downloads.shown,
+                progress: downloads.rows.isEmpty ? nil : downloads.shown,
                 fetching: fetching,
                 paused: model.tourPausedAt != nil,
                 seek: { model.seekTour(to: $0) },

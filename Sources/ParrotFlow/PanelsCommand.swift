@@ -268,7 +268,7 @@ enum PanelsCommand {
         ("folded", TutorialSlack.landsAt + TutorialSlack.Beat.folded.rawValue + 0.4),
         (
             "reopened",
-            TutorialSlack.landsAt + TutorialSlack.Beat.reopening.rawValue + 0.3
+            TutorialSlack.landsAt + TutorialSlack.Beat.reopening.rawValue + PillHUD.motion / 2
         ),
         ("clicked", TutorialSlack.landsAt + TutorialSlack.Beat.clicking.rawValue + 0.4),
         ("handled", TutorialSlack.landsAt + TutorialSlack.Beat.handled.rawValue + 0.3),
