@@ -438,30 +438,19 @@ final class PillHUD {
     /// Armed by a `set()` that carries a duration.
     private var pendingDismiss: DispatchWorkItem?
     private var isFading = false
-    /// Thinning out on a deadline, rather than holding and then going. Only the
-    /// offer does this — see `decay(over:)`.
-    private var isDecaying = false
+    /// Waiting to fold on a deadline. Only the open offer does this — see
+    /// `fold(after:)`.
+    private var foldIsPending = false
     /// How long the offer on screen was given, so the pointer can give it again.
     private var offerFor: TimeInterval?
-    /// A decay standing still, as against one whose alpha is moving.
+    /// Which deadline is the live one.
     ///
-    /// True through the hold, and again once the pointer stops the fade. The
-    /// two end differently. A still one sits at `offerAlpha`, which is a real
-    /// strength, so it can fade out the way every other state does. A moving
-    /// one has already told AppKit to finish at zero, so a fade laid over it
-    /// has nothing left to move and it is cut instead.
-    private var decayIsStill = false
-    /// Which decay is the live one.
-    ///
-    /// Replacing an animation makes the one it replaced call its completion
-    /// handler, straight away. A flag alone cannot tell those apart: the decay
-    /// that replaces it sets `isDecaying` back to true before the old handler
-    /// runs, so the old handler passes the guard and orders the panel out. That
-    /// was the pointer dismissing the offer it was there to hold open. The
-    /// handler checks this number as well, and a stale one does nothing.
-    private var decayRun = 0
-    /// The offer's fade, waiting out the hold. See `decay(over:)`.
-    private var pendingDecayFade: DispatchWorkItem?
+    /// A flag alone cannot distinguish a cancelled deadline from the new one
+    /// that replaced it, so the handler checks this number as well. A stale
+    /// deadline does nothing.
+    private var foldRun = 0
+    /// The open offer's pending fold. See `fold(after:)`.
+    private var pendingFold: DispatchWorkItem?
     /// The alert's countdown: the clock, the whole of it, when it runs out,
     /// and what is left while the pointer holds it.
     private var alertClock: Timer?
@@ -608,14 +597,10 @@ final class PillHUD {
     /// The highlight is cleared first. It belonged to the last offer's pointer,
     /// and the pointer is not on this one yet.
     ///
-    /// This is the one state that leaves by going quiet rather than by
-    /// disappearing. Every other one holds full strength and then goes. This
-    /// one stands at full strength for `PillHUD.offerHold` and then thins out
-    /// over `PillHUD.offerFade`, because it is the only state with a deadline
-    /// you might want to beat: a hard cut gives you the time and then nothing,
-    /// while a fade says how long is left without a clock on screen, and stays
-    /// usable to the last frame. The keys and the chips work the whole way
-    /// down; the fading only says how long is left.
+    /// This is the one state that folds down instead of leaving. It stands at
+    /// full strength for the whole deadline, then the same surface contracts
+    /// into its compact tab. The tab stays live, so the commands remain one
+    /// key or click away without leaving a faded ghost over the document.
     /// `open` is false for every ordinary dictation: the offer arrives as a tab
     /// and is opened by the pointer or by the key. It is true for the one that
     /// cannot wait to be asked for — see `AppDelegate.showCorrectOffer`.
@@ -631,8 +616,8 @@ final class PillHUD {
         // A tab does not run out. It is 33x23 of your document and it costs
         // nothing to leave there, unlike the panel it opens into — so it waits
         // for you to act rather than for a clock: a click, a keystroke, the
-        // next dictation. Only the open panel decays.
-        if open { decay(over: duration) }
+        // next dictation. Only the open panel has a fold deadline.
+        if open { fold(after: duration) }
     }
 
     /// Unfold the tab, or fold it back.
@@ -642,8 +627,7 @@ final class PillHUD {
     /// The payload rides through untouched: what opens is the surface already
     /// on screen, holding what it has held since the words landed.
     ///
-    /// `set` clears the decay on its way through — it has to, because a state
-    /// arriving on a surface half faded out must be readable — so the clock is
+    /// `set` clears the old deadline on its way through, so the clock is
     /// started again here unless the pointer is on it, which is the one thing
     /// that means you are still deciding.
     func open(_ wanted: Bool, byPointer: Bool = false) {
@@ -658,7 +642,7 @@ final class PillHUD {
             model.onFold?()
         }
         guard wanted, let offerFor, !pointerHolds else { return }
-        decay(over: offerFor)
+        fold(after: offerFor)
     }
 
     /// Whether what is on screen is an offer, and whether it is unfolded.
@@ -680,110 +664,48 @@ final class PillHUD {
     private var pendingOpen: DispatchWorkItem?
     /// Whether the pointer is holding the offer open.
     ///
-    /// Kept rather than read off `isDecaying`, because unfolding the tab is a
+    /// Kept rather than read off `foldIsPending`, because unfolding the tab is a
     /// state change and `set` clears that flag — so the pointer leaving
-    /// afterwards would find no decay to restart and the offer would stand
+    /// afterwards would find no fold deadline to restart and the offer would stand
     /// there for good.
     private var pointerHolds = false
 
-    /// Hold at `Self.offerAlpha` for what is left after the fade, then run
-    /// out over `Self.offerFade`, then gone.
-    ///
-    /// The hold comes first because the offer is read before it is answered.
-    /// A surface that starts thinning on the frame it appears is one you read
-    /// against the clock; one that stands still first is one you read, and
-    /// only then decide about.
-    ///
-    /// The fade is linear on purpose. An eased fade spends most of its time
-    /// near the ends and crosses the middle quickly, which reads as the
-    /// surface being yanked away at the halfway mark. A straight ramp is the
-    /// one shape that says "this is running out" at a steady rate — a clock
-    /// without a clock.
-    private func decay(over duration: TimeInterval) {
+    /// Keep the expanded offer readable for its whole lifetime, then contract
+    /// it into the compact tab. `open(false)` performs the actual 180ms frame
+    /// morph, so the surface, hard shadow and contents finish as the same live
+    /// object the user can reopen.
+    private func fold(after duration: TimeInterval) {
         guard let panel else { return }
         pendingDismiss?.cancel(); pendingDismiss = nil
-        pendingDecayFade?.cancel(); pendingDecayFade = nil
+        pendingFold?.cancel(); pendingFold = nil
         isFading = false
-        isDecaying = true
-        decayIsStill = true
-        decayRun += 1
-        let run = decayRun
+        foldIsPending = true
+        foldRun += 1
+        let run = foldRun
 
-        // Land on the starting strength at once, cancelling whatever was
-        // animating alpha. Usually nothing — the offer follows a pill already
-        // on screen — but raised from cold, `set` has just put it at full, and
-        // this is what takes it down to the offer's own strength.
         if !panel.isVisible {
             model.onScreen = true
             panel.orderFrontRegardless()
         }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0
-            panel.animator().alphaValue = Self.offerAlpha
-        }
+        panel.alphaValue = 1
 
-        let fade = min(Self.offerFade, duration)
-        let hold = max(0, duration - fade)
-        let start = DispatchWorkItem { [weak self] in
-            self?.runOut(panel, over: fade, run: run)
+        let deadline = DispatchWorkItem { [weak self] in
+            guard let self, self.foldIsPending, self.foldRun == run else { return }
+            self.pendingFold = nil
+            self.foldIsPending = false
+            if self.offerIsOpen { self.open(false) }
         }
-        pendingDecayFade = start
-        DispatchQueue.main.asyncAfter(deadline: .now() + hold, execute: start)
+        pendingFold = deadline
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + max(0, duration), execute: deadline
+        )
     }
 
-    /// The second half of the decay: the alpha finally moves.
-    private func runOut(_ panel: NSPanel, over fade: TimeInterval, run: Int) {
-        // `decayRun` and not `isDecaying` alone: see the property.
-        guard isDecaying, decayRun == run else { return }
-        pendingDecayFade = nil
-        decayIsStill = false
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = fade
-            context.timingFunction = CAMediaTimingFunction(name: .linear)
-            panel.animator().alphaValue = 0
-        } completionHandler: { [weak self] in
-            guard let self, self.isDecaying, self.decayRun == run else { return }
-            self.isDecaying = false
-            self.decayIsStill = false
-
-            // An open panel folds rather than goes. What ran out is the panel,
-            // not the offer: the words are still there, the tab is still what
-            // says so, and taking the whole surface away for not having been
-            // answered inside six seconds means the only way back is to
-            // remember the key with nothing on screen naming it. The fade is
-            // still worth having — it says the panel is about to close — it
-            // just ends somewhere other than nothing.
-            if self.offerIsOpen {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0
-                    panel.animator().alphaValue = 1
-                }
-                self.open(false)
-                return
-            }
-
-            // The aim belonged to the dictation that has just ended, the same
-            // as in `fadeOut`.
-            self.near = nil
-            panel.orderOut(nil)
-            self.model.onScreen = false
-            // Back to full strength while off screen, or the next appearance
-            // starts from a panel that is already invisible and stays that way.
-            panel.alphaValue = 1
-        }
-    }
-
-    /// Hold the offer at full strength, or let it start running out again.
+    /// Hold the offer open, or give it a fresh fold deadline.
     ///
     /// The pointer resting on the pill is the least ambiguous statement there
-    /// is that you are still deciding, so the fade stops entirely rather than
-    /// resetting — and starts again from the beginning when the pointer leaves.
-    /// A surface that went on thinning while you were reaching for it would be
-    /// arguing with you about whether you had finished.
-    ///
-    /// This is also why the offer can stand at full strength the way it does.
-    /// Clutter that bright would be too much to put on screen after every
-    /// dictation if reading it did not put the whole clock back.
+    /// is that you are still deciding, so the deadline stops entirely and
+    /// starts again from the beginning when the pointer leaves.
     func hovering(_ inside: Bool) {
         let held = pointerHolds
         pointerHolds = inside
@@ -797,44 +719,25 @@ final class PillHUD {
         // One or the other, and staying is worth more. The key is the way in
         // now, and the tab draws it.
 
-        // `isVisible` as well as the flag: a decay that finished a moment ago
-        // has taken the panel out, and nothing about the pointer should bring
-        // an offer that is over back onto the screen.
+        // `isVisible` as well as the flag: a panel taken down by another action
+        // must not be brought back by a late pointer event.
         //
-        // `held` as well as `isDecaying`: see `pointerHolds`.
-        guard let panel, panel.isVisible, let offerFor, isDecaying || inside || held
+        // `held` as well as `foldIsPending`: see `pointerHolds`.
+        guard let panel, panel.isVisible, let offerFor, foldIsPending || inside || held
         else { return }
         if inside {
-            // Stop the running decay without letting its completion fire: the
-            // animation below replaces it, and a replaced animation calls its
-            // handler at once.
-            decayRun += 1
-            pendingDecayFade?.cancel(); pendingDecayFade = nil
-            isDecaying = true
-            decayIsStill = true
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0
-                panel.animator().alphaValue = Self.offerAlpha
-            }
+            // Stop the deadline while the pointer is making a decision.
+            foldRun += 1
+            pendingFold?.cancel(); pendingFold = nil
+            foldIsPending = true
+            panel.alphaValue = 1
         } else {
-            decay(over: offerFor)
+            fold(after: offerFor)
         }
     }
 
-    /// Where the offer starts, and stands through the hold: full strength.
-    ///
-    /// It was 0.92 — quieter than the other states, because it is the one
-    /// surface that appears without being asked for. That made the chips on it
-    /// hard to read at the moment they are meant to be read, and the fade
-    /// already says the offer is optional.
-    static let offerAlpha: CGFloat = 1
-
-    /// How long the offer stands still before it starts running out.
-    static let offerHold: TimeInterval = 4
-    /// How long it takes to go, once it starts.
-    static let offerFade: TimeInterval = 2
-    /// The whole of the offer's life, hold and fade.
-    static let offerLife: TimeInterval = offerHold + offerFade
+    /// How long the expanded offer stays readable before folding to its tab.
+    static let offerLife: TimeInterval = 6
 
     /// The pill's own visible capsule right now — what a click has to land
     /// inside of to count as a click on the pill rather than a click past it.
@@ -920,16 +823,8 @@ final class PillHUD {
 
         // A fade that has not finished is a panel that is still on screen. Put
         // it back to full strength rather than morphing something half gone.
-        // The same for a decay, which is a fade with a longer clock on it: a
-        // pill part-way through running out that then has something to say
-        // would otherwise say it at whatever strength it had got down to.
-        if isFading || isDecaying {
+        if isFading {
             isFading = false
-            isDecaying = false
-            decayIsStill = false
-            // The decay's handler is now a stale one. See `decayRun`.
-            decayRun += 1
-            pendingDecayFade?.cancel(); pendingDecayFade = nil
             // Zero-length rather than a plain assignment: that is what stops
             // the animation underneath, which would otherwise go on pulling
             // the alpha down under the state that has just replaced it.
@@ -937,6 +832,12 @@ final class PillHUD {
                 context.duration = 0
                 panel.animator().alphaValue = 1
             }
+        }
+        // A newly set state supersedes any pending automatic fold.
+        if foldIsPending {
+            foldIsPending = false
+            foldRun += 1
+            pendingFold?.cancel(); pendingFold = nil
         }
 
         let arriving = !panel.isVisible
@@ -1068,43 +969,12 @@ final class PillHUD {
         pendingOpen?.cancel(); pendingOpen = nil
         guard let panel, panel.isVisible, !isFading else { return }
 
-        // A decision takes the offer at once rather than letting the rest of
-        // its decay play out. Escape, Return and running a command all arrive
-        // here, and a dismissal that took another few seconds to show would
-        // read as the key not working.
-        //
-        // A moving decay is cut, because its alpha is already on its way to
-        // zero and a fade laid over that has nothing left to move. A decay
-        // standing still is not — in its hold, or stopped there by the pointer
-        // — because it sits at `offerAlpha`, so it goes out the way every
-        // other state does. Clicking a chip is the common
-        // path and the pointer is on the pill by definition, so that is the
-        // one that must not blink out. The stale handler is seen off the same
-        // way as in `set`.
-        if isDecaying, !decayIsStill {
-            isDecaying = false
-            decayRun += 1
-            pendingDecayFade?.cancel(); pendingDecayFade = nil
-            near = nil
-            // A zero-length animation is how the running one is stopped, and
-            // it leaves the panel at full strength for the next appearance.
-            // Nothing is drawn at that strength: the panel goes out in the
-            // same turn.
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0
-                panel.animator().alphaValue = 1
-            }
-            panel.orderOut(nil)
-            model.onScreen = false
-            return
-        }
-        // Nothing is decaying past this line. A held decay is standing at a
-        // real alpha, so it leaves as an ordinary fade — and either way the
-        // flags and the handler are seen off before that fade starts.
-        isDecaying = false
-        decayIsStill = false
-        decayRun += 1
-        pendingDecayFade?.cancel(); pendingDecayFade = nil
+        // A decision cancels the automatic fold at once. Escape, Return and
+        // running a command all arrive here, and the ordinary short dismissal
+        // fade begins from a fully opaque surface.
+        foldIsPending = false
+        foldRun += 1
+        pendingFold?.cancel(); pendingFold = nil
 
         isFading = true
         NSAnimationContext.runAnimationGroup { context in

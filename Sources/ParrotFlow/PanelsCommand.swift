@@ -1447,15 +1447,13 @@ enum PanelsCommand {
             }
         case "offer":
             // The real call rather than a bare `set`. The offer is the one
-            // state that holds and then thins out, so a preview that only held
-            // would be a picture of a pill that never leaves. It gets the
+            // state that folds to its tab on a deadline, so it gets the same
             // duration the app gives it.
             pill.offer(offerChips, for: AppDelegate.offerSeconds)
             // The one state that takes the mouse, so the one worth being able
             // to hover. Nothing runs — this is the surface, not the app — but
             // the highlight and the hold behave the way they do there: park the
-            // pointer on the pill and it stops fading, which is also how you
-            // keep it on screen for as long as you want to look at it.
+            // pointer on the pill and it stops the fold deadline.
             pill.model.onHover = { inside in
                 if !inside { pill.model.selected = nil }
                 pill.hovering(inside)
@@ -1665,6 +1663,7 @@ enum PanelsCommand {
                 (4.0, { pill.working("Grammar…") }),
                 (5.4, { pill.notice("Grammar applied", tone: .done, duration: nil) }),
                 (7.4, { pill.offer(offerChips, for: 3) }),
+                (8.0, { pill.open(true) }),
                 (11.4, { pill.recording(icon: nil) }),
                 (14.0, { pill.working("Transcribing…") }),
                 (15.4, { pill.notice("Nowhere to type — the transcription is on your clipboard",
