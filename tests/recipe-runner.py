@@ -961,15 +961,6 @@ def agent_checks(runner, stderr_path, trace_path):
           "\nNow: " in messages(body)[1]["content"], messages(body)[1]["content"][:200])
 
     end, fake, report, asked = run(
-        "write to Peter", [draft("")] * 12,
-        [[act({"do": "type", "id": 1, "value": "Peter"})],
-         [act({"do": "type", "id": 1, "value": "Peter"})], [("stuck", {"why": "x"})]])
-    second = results(2)[-1] if len(planner_bodies) >= 3 else ""
-    check("agent: the same text is not typed into the same field twice",
-          "was already typed there" in second
-          and [s["do"] for s in fake.steps].count("type") == 1, (second, fake.did()))
-
-    end, fake, report, asked = run(
         "write to Peter", [draft(""), draft("Pe", popup=True), draft("Pe", popup=True)],
         [[act({"do": "type", "id": 1, "value": "Peter"}, {"do": "click", "id": 2})],
          [("done", {"summary": "typed"})]])
@@ -1135,17 +1126,6 @@ def agent_checks(runner, stderr_path, trace_path):
     check("agent: a batch that repeats with the same result is flagged",
           "This exact batch already ran and did the same thing" in got
           and "already ran" not in (results(1)[-1] if len(planner_bodies) > 1 else "x"), got[:300])
-
-    end, fake, report, asked = run(
-        "write to Peter", [draft("")] * 12,
-        [[act({"do": "type", "id": 1, "value": "Peter"})],
-         [act({"do": "type", "id": 1, "value": "Peter"})], [("done", {"summary": "ok"})]],
-        {("ask", 1): {"answer": "No", "via": "option"}})
-    sent = next((s for s in fake.steps if s["do"] == "ask"), {})
-    check("guard: typing the same text twice asks, next to the field",
-          sent.get("options") == ["Yes, go ahead", "No"]
-          and (sent.get("near") or {}).get("x") == 400
-          and [s["do"] for s in fake.steps].count("type") == 1, (sent, fake.did()))
 
     end, fake, report, asked = run(
         "mute this channel", [home, menu, muted],
@@ -1341,15 +1321,6 @@ def agent_checks(runner, stderr_path, trace_path):
     check("agent: covered with a list open: Return first, then read again and act",
           acted == [("key", "return"), ("press", 102), ("type", None)], acted)
 
-    covered_once = {("press", 1): {"error": "refused"}}
-    end, fake, report, asked = run(
-        "write to Peter", [draft("")] * 8,
-        [[act({"do": "type", "id": 1, "value": "Peter"})],
-         [act({"do": "type", "id": 1, "value": "Peter"})], [("done", {"summary": "ok"})]],
-        covered_once)
-    check("agent: a type refused before typing does not count as typed once",
-          "ask" not in [s["do"] for s in fake.steps] and "type" in fake.did(), fake.did())
-
     focused_to = draft("Alex Moreau")
     focused_to["items"][0]["state"] = ["focused"]
     end, fake, report, asked = run(
@@ -1436,7 +1407,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 156 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 147 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
@@ -1678,7 +1649,8 @@ def recorder_checks(url, user, plans_url):
     said = [line for line in fake.logs if line.startswith("recorder:")]
     check("recorder: a folder that cannot be made is logged once, and the run goes on",
           end["end"] == "done" and len(said) == 1
-          and not any("shot" in s for s in fake.steps if s["do"] == "snapshot"), (end, said))
+          and not any(s.get("shot", "").startswith(blocked) for s in fake.steps
+                      if s["do"] == "snapshot"), (end, said))
     runner.process.stdin.close()
     runner.process.wait(timeout=5)
 
@@ -1908,26 +1880,32 @@ def grounding_checks(url, user, plans_url):
         [act({"do": "click", "id": 2})], [act({"do": "click", "id": 2})], [("read", {})],
         [("done", {"summary": "ok"})]])
     counts = [len(pictures(body)) for body in planner_bodies]
-    detail = pictures(planner_bodies[2]) if len(planner_bodies) > 2 else []
-    check("stuck: a picture goes with the request after the same batch ran twice, and only that "
-          "one",
-          counts == [0, 0, 1, 0] and detail[0][0] == "low"
-          and "Stuck: this exact batch already ran" in text(messages(planner_bodies[2])[-1]),
-          (counts, detail))
+    detail = [d for body in planner_bodies for d, _ in pictures(body)]
+    check("picture: every request after the first step has one, of the last target, at low",
+          counts == [0, 1, 1, 1] and set(detail) == {"low"}
+          and 'The picture: the screen around "Settings"' in text(messages(planner_bodies[2])[-1])
+          and "call `ground`" in text(messages(planner_bodies[2])[-1]), (counts, detail))
     call = read_json(os.path.join(root, recorded(root)[-1]), "calls", "03.json")
     kept = json.dumps(call["messages"])
-    check("stuck: the recorded request names the picture's file, not its bytes",
-          "base64" not in kept and "[picture: grounds/01.jpg]" in kept
-          and os.path.exists(os.path.join(root, recorded(root)[-1], "grounds", "01.jpg")),
+    check("picture: the recorded request names the picture's file, not its bytes, and only "
+          "the newest",
+          "base64" not in kept and "[picture: grounds/02.jpg]" in kept
+          and kept.count("[picture:") == 1
+          and os.path.exists(os.path.join(root, recorded(root)[-1], "grounds", "02.jpg")),
           kept[-300:])
 
     end, fake, report = run(tiny, [home] * 4, [
-        [act({"do": "click", "id": 2})], [("stuck", {"why": "no idea"})],
-        [("stuck", {"why": "still no idea"})]])
-    counts = [len(pictures(body)) for body in planner_bodies]
-    check("stuck: the first `stuck` sends a picture back, the second asks the user",
-          counts == [0, 0, 1] and [s["do"] for s in fake.steps].count("ask") == 1
-          and report["stopped"] == "Stuck — still no idea", (counts, report))
+        [act({"do": "click", "id": 2})], [("stuck", {"why": "no idea"})]])
+    check("stuck: the first `stuck` asks the user",
+          len(planner_bodies) == 2 and [s["do"] for s in fake.steps].count("ask") == 1
+          and report["stopped"] == "Stuck — no idea", report)
+
+    focused = draft("")
+    focused["items"][0]["state"] = ["focused"]
+    end, fake, report = run(tiny, [focused] * 2, [[("done", {"summary": "ok"})]])
+    first = text(messages(planner_bodies[0])[-1]) if planner_bodies else ""
+    check("picture: the first request shows the area around the focused field",
+          len(pictures(planner_bodies[0])) == 1 and 'the screen around "To"' in first, first)
     tiny.process.stdin.close()
     tiny.process.wait(timeout=10)
 
@@ -1950,9 +1928,9 @@ def grounding_checks(url, user, plans_url):
     end, fake, report = run(off, [home] * 6, [
         [act({"do": "click", "id": 2})], [act({"do": "click", "id": 2})], [("read", {})],
         [("done", {"summary": "ok"})]])
-    check("ground off: no `ground` tool, no word of it, and no picture on a stuck turn",
-          "ground" not in names(0) and "`ground`" not in json.dumps(planner_bodies[0])
-          and all(not pictures(body) for body in planner_bodies) and len(planner_bodies) == 4,
+    check("ground off: no `ground` tool and no word of it, and the picture still goes",
+          "ground" not in names(0) and "ground" not in json.dumps(planner_bodies[2])
+          and len(pictures(planner_bodies[2])) == 1 and len(planner_bodies) == 4,
           (names(0), len(planner_bodies)))
     off.process.stdin.close()
     off.process.wait(timeout=10)
@@ -2003,8 +1981,8 @@ def surprise_checks(url, user, plans_url):
                             [0.9])
     step = read_json(root, recorded(root)[-1], "steps", "01.json")
     sent = visible_bodies[0] if visible_bodies else {}
-    check("expect: a true expect says nothing, and the next request has no picture",
-          "not what happened" not in result(2) and efforts()[2] == ("low", 0)
+    check("expect: a true expect says nothing",
+          "not what happened" not in result(2)
           and end["end"] == "done", (result(2), efforts()))
     check("expect: Jev is asked about it with the fields' values, and the step records it",
           sent.get("questions", {}).get("visible", {}).get("instructions")
@@ -2022,8 +2000,8 @@ def surprise_checks(url, user, plans_url):
           f'type “To” = “Alex” — "To" now holds "Alex" — expected "{expect}", not what happened'
           in got and any(f'expected "{expect}", not what happened' in " ".join(t["notes"])
                          for p in runner.progress for t in p.get("plan") or ()), got)
-    check("expect: every request reasons at low; the next one has a picture, the one after not",
-          efforts()[:4] == [("low", 0), ("low", 0), ("low", 1), ("low", 0)], efforts())
+    check("reasoning: every request reasons at low; each after the typing has one picture",
+          efforts() == [("low", 0), ("low", 0)] + [("low", 1)] * (len(efforts()) - 2), efforts())
 
     slack = "\u00a0 Alex Moreau \u00a0 \u00a0"
     end, fake, report = run([draft(slack), draft("\u00a0 Antonio \u00a0")] * 3,
@@ -2032,15 +2010,15 @@ def surprise_checks(url, user, plans_url):
                              [plan(("Add Antonio", "completed"))], [("done", {"summary": "ok"})]])
     got = result(2)
     step = read_json(root, recorded(root)[-1], "steps", "01.json")
-    check("lost: a step that took a name out of its field says so, and the next request has a picture",
-          'this step removed "Alex Moreau" from "To"' in got and efforts()[2][1] == 1
+    check("lost: a step that took a name out of its field says so",
+          'this step removed "Alex Moreau" from "To"' in got
           and step["lost"] == '"Alex Moreau"', (got, efforts(), step.get("lost")))
     end, fake, report = run([draft("Alex"), draft("Alex, Antonio")] * 3,
                             [[plan(("Add Antonio", "in_progress"))],
                              [act({"do": "type", "id": 1, "value": "Antonio"})], [("read", {})],
                              [plan(("Add Antonio", "completed"))], [("done", {"summary": "ok"})]])
     check("lost: a name added after another loses nothing",
-          "removed" not in result(2) and efforts()[2][1] == 0, (result(2), efforts()))
+          "removed" not in result(2), result(2))
 
     both = "To holds Alex Moreau and Antonio"
     end, fake, report = run(

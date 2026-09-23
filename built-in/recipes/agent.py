@@ -32,10 +32,10 @@ most 600×400 points, and gives it a point ID that `act` clicks at
 (`ground.py`). `actions.ground` picks TinyClick or the planner's model; off,
 there is no `ground` tool.
 
-A stuck turn gets a picture. After a surprise or the first `stuck`, the
-next request carries a 512 px JPEG of the area around the last target or the
-list that opened, `detail: low`. One image per request at most: `_prepare`
-drops the one before. Off, no pictures.
+Every request carries a picture of the area being worked in: a 512 px JPEG,
+`detail: low`, of the list that opened, else around the last target, else,
+on the first call, around the focused item or the gaze point. `_prepare`
+drops the one before. No screenshot, no picture.
 
 A surprise: a step failed, the same batch ran twice, `done` was refused, a
 step's `expect` is not true after it (Jev, about 0.3 s, no model call), or a
@@ -115,7 +115,8 @@ Rules:
 - Never invent a menu item or a label. Work out dates and times like "tomorrow at 10" from the date and time you are given, then find them on screen. When unsure, act one step at a time.
 - A step that changed nothing did not work. Do not repeat it: try another way.
 - Your first call is `write_plan`: the task as a few short steps. Keep the plan current: one step `in_progress`, a step `completed` once the screen shows it done, `cancelled` when it is not needed.
-- Call `done` when the task is done, `stuck` when it cannot be done here and no question would help. `done` is refused while a plan step is open."""
+- Call `done` when the task is done, `stuck` when it cannot be done here and no question would help. `done` is refused while a plan step is open.
+- The picture shows the area you are working in: check it for what the screen lines cannot say (which part of a field is selected, highlighted rows, chips, what covers what)."""
 GROUNDING = ("When a target you need has no ID in the screen lines, such as a row in a list "
              "that opened, call `ground` with what it looks like before trying another way. It "
              "returns a point ID that `act` can click.")
@@ -262,9 +263,6 @@ class Agent:
         self.grounder = GROUNDER
         # What the last step aimed at, whether it ran or not.
         self.target = None
-        # (text, JPEG, what it shows) for the next model request, after a stuck signal.
-        self.stuck = None
-        self.looked_when_stuck = False
         # The picture last shown: its box in points and its size in pixels.
         self.shown = None
         # Where the picture in the request being sent was recorded.
@@ -688,12 +686,10 @@ class Agent:
         return next((i.id for i in self.plan.now() if i.status.value == "in_progress"), None)
 
     def _surprise(self, why, note=None):
-        """Something did not go as the model expected. The next request
-        gets a picture when there is one. A second surprise on the same
-        task: the instruction to ask the user, else ""."""
+        """Something did not go as the model expected. A second surprise on
+        the same task: the instruction to ask the user, else ""."""
         if note is not False:
             self._note(note or why)
-        self._stuck(why)
         task = self._task()
         if task is None:
             return ""
@@ -912,36 +908,40 @@ class Agent:
             "tokens": found.get("tokens"), "error": found.get("error") or ""},
             found.get("image"))
 
-    def _stuck(self, why):
-        """A stuck signal: the next model request gets a picture of the area
-        around the last target, or of the list that opened. False when there
-        is nothing to show."""
+    def _area(self):
+        """(text, JPEG, what it shows) for the area being worked in, or None
+        without a screenshot."""
         shot = self.snapshot.get("shot") or {}
-        if not self.grounder.on or not shot.get("file"):
-            return False
-        opened = self._opened_region()
-        if opened is not None:
-            region, what = opened, "the list that opened"
-        elif self.target is not None:
-            region = self._region(self._refind(self.target) or self.target, "around")
-            what = f"\"{decider.label(self.target)}\""
-        else:
-            return False
+        if not shot.get("file"):
+            return None
+        region, what = self._opened_region(), "the list that opened"
+        if region is None:
+            item = self.target and (self._refind(self.target) or self.target)
+            item = item or next((i for i in self.snapshot["items"]
+                                 if "focused" in (i.get("state") or ())), None)
+            if item is not None:
+                what = f"\"{decider.label(item)}\""
+            elif any(self.aim):
+                item = {"x": self.aim[0], "y": self.aim[1], "w": 0, "h": 0}
+                what = "where the user looks"
+            else:
+                return None
+            region = self._region(item, "around")
         box = grounding.crop_box(region, shot["frame"])
         if box is None:
-            return False
+            return None
         crop = grounding.pixels(box, shot)
         try:
             image, size = grounding.jpeg(shot["file"], crop)
         except (ImportError, OSError) as error:
-            self.loop.log(f"agent: no picture for a stuck turn — {error}")
-            return False
-        text = (f"Stuck: {why}. The picture shows the screen around {what}, {size[0]}×{size[1]} "
-                "pixels. If what you need is in it, call `ground` with its description, or with "
-                "image_x and image_y, its centre in this picture's pixels.")
-        self.stuck = (text, image, {"box": box, "size": size, "why": why, "crop": crop,
-                                    "shot": shot.get("file", ""), "what": what})
-        return True
+            self.loop.log(f"agent: no picture — {error}")
+            return None
+        text = f"The picture: the screen around {what}, {size[0]}×{size[1]} pixels."
+        if self.grounder.on:
+            text += (" For a target in it with no ID, call `ground` with its description, or "
+                     "with image_x and image_y, its centre in this picture's pixels.")
+        return text, image, {"box": box, "size": size, "crop": crop,
+                             "shot": shot.get("file", ""), "what": what}
 
     def _sent(self):
         """The request as recorded: the instructions as a system message, then
@@ -1081,22 +1081,21 @@ def _is_picture(part):
 
 
 def _picture(ctx: pai.RunContext[Agent], messages):
-    """The picture for a stuck turn, on the request about to be sent. The
-    one before is dropped: one picture per request, only after a signal."""
+    """The picture of the working area, on the request about to be sent.
+    The one before is dropped: one picture per request."""
     deps = ctx.deps
     messages = [dataclasses.replace(m, parts=[p for p in m.parts if not _is_picture(p)])
                 if isinstance(m, pai.ModelRequest) and any(_is_picture(p) for p in m.parts)
                 else m for m in messages]
-    if deps.stuck is None or not isinstance(messages[-1], pai.ModelRequest):
+    area = deps._area() if isinstance(messages[-1], pai.ModelRequest) else None
+    if area is None:
         return messages
-    text, image, shown = deps.stuck
-    deps.stuck = None
+    text, image, shown = area
     deps.shown = shown
     deps.sent_image = deps.loop.recorder.ground({
-        "method": "image", "description": shown["what"], "why": shown["why"],
+        "method": "image", "description": shown["what"],
         "region": Agent._centred(shown["box"]), "crop": shown["crop"], "shot": shown["shot"]},
         image)
-    deps.loop.log(f"agent: a picture of {shown['what']} goes with the next call — {shown['why']}")
     part = pai.UserPromptPart([text, pai.BinaryContent(image, media_type="image/jpeg",
                                                        vendor_metadata={"detail": "low"})])
     messages[-1] = dataclasses.replace(messages[-1], parts=[*messages[-1].parts, part])
@@ -1126,9 +1125,6 @@ async def _check_end(ctx: pai.RunContext[Agent], output):
             ask = deps._surprise("`done` was refused", False)
             raise pai.ModelRetry(f"Not done: '{still[0].content}' is still open. Finish it, "
                                  "or cancel it with a reason." + (f" {ask}" if ask else ""))
-    elif deps.loop.execute and not deps.looked_when_stuck and deps._stuck("you called `stuck`"):
-        deps.looked_when_stuck = True
-        raise pai.ModelRetry("Before you give up, look at the picture that follows.")
     elif deps.loop.execute and not deps.asked_when_stuck:
         # Seen 09-23: stuck after leaving the event form by mistake. The
         # user could have said "go back to the form".

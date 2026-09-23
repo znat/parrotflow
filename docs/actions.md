@@ -574,8 +574,7 @@ without a model call:
   do other fields. Over 72 recorded steps with a target, it fired 3 times,
   and each time a recipient had been removed.
 
-A surprise ends the batch and is a note under the task in progress. The next
-request carries the stuck picture (below).
+A surprise ends the batch and is a note under the task in progress.
 
 A second surprise on the same task adds to the result: "Two steps surprised
 you on this task. Call `ask` now: …". If the model's next tool is not `ask` or
@@ -661,13 +660,16 @@ helper takes about 1 GB while it is up.
 Numbered boxes drawn on the picture (set-of-marks) did worse for Luna, 28/42
 at 512 px, so it is asked for a point.
 
-**A stuck turn gets a picture.** Unless `ground` is off, the request after a
-stuck signal carries a picture of the area around the last target, or of
-the list that opened: 512 px on its long side, `detail: low`, with a line
-that says what it shows and that the model may answer with `ground`, by
-description, or by `image_x` and `image_y` in the picture. The signals: a
-[surprise](#surprises), or the first `stuck`, which then goes back to the
-model with the picture before the user is asked. One picture per request at most, and none on other turns.
+**Every request gets a picture** of the area being worked in: the list that
+opened, else around the last target, else, on the first call, around the
+focused item or the gaze point. 512 px on its long side, `detail: low`, about
+300 tokens. A line says what it shows; with `ground` on, it adds that the
+model may answer with `ground`, by description, or by `image_x` and `image_y`
+in the picture. The system prompt asks the model to check it for what the
+screen lines cannot say: which part of a field is selected, highlighted rows,
+chips, what covers what. Only the newest request keeps its picture. No
+screenshot (no Screen Recording, or none of the above to centre on), no
+picture.
 
 No automatic `ground` call. An `act` step names its target by ID only, so a
 step aimed at something with no ID carries no words to look for. A step on
@@ -804,7 +806,7 @@ A run's folder, written by `built-in/recipes/runlog.py`:
 | `trees/NN.json` | Every read of the window, raw: all items, not only those shown, with the window frame. `shot` is the screenshot's file, its frame in screen points (top left and size), its scale in pixels per point and its size in pixels. `seen` is every line of text read from it, and `seen_ms` the time; a step's `change.seen` and `change.still` are the lines it reported. |
 | `shots/NN.jpg` | The screenshot of that read, cut to the window, JPEG at 0.7. Taken right after the walk, without ParrotFlow's own panels. Without Screen Recording there is none: `shot` is null and `shot_error` says why. |
 | `looks/NN.json` | A `look`: the region and the lines read. |
-| `grounds/NN.json` | A `ground` call or a stuck turn's picture: the method (`tinyclick`, `luna`, or `image`), the description, the region in points, the crop in the shot's pixels, the point or null, ms, and Luna's tokens. |
+| `grounds/NN.json` | A `ground` call or a request's picture: the method (`tinyclick`, `luna`, or `image`), the description, the region in points, the crop in the shot's pixels, the point or null, ms, and Luna's tokens. |
 | `grounds/NN.jpg` | The JPEG the model got for it. |
 
 The agent records everything. The plan path records its call, its steps and

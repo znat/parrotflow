@@ -1025,11 +1025,6 @@ class Loop:
                  + (f"{via}: {decider.prefix(answer, 120)}" if answer else f"no answer ({via})"))
         return answer or None, via
 
-    def _typed(self):
-        where = self.__dict__.pop("typing", None)
-        if where is not None:
-            self.__dict__.setdefault("typed", set()).add(where)
-
     def _allowed(self, question, near=None):
         """The answer to a step a guard would refuse, as `verdict` reads it:
         YES, None for no (no answer is no), or other words."""
@@ -1116,19 +1111,6 @@ class Loop:
             if unsaid and answer != YES:
                 return (self._refused(answer, "would type words that were not said: "
                                       + ", ".join(unsaid[:4])), snapshot, aim, "")
-        if do in ("type", "write") and value:
-            typed = self.__dict__.setdefault("typed", set())
-            where = (item["name"] if item else step.get("target", ""), value)
-            if where in typed:
-                answer = self._allowed(f"Type “{decider.prefix(value, 40)}” there again?",
-                                       frame(item))
-                if answer != YES:
-                    return (self._refused(answer, f"“{decider.prefix(value, 40)}” was already "
-                                          "typed there; its list may be open: pick from it or "
-                                          "read the screen"), snapshot, aim, "")
-            # Counted once typed. Seen 09-23: a click refused as covered
-            # typed nothing, and the retry was asked about as a repeat.
-            self.typing = where
         if do == "key" and value == "cmd+a":
             role = self.call("focus", app=snapshot["app"]).get("role")
             if role in ONE_LINE:
@@ -1160,7 +1142,6 @@ class Loop:
                 return "nothing to type", snapshot, aim, ""
             self.front()
             self.act("paste" if do == "write" else "type", text=value)
-            self._typed()
         else:
             target, why = (item, None) if item is not None else self._find(step, snapshot)
             if target is None:
@@ -1201,7 +1182,6 @@ class Loop:
                 # Key presses for `type`, the paste for `write`. Seen 09-23 in
                 # Outlook: the time field's hour ignored a pasted "11" three times.
                 self.act("type" if do == "type" else "paste", text=value)
-                self._typed()
         report.acted = True
         time.sleep(0.5)
         now = self._read(aim, snapshot["app"])

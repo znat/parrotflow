@@ -297,8 +297,8 @@ class Channel:
         self.state = {}
         self.shown = None
         self.sent_at = 0.0
-        # Where each read's picture goes when runs are not recorded and
-        # `ground` needs one. Overwritten by the next read.
+        # Where each read's picture goes when runs are not recorded and the
+        # agent needs one. Overwritten by the next read.
         self.shots = None
 
     def send(self, message):
@@ -504,7 +504,7 @@ def main():
         return refuse(channel, NEEDS)
     jev = judge.Jev.from_env()
     planner = planning.Planner.from_env()
-    if agent.GROUNDER.on and planner is not None and planner.loop == "agent":
+    if planner is not None and planner.loop == "agent":
         channel.shots = os.path.join(tempfile.gettempdir(), f"parrotflow-shot-{os.getpid()}.jpg")
     channel.send({"up": os.getpid()})
     while True:
