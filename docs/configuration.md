@@ -58,7 +58,7 @@ feedback:
   sound: true
   overlay: true
   correct_offer: true
-  theme: system          # system contrasts with macOS; or force dark / light
+  theme: system          # follows macOS; or force dark / light
   primary_color: "#5F46CA"
 
 logging:
@@ -1125,11 +1125,10 @@ still scores near 0.93 — the word colour catches that, and this number does
 not.
 
 `theme` chooses the appearance of the floating Context surfaces: the recording
-and feedback pill, and the startup model panel. `dark` and `light` force those
-literal appearances. The default, `system`, deliberately **contrasts with** the
-current macOS appearance: a light Mac gets dark floating surfaces, and a dark
-Mac gets light floating surfaces. It updates when macOS changes appearance and
-when `config.yaml` is saved; no restart is needed.
+and feedback pill, the startup model panel, and the vocabulary editor. `dark`
+and `light` force those literal appearances. The default, `system`, follows the
+current macOS appearance. It updates when macOS changes appearance and when
+`config.yaml` is saved; no restart is needed.
 
 This does not sample or guess the background of whichever app is frontmost.
 The regular titled setup window continues to follow macOS so its native controls

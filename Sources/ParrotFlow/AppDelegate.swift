@@ -950,6 +950,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pill.model.theme = config.feedback.theme
         launch.primaryColor = config.feedback.primaryColor
         launch.theme = config.feedback.theme
+        correctionPanel.primaryColor = config.feedback.primaryColor
+        correctionPanel.theme = config.feedback.theme
 
         configProblems = config.problems()
         for problem in configProblems { Log.write("config: \(problem)") }

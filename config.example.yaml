@@ -38,12 +38,12 @@ audio:
   second_opinion: true
 
 feedback:
-  # Floating Context surfaces contrast with macOS by default: dark on a light
-  # desktop, light on a dark desktop. Use dark or light to force one literally.
+  # Floating Context surfaces follow macOS by default. Use dark or light to
+  # force one literally.
   theme: system
 
-  # Primary Context colour for the pill and startup screen, as #RRGGBB. Dark
-  # appearance keeps the hue and lifts it when needed for contrast.
+  # Primary Context colour for the pill, startup screen and vocabulary editor,
+  # as #RRGGBB. Dark appearance lifts the hue when needed for contrast.
   primary_color: "#5F46CA"
 
 logging:

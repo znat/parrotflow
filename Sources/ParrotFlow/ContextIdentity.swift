@@ -3,9 +3,8 @@ import SwiftUI
 
 /// Which appearance the floating Context surfaces use.
 ///
-/// `system` is deliberately contrastive rather than a synonym for following
-/// macOS: a dark desktop gets a light floating surface, and a light desktop
-/// gets a dark one. Explicit `dark` and `light` are literal overrides.
+/// `system` follows the current macOS appearance. Explicit `dark` and `light`
+/// are literal overrides.
 enum ContextAppearance: String, Codable, CaseIterable {
     case dark, light, system
 
@@ -13,7 +12,7 @@ enum ContextAppearance: String, Codable, CaseIterable {
         switch self {
         case .dark: return .dark
         case .light: return .light
-        case .system: return system == .dark ? .light : .dark
+        case .system: return system
         }
     }
 }
@@ -75,6 +74,13 @@ enum ContextIdentity {
         return pole
     }
 
+    /// Whichever neutral has more contrast with a filled accent. The accent is
+    /// configurable, so its label cannot safely assume white or charcoal from
+    /// the surrounding appearance alone.
+    static func foreground(on color: NSColor) -> NSColor {
+        contrast(.white, color) >= contrast(.black, color) ? .white : .black
+    }
+
     private static func contrast(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
         let a = luminance(lhs)
         let b = luminance(rhs)
@@ -114,6 +120,36 @@ struct ContextTheme {
     /// appearance keeps the established Parrot colours.
     var caution: Color { dark ? Parrot.amber : Color(hex: 0x8A5A00) }
     var failure: Color { dark ? Parrot.scarlet : Color(hex: 0x9D3732) }
+    /// Text set directly on the configurable accent.
+    var onAccent: Color {
+        let fill = ContextIdentity.accent(primaryHex, dark: dark)
+        return Color(nsColor: ContextIdentity.foreground(on: fill))
+    }
+}
+
+struct ContextSurface<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let border: Color
+    let theme: ContextTheme
+    @Environment(\.displayScale) private var scale
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                shape.fill(theme.hardShadow)
+                    .offset(x: ContextIdentity.shadowOffset, y: ContextIdentity.shadowOffset)
+                shape.fill(theme.surface)
+            }
+            .overlay(shape.strokeBorder(border, lineWidth: 1 / scale))
+    }
+}
+
+extension View {
+    func contextSurface<S: InsettableShape>(
+        _ shape: S, border: Color, theme: ContextTheme
+    ) -> some View {
+        modifier(ContextSurface(shape: shape, border: border, theme: theme))
+    }
 }
 
 private struct ContextPrimaryColorKey: EnvironmentKey {

@@ -915,7 +915,9 @@ enum PanelsCommand {
         let asked = CorrectionModel()
         asked.load(
             rules: [(heard: "this fluency", corrected: "disfluency")],
-            over: "I wanna work on disfluency."
+            over: "I wanna work on disfluency while the vocabulary editor stays readable over"
+                + " a long terminal paragraph, keeps every field editable, and preserves the"
+                + " sentence that taught the correction."
         )
 
         // Both states of the microphone notice, because the disclosure is the
@@ -1038,7 +1040,7 @@ enum PanelsCommand {
         // legible both ways. So it appears twice, once each.
         // A nil scheme lets the surface apply its own policy to the column.
         // Context surfaces use the default `feedback.theme: system`, so they
-        // deliberately contrast with it; older floating panels that still call
+        // follow it; older floating panels that still call
         // `adoptParrotAppearance` remain explicitly dark.
         let surfaces: [(view: AnyView, size: NSSize, scheme: ColorScheme?, drawn: Bool)] = [
             // The one real window the app has, and the first thing anyone sees.
@@ -1155,13 +1157,15 @@ enum PanelsCommand {
              NSSize(width: KeyboardNoticeMetrics.width,
                     height: KeyboardNoticeMetrics.height(expanded: true)), .dark, true),
             (AnyView(CorrectionView().environmentObject(correction)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: correction.rows.count)), .dark, false),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: correction.rows.count)), nil, false),
             (AnyView(CorrectionView().environmentObject(rule)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: rule.rows.count)), .dark, false),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: rule.rows.count)), nil, false),
             (AnyView(CorrectionView().environmentObject(several)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: several.rows.count)), .dark, false),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: several.rows.count)), nil, false),
             (AnyView(CorrectionView().environmentObject(asked)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: asked.rows.count) + 44), .dark, false),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(
+                forRows: asked.rows.count, showsContext: true
+             )), nil, false),
             // The dictation panel is deliberately not here. Its field is an
             // `NSTextField` and its background is real Liquid Glass, and this
             // sheet can draw neither — it came out as a white block inside an
@@ -1189,7 +1193,7 @@ enum PanelsCommand {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: canvas)
 
-        // Context surfaces contrast with the two columns, as the default
+        // Context surfaces follow the two columns, as the default
         // `feedback.theme: system` does in production. Fixed HUDs keep their
         // own production appearance.
         for index in 0..<2 {
@@ -1478,6 +1482,16 @@ enum PanelsCommand {
         case "rule":
             correction.show(rules: [(heard: "Ver Sal", corrected: "Vercel"),
                                     (heard: "Mick", corrected: "Mik")])
+        case "proposal", "proposal-light", "proposal-dark":
+            if surface == "proposal-light" { correction.theme = .light }
+            if surface == "proposal-dark" { correction.theme = .dark }
+            correction.show(
+                rules: [(heard: "Ver Sal", corrected: "Vercel"),
+                        (heard: "Tasmine", corrected: "Tasmeen")],
+                over: "We worked with Tasmine on the Ver Sal deployment while reviewing a long"
+                    + " context sentence that has to remain readable without covering the"
+                    + " document behind the editor."
+            )
         // The panel the pill's offer opens: one line, editable, over what was
         // just dictated. A different shape from the transform preview below —
         // short enough for a field rather than an area — and the one that is
@@ -1689,7 +1703,8 @@ enum PanelsCommand {
             setupWindow = preview
         default:
             print("usage: ParrotFlow --panels <notice|caution|failure|alert|thinking|offer"
-                + "|confidence|vocabulary|punctuation|rule|dictation|preview|microphone"
+                + "|confidence|vocabulary|punctuation|rule|proposal|proposal-light"
+                + "|proposal-dark|dictation|preview|microphone"
                 + "|keyboard|pill|learn|learn-long|selector|selector-long|selector-two"
                 + "|update|models|setup|launch|sequence|tutorial|names|slack|hack"
                 + "|downloads|ready|callout> [seconds]")

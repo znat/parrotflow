@@ -2755,9 +2755,9 @@ struct Config: Decodable, Equatable {
 
         /// Appearance of the floating Context surfaces.
         ///
-        /// Explicit dark/light are literal. System is contrastive: light on a
-        /// dark macOS appearance and dark on a light one. An invalid value is
-        /// retained for `problems()` while the safe system default is used.
+        /// Explicit dark/light are literal. System follows macOS. An invalid
+        /// value is retained for `problems()` while the safe system default is
+        /// used.
         var theme: ContextAppearance = .system
         var refusedTheme: String?
 

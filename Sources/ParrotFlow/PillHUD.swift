@@ -1639,6 +1639,10 @@ enum PillMetrics {
     static let chooseLead = "Did you mean?"
     static let holdLead = "or hold"
     static let holdTail = "and say what to change"
+    /// Air above and below an expanded offer. The old 8pt was hidden inside
+    /// the 42pt collapsed height and came out closer to four at the top once
+    /// AppKit and SwiftUI rounded the stacked rows differently.
+    static let offerVerticalPadding: CGFloat = 11
     /// The keycap between the two halves of the hold line, and the gaps either
     /// side of it.
     ///
@@ -1769,9 +1773,10 @@ enum PillMetrics {
         let wrapped = max(0, chipRows(commands, lead: lead).count - 1)
         extra += CGFloat(wrapped) * (chipRowHeight + chipRowGap)
 
+        let base = chipRowHeight + offerVerticalPadding * 2
         let rows = readingRows(reading, width: width)
-        guard !rows.isEmpty else { return height + extra }
-        return height + extra + sentenceTop
+        guard !rows.isEmpty else { return base + extra }
+        return base + extra + sentenceTop
             + rows.reduce(0, +) + blockGap * CGFloat(rows.count)
     }
 
@@ -1917,6 +1922,7 @@ enum PillMetrics {
             widest = max(widest, min(
                 sentenceWidth,
                 padding * 2 + title(holdLead) + holdKeycapWidth(hotkey) + title(holdTail)
+                    + holdGap * 2 + rowFit
             ))
         }
         if !reading.words.isEmpty {
@@ -1987,6 +1993,8 @@ enum PillMetrics {
     /// The keycap on a chip: one character at 11pt bold, 4pt either side, and
     /// the 6pt between it and the words.
     static let keycap: CGFloat = 24
+    /// The two spaces around the hotkey in the spoken-command footer.
+    static let holdGap: CGFloat = 6
 
     /// A chip's words at 12pt rounded.
     ///
@@ -2141,31 +2149,6 @@ enum PillMetrics {
     static let learnFit: CGFloat = 8
     static let chipFit: CGFloat = 2
     static let rowFit: CGFloat = 4
-}
-
-private struct ContextSurface<S: InsettableShape>: ViewModifier {
-    let shape: S
-    let border: Color
-    let theme: ContextTheme
-    @Environment(\.displayScale) private var scale
-
-    func body(content: Content) -> some View {
-        content
-            .background {
-                shape.fill(theme.hardShadow)
-                    .offset(x: ContextIdentity.shadowOffset, y: ContextIdentity.shadowOffset)
-                shape.fill(theme.surface)
-            }
-            .overlay(shape.strokeBorder(border, lineWidth: 1 / scale))
-    }
-}
-
-private extension View {
-    func contextSurface<S: InsettableShape>(
-        _ shape: S, border: Color, theme: ContextTheme
-    ) -> some View {
-        modifier(ContextSurface(shape: shape, border: border, theme: theme))
-    }
 }
 
 private struct PillHeading: View {
@@ -3013,13 +2996,15 @@ private struct OfferContent: View {
     /// not draw.
     @ViewBuilder private var hold: some View {
         if showsHold {
-            HStack(spacing: 6) {
+            HStack(spacing: PillMetrics.holdGap) {
                 Text(PillMetrics.holdLead)
                 keycap(model.hotkey)
                 Text(PillMetrics.holdTail)
             }
             .font(.system(size: 12, weight: .medium, design: .rounded))
             .foregroundStyle(theme.muted)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, PillMetrics.padding)
             // Under the chips and lined up with them: on a panel pinned to a
             // character everything reads down one left edge, and a centred
