@@ -300,6 +300,7 @@ actions:
     api_key: file:~/.openai_api_key
     reasoning: low           # the reasoning effort; empty leaves it out
     timeout_seconds: 15      # per attempt
+    review_reasoning: high   # the review after an agent run; empty leaves it out
 ```
 
 **The call.** The runner uses the official `openai` package (3.19), one
@@ -765,10 +766,54 @@ The runner sends the state with the `progress` verb (see `runner.py`).
     ParrotFlow --panels run-ask [seconds] [--at x y w h]
 
 `run` goes through a made-up run: tasks complete, a step fails, a question
-comes and is answered, the run ends, then again. `run-ask` stops on the
+comes and is answered, the run ends, a made-up review comes, then again. `run-ask` stops on the
 question and asks it again after each answer. `--at` is the question's
 anchor; without it the question stays where the panel is. Each placement is
 printed.
+
+### The review after a run
+
+After an agent run ends (done, stopped or stuck), one more model call reviews
+it and proposes memory files. It needs a planner key and `actions.record`: the
+review reads the run's recording. The end of the run is not delayed: the
+runner sends `end` first and makes the review in a thread
+(`built-in/recipes/review.py`).
+
+**What the model gets.** A digest built by code from the run folder: the
+request, the plan, each call's tools in short form, each step's outcome, the
+failures with at most five items of screen near each and the call after it,
+the user's answers, the timings, and the memory files the agent had for this
+app and for the people the request names. No screen beyond that. About
+2,000-13,000 characters on four recorded runs.
+
+**The call.** The planner's model, host and key, on the Responses API, with
+`review_reasoning` (`high` by default). 120 s per attempt, tried once more.
+The answer is strict: `next_time`, `learned`, `went_wrong` and `proposals`,
+each `{file, content, why}`. The prompt gives the rules: record the path
+that finally worked, never a detour; say where to click and what the screen
+shows; update a file rather than add one; people facts only from the user's
+answers; `steps:` only for gestures that succeeded in this run, each with a
+check; nothing when nothing new was learned; short files.
+
+**What code drops.** A proposal whose file is not `<app folder>/<name>.md` or
+`people/<first name>.md`, one without front matter or over 2,500 characters,
+a `steps:` block that `skills.problems` rejects, and a step that clicks a
+control no step of this run clicked without an error. At most 4 are shown.
+
+**The panel.** Under the run's outcome, "Reviewing the run…", then the
+report: next time, what was learned, where the time went (computed from the
+recording's `ms`, not by the model), what went wrong. Then each proposal:
+its file, `new` or `update`, why, and **Keep** / **Drop**. A click on the
+file name shows its content. When each proposal has an answer, the kept files
+are written under `<config>/memories/`, folders made as needed. Closed, or no
+answer in 5 minutes, and nothing is written. A new request drops a review
+that was not answered.
+
+**Between runs.** The review is sent once, and only while no request is
+served. The app listens for it until the review comes, 5 minutes pass, or a
+new request starts. A review sent just as a request came is dropped on both
+sides. `review.json` in the run folder holds the digest, the report, the
+proposals shown, those dropped and why, and what was kept.
 
 ## Measuring it
 
@@ -827,6 +872,7 @@ A run's folder, written by `built-in/recipes/runlog.py`:
 | `looks/NN.json` | A `look`: the region and the lines read. |
 | `grounds/NN.json` | A `ground` call or a request's picture: the method (`tinyclick`, `luna`, or `image`), the description, the region in points, the crop in the shot's pixels, the point or null, ms, and Luna's tokens. |
 | `grounds/NN.jpg` | The JPEG the model got for it. |
+| `review.json` | The review after the run: the digest, the report, the proposals shown and those dropped with why, whether it was shown, what was kept and how it ended (`answered`, `closed`, `timeout`, `superseded`). The review's model call is `calls/NN.json` with `kind: review`. |
 
 The agent records everything. The plan path records its call, its steps and
 its trees. A recipe and the Jev loop record the run, the trees and one step
@@ -952,3 +998,4 @@ Measured, or seen once and not yet measured. None of it is fixed.
 | The planner: context, prompt, the call | `built-in/recipes/planner.py` |
 | Following a plan, the re-plan triggers | `built-in/recipes/loop.py` (`_planned`) |
 | Recording a run, the run viewer | `built-in/recipes/runlog.py`, `scripts/trace-viewer/` |
+| The review after a run, the proposals | `built-in/recipes/review.py`, `QuestionPanel.swift` |

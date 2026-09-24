@@ -36,6 +36,9 @@ agent_turns = []
 # `ground` through the planner's model: its answers, and what it was sent.
 luna_points = []
 luna_bodies = []
+# The review after a run: the model's answers, and what it was sent.
+review_turns = []
+review_bodies = []
 PLAN_TOOLS = {"write_plan", "read_plan", "add_task", "update_task_status", "update_task_statuses",
               "remove_task"}
 
@@ -140,9 +143,16 @@ class FakePlanner(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
-        planner_bodies.append(body)
+        reviewing = any(t.get("name") == "review" for t in body.get("tools") or ())
+        if reviewing:
+            review_bodies.append(body)
+        else:
+            planner_bodies.append(body)
         if self.path.endswith("/responses"):
-            turn = agent_turns.pop(0) if agent_turns else [("stuck", {"why": "no turn left"})]
+            if reviewing:
+                turn = [("review", review_turns.pop(0))]
+            else:
+                turn = agent_turns.pop(0) if agent_turns else [("stuck", {"why": "no turn left"})]
             k = len(planner_bodies)
             output = [{"type": "function_call", "id": f"fc_{k}_{n}", "call_id": f"call_{k}_{n}",
                        "name": name, "arguments": json.dumps(args), "status": "completed"}
@@ -2203,6 +2213,174 @@ def surprise_checks(url, user, plans_url):
           kept and PLANNER_KEY not in kept and "test-key" not in kept)
 
 
+def within(runner, seconds=10):
+    """The runner's next line, or None after `seconds`. A reader left waiting
+    takes the next line, so only a last read may time out; it ends when the
+    runner does."""
+    got = []
+    reader = threading.Thread(target=lambda: got.append(runner.process.stdout.readline()),
+                              daemon=True)
+    reader.start()
+    reader.join(seconds)
+    return json.loads(got[0]) if got and got[0] else None
+
+
+def waited(test, seconds=5):
+    import time
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if test():
+            return True
+        time.sleep(0.05)
+    return test()
+
+
+def review_checks(url, user, plans_url):
+    """The review after a run, `review.py`: the digest, the rules, the
+    proposals, and nothing written without Keep."""
+    root = tempfile.mkdtemp()
+    config = tempfile.mkdtemp()
+    memories = os.path.join(config, "memories")
+    os.makedirs(os.path.join(memories, "test"))
+    existing = os.path.join(memories, "test", "open-settings.md")
+    before = "---\napp: Test\ngoal: open the settings\nwhen: Test is open\n---\nClick Settings.\n"
+    with open(existing, "w", encoding="utf-8") as handle:
+        handle.write(before)
+    trace = os.path.join(tempfile.mkdtemp(), "agent.jsonl")
+    runner = Runner(url, user, extra=planner_env(
+        plans_url, PARROTFLOW_PLANNER_LOOP="agent", PARROTFLOW_PLANNER_TRACE=trace,
+        PARROTFLOW_RUNS=root, PARROTFLOW_APP_NOTES=os.path.join(config, "apps")))
+
+    home = panel("Home", ["General", "Settings", "Leave"])
+    menu = panel("Home", ["General", "Settings", "Leave", "Mute channel"])
+    muted = panel("Home — muted", ["General", "Settings", "Leave", "Unmute channel"])
+    updated = ("---\napp: Test\ngoal: open the settings\nwhen: Test is open\n"
+               "seen: 2026-09-24 (worked)\n---\nClick Settings. The menu shows Mute channel.\n")
+    alex = "---\nkind: person\nseen: 2026-09-24 (the user chose)\n---\nAlex is Alex Moreau.\n"
+    answer = {
+        "next_time": "Click Settings first, then Mute channel.",
+        "learned": ["Settings opens a menu with Mute channel."],
+        "went_wrong": ["General failed; Settings worked."],
+        "proposals": [
+            {"file": "test/open-settings.md", "content": updated, "why": "says what the menu shows"},
+            {"file": "people/alex.md", "content": alex, "why": "which Alex"},
+            {"file": "test/mute.md", "why": "a skill",
+             "content": "---\ngoal: mute\nparams: []\nsteps:\n  - click the settings | looks muted\n"
+                        "---\nMute.\n"},
+            {"file": "test/leave.md", "why": "a skill",
+             "content": "---\ngoal: leave\nparams: []\nsteps:\n  - click Button \"Leave\" | "
+                        "appears \"Rejoin\"\n---\nLeave.\n"},
+            {"file": "../evil.md", "content": "---\ngoal: x\n---\nx\n", "why": "outside"}]}
+
+    def run(fake=None):
+        agent_turns[:] = [
+            [act({"do": "click", "id": 2}, {"do": "click", "id": 1})],
+            [("ask", {"question": "Which Alex?", "options": ["Alex Moreau", "Alex Other"]})],
+            [("done", {"summary": "ok"})]]
+        review_turns[:] = [answer]
+        del review_bodies[:]
+        fake = fake or Screen([home, menu, muted], {
+            ("press", 2): {"error": "no such element"},
+            ("ask", 1): {"answer": "Alex Moreau", "via": "option"}})
+        end, fake = runner.run("mute this channel for alex", "Test", fake=fake, loop=LOOP,
+                               recipes=False, review=True)
+        return end, os.path.join(root, recorded(root)[-1])
+
+    end, folder = run()
+    line = within(runner)
+    check("review: the end names the review, and the review comes after it",
+          end.get("review") == os.path.basename(folder) and line is not None
+          and line.get("do") == "review" and line.get("id") == end["review"], (end, line))
+    line = line or {}
+    body = review_bodies[0] if review_bodies else {}
+    sent = "".join(text(m) for m in messages(body)[1:]) if body else ""
+    rules = ["Never record a detour", "Be specific and actionable",
+             "Prefer updating an existing file", "Facts about people come only from the user's answers",
+             "Add a `steps:` block only when those exact gestures succeeded in this run",
+             "No proposal when the run taught nothing new", "Keep files short"]
+    check("review: the prompt says the rules for proposals",
+          all(rule in (body.get("instructions") or "") for rule in rules),
+          [r for r in rules if r not in (body.get("instructions") or "")])
+    check("review: one call, with high reasoning by default",
+          len(review_bodies) == 1 and (body.get("reasoning") or {}).get("effort") == "high",
+          body.get("reasoning"))
+    want = ["Request: mute this channel for alex", "App folder: test",
+            "act click Button \"Settings\"; click Button \"General\"", "step 1: click “Settings”",
+            "Failures:", "no such element", "then: ask", "The user's answers:",
+            "Which Alex? — The user answered: Alex Moreau", "Time:", "model calls",
+            "=== test/open-settings.md", "Click Settings."]
+    check("review: the digest holds the calls, the steps, the failure, the answers, the time "
+          "and the memory files", all(w in sent for w in want),
+          ([w for w in want if w not in sent], sent[:3000]))
+    check("review: the digest has no screen beyond a few lines",
+          sent.count("Button \"Leave\"") <= 1 and len(sent) < 4000, len(sent))
+    report = line.get("report") or {}
+    check("review: the report has the model's three parts and the timings from code",
+          report.get("next_time") == answer["next_time"]
+          and report.get("learned") == answer["learned"]
+          and report.get("went_wrong") == answer["went_wrong"]
+          and any("model calls" in t for t in report.get("time") or ())
+          and any("steps" in t and "slowest" in t for t in report.get("time") or ()), report)
+    proposals = line.get("proposals") or []
+    check("review: proposals parsed; a new file and an update say which",
+          [(p["file"], p["exists"]) for p in proposals]
+          == [("test/open-settings.md", True), ("people/alex.md", False)]
+          and proposals[0]["content"] == updated and proposals[1]["why"] == "which Alex",
+          proposals)
+    record = read_json(folder, "review.json") if os.path.exists(os.path.join(folder, "review.json")) else {}
+    dropped = {d["file"]: d["why"] for d in record.get("dropped") or ()}
+    check("review: steps that skills.parse cannot read, a click that did not succeed, and a "
+          "file outside the memories are dropped",
+          dropped.get("test/mute.md", "").startswith("steps: cannot do")
+          and "Leave" in dropped.get("test/leave.md", "") and "../evil.md" in dropped
+          and record.get("shown") is True and record.get("kept") is None, record)
+    calls = sorted(os.listdir(os.path.join(folder, "calls")))
+    call = read_json(folder, "calls", calls[-1])
+    check("review: the call is recorded with the run's calls",
+          call["kind"] == "review" and call["tools"][0]["name"] == "review"
+          and call["tools"][0]["args"]["next_time"] == answer["next_time"]
+          and read_json(folder, "run.json")["calls"] == len(calls) == 4,
+          (calls, call.get("kind"), call.get("tools")))
+
+    runner.send({"review": line.get("id"), "kept": [], "via": "closed"})
+    check("review: closed without Keep, nothing is written",
+          waited(lambda: read_json(folder, "review.json").get("via") == "closed")
+          and open(existing, encoding="utf-8").read() == before
+          and not os.path.exists(os.path.join(memories, "people", "alex.md")),
+          read_json(folder, "review.json").get("via"))
+
+    end, folder = run()
+    line = within(runner) or {}
+    runner.send({"review": line.get("id"), "kept": ["people/alex.md", "test/mute.md"],
+                 "via": "answered"})
+    written = os.path.join(memories, "people", "alex.md")
+    check("review: Keep writes that file, and a folder is made for it",
+          waited(lambda: os.path.exists(written))
+          and open(written, encoding="utf-8").read() == alex
+          and open(existing, encoding="utf-8").read() == before
+          and not os.path.exists(os.path.join(memories, "test", "mute.md"))
+          and read_json(folder, "review.json").get("kept") == ["people/alex.md"],
+          read_json(folder, "review.json").get("kept"))
+
+    end, folder = run()
+    line = within(runner) or {}
+    agent_turns[:] = [[("done", {"summary": "ok"})]]
+    runner.run("mute this channel", "Test", fake=Screen([home]), loop=LOOP, recipes=False)
+    check("review: the next request drops a review nobody answered",
+          line.get("do") == "review"
+          and read_json(folder, "review.json").get("via") == "superseded"
+          and read_json(folder, "review.json").get("kept") == [],
+          read_json(folder, "review.json").get("via"))
+
+    agent_turns[:] = [[("done", {"summary": "ok"})]]
+    end, _ = runner.run("mute this channel", "Test", fake=Screen([home]), loop=LOOP,
+                        recipes=False)
+    check("review: none unless the app asks for it", "review" not in end
+          and within(runner, 1) is None, end)
+    runner.process.stdin.close()
+    runner.process.wait(timeout=5)
+
+
 def check(name, condition, detail=""):
     print(("ok    " if condition else "FAIL  ") + name + ("" if condition else f"  {detail}"))
     if not condition:
@@ -2352,6 +2530,7 @@ def main():
     steer_checks(url, user, f"http://127.0.0.1:{plans.server_address[1]}")
     grounding_checks(url, user, f"http://127.0.0.1:{plans.server_address[1]}")
     surprise_checks(url, user, f"http://127.0.0.1:{plans.server_address[1]}")
+    review_checks(url, user, f"http://127.0.0.1:{plans.server_address[1]}")
     client_checks(f"http://127.0.0.1:{plans.server_address[1]}")
     missing_checks(url, user)
     plans.shutdown()

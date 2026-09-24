@@ -59,6 +59,10 @@ def parse(path):
             text = handle.read()
     except (OSError, UnicodeDecodeError):
         return None
+    return parse_text(text, os.path.splitext(os.path.basename(path))[0])
+
+
+def parse_text(text, name):
     head = text.split("---")
     if len(head) < 3:
         return None
@@ -80,7 +84,38 @@ def parse(path):
             in_steps = True
     if not steps:
         return None
-    return Skill(os.path.splitext(os.path.basename(path))[0], goal, params, steps)
+    return Skill(name, goal, params, steps)
+
+
+def problems(text):
+    """Why the `steps:` block of a memory would not play, one line each.
+    `parse_text` skips a line it cannot read; this names it."""
+    head = text.split("---")
+    if len(head) < 3:
+        return ["no front matter"]
+    skill = parse_text(text, "memory")
+    params = skill.params if skill else []
+    out, in_steps, found = [], False, False
+    for line in head[1].splitlines():
+        if in_steps and line.startswith((" ", "\t")):
+            step = _STEP.match(line)
+            if not step:
+                out.append(f"cannot read the step {line.strip()!r}")
+                continue
+            gesture, expect = step.group(1), step.group(2) or ""
+            if not (_CLICK.match(gesture) or re.match(r"^(type|key)\s+\S", gesture)):
+                out.append(f"cannot do {gesture!r}")
+            if expect and not any(p.match(expect) for p in (_FOCUS, _VALUE, _WINDOW, _APPEARS)):
+                out.append(f"cannot check {expect!r}")
+            unknown = [n for n in re.findall(r"\{(\w+)\}", gesture + expect) if n not in params]
+            if unknown:
+                out.append(f"{{{unknown[0]}}} is not in params")
+            continue
+        in_steps = line.partition(":")[0] == "steps"
+        found = found or in_steps
+    if found and skill is None and not out:
+        out.append("no step could be read")
+    return out
 
 
 def of_app(root, folder):

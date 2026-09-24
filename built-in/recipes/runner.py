@@ -100,6 +100,13 @@ A `snapshot` with `see: true` also carries, when `actions.see` is on and
 Screen Recording is granted, `seen`: the window's text lines as `look` gives
 them, read from the same capture, and `seen_ms`. Without it there is no
 `seen`.
+
+A `run` with `review: true` asks for a review of the run after it (see
+`review.py`). When the run gets one, its `end` carries `"review": "<id>"`.
+Later, between requests, the runner sends `{"do": "review", "id": .., ...}`
+once, and the app answers `{"review": "<id>", "kept": [..], "via": ..}`, with
+no reply back. It is never sent while a request is served: the next request
+drops a review not yet answered.
 """
 
 import importlib.util
@@ -107,6 +114,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import traceback
 import unicodedata
@@ -130,20 +138,21 @@ try:
     from judge import Failure
     import planner as planning
     import runlog as recording
+    import review as reviewing
     # 330-520 ms, once per runner, instead of on the first agent run.
     import agent  # noqa: F401
 except ImportError as error:
     missing = (error.name or "").split(".")[0]
     if missing not in PACKAGES:
         raise
-    judge = loop = planning = recording = None
+    judge = loop = planning = recording = reviewing = None
     NEEDS = (f"the action runner needs {PACKAGES[missing]}: python3 -m pip install "
              + " ".join(f"'{p}'" if "[" in p else p for p in dict.fromkeys(PACKAGES.values())))
 
 BUILT_IN = os.path.dirname(os.path.abspath(__file__))
 PROGRESS_EVERY = 0.1
 NOT_RECIPES = {"parrotflow.py", "runner.py", "decider.py", "loop.py", "planner.py", "agent.py",
-               "runlog.py", "judge.py", "ground.py", "ground_server.py"}
+               "runlog.py", "judge.py", "ground.py", "ground_server.py", "review.py"}
 
 
 class Gone(BaseException):
@@ -316,10 +325,16 @@ class Channel:
         self.shots = None
         # Seconds the app held screen steps while the user typed to the run.
         self.paused = 0.0
+        # The review thread writes too, only while no run is served.
+        self.lock = threading.RLock()
+        self.busy = False
+        self.review = None
+        self.finished = None
 
     def send(self, message):
-        self.out.write(json.dumps(message) + "\n")
-        self.out.flush()
+        with self.lock:
+            self.out.write(json.dumps(message) + "\n")
+            self.out.flush()
 
     def read(self):
         while True:
@@ -423,6 +438,7 @@ def serve(request, channel, jev, planner=None):
         return ended
     finally:
         channel.state, channel.shown = {}, None
+        channel.finished = recorder
         channel.recorder = recording.OFF
         if planner is not None:
             planner.recorder = recording.OFF
@@ -508,6 +524,14 @@ def refuse(channel, why):
         request = channel.read()
         if request is None:
             return
+        if "review" in request and "run" not in request and "decide" not in request:
+            answered(request, channel)
+            continue
+        with channel.lock:
+            channel.busy = True
+            if channel.review is not None:
+                channel.review.answered([], "superseded")
+                channel.review = None
         if "decide" in request:
             channel.send({"end": "failed", "ok": False, "error": why})
         elif "run" in request:
@@ -530,21 +554,62 @@ def main():
         request = channel.read()
         if request is None:
             return
+        if "review" in request and "run" not in request and "decide" not in request:
+            answered(request, channel)
+            continue
+        with channel.lock:
+            channel.busy = True
+            if channel.review is not None:
+                channel.review.answered([], "superseded")
+                channel.review = None
         if "decide" in request:
             try:
                 channel.send(decide(request, channel, jev))
             except Gone:
                 return
+            channel.busy = False
             continue
         if "run" not in request:
             print(f"not a request: {json.dumps(request)[:120]}")
+            channel.busy = False
             continue
+        channel.finished = None
         try:
             ended = serve(request, channel, jev, planner)
         except Gone:
             return
         ended["ok"] = ended["end"] in ("planned", "ready", "done")
-        channel.send(ended)
+        pending = review_of(request, ended, channel.finished, planner)
+        if pending is not None:
+            ended["review"] = pending.id
+        with channel.lock:
+            channel.send(ended)
+            channel.busy = False
+            channel.review = pending
+        if pending is not None:
+            reviewing.start(pending, channel)
+
+
+def review_of(request, ended, recorder, planner):
+    """The review this run gets, or None. The app asks for one with
+    `review: true`; it needs the agent, a key and a recording."""
+    if not request.get("review") or planner is None or not planner.key or recorder is None \
+            or not recorder.live or recorder.run is None or recorder.run.kind != "agent" \
+            or not recorder.counts["calls"] or ended["end"] == "planned":
+        return None
+    import agent
+    return reviewing.Pending(recorder, planner, agent.memory_root())
+
+
+def answered(message, channel):
+    """The user's choice on a review shown in the panel."""
+    with channel.lock:
+        pending = channel.review
+        if pending is None or pending.id != message.get("review"):
+            print(f"review: an answer for no review shown: {str(message.get('review'))[:80]}")
+            return
+        channel.review = None
+    pending.answered(message.get("kept") or [], message.get("via") or "answered")
 
 
 def decide(request, channel, jev):

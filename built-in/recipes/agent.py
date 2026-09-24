@@ -249,6 +249,13 @@ def memory_folder(app):
     return app if "." in app else decider.slug(app)
 
 
+def memory_paths(root, app, utterance):
+    words = set(decider._words(utterance))
+    paths = sorted(glob.glob(os.path.join(root, memory_folder(app) or "-", "*.md")))
+    return paths + [p for p in sorted(glob.glob(os.path.join(root, "people", "*.md")))
+                    if os.path.splitext(os.path.basename(p))[0].lower() in words]
+
+
 def memories(app, utterance, log):
     """Every file in `<config>/memories/<app>/`, `app` being the bundle ID
     (`com.microsoft.Outlook`) or else the name, and each `people/<name>.md`
@@ -257,10 +264,7 @@ def memories(app, utterance, log):
     root = memory_root()
     if not root:
         return ""
-    words = set(decider._words(utterance))
-    paths = sorted(glob.glob(os.path.join(root, memory_folder(app) or "-", "*.md")))
-    paths += [p for p in sorted(glob.glob(os.path.join(root, "people", "*.md")))
-              if os.path.splitext(os.path.basename(p))[0].lower() in words]
+    paths = memory_paths(root, app, utterance)
     texts = []
     for path in paths:
         try:

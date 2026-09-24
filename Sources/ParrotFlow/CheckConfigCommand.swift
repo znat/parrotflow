@@ -312,6 +312,9 @@ enum CheckConfigCommand {
                     // Same as Accessibility below: macOS credits this check to the shell.
                     emit("  · screen recording  needed for the agent's look, but not checkable from a terminal")
                     groundLines(actions, planner: planner, emit: emit)
+                    emit("      review          " + (actions.record
+                        ? "after each run, reasoning \(planner.reviewReasoning.isEmpty ? "left out" : planner.reviewReasoning); a file is saved only on Keep"
+                        : "off — it reads the recording, and record is off"))
                 }
                 if planner.apiKey.resolve() == nil {
                     emit("  ✗ actions.planner   no key, so no plan can be asked for")

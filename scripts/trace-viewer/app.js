@@ -186,6 +186,10 @@ function callSummary(call) {
   const tool = call.tools?.[0];
   if (call.error) return { ok: false, text: call.error };
   if (call.kind === "plan") return { ok: true, text: "plan" };
+  if (call.kind === "review") {
+    const files = (tool?.args?.proposals || []).map((p) => p.file);
+    return { ok: true, text: `review${files.length ? ": " + files.join(", ") : ", no proposal"}` };
+  }
   if (!tool) return { ok: false, text: "no tool" };
   const result = String(call.results?.[0]?.result || "");
   const ok = !/^(Not run|Nothing ran|Could not)/.test(result) && !/— failed:/.test(result);

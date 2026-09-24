@@ -66,6 +66,7 @@ enum Recipes {
             ] as [String: Any],
         ]
         if let aim { request["gaze"] = [Int(aim.x), Int(aim.y)] }
+        if execute, config.planner != nil { request["review"] = true }
         request["bundle"] = NSWorkspace.shared.runningApplications
             .first { $0.localizedName == app }?.bundleIdentifier ?? ""
         let ended = await RecipeProcess.shared.run(request, app: app, config: config, say: say)
