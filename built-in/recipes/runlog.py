@@ -11,6 +11,7 @@
                             grounds/NN.json a point found in the pixels (`ground`), or the
                                            picture shown to the model on a stuck turn
                             grounds/NN.jpg the JPEG sent to the model, when one was
+                            review.json    the review after the run (`review.py`)
 
 The app sets PARROTFLOW_RUNS to the folder when `actions.record` is on. No
 folder, no recording. The runner hooks `Channel.ask`: every snapshot the app
@@ -67,7 +68,7 @@ class Call(BaseModel):
     n: int
     seq: int
     at: str
-    kind: str                       # agent | plan
+    kind: str                       # agent | plan | review
     messages: List[Any]             # as sent, after history cutting
     tool_calls: List[Any] = Field(default_factory=list)
     tools: List[Any] = Field(default_factory=list)    # {name, args}, args parsed

@@ -94,6 +94,10 @@ final class RecipeProcess: @unchecked Sendable {
     private var startedWith: [String: String] = [:]
     private var starting: Task<Bool, Never>?
     private var busy = false
+    /// Between runs: waits for the review of the run that ended.
+    private var listener: Task<Void, Never>?
+    /// Long enough for a review at high reasoning, tried twice.
+    private static let reviewWait: TimeInterval = 300
 
     static var script: URL {
         ConfigStore.builtInDirectory.appendingPathComponent("recipes/runner.py")
@@ -123,6 +127,7 @@ final class RecipeProcess: @unchecked Sendable {
             return ["end": "failed"]
         }
         defer { lock.withLock { busy = false } }
+        await stopListening()
         guard await ensure(Self.environment(config)) else {
             say("✗ the action runner did not start: \(lock.withLock { self.complaints.last } ?? "no output")")
             return ["end": "failed"]
@@ -172,6 +177,11 @@ final class RecipeProcess: @unchecked Sendable {
                 break
             }
             guard let verb = message["do"] as? String else { continue }
+            if verb == "review" {
+                // Sent just as this request came: the runner drops it.
+                Log.write("recipe: a review came during a run; dropped")
+                continue
+            }
             if verb == "progress" {
                 send(await session.handle(verb, message, say: say))
                 continue
@@ -201,7 +211,67 @@ final class RecipeProcess: @unchecked Sendable {
             await MainActor.run { QuestionPanel.shared.close() }
         }
         if watching { await MainActor.run { EscapeWatch.stop() } }
+        if let id = end["review"] as? String {
+            if session.showsPanel, await MainActor.run(body: { QuestionPanel.shared.showsRun }) {
+                listen(for: id, on: lines)
+            } else {
+                send(["review": id, "kept": [String](), "via": "closed"])
+            }
+        }
         return end
+    }
+
+    // MARK: - The review after a run
+
+    /// Reads the runner's lines until the review comes, shows it, and sends
+    /// what the user kept. Only between runs: `run` stops it first.
+    private func listen(for id: String, on lines: LineBuffer) {
+        let task = Task.detached { [weak self] in
+            guard let self else { return }
+            await MainActor.run { QuestionPanel.shared.awaitReview() }
+            let deadline = Date().addingTimeInterval(Self.reviewWait)
+            var review: [String: Any]?
+            while !Task.isCancelled, Date() < deadline {
+                let (line, closed) = lines.take()
+                guard let line else {
+                    if closed { break }
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                    continue
+                }
+                guard let data = line.data(using: .utf8),
+                      let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                      message["do"] as? String == "review", message["id"] as? String == id else {
+                    Log.write("recipe: py wrote between runs: \(line.prefix(120))")
+                    continue
+                }
+                review = message
+                break
+            }
+            // Cancelled: the next request drops the review in the runner.
+            if Task.isCancelled { return }
+            guard let review, review["error"] == nil else {
+                if let error = review?["error"] as? String { Log.write("recipe: the review failed — \(error)") }
+                await MainActor.run { QuestionPanel.shared.reviewGone() }
+                self.send(["review": id, "kept": [String](), "via": review == nil ? "timeout" : "failed"])
+                return
+            }
+            let shown = RunReview(review)
+            let (kept, via) = await QuestionPanel.shared.review(shown)
+            if Task.isCancelled { return }
+            self.send(["review": id, "kept": kept, "via": via])
+            Log.write("recipe: review — kept \(kept.count) of \(shown.proposals.count) (\(via))")
+        }
+        lock.withLock { listener = task }
+    }
+
+    private func stopListening() async {
+        guard let task = lock.withLock({ () -> Task<Void, Never>? in
+            defer { listener = nil }
+            return listener
+        }) else { return }
+        task.cancel()
+        await MainActor.run { QuestionPanel.shared.dropReview() }
+        await task.value
     }
 
     /// How a run ended, for the panel, when the runner did not say.
@@ -240,6 +310,7 @@ final class RecipeProcess: @unchecked Sendable {
             env["PARROTFLOW_PLANNER_REASONING"] = planner.reasoning
             env["PARROTFLOW_PLANNER_TIMEOUT"] = String(planner.timeoutSeconds)
             env["PARROTFLOW_PLANNER_LOOP"] = planner.loop
+            env["PARROTFLOW_PLANNER_REVIEW_REASONING"] = planner.reviewReasoning
             env["PARROTFLOW_PLANNER_TRACE"] = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Logs/" + AppVariant.logFileName
                     .replacingOccurrences(of: ".log", with: "-agent.jsonl")).path

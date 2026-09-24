@@ -1422,6 +1422,26 @@ enum PanelsCommand {
                 panel.update(["plan": plan("dddcdd", notes: [2: covered]), "activity": NSNull(),
                               "outcome": "Done"])
                 panel.end(outcome: "Done")
+                panel.awaitReview()
+                await pause(2)
+                let (kept, via) = await panel.review(RunReview(
+                    nextTime: "Open a new event with ⌘N, then set Start time before the attendees.",
+                    learned: ["Typing “Peter” opens a list of people under Invite attendees."],
+                    time: ["41.2 s in all: model 24.1 s, harness 17.1 s.",
+                           "9 model calls, the slowest 3.4 s (call 5).",
+                           "7 steps, 9.8 s; the slowest: click “Start time”, 2.1 s."],
+                    wentWrong: ["Start time's open list covered Invite attendees; Return closed it."],
+                    proposals: [
+                        .init(file: "com.microsoft.Outlook/add-attendee.md",
+                              content: "---\napp: com.microsoft.Outlook\ngoal: add a person to a meeting\n"
+                                  + "---\nType the first name, then pick the row “Name, email.”.\n",
+                              why: "says which row to pick", exists: true),
+                        .init(file: "people/peter.md",
+                              content: "---\nkind: person\n---\n“Peter” at work: Peter Holm.\n",
+                              why: "you chose Peter Holm", exists: false),
+                    ]))
+                print("review: kept \(kept) via \(via)")
+                fflush(stdout)
                 await pause(6)
             }
         }

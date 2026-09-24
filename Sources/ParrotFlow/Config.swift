@@ -3137,6 +3137,9 @@ struct Config: Decodable, Equatable {
             /// "plan": one plan, Jev finds each target. "agent": the model calls
             /// tools and sees the screen after each batch (`agent.py`).
             var loop: String = "plan"
+            /// The reasoning effort of the review after an agent run
+            /// (`review.py`). Empty leaves it out.
+            var reviewReasoning: String = "high"
 
             var host: String { URL(string: endpoint)?.host ?? endpoint }
 
@@ -3144,6 +3147,7 @@ struct Config: Decodable, Equatable {
                 case model, endpoint, reasoning, loop
                 case apiKey = "api_key"
                 case timeoutSeconds = "timeout_seconds"
+                case reviewReasoning = "review_reasoning"
             }
 
             init() {}
@@ -3161,6 +3165,9 @@ struct Config: Decodable, Equatable {
                 if let v = try c.decodeIfPresent(Double.self, forKey: .timeoutSeconds) {
                     timeoutSeconds = v
                 }
+                if let v = try c.decodeIfPresent(String.self, forKey: .reviewReasoning) {
+                    reviewReasoning = v
+                }
             }
 
             func encode(to encoder: Encoder) throws {
@@ -3170,6 +3177,7 @@ struct Config: Decodable, Equatable {
                 try c.encode(reasoning, forKey: .reasoning)
                 try c.encode(loop, forKey: .loop)
                 try c.encode(timeoutSeconds, forKey: .timeoutSeconds)
+                try c.encode(reviewReasoning, forKey: .reviewReasoning)
             }
         }
 

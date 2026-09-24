@@ -152,6 +152,9 @@ enum QuestionPlacement {
     private var screen: CGRect = .zero
     /// The app that was in front when typing had to activate this one.
     private var cameFrom: NSRunningApplication?
+    private var reviewFinish: (([String], String) -> Void)?
+    private var reviewClock: DispatchWorkItem?
+    nonisolated static let reviewSeconds: TimeInterval = 300
 
     /// `near` and `window` are in accessibility coordinates. With no `near`,
     /// the panel is centred on the screen `window` is on.
@@ -170,6 +173,8 @@ enum QuestionPlacement {
                 model.outcome = nil
                 model.running = false
                 model.closable = false
+                model.review = nil
+                model.reviewing = false
             }
             model.asking = true
             model.steps = Array(steps.suffix(4))
@@ -212,6 +217,8 @@ enum QuestionPlacement {
     /// Another surface needs the screen, or the user closed the panel.
     func close() {
         if isAsking { answer(QuestionAnswer(text: nil, via: "timeout")) }
+        endReview("closed")
+        model.reviewing = false
         stopIdleEscape()
         if model.running { dismissed = true }
         showsRun = model.running
@@ -224,6 +231,9 @@ enum QuestionPlacement {
     /// accessibility coordinates: the app's window and where the user looks.
     func begin(title: String, window: CGRect?, aim: CGPoint?) {
         if isAsking { answer(QuestionAnswer(text: nil, via: "timeout")) }
+        endReview("superseded")
+        model.review = nil
+        model.reviewing = false
         stopIdleEscape()
         showsRun = true
         dismissed = false
@@ -279,6 +289,88 @@ enum QuestionPlacement {
         }
         refresh()
         startIdleEscape()
+    }
+
+    // MARK: - The review after a run
+
+    /// The runner is reviewing the run that ended: a line says so.
+    func awaitReview() {
+        guard showsRun, !model.running else { return }
+        model.reviewing = true
+        refresh()
+    }
+
+    /// No review is coming.
+    func reviewGone() {
+        model.reviewing = false
+        refresh()
+    }
+
+    /// The review under the run's outcome, with Keep and Drop on each
+    /// proposal. Returns the files kept and how it ended: `answered`,
+    /// `closed`, `timeout` or `superseded`. Nothing is kept unless every
+    /// proposal was answered.
+    func review(_ review: RunReview) async -> (kept: [String], via: String) {
+        model.reviewing = false
+        guard showsRun, !dismissed, !model.running, panel?.isVisible == true else {
+            refresh()
+            return ([], "closed")
+        }
+        endReview("superseded")
+        return await withCheckedContinuation { (done: CheckedContinuation<([String], String), Never>) in
+            reviewFinish = { done.resume(returning: ($0, $1)) }
+            model.review = review
+            model.kept = [:]
+            model.expanded = []
+            model.deciding = true
+            model.onKeep = { [weak self] in self?.choose($0, keep: $1) }
+            model.onExpand = { [weak self] in self?.expand($0) }
+            Log.write("action: review — \(review.proposals.map(\.file).joined(separator: ", "))")
+            refresh()
+            let work = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated { self?.endReview("timeout") }
+            }
+            reviewClock = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.reviewSeconds, execute: work)
+            if review.proposals.isEmpty { endReview("answered") }
+        }
+    }
+
+    /// A new request takes the panel.
+    func dropReview() {
+        endReview("superseded")
+    }
+
+    private func choose(_ index: Int, keep: Bool) {
+        guard reviewFinish != nil, let review = model.review,
+              review.proposals.indices.contains(index) else { return }
+        model.kept[index] = keep
+        refresh()
+        if model.kept.count == review.proposals.count { endReview("answered") }
+    }
+
+    private func expand(_ index: Int) {
+        if model.expanded.contains(index) {
+            model.expanded.remove(index)
+        } else {
+            model.expanded.insert(index)
+        }
+        refresh()
+    }
+
+    private func endReview(_ via: String) {
+        reviewClock?.cancel()
+        reviewClock = nil
+        guard let finish = reviewFinish else { return }
+        reviewFinish = nil
+        model.deciding = false
+        let kept = via == "answered"
+            ? (model.review?.proposals ?? []).indices.filter { model.kept[$0] == true }
+                .map { model.review!.proposals[$0].file }
+            : []
+        refresh()
+        Log.write("action: review \(via) — kept \(kept.isEmpty ? "nothing" : kept.joined(separator: ", "))")
+        finish(kept, via)
     }
 
     private func refresh() {
@@ -535,6 +627,45 @@ struct RunTask: Equatable {
     var notes: [String]
 }
 
+/// The review of a run, as the runner sends it (`review.py`).
+struct RunReview: Equatable {
+    struct Proposal: Equatable {
+        var file: String
+        var content: String
+        var why: String
+        /// It replaces a file that exists.
+        var exists: Bool
+    }
+
+    var nextTime: String
+    var learned: [String]
+    var time: [String]
+    var wentWrong: [String]
+    var proposals: [Proposal]
+
+    init(nextTime: String, learned: [String], time: [String], wentWrong: [String],
+         proposals: [Proposal]) {
+        self.nextTime = nextTime
+        self.learned = learned
+        self.time = time
+        self.wentWrong = wentWrong
+        self.proposals = proposals
+    }
+
+    init(_ message: [String: Any]) {
+        let report = message["report"] as? [String: Any] ?? [:]
+        self.init(
+            nextTime: report["next_time"] as? String ?? "",
+            learned: report["learned"] as? [String] ?? [],
+            time: report["time"] as? [String] ?? [],
+            wentWrong: report["went_wrong"] as? [String] ?? [],
+            proposals: (message["proposals"] as? [[String: Any]] ?? []).map {
+                Proposal(file: $0["file"] as? String ?? "", content: $0["content"] as? String ?? "",
+                         why: $0["why"] as? String ?? "", exists: $0["exists"] as? Bool ?? false)
+            })
+    }
+}
+
 final class QuestionModel: ObservableObject {
     @Published var title = ""
     @Published var plan: [RunTask]?
@@ -551,6 +682,16 @@ final class QuestionModel: ObservableObject {
     @Published var hotkey: String?
     @Published var primaryColor = ContextIdentity.defaultPrimary
     @Published var theme: ContextAppearance = .system
+    /// The runner is reviewing the run that ended.
+    @Published var reviewing = false
+    @Published var review: RunReview?
+    /// Proposal index: kept or dropped.
+    @Published var kept: [Int: Bool] = [:]
+    @Published var expanded: Set<Int> = []
+    /// Keep and Drop are offered.
+    @Published var deciding = false
+    var onKeep: ((Int, Bool) -> Void)?
+    var onExpand: ((Int) -> Void)?
     var onPick: ((Int) -> Void)?
     var onSubmit: (() -> Void)?
     var onCancel: (() -> Void)?
@@ -594,6 +735,13 @@ struct QuestionView: View {
                 if model.typing { field }
             } else {
                 status
+                if model.reviewing {
+                    Text("Reviewing the run…")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(theme.muted)
+                        .padding(.top, 6)
+                }
+                if let review = model.review { reviewed(review) }
             }
             footer
         }
@@ -701,6 +849,110 @@ struct QuestionView: View {
         }
     }
 
+    private func reviewed(_ review: RunReview) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            reviewPart("Next time", [review.nextTime].filter { !$0.isEmpty })
+            reviewPart("Learned", review.learned)
+            reviewPart("Where the time went", review.time)
+            reviewPart("What went wrong", review.wentWrong)
+            ForEach(Array(review.proposals.enumerated()), id: \.offset) { index, proposal in
+                proposalRow(index, proposal)
+            }
+        }
+        .padding(.top, 12)
+    }
+
+    @ViewBuilder private func reviewPart(_ title: String, _ lines: [String]) -> some View {
+        if !lines.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(theme.muted)
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(theme.foreground)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func proposalRow(_ index: Int, _ proposal: RunReview.Proposal) -> some View {
+        let open = model.expanded.contains(index)
+        let choice = model.kept[index]
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                Button { model.onExpand?(index) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: open ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(theme.muted)
+                            .frame(width: 10)
+                        Text(proposal.file)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(theme.foreground)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text(proposal.exists ? "update" : "new")
+                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(theme.muted)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(open ? "Hide the file" : "Show the file")
+                Spacer(minLength: 0)
+                if model.deciding, choice == nil {
+                    choiceButton("Keep", lit: true) { model.onKeep?(index, true) }
+                    choiceButton("Drop", lit: false) { model.onKeep?(index, false) }
+                } else {
+                    Text(choice == true ? (model.deciding ? "Keeping" : "Saved")
+                         : choice == false ? "Dropped" : "Not saved")
+                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(choice == true ? theme.accent : theme.muted)
+                }
+            }
+            Text(proposal.why)
+                .font(.system(size: 12, design: .rounded))
+                .foregroundStyle(theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            if open {
+                Text(proposal.content)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(theme.foreground)
+                    .lineLimit(40)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(theme.controlFill, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+        }
+        .padding(8)
+        .overlay {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .strokeBorder(theme.controlEdge, lineWidth: 1)
+        }
+    }
+
+    private func choiceButton(_ title: String, lit: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(lit ? theme.accent : theme.muted)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3)
+                .background(lit ? theme.accent.opacity(0.13) : theme.controlFill,
+                            in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(lit ? theme.accent.opacity(0.65) : theme.controlEdge, lineWidth: 1)
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
     private var steps: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(Array(model.steps.enumerated()), id: \.offset) { _, step in
@@ -789,6 +1041,7 @@ struct QuestionView: View {
     }
 
     private var footerText: String {
+        if model.deciding { return "keep or drop each · esc closes and saves nothing" }
         if !model.asking { return model.running ? "esc stops" : "esc closes" }
         var parts: [String] = []
         if model.typing { parts.append("↩ sends") }

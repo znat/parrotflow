@@ -190,6 +190,18 @@ models:
 #     api_key: file:~/.typesafe_api_key
 #     timeout_seconds: 10
 #
+#   # A remote chat model that plans the steps, or calls tools with
+#   # `loop: agent`. It gets the request and the names of the controls on
+#   # screen. After an agent run, one more call reviews the recording and
+#   # proposes memory files, which you keep or drop in the run panel.
+#   # review_reasoning is that call's effort; empty leaves it out.
+#   planner:
+#     model: gpt-5.6-luna
+#     api_key: file:~/.openai_api_key
+#     loop: agent
+#     reasoning: none
+#     review_reasoning: high
+#
 #   # Whether Return is pressed after a message is typed. Off: the words land
 #   # in the composer and you send them yourself.
 #   send: false

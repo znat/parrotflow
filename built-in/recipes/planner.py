@@ -14,6 +14,8 @@ without `/chat/completions`. Each attempt may take PARROTFLOW_PLANNER_TIMEOUT
 seconds, and a failed attempt is tried twice more (see `Planner.client`).
 PARROTFLOW_PLANNER_LOOP=agent hands the run to `agent.py` instead of a plan;
 PARROTFLOW_PLANNER_TRACE is where it writes one JSON line per call.
+PARROTFLOW_PLANNER_REVIEW_REASONING is the effort of the review after a run
+(`review.py`), `high` by default.
 """
 
 import asyncio
@@ -302,8 +304,9 @@ def base_url(endpoint):
 
 class Planner:
     def __init__(self, url, key, model, reasoning="none", timeout=15.0, source="",
-                 loop="plan", trace=""):
+                 loop="plan", trace="", review_reasoning="high"):
         self.url = urllib.parse.urlsplit(url)
+        self.review_reasoning = review_reasoning
         self.loop = loop
         self.trace = trace
         self.key = key
@@ -334,6 +337,7 @@ class Planner:
             env.get("PARROTFLOW_PLANNER_LOOP", "plan").strip() or "plan",
             env.get("PARROTFLOW_PLANNER_TRACE", "")
             or os.path.expanduser("~/Library/Logs/ParrotFlow-agent.jsonl"),
+            env.get("PARROTFLOW_PLANNER_REVIEW_REASONING", "high").strip(),
         )
 
     @property
@@ -361,24 +365,31 @@ class Planner:
         /v1/chat/completions gpt-6-luna answers 400 to any reasoning effort
         but none when tools are sent (09-23)."""
         if self._agent_model is None:
-            from pydantic_ai.models.openai import OpenAIResponsesModel
-            from pydantic_ai.providers.openai import OpenAIProvider
-
             async def keep(request):
                 try:
                     self.sent = json.loads(request.content)
                 except ValueError:
                     self.sent = None
 
-            query = dict(urllib.parse.parse_qsl(self.url.query))
-            client = openai.AsyncOpenAI(
-                api_key=self.key, base_url=base_url(urllib.parse.urlunsplit(self.url)),
-                timeout=self.timeout, max_retries=RETRIES, default_query=query or None,
-                default_headers=PLAIN,
-                http_client=openai.DefaultAsyncHttpxClient(event_hooks={"request": [keep]}))
-            self._agent_model = OpenAIResponsesModel(
-                self.model, provider=OpenAIProvider(openai_client=client))
+            self._agent_model = self.responses_model(
+                self.async_client(self.timeout, RETRIES, keep))
         return self._agent_model
+
+    def async_client(self, timeout, retries, keep=None):
+        """An async client to the planner's host. Its connections belong to
+        the event loop that first uses it."""
+        query = dict(urllib.parse.parse_qsl(self.url.query))
+        return openai.AsyncOpenAI(
+            api_key=self.key, base_url=base_url(urllib.parse.urlunsplit(self.url)),
+            timeout=timeout, max_retries=retries, default_query=query or None,
+            default_headers=PLAIN,
+            http_client=openai.DefaultAsyncHttpxClient(
+                event_hooks={"request": [keep]} if keep else None))
+
+    def responses_model(self, client):
+        from pydantic_ai.models.openai import OpenAIResponsesModel
+        from pydantic_ai.providers.openai import OpenAIProvider
+        return OpenAIResponsesModel(self.model, provider=OpenAIProvider(openai_client=client))
 
     def run(self, coroutine):
         """Runs a coroutine on the runner's one event loop: the async client's
