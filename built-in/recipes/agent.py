@@ -117,7 +117,8 @@ Rules:
 - Prefer the app's keyboard shortcut when it has one.
 - Never invent a menu item or a label. Work out dates and times like "tomorrow at 10" from the date and time you are given, then find them on screen. When unsure, act one step at a time.
 - A step after which nothing in the tree changed is not verified. Check the picture: it may have worked. If it did not, do not repeat it: try another way.
-- Your first call is `write_plan`: the task as a few short steps. Keep the plan current: one step `in_progress`, a step `completed` once the screen shows it done, `cancelled` when it is not needed.
+- A request with several parts starts with `write_plan`: the parts as a few short steps. A request with one part needs no plan. Keep a plan current: one step `in_progress`, a step `completed` once the screen shows it done, `cancelled` when it is not needed. Update the plan in the same turn as your next `act` or `use`.
+- When the last result shows the task done, call `done`. Do not read again to check.
 - Call `done` when the task is done, `stuck` when it cannot be done here and no question would help. `done` is refused while a plan step is open.
 - The picture shows the area you are working in: check it for what the screen lines cannot say (which part of a field is selected, highlighted rows, chips, what covers what)."""
 GROUNDING = ("When a target you need has no ID in the screen lines, such as a row in a list "
@@ -445,7 +446,9 @@ class Agent:
             raise
 
     def _settings(self):
-        settings = {"parallel_tool_calls": False}
+        # A plan tool can ride along with a screen tool; the screen tools
+        # still run one per turn.
+        settings = {"parallel_tool_calls": True}
         if self.planner.reasoning:
             settings["openai_reasoning_effort"] = self.planner.reasoning
         return settings
@@ -1192,6 +1195,8 @@ async def _check_end(ctx: pai.RunContext[Agent], output):
     """`done` with a plan task open is refused. `stuck` asks the user once
     first; an answer other than Stop goes back to the model."""
     deps = ctx.deps
+    if isinstance(output, Done) and deps.ran:
+        raise pai.ModelRetry("Not done: this turn acted. Read its result first.")
     if isinstance(output, Done):
         still = [i for i in await deps.plan.get_items() if i.status.value in OPEN]
         if still:

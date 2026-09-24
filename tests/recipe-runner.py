@@ -1005,11 +1005,11 @@ def agent_checks(runner, stderr_path, trace_path):
           [s["id"] for s in fake.steps if s["do"] == "press"] == [102, 105], fake.steps)
     body = planner_bodies[0]
     names = [t["name"] for t in body["tools"]]
-    check("agent: tools, strict, required, no parallel calls, reasoning none, on /v1/responses",
+    check("agent: tools, strict, required, parallel calls, reasoning none, on /v1/responses",
           names[:4] == ["act", "read", "look", "ask"] and names[-2:] == ["done", "stuck"]
           and set(names[4:-2]) == PLAN_TOOLS
           and all(t["strict"] for t in body["tools"] if t["name"] not in PLAN_TOOLS)
-          and body["tool_choice"] == "required" and body["parallel_tool_calls"] is False
+          and body["tool_choice"] == "required" and body["parallel_tool_calls"] is True
           and body["reasoning"] == {"effort": "none"} and "input" in body, names)
     schema_checks(body["tools"])
     check("agent: the screen is sent as numbered lines",
@@ -1045,6 +1045,15 @@ def agent_checks(runner, stderr_path, trace_path):
           and report["stopped"] == "Stuck — refused"
           and [s["do"] for s in fake.steps].count("ask") == 2
           and "type" not in fake.did(), (got, report, fake.did()))
+
+    end, fake, report, asked = run(
+        "mute this channel", [home] * 3,
+        [[act({"do": "click", "id": 2}), ("done", {"summary": "ok"})],
+         [("done", {"summary": "ok"})]])
+    got = results(1)
+    check("agent: done in the same turn as an act is refused until the result is read",
+          any("Not done: this turn acted" in r for r in got) and end["end"] == "done"
+          and len(planner_bodies) == 2, (got, report))
 
     end, fake, report, asked = run(
         "leave this channel", [home] * 3,
@@ -1468,7 +1477,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 148 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 150 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",

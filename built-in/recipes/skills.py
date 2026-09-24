@@ -32,9 +32,9 @@ _FOCUS = re.compile(r'^focus\s+"([^"]+)"$')
 _VALUE = re.compile(r'^value\s+"([^"]+)"\s*~\s*"([^"]*)"$')
 _WINDOW = re.compile(r'^window\s*~\s*"([^"]*)"$')
 _APPEARS = re.compile(r'^appears\s+"([^"]*)"$')
-# Points in from the edge for `at left`: the first part of Outlook's date
-# and time fields.
-EDGE = 10
+# Points in from the edge for `at left`. Measured 09-24 on Outlook's date and
+# time fields: 10 lands before the hour's first digit, 18 on both parts.
+EDGE = 16
 # Reads after a gesture before a check fails: the app redraws late.
 TRIES = 3
 PAUSE = 0.3
