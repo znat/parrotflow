@@ -121,6 +121,7 @@ Rules:
 - A request with several parts starts with `write_plan`: the parts as a few short steps. A request with one part needs no plan. With a plan, every call that has a `plan` field fills it: the tasks the screen now shows done, the tasks dropped and why, and the task this call is for. Without a plan, `plan` is null. Call `write_plan` again only to change the plan itself.
 - When the last result shows the task done, call `done`. Do not read again to check.
 - Call `done` when the task is done, `stuck` when it cannot be done here and no question would help. `done` is refused while a plan step is open.
+- The user may write or speak to you while you work: "The user says, while you work: …". Their words come first, and may change the plan.
 - The picture shows the area you are working in: check it for what the screen lines cannot say (which part of a field is selected, highlighted rows, chips, what covers what)."""
 GROUNDING = ("When a target you need has no ID in the screen lines, such as a row in a list "
              "that opened, call `ground` with what it looks like before trying another way. It "
@@ -357,6 +358,7 @@ class Agent:
         self.report = report
         if lp.execute:
             lp.call("watch")
+            lp.show(steers=True)
         gaze = lp.request.get("gaze")
         self.aim = list(gaze) if gaze else [0, 0]
         self.snapshot = lp._read(self.aim, lp.app)
@@ -437,6 +439,7 @@ class Agent:
                         turn = None
                     if isinstance(node, pai.ModelRequestNode):
                         lp.show(now=True, plan=self._plan(), activity="thinking…")
+                        self._unpause()
                         if self.over:
                             return None
                         if self.steps >= lp.max_steps:
@@ -445,12 +448,14 @@ class Agent:
                             report.stopped = f"Stopped after {SECONDS} s"
                             lp.log(f"agent: {report.stopped}")
                             return None
+                        steered = self._steer(node)
                         calls += 1
                         self.ran = 0
                         self.planner.sent = None
                         self.sent_image = None
                         turn = {"n": calls, "screen": recorder.screen(self.snapshot, self.ids),
-                                "began": recorder.begin_call(calls), "at": time.monotonic()}
+                                "began": recorder.begin_call(calls), "at": time.monotonic(),
+                                "steer": steered}
                     elif isinstance(node, pai.CallToolsNode):
                         turn["ms"] = int((time.monotonic() - turn["at"]) * 1000)
                         turn["response"] = node.model_response
@@ -469,6 +474,31 @@ class Agent:
                 recorder.call(turn["began"], "agent", self._sent(), screen=turn["screen"],
                               error=self.planner._clean(str(error)))
             raise
+
+    def _unpause(self):
+        """The time a step waited for the user to finish typing is not the run's."""
+        channel = self.loop.channel
+        paused = getattr(channel, "paused", 0.0)
+        if paused:
+            self.started += paused
+            channel.paused = 0.0
+            self.loop.log(f"agent: {paused:.1f} s waiting for the user, not counted")
+
+    def _steer(self, node):
+        """What the user typed or said since the last call, as user messages
+        on the request about to be sent. It joins the history, so later
+        requests keep it."""
+        lp = self.loop
+        if not lp.execute:
+            return []
+        said = [" ".join(str(m).split()) for m in lp.call("steer").get("messages") or ()]
+        said = [m for m in said if m]
+        for message in said:
+            lp.log(f"agent: the user says — {decider.prefix(message, 200)}")
+        if said:
+            node.request.parts = [*node.request.parts, *(
+                pai.UserPromptPart(f"The user says, while you work: {m}") for m in said)]
+        return said
 
     def _settings(self):
         # A plan tool can ride along with a screen tool; the screen tools
@@ -539,7 +569,7 @@ class Agent:
                f" · {turn['ms']} ms, {usage['prompt_tokens']} tokens in")
         self._trace(turn["n"], turn["sent"], wire, results, turn["ms"], usage, plan)
         lp.recorder.call(turn["began"], "agent", turn["sent"], wire, results, ms=turn["ms"],
-                         usage=usage, screen=turn["screen"], plan=plan)
+                         usage=usage, screen=turn["screen"], plan=plan, steer=turn.get("steer"))
 
     def _tool(self, name, args):
         """A screen tool, run for the model: its result, and the result cut
@@ -660,6 +690,7 @@ class Agent:
         # (index in `ran`, its change, the read after it): its seen lines get IDs.
         saw = None
         for n, step in enumerate(steps, 1):
+            self._unpause()
             if self.steps >= lp.max_steps or time.monotonic() - self.started > SECONDS:
                 stop = "the run's limit of steps or time"
                 break

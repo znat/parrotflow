@@ -738,6 +738,23 @@ about. After the answer the panel goes back to its place. That place is
 chosen once per run: beside the app's window when there is room, else the
 screen corner farthest from where you looked. It then only grows or shrinks.
 
+During an agent run, a field at the bottom takes words for the agent. Type
+and press Return, or hold the action key and speak: a press during a run
+never starts a second run. The words are queued in the app. Before each model
+call the agent asks for them (`steer`) and adds each to the request as "The
+user says, while you work: …". They stay in the history. The prompt says they
+come first and may change the plan. Each shows under the plan, with a clock
+until the agent takes it, then a tick. The runner logs each, and the run
+recording keeps them in `steer` on the call that got them.
+
+While the field has focus or holds unsent text, a step that touches the
+screen (a key, typing, a paste, a click at a point, a drag, a menu) waits.
+An accessibility press, a scroll, reads and model calls go on. Return gives
+focus back to the run's app, then the steps go on. The wait does not count
+against the run's time. Escape clears the field; in an empty field it stops
+the run. While a question is up, the field is hidden and the question's own
+answer field is used.
+
 When the run ends, the line says how ("Done", "Stopped — …"), and the panel
 stays until ✕ or Escape. Escape during a run stops it; ✕ stops it and closes.
 The runner sends the state with the `progress` verb (see `runner.py`).
@@ -801,7 +818,7 @@ A run's folder, written by `built-in/recipes/runlog.py`:
 | File | What |
 | --- | --- |
 | `run.json` | The request, the app, the loop (agent, plan, loop or recipe), the model, the settings, start and end, the outcome and the steps shown. Rewritten as the run goes. |
-| `calls/NN.json` | One model call: the messages exactly as sent (for the agent, the instructions as a system message, then the Responses `input` items), the tool calls with `why`, the results, ms, tokens, and the agent's plan after the call. `ids` maps each `[ID]` the model saw to the item's id in `tree`, as the agent numbered them. They are recorded, not recomputed. A line `look` saw is in `seen`, whole. |
+| `calls/NN.json` | One model call: the messages exactly as sent (for the agent, the instructions as a system message, then the Responses `input` items), the tool calls with `why`, the results, ms, tokens, and the agent's plan after the call. `steer` is what the user typed or said to the run that this call got. `ids` maps each `[ID]` the model saw to the item's id in `tree`, as the agent numbered them. They are recorded, not recomputed. A line `look` saw is in `seen`, whole. |
 | `steps/NN.json` | One step: what was asked, the target item, the point, an accessibility press or a real click, `under` (what the hit test found at the point before), the trees before and after, the change and its sentence, a guard's question and answer, the verbs sent to the app and their replies, errors and ms. The agent adds `expect`, Jev's `expect_p` and `expect_ms`, and `lost`, what the step took out of its field. |
 | `trees/NN.json` | Every read of the window, raw: all items, not only those shown, with the window frame. `shot` is the screenshot's file, its frame in screen points (top left and size), its scale in pixels per point and its size in pixels. `seen` is every line of text read from it, and `seen_ms` the time; a step's `change.seen` and `change.still` are the lines it reported. |
 | `shots/NN.jpg` | The screenshot of that read, cut to the window, JPEG at 0.7. Taken right after the walk, without ParrotFlow's own panels. Without Screen Recording there is none: `shot` is null and `shot_error` says why. |
