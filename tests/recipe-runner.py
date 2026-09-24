@@ -338,10 +338,13 @@ class Screen:
             return {"answer": None, "via": "timeout"}
         if do == "look":
             return {"lines": []}
+        if do == "steer":
+            return {"messages": []}
         return {"ok": True}
 
     def did(self):
-        return [s["do"] for s in self.steps if s["do"] not in ("say", "log", "watch", "wait")]
+        return [s["do"] for s in self.steps
+                if s["do"] not in ("say", "log", "watch", "wait", "steer")]
 
 
 LOOP = {"max_steps": 15, "send": False, "spotlight": 0, "lookup_letters": 2}
@@ -1495,6 +1498,74 @@ STRICT_KEYS = {"type", "properties", "required", "additionalProperties", "items"
                "anyOf", "description", "const"}
 
 
+def steer_checks(url, user, plans_url):
+    """What the user types or says during an agent run: the app queues it,
+    the agent takes it with `steer` before each model call."""
+    root = tempfile.mkdtemp()
+    runner = Runner(url, user, extra=planner_env(
+        plans_url, PARROTFLOW_PLANNER_LOOP="agent", PARROTFLOW_RUNS=root))
+    said = "The user says, while you work: "
+
+    def run(turns, override=None, windows=None):
+        agent_turns[:] = turns
+        del planner_bodies[:]
+        home = panel("Home", ["General", "Settings", "Leave"])
+        fake = Screen(windows or [home] * 4, override)
+        end, fake = runner.run("mute this channel", "Test", fake=fake, loop=LOOP, recipes=False)
+        return end, fake, os.path.join(root, recorded(root)[-1])
+
+    def users(n):
+        """The user messages of the nth request that the user said during the run."""
+        return [text(m)[len(said):] for m in messages(planner_bodies[n])
+                if m.get("role") == "user" and text(m).startswith(said)]
+
+    three = [[act({"do": "click", "id": 2})], [act({"do": "click", "id": 1})],
+             [("done", {"summary": "ok"})]]
+    end, fake, folder = run(three, {("steer", 2): {"messages": ["mute General instead"]}})
+    check("steer: a queued message reaches the next request as a user message, and not before",
+          len(planner_bodies) == 3 and users(0) == [] and users(1) == ["mute General instead"]
+          and end["end"] == "done", [users(n) for n in range(len(planner_bodies))])
+    last = [text(m) for m in messages(planner_bodies[2])] if len(planner_bodies) == 3 else []
+    check("steer: the message survives the history cut: two calls later it is still sent",
+          users(2) == ["mute General instead"]
+          and any(t.endswith("(the screen is in the newest tool result)") for t in last), last)
+    check("steer: the agent asks before each model call, and the panel shows the field",
+          [s["do"] for s in fake.steps].count("steer") == 3
+          and any(p.get("steers") is True for p in runner.progress), fake.steps)
+    check("steer: the runner logs each message",
+          "agent: the user says — mute General instead" in fake.logs, fake.logs)
+    check("steer: the prompt says the user's words come first",
+          "Their words come first, and may change the plan." in messages(planner_bodies[0])[0]["content"])
+    calls = [read_json(folder, "calls", f"0{n}.json") for n in (1, 2, 3)]
+    check("steer: the recording keeps each message on the call that received it",
+          [c["steer"] for c in calls] == [[], ["mute General instead"], []],
+          [c.get("steer") for c in calls])
+
+    end, fake, folder = run(three, {("steer", 1): {"messages": ["first", " second  one "]},
+                                    ("steer", 2): {"messages": ["third"]}})
+    check("steer: several messages keep their order, across calls",
+          users(0) == ["first", "second one"] and users(2) == ["first", "second one", "third"],
+          [users(n) for n in range(len(planner_bodies))])
+
+    end, fake, folder = run(three)
+    check("steer: no message changes nothing in the requests",
+          all(users(n) == [] for n in range(len(planner_bodies))) and len(planner_bodies) == 3
+          and not any(said in json.dumps(b["input"]) for b in planner_bodies)
+          and end["end"] == "done",
+          len(planner_bodies))
+
+    end, fake, folder = run(
+        [[act({"do": "type", "value": "channel"})], [("done", {"summary": "ok"})]],
+        {("type", 1): {"ok": True, "paused_ms": 2500}})
+    check("steer: a screen step that waited for the user goes on, and the wait is logged",
+          end["end"] == "done" and "type" in fake.did()
+          and any(line.startswith("agent: 2.5 s waiting for the user") for line in fake.logs),
+          (end, fake.logs))
+
+    runner.process.stdin.close()
+    runner.process.wait(timeout=5)
+
+
 def strict_errors(node, path="$"):
     """What OpenAI's strict mode would refuse in a JSON schema."""
     if isinstance(node, list):
@@ -2278,6 +2349,7 @@ def main():
             "PARROTFLOW_PLANNER_TRACE": trace}, stderr=stderr)
         agent_checks(agent, printed, trace)
     recorder_checks(url, user, f"http://127.0.0.1:{plans.server_address[1]}")
+    steer_checks(url, user, f"http://127.0.0.1:{plans.server_address[1]}")
     grounding_checks(url, user, f"http://127.0.0.1:{plans.server_address[1]}")
     surprise_checks(url, user, f"http://127.0.0.1:{plans.server_address[1]}")
     client_checks(f"http://127.0.0.1:{plans.server_address[1]}")

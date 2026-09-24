@@ -188,7 +188,10 @@ final class RecipeProcess: @unchecked Sendable {
                 send(["error": "escape", "said": true])
                 continue
             }
-            send(await session.handle(verb, message, say: say))
+            let reply = await session.handle(verb, message, say: say)
+            send(reply)
+            // A step that waited for the user was not the runner being quiet.
+            if reply["paused_ms"] != nil { heard = Date() }
             if verb == "begin" || verb == "watch", !watching {
                 watching = true
                 await MainActor.run { EscapeWatch.start() }
@@ -452,18 +455,43 @@ private final class RecipeSession {
         never = config.neverPress
     }
 
+    // `press` and `scroll` are not here: an accessibility press needs no
+    // focus, and a wheel event goes to the pane under the point.
+    static let touchesScreen: Set<String> = [
+        "key", "type", "paste", "click", "click_at", "right_click", "hover", "drag", "ready",
+        "select", "show_menu",
+    ]
+
+    /// While the user types to the run, a step that touches the screen waits.
+    /// Its reply then says for how long, in `paused_ms`.
     func handle(_ verb: String, _ r: [String: Any], say: (String) -> Void) async -> [String: Any] {
+        guard Self.touchesScreen.contains(verb) else { return await perform(verb, r, say: say) }
+        let began = Date()
+        var waited = false
+        while await MainActor.run(body: { QuestionPanel.shared.holdsRun }) {
+            if !waited {
+                waited = true
+                Log.write("action: \(verb) waits — the user is typing to the run")
+            }
+            if await MainActor.run(body: { EscapeWatch.wasAsked }) {
+                return ["error": "escape", "said": true]
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        guard waited else { return await perform(verb, r, say: say) }
+        let ms = Int(Date().timeIntervalSince(began) * 1000)
+        Log.write("action: \(verb) goes on after \(ms) ms")
+        var reply = await perform(verb, r, say: say)
+        reply["paused_ms"] = ms
+        return reply
+    }
+
+    private func perform(_ verb: String, _ r: [String: Any], say: (String) -> Void) async -> [String: Any] {
         if let steps = r["shown"] as? [String] { shown = steps }
         // Keys and clicks go to whatever is in front. Seen 09-22: Slack was in
         // front mid-run and the letters meant for Outlook's To field never
         // arrived there.
-        // `press` and `scroll` are not here: an accessibility press needs no
-        // focus, and a wheel event goes to the pane under the point.
-        let touchesScreen: Set<String> = [
-            "key", "type", "paste", "click", "click_at", "right_click", "hover", "drag", "ready",
-            "select", "show_menu",
-        ]
-        if touchesScreen.contains(verb),
+        if Self.touchesScreen.contains(verb),
            let front = NSWorkspace.shared.frontmostApplication?.localizedName, front != app {
             let line = "\(front) is in front, not \(app) — stopping before \(verb)"
             say("✗ \(line)")
@@ -481,9 +509,14 @@ private final class RecipeSession {
                 if first {
                     panel.begin(title: r["title"] as? String ?? title, window: window, aim: aim)
                 }
+                panel.runApp = owner
                 panel.update(r)
             }
             return ["ok": true]
+
+        case "steer":
+            let messages = await MainActor.run { QuestionPanel.shared.takeSteers() }
+            return ["messages": messages]
 
         case "begin":
             let allowed = (r["allows"] as? [String] ?? []).map { $0.lowercased() }

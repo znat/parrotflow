@@ -5995,6 +5995,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 updateUI()
                 return
             }
+            // A run is going: the words are for it, not a second run.
+            let steered = MainActor.assumeIsolated { () -> Bool in
+                guard QuestionPanel.shared.takesSteer else { return false }
+                QuestionPanel.shared.steer(trimmed, via: "voice")
+                return true
+            }
+            if steered {
+                updateUI()
+                return
+            }
             Log.write("action: \"\(trimmed)\"")
             act(on: trimmed, for: press)
             updateUI()

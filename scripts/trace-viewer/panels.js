@@ -62,6 +62,9 @@ export function CallPanel({ call, tree }) {
     <h3>Call ${call.n} <span class="muted small">· ${call.kind} · ${call.ms} ms ·
       ${call.tokens?.in ?? 0} tokens in, ${call.tokens?.out ?? 0} out · screen from tree ${call.tree ?? "—"}</span></h3>
     ${call.error && html`<p class="error">${call.error}</p>`}
+    ${call.steer?.length > 0 && html`<details open><summary>the user said, during the run</summary>
+      <pre>${call.steer.join("\n")}</pre>
+    </details>`}
     ${call.plan?.length > 0 && html`<details open><summary>plan after the call</summary>
       <pre>${call.plan.map((t, k) => `${k + 1}. ${MARKS[t.status] || t.status} ${t.content}`).join("\n")}</pre>
     </details>`}

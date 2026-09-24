@@ -57,6 +57,20 @@ question. `outcome` is set once, at the end, before the `end` message.
 Sent at most every 100 ms; a newer state waits for the next message, and
 the state before a wait (thinking, asking, the end) is sent at once.
 
+`steers: true`, sent by the agent, shows a text field under the plan: the
+user can type to the run, or hold the action key and speak. Each message is
+queued in the app.
+
+    runner  {"do": "steer"}
+    app     {"messages": [".."]}
+
+The messages sent since the last `steer`, oldest first, and the queue is
+emptied. The agent asks before each model call and adds each as a user
+message. While the field has focus or holds unsent text, a step that touches
+the screen (a key, typing, a paste, a click at a point, a drag, a menu) waits.
+Its reply then carries `paused_ms`, the time it waited, which the agent does
+not count against its time limit. Escape in an empty field stops the run.
+
     app     {"decide": "<utterance>", "snapshot": {...}, "done": [..],
              "mode": "decide|look|request"}
     runner  {"end": "decided", "ok": true, "offers": [..], "decision": {..} | "body": ".."}
@@ -300,6 +314,8 @@ class Channel:
         # Where each read's picture goes when runs are not recorded and the
         # agent needs one. Overwritten by the next read.
         self.shots = None
+        # Seconds the app held screen steps while the user typed to the run.
+        self.paused = 0.0
 
     def send(self, message):
         self.out.write(json.dumps(message) + "\n")
@@ -341,6 +357,7 @@ class Channel:
         self.state = {"title": title, "plan": None, "activity": "reading the screen…",
                       "outcome": None}
         self.shown = None
+        self.paused = 0.0
         self._flush()
 
     def ask(self, do, **args):
@@ -358,6 +375,8 @@ class Channel:
         if reply is None:
             raise Gone()
         recorder.saw(do, args, reply, int((time.monotonic() - started) * 1000))
+        if isinstance(reply.get("paused_ms"), (int, float)):
+            self.paused += reply["paused_ms"] / 1000
         return reply
 
     def call(self, do, **args):

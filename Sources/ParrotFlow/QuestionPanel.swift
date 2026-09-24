@@ -103,7 +103,11 @@ enum QuestionPlacement {
 ///
 /// A question is answered by clicking an option, by its number, by typing
 /// after "Something else…", or by holding the action key and speaking.
-/// Escape stops the run. It takes keyboard focus only for typing: until then
+/// Escape stops the run.
+///
+/// During an agent run a field under the plan takes words for the agent,
+/// typed or spoken. While it has focus or holds unsent text, steps that touch
+/// the screen wait (`holdsRun`). It takes keyboard focus only for typing: until then
 /// the app the run acts on keeps it. Asked outside a run, it is the question
 /// alone, and it goes away with the answer.
 @MainActor final class QuestionPanel {
@@ -152,6 +156,13 @@ enum QuestionPlacement {
     private var screen: CGRect = .zero
     /// The app that was in front when typing had to activate this one.
     private var cameFrom: NSRunningApplication?
+    /// The app the run acts on, by name, for giving it focus back.
+    var runApp: String?
+    /// Sent to the run and not yet taken by the agent, oldest first.
+    private var steers: [String] = []
+    /// Focus is on its way back to the run's app.
+    private var handingBack = false
+    private var steerEscape: Any?
 
     /// `near` and `window` are in accessibility coordinates. With no `near`,
     /// the panel is centred on the screen `window` is on.
@@ -196,6 +207,10 @@ enum QuestionPlacement {
     /// panel is ParrotFlow's own window, so a paste would land in the app
     /// in front instead.
     func dictate(_ words: String) -> Bool {
+        if !isAsking, steerHasFocus {
+            model.steerText += (model.steerText.isEmpty ? "" : " ") + words
+            return true
+        }
         guard isAsking, model.typing else { return false }
         model.text += (model.text.isEmpty ? "" : " ") + words
         restartClock(Self.seconds)
@@ -213,6 +228,7 @@ enum QuestionPlacement {
     func close() {
         if isAsking { answer(QuestionAnswer(text: nil, via: "timeout")) }
         stopIdleEscape()
+        stopSteerEscape()
         if model.running { dismissed = true }
         showsRun = model.running
         panel?.orderOut(nil)
@@ -234,6 +250,12 @@ enum QuestionPlacement {
         model.activity = nil
         model.outcome = nil
         model.steps = []
+        model.steers = false
+        model.steerText = ""
+        model.said = []
+        steers = []
+        handingBack = false
+        startSteerEscape()
         model.closable = true
         model.onClose = { [weak self] in self?.closeButton() }
         runWindow = window.map(QuestionPlacement.flipped)
@@ -262,6 +284,7 @@ enum QuestionPlacement {
             }
         }
         if progress.keys.contains("activity") { model.activity = progress["activity"] as? String }
+        if progress.keys.contains("steers") { model.steers = progress["steers"] as? Bool == true }
         if let outcome = progress["outcome"] as? String { model.outcome = outcome }
         refresh()
     }
@@ -270,8 +293,12 @@ enum QuestionPlacement {
     func end(outcome: String) {
         if isAsking { answer(QuestionAnswer(text: nil, via: "timeout")) }
         guard showsRun else { return }
+        let hadKey = panel?.isKeyWindow == true
         model.running = false
         model.activity = nil
+        steers = []
+        stopSteerEscape()
+        if hadKey { handBack() }
         if model.outcome == nil { model.outcome = outcome }
         if dismissed {
             showsRun = false
@@ -286,6 +313,99 @@ enum QuestionPlacement {
         layout()
         // SwiftUI sizes new rows on its next pass.
         DispatchQueue.main.async { [weak self] in self?.layout() }
+    }
+
+    // MARK: - Words to the run
+
+    /// A run that takes words from the user: an agent run, still going.
+    var takesSteer: Bool { showsRun && model.running && model.steers && !dismissed }
+
+    /// Steps that touch the screen wait while this is true: the user is
+    /// typing to the run, or focus is going back to the run's app.
+    var holdsRun: Bool {
+        guard takesSteer else { return false }
+        return handingBack || steerHasFocus
+            || !model.steerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var steerHasFocus: Bool {
+        takesSteer && !isAsking && model.steerFocused && panel?.isKeyWindow == true
+    }
+
+    /// Typed and sent, or said with the action key.
+    func steer(_ words: String, via: String) {
+        let said = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard takesSteer, !said.isEmpty else { return }
+        steers.append(said)
+        model.said.append(SteerLine(text: said, taken: false))
+        Log.write("action: steer (\(via)) — \(said.prefix(200))")
+        refresh()
+    }
+
+    /// The runner's `steer` verb: what was sent since it last asked.
+    func takeSteers() -> [String] {
+        let taken = steers
+        steers = []
+        guard !taken.isEmpty else { return [] }
+        for index in model.said.indices { model.said[index].taken = true }
+        refresh()
+        let shown = model.said
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            guard let self else { return }
+            self.model.said.removeAll { line in line.taken && shown.contains(line) }
+            self.refresh()
+        }
+        return taken
+    }
+
+    private func sendSteer() {
+        let typed = model.steerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard takesSteer, !typed.isEmpty else { return }
+        model.steerText = ""
+        steer(typed, via: "text")
+        handBack()
+    }
+
+    /// The run's app gets keyboard focus back. ParrotFlow activates first:
+    /// a key panel of an inactive app can stay key when the app in front is
+    /// asked to activate again, and only an active app can hand activation on.
+    private func handBack() {
+        model.steerFocused = false
+        let owner = cameFrom ?? runApp.flatMap { name in
+            NSWorkspace.shared.runningApplications.first { $0.localizedName == name }
+        }
+        cameFrom = nil
+        guard panel?.isKeyWindow == true || NSApp.isActive, let owner else { return }
+        handingBack = true
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async {
+            owner.activate()
+            // As after a typed answer: the next step checks the app is in front.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                self?.handingBack = false
+            }
+        }
+    }
+
+    /// Escape while the panel is key, taken before the field editor sees it,
+    /// so it is handled once. The global `EscapeWatch` never sees it then.
+    private func startSteerEscape() {
+        stopSteerEscape()
+        steerEscape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 53 else { return event }
+            return MainActor.assumeIsolated {
+                let panel = QuestionPanel.shared
+                guard !panel.isAsking, panel.takesSteer, panel.panel?.isKeyWindow == true
+                else { return event }
+                panel.escape()
+                return nil
+            }
+        }
+    }
+
+    private func stopSteerEscape() {
+        if let steerEscape { NSEvent.removeMonitor(steerEscape) }
+        steerEscape = nil
     }
 
     /// ✕ during a run stops it, as Escape does.
@@ -349,7 +469,18 @@ enum QuestionPlacement {
         answer(QuestionAnswer(text: Self.option(typed, among: options) ?? typed, via: "text"))
     }
 
+    /// Escape reaches this only while the panel is key. In the run's field
+    /// it clears what was typed; an empty field stops the run.
     private func escape() {
+        if !isAsking, takesSteer {
+            if !model.steerText.isEmpty {
+                model.steerText = ""
+                return
+            }
+            EscapeWatch.press()
+            handBack()
+            return
+        }
         guard isAsking else { return }
         EscapeWatch.press()
         answer(QuestionAnswer(text: nil, via: "escape"))
@@ -376,6 +507,7 @@ enum QuestionPlacement {
         }
         Log.write("action: answered (\(answer.via)) — \(answer.text ?? "nothing")")
         // The next step checks that the target app is in front.
+        if cameFrom == nil, takesSteer, panel?.isKeyWindow == true { handBack() }
         guard let owner = cameFrom else { return finish(answer) }
         cameFrom = nil
         owner.activate()
@@ -497,6 +629,12 @@ enum QuestionPlacement {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.appearance = nil
         panel.onCancel = { [weak self] in self?.escape() }
+        panel.keyable = { [weak self] in
+            guard let self else { return false }
+            return self.takesSteer && !self.isAsking
+        }
+        model.onSteer = { [weak self] in self?.sendSteer() }
+        model.onCancel = { [weak self] in self?.escape() }
         self.panel = panel
         self.hosting = hosting
     }
@@ -510,12 +648,13 @@ enum QuestionMetrics {
     static let windowWidth: CGFloat = surfaceWidth + bleed * 2
 }
 
-/// Key only while the user types an answer.
+/// Key only while the user types an answer, or during a run that takes words.
 private final class QuestionWindow: NSPanel {
     var allowsKey = false
+    var keyable: (() -> Bool)?
     var onCancel: (() -> Void)?
 
-    override var canBecomeKey: Bool { allowsKey }
+    override var canBecomeKey: Bool { allowsKey || keyable?() == true }
 
     override func cancelOperation(_ sender: Any?) {
         onCancel?()
@@ -525,6 +664,12 @@ private final class QuestionWindow: NSPanel {
 /// A click on an option works the first time, while another app is active.
 private final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+/// A message sent to the run; `taken` once the agent has it.
+struct SteerLine: Equatable {
+    var text: String
+    var taken: Bool
 }
 
 struct RunTask: Equatable {
@@ -551,6 +696,12 @@ final class QuestionModel: ObservableObject {
     @Published var hotkey: String?
     @Published var primaryColor = ContextIdentity.defaultPrimary
     @Published var theme: ContextAppearance = .system
+    /// The run takes words: the agent said so.
+    @Published var steers = false
+    @Published var steerText = ""
+    @Published var steerFocused = false
+    @Published var said: [SteerLine] = []
+    var onSteer: (() -> Void)?
     var onPick: ((Int) -> Void)?
     var onSubmit: (() -> Void)?
     var onCancel: (() -> Void)?
@@ -562,6 +713,7 @@ struct QuestionView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var scale
     @FocusState private var fieldFocused: Bool
+    @FocusState private var steerFocused: Bool
     @State private var hovered: Int?
 
     private var effectiveColorScheme: ColorScheme {
@@ -580,6 +732,9 @@ struct QuestionView: View {
             } else if model.asking, !model.steps.isEmpty {
                 steps
             }
+            if model.running, !model.said.isEmpty {
+                saidLines
+            }
             if model.asking {
                 Text(model.question)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -594,6 +749,7 @@ struct QuestionView: View {
                 if model.typing { field }
             } else {
                 status
+                if model.running, model.steers { steerField }
             }
             footer
         }
@@ -609,6 +765,10 @@ struct QuestionView: View {
         .onExitCommand { model.onCancel?() }
         .onChange(of: model.typing) { _, typing in
             if typing { DispatchQueue.main.async { fieldFocused = true } }
+        }
+        .onChange(of: steerFocused) { _, focused in model.steerFocused = focused }
+        .onChange(of: model.steerFocused) { _, focused in
+            if !focused, steerFocused { steerFocused = false }
         }
     }
 
@@ -780,6 +940,47 @@ struct QuestionView: View {
             .padding(.top, 8)
     }
 
+    /// What the user sent to the run: a clock until the agent takes it, then a tick.
+    private var saidLines: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(model.said.suffix(2).enumerated()), id: \.offset) { _, line in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: line.taken ? "checkmark" : "clock")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(line.taken ? theme.accent : theme.muted)
+                        .frame(width: 14, alignment: .center)
+                    Text("You: " + line.text)
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(theme.muted)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.bottom, 10)
+    }
+
+    private var steerField: some View {
+        TextField("Tell it something while it works", text: $model.steerText)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .focused($steerFocused)
+            .onSubmit { model.onSteer?() }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .foregroundStyle(theme.foreground)
+            .background(theme.controlFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(
+                        steerFocused ? theme.accent : theme.controlEdge,
+                        lineWidth: steerFocused ? 1.25 : 1
+                    )
+            }
+            .padding(.top, 10)
+    }
+
     private var footer: some View {
         Text(footerText)
             .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -789,6 +990,9 @@ struct QuestionView: View {
     }
 
     private var footerText: String {
+        if !model.asking, model.running, model.steers, model.steerFocused || !model.steerText.isEmpty {
+            return "paused while you type · ↩ sends · esc " + (model.steerText.isEmpty ? "stops" : "clears")
+        }
         if !model.asking { return model.running ? "esc stops" : "esc closes" }
         var parts: [String] = []
         if model.typing { parts.append("↩ sends") }
