@@ -10,6 +10,8 @@ window you are looking at.
 Off by default, and off completely: no key registered, no file read, nothing
 sent.
 
+The agent's rules as decision trees: [actions-trees.md](actions-trees.md).
+
 ## Before you turn it on
 
 **It sends the window you are looking at off this Mac.** Not what you
