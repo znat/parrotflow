@@ -115,7 +115,7 @@ measured 395,489 characters.
 `loop.sentence()` says it in one sentence, which goes to the model in each
 step's result: `a pop-up opened near "To": "Peter Holm", "Peter Smith"; "To"
 now holds "Pe"`. Typing is a change, so a step that only typed is not
-"nothing changed". The expect check lists the rows too.
+"nothing changed".
 
 When the read after the step has seen lines, the change also holds `seen`, text
 on screen that the tree lacks, `[{"near": "To", "lines": [{"text", "x", "y",
@@ -370,12 +370,11 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   batch is for, in a few words. It goes in the app
   log line and the trace. A call without it still runs. `expect`, optional,
   is what should be true after the step, such as "To holds Alex Moreau and
-  Antonio Ruiz". See [Surprises](#surprises).
+  Antonio Ruiz". It is recorded with the step and not checked.
   Each step goes through `Loop._planned_step` and its guards. The
   batch stops at the first surprise: a step failed, a step changed nothing
-  (`type` and `write` do not count), a step's `expect`
-  is not true, a step took a name out of its field, or something opened
-  that the next step does not target. The result says which steps
+  (`type` and `write` do not count), a step took a name out of its field,
+  or something opened that the next step does not target. The result says which steps
   ran, why it stopped, what changed (as `changes()` gives it), and the new
   screen with new IDs.
 - `read()`: the screen again, nothing done.
@@ -495,14 +494,13 @@ came back.
 ### Surprises
 
 A surprise is a step that failed, the same batch run twice, a refused
-`done`, a step whose `expect` is not true, or a step that took a name or
-words out of its field. The last two are checked after every step that ran,
-without a model call:
+`done`, or a step that took a name or words out of its field. The last is
+checked after every step that ran, without a model call.
 
-- `expect`: Jev is asked "Is this true now: <expect>?" about the window, the
-  change sentence and what each text field holds. Below 0.5, the step's line
-  ends with `— expected "<expect>", not what happened`. About 0.3 s, added to
-  the step's ms.
+A step's `expect` is not checked. Asking Jev "Is this true now: <expect>?"
+cost 0.6-1.0 s a step, and on 09-24 it said no to three steps that had
+worked. It was removed on 09-24; the step still records `expect`.
+
 - Loss (`loop.lost`): the text the target field held, split into names, and
   the items drawn inside its frame. A part with two letters or more that is
   gone after the step is reported: `— this step removed "Alex Moreau" from
@@ -799,7 +797,7 @@ A run's folder, written by `built-in/recipes/runlog.py`:
 | --- | --- |
 | `run.json` | The request, the app, the loop (agent, plan, loop or recipe), the model, the settings, start and end, the outcome and the steps shown. Rewritten as the run goes. |
 | `calls/NN.json` | One model call: the messages exactly as sent (for the agent, the instructions as a system message, then the Responses `input` items), the tool calls with `why`, the results, ms, tokens, and the agent's plan after the call. `steer` is what the user typed or said to the run that this call got. `ids` maps each `[ID]` the model saw to the item's id in `tree`, as the agent numbered them. They are recorded, not recomputed. A line `look` saw is in `seen`, whole. |
-| `steps/NN.json` | One step: what was asked, the target item, the point, an accessibility press or a real click, `under` (what the hit test found at the point before), the trees before and after, the change and its sentence, a guard's question and answer, the verbs sent to the app and their replies, errors and ms. The agent adds `expect`, Jev's `expect_p` and `expect_ms`, and `lost`, what the step took out of its field. |
+| `steps/NN.json` | One step: what was asked, the target item, the point, an accessibility press or a real click, `under` (what the hit test found at the point before), the trees before and after, the change and its sentence, a guard's question and answer, the verbs sent to the app and their replies, errors and ms. The agent adds `expect` and `lost`, what the step took out of its field. `expect_p` and `expect_ms`, Jev's check of `expect`, are in runs before 09-24 only. |
 | `trees/NN.json` | Every read of the window, raw: all items, not only those shown, with the window frame. `shot` is the screenshot's file, its frame in screen points (top left and size), its scale in pixels per point and its size in pixels. `seen` is every line of text read from it, and `seen_ms` the time; a step's `change.seen` and `change.still` are the lines it reported. |
 | `shots/NN.jpg` | The screenshot of that read, cut to the window, JPEG at 0.7. Taken right after the walk, without ParrotFlow's own panels. Without Screen Recording there is none: `shot` is null and `shot_error` says why. |
 | `looks/NN.json` | A `look`: the region and the lines read. |

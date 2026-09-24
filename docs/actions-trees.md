@@ -334,11 +334,7 @@ flowchart TD
   Q2 -->|yes| SU["Surprise, batch stops"]
   Q2 -->|no| Q3{"Words gone from field?<br/><i>lost</i>"}
   Q3 -->|yes| SU
-  Q3 -->|no| Q4{"expect, tree changed?<br/><i>expect-skip</i>"}
-  Q4 -->|yes| Q5{"Jev says under 0.5?<br/><i>expect-jev</i>"}
-  Q5 -->|yes| SU
-  Q5 -->|no| Q6
-  Q4 -->|no| Q6{"Lookup list seen below?<br/><i>lookup-below</i>"}
+  Q3 -->|no| Q6{"Lookup list seen below?<br/><i>lookup-below</i>"}
   Q6 -->|yes| ST
   Q6 -->|no| Q7{"Unchanged, not type/write?<br/><i>unchanged-stop</i>"}
   Q7 -->|yes| ST
@@ -536,8 +532,6 @@ Python files are in `built-in/recipes/`. Swift files are in `Sources/ParrotFlow/
 | redirect-stop | agent.py:602 |
 | fail-stop | agent.py:607 |
 | lost | loop.py:527 |
-| expect-skip | agent.py:685 |
-| expect-jev | decider.py:505 |
 | lookup-below | agent.py:594 |
 | unchanged-stop | agent.py:632 |
 | opened-stop | agent.py:636, 640 |

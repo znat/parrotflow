@@ -24,9 +24,6 @@ jev_calls = []
 # The loop's answers, one per call: action, target, and the noul questions.
 loop_answers = []
 loop_bodies = []
-# Jev's answer to "is <expect> true now".
-visible_answers = []
-visible_bodies = []
 PLANNER_KEY = "sk-test-planner-key-1234"
 planner_plans = []
 planner_bodies = []
@@ -57,8 +54,7 @@ def plain(body):
         if isinstance(instructions, dict):
             instructions = instructions["question"]
         if key == "response":
-            key = ("visible" if question["type"] == "noul" else
-                   "recipe" if instructions == "Which of these is the user asking for?" else "pick")
+            key = "recipe" if instructions == "Which of these is the user asking for?" else "pick"
         questions[key] = dict(question, instructions=instructions)
     return {"state": json.loads(body["state"]), "model": body["model"], "questions": questions}
 
@@ -94,11 +90,6 @@ class FakeJev(http.server.BaseHTTPRequestHandler):
                 if len(matches) > 1:
                     answers[key] = choice(chosen, {k: 0.97 for k in matches})
                     continue
-            elif key == "visible":
-                visible_bodies.append(body)
-                answers[key] = {"type": "noul",
-                                "noul": visible_answers.pop(0) if visible_answers else 0.9}
-                continue
             else:
                 word = body["state"]["words"][key]
                 chosen = "who" if word in NAMES else "none"
@@ -1739,11 +1730,9 @@ def surprise_checks(url, user, plans_url):
         PARROTFLOW_GROUND_SERVER=helper, PARROTFLOW_GROUND_MODEL=folder,
         FAKE_GROUND_LOG=os.path.join(folder, "asked.jsonl"), PARROTFLOW_RUNS=root))
 
-    def run(windows, turns, verdicts=(), override=None):
+    def run(windows, turns, override=None):
         agent_turns[:] = turns
-        visible_answers[:] = verdicts
         del planner_bodies[:]
-        del visible_bodies[:]
         fake = Pictured(windows, override)
         end, fake = runner.run("write to Alex and Antonio", "Test", fake=fake, loop=LOOP,
                                recipes=False)
@@ -1765,30 +1754,14 @@ def surprise_checks(url, user, plans_url):
     expect = "To holds Alex"
     typed = act({"do": "type", "id": 1, "value": "Alex", "expect": expect})
 
+    calls = len(jev_calls)
     end, fake, report = run([draft(""), draft("Alex")] * 3,
-                            [[plan(("Add Alex", "in_progress"))], [typed], [("read", {})]] + finish,
-                            [0.9])
+                            [[plan(("Add Alex", "in_progress"))], [typed], [("read", {})]] + finish)
     step = read_json(root, recorded(root)[-1], "steps", "01.json")
-    sent = visible_bodies[0] if visible_bodies else {}
-    check("expect: a true expect says nothing",
-          "not what happened" not in result(2)
-          and end["end"] == "done", (result(2), efforts()))
-    check("expect: Jev is asked about it with the fields' values, and the step records it",
-          sent.get("questions", {}).get("visible", {}).get("instructions")
-          == f"Is this true now: {expect}?"
-          and sent["state"]["fields"] == {"To": "Alex"}
-          and "changed_by_the_last_step" in sent["state"]
-          and step["expect"] == expect and step["expect_p"] == 0.9
-          and step["ms"] >= step["expect_ms"] >= 0, (sent, step))
-
-    end, fake, report = run([draft(""), draft("Alex")] * 3,
-                            [[plan(("Add Alex", "in_progress"))], [typed], [("read", {})]] + finish,
-                            [0.2])
-    got = result(2)
-    step = read_json(root, recorded(root)[-1], "steps", "01.json")
-    check("expect: a false expect is recorded and says nothing to the model",
-          "not what happened" not in got and "Stopped" not in got
-          and step["expect_p"] == 0.2, (got, step))
+    check("expect: recorded with the step, never sent to Jev, and says nothing",
+          jev_calls[calls:] == [] and "Stopped" not in result(2) and end["end"] == "done"
+          and step["expect"] == expect and step["expect_p"] is None and step["expect_ms"] == 0,
+          (jev_calls[calls:], result(2), step))
     check("reasoning: every request reasons at low; each after the typing has one picture",
           efforts() == [("low", 0), ("low", 0)] + [("low", 1)] * (len(efforts()) - 2), efforts())
 
@@ -1816,8 +1789,7 @@ def surprise_checks(url, user, plans_url):
         [[plan(("Add both", "in_progress"))],
          [act({"do": "type", "id": 1, "value": "Antonio"})],
          [act({"do": "type", "id": 1, "value": "Alex", "expect": both})],
-         [plan(("Add both", "completed"))], [("done", {"summary": "ok"})]],
-        [0.1])
+         [plan(("Add both", "completed"))], [("done", {"summary": "ok"})]])
     check("surprises: two on one task do not make anyone ask the user",
           not [s for s in fake.steps if s["do"] == "ask"] and "Call `ask`" not in result(3)
           and end["end"] == "done", (result(3), fake.did()))

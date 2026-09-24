@@ -107,9 +107,9 @@ class Step(BaseModel):
     sentence: str = ""
     outcome: str = ""
     error: str = ""
-    ms: int = 0                     # with the expect check
+    ms: int = 0
     expect: str = ""                # what the agent said should be true after it
-    expect_p: Optional[float] = None    # Jev's yes to it
+    expect_p: Optional[float] = None    # Jev's yes to it, in runs before 09-24
     expect_ms: int = 0
     lost: str = ""                  # what the step took out of its field
 

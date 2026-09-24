@@ -40,7 +40,7 @@ drops the one before. No screenshot, no picture.
 What went wrong (a step failed, the same batch ran twice, a step took a name
 or words out of its field) is a note under the task in the run panel. The
 model decides what to do; the user is asked only before a step that commits.
-A step's `expect` goes to Jev and is recorded, and changes nothing.
+A step's `expect` is recorded with the step, and never checked.
 
 No automatic `ground` call: an `act` step names its target by ID only, so a
 step aimed at something without an ID carries no words to look for. The
@@ -739,7 +739,7 @@ class Agent:
             self.opened = [i for i in looping.appeared(before, self.snapshot) if i.get("in")]
             if lp.change.get("seen") or lp.change.get("still"):
                 saw = (len(ran) - 1, lp.change, self.snapshot)
-            surprise = self._check(step.do, expect, item, before, outcome)
+            surprise = self._check(step.do, expect, item, before)
             if surprise:
                 ran[-1] += f" — {surprise}"
                 stop = f"step {n} did not go as expected"
@@ -797,29 +797,19 @@ class Agent:
         change = json.dumps(change, ensure_ascii=False)
         return f"{short}\nChange: {change}\n{screen}", short
 
-    def _check(self, do, expect, item, before, outcome):
+    def _check(self, do, expect, item, before):
         """What went wrong in a step that ran, or "": a name or words gone
-        from the field it acted in. Jev's answer on `expect` is only recorded:
-        it reads text, and on 09-24 said no to three steps that had worked."""
-        lp, said, record = self.loop, [], {}
+        from the field it acted in. Asking Jev about `expect` cost 0.6-1.0 s
+        a step, and on 09-24 it said no to three steps that had worked."""
+        said, record = [], {}
         gone = looping.lost(item, before, self.snapshot) if item and do != "key" else []
         if gone:
             record["lost"] = ", ".join(f"\"{g}\"" for g in gone)
             said.append(f"this step removed {record['lost']} from \"{decider.label(item)}\"")
-        # The tree did not change, so Jev can only say no.
-        if expect and not outcome.endswith(looping.UNCHANGED):
-            began = time.monotonic()
-            try:
-                p = decider.true_now(lp.jev, expect, self.snapshot, outcome)
-            except decider.Failure as error:
-                p = None
-                lp.log(f"agent: could not check “{expect}” — {error}")
-            ms = int((time.monotonic() - began) * 1000)
-            record.update(expect=expect, expect_p=p, expect_ms=ms)
-            if p is not None:
-                lp.log(f"agent: expected “{expect}” — {p:.2f}, {ms} ms")
+        if expect:
+            record["expect"] = expect
         if record:
-            lp.recorder.add_to_step(record.get("expect_ms", 0), **record)
+            self.loop.recorder.add_to_step(**record)
         return "; ".join(said)
 
     def _task(self):
