@@ -62,24 +62,23 @@ and left there for you to send. On, Return is pressed.
 
 3. **The runner takes the request.** The app sends what you said to
    `built-in/recipes/runner.py`, one Python process that does all the
-   deciding. A recipe runs if one fits. Otherwise the loop runs, in the same
-   process (`loop.py`).
+   deciding. A recipe runs if one fits. Otherwise the agent runs, in the
+   same process (`loop.py`, `agent.py`). The agent needs `actions: planner:`.
+   Without it, a request no recipe fits fails with "No planner is set".
 
 4. **The window is read.** The runner asks the app for it. `ScreenTargets`
    walks the window under the gaze and comes back with everything worth
    naming: buttons, rows, labels, text fields, each with its distance from
    where you were looking. About 0.4 s on a Slack window of 224 targets.
 
-5. **One question, four answers.** The 40 nearest targets, plus any whose name
-   matches a word of what you said, go to Jev with the utterance
-   (`decider.py`). It answers: which action, which target, does the utterance
-   carry the words to type, and does it point rather than name. About 0.3 s
-   on a kept-open connection, 0.65-0.8 s on a new one.
+5. **The agent decides.** The planner's model gets the request and the
+   window as `[ID] Role "name"` lines, and calls tools: `act` with a batch
+   of steps, `read`, `look`, `ask`, `done`. See [The agent loop](#the-agent-loop).
 
-6. **It happens.** The runner turns the answer into steps, and the app does
-   each one: a click, a paste, a key. Never a keystroke per character: the
-   paste is the app's own, the same one dictation uses. Then the window is
-   read again, until the request is carried out or a stop rule fires.
+6. **It happens.** The runner turns each step into calls the app does: a
+   click, a paste, a key. The paste is the app's own, the same one dictation
+   uses. Then the window is read again, and the model gets what changed,
+   until it calls `done` or a stop rule fires.
 
 Anything that fails — no window under the gaze, no key, the decider times out
 — leaves the screen exactly as it was and says why on the pill.
@@ -113,12 +112,10 @@ measured 395,489 characters.
     {"appeared": [{"kind": "pop-up", "near": "To", "rows": ["Peter Holm", "Peter Smith"]}],
      "values": {"To": "Peter"}, "new": ["Send"], "gone": 3, "window": "Untitled"}
 
-`difference()` says it in one sentence, which goes to Jev as `changed` and to
-the planner under each step taken: `a pop-up opened near "To": "Peter
-Holm", "Peter Smith"; "To" now holds "Pe"`. Typing is a change, so a step
-that only typed is not "nothing changed". On a re-plan the planner also gets
-`Just opened:` and `Now in "To":` lines, and the rows are listed as
-`Cell "Peter Smith" (in the pop-up)`. The expect check lists the rows too.
+`loop.sentence()` says it in one sentence, which goes to the model in each
+step's result: `a pop-up opened near "To": "Peter Holm", "Peter Smith"; "To"
+now holds "Pe"`. Typing is a change, so a step that only typed is not
+"nothing changed".
 
 When the read after the step has seen lines, the change also holds `seen`, text
 on screen that the tree lacks, `[{"near": "To", "lines": [{"text", "x", "y",
@@ -130,7 +127,9 @@ app as if it had just opened. It only reads.
 
 ## Who decides what
 
-The split is the whole design, and it was measured rather than assumed.
+This is the decider, which `--act` and `scripts/check-actions.sh` still
+measure. The Jev loop that ran on it, one question per step, was removed on
+09-24: runs go to the agent. The split was measured rather than assumed.
 
 | Question | Decided by | Why |
 | --- | --- | --- |
@@ -152,7 +151,7 @@ spotlight, Escape, and the checks at the moment of acting.
 | the loop's question to Jev, and reading the answer | clicks, presses, keys, paste, wheel, drag |
 | the stop rules, what changed, what goes in `done` | `never_press`, refused by name at the moment of acting |
 | the per-app notes in `apps/<app>.md` | the front-app check before a key or a click |
-| which step each action becomes (⌘N, ⌘G, the composer) | Return refused in a message box when `send` is off |
+| the guards before each step | Return refused in a message box when `send` is off |
 | whether a name is on the recipient line | Escape, and the outlines |
 
 The gaze only overrides a target the model could not use — a label, or none at
@@ -165,7 +164,7 @@ onto a pressable group 0.7 cm nearer.
 
 A recipe is a fixed sequence for a request the loop gets wrong, such as a
 message to two people. It is a Python function. The model picks the recipe from
-what you said, or says none, and none goes to the loop as before.
+what you said, or says none, and none goes to the agent.
 `actions: recipes: true` turns it on; it is off by default.
 
 One Python process does the deciding: `built-in/recipes/runner.py`. The app
@@ -226,7 +225,7 @@ The recipe never touches the screen. The app sends the runner one line,
 "recipes": …, "read_app": …, "loop": {…}}`. The runner answers with one
 `{"do": …}` line per step, the app replies to each, and the runner ends with
 `{"end": "planned|ready|done|stopped|failed"}`. When no recipe fits, or
-`recipes` is false, the runner runs the loop and the end line also carries
+`recipes` is false, the runner runs the agent and the end line also carries
 `"loop"`: the report the pill or the alert shows (`said`, `markdown`,
 `acted`, `stopped`, `steps`, `shown`). The top of `runner.py` has the details.
 The app does the reading, typing and clicking, so Escape still stops the run,
@@ -266,11 +265,10 @@ the bottom fifth of its window. A field that narrows a list is not one, so the
 Slack search recipe's Return still goes through. It asks first. "Yes, go ahead" presses it. "No" fails the step with
 `said: true`, and the run stops with "Won't press Return in the message box —
 send is off". Other words fail it with `{"error": "redirected", "text": …}`
-and the run goes on: see [The question panel](#the-question-panel). The loop itself never asks for Return with `send` off; this is
-the check that holds if something does.
+and the run goes on: see [The question panel](#the-question-panel). This check holds whatever step a run asks for.
 
 `python3 tests/recipe-runner.py` runs the runner against a fake app and a fake
-Jev: no screen, no network. It covers the recipes and the loop's stop rules.
+Jev: no screen, no network. It covers the recipes, the agent and its guards.
 
 `type` sends real keystrokes, for a field that filters a list as you type.
 `paste` goes through the clipboard, for anything longer. Slack's recipient
@@ -287,10 +285,13 @@ PARROTFLOW_CONFIG_DIR=<a copy of the config folder> \
 ## Planner
 
 A planner is a remote chat model that knows how apps work. It is off unless
-`actions: planner:` is set. When it is set and no recipe fits, the loop asks it
-for a plan instead of asking Jev "what now" at every step. Jev scores 0.95-0.99
-on "which of these is X" and 0.32-0.52 on "what now", so the planner takes the
-wide question and Jev keeps the narrow one.
+`actions: planner:` is set. When no recipe fits, it runs the request as the
+agent: see [The agent loop](#the-agent-loop). Without a planner, that request
+fails with "No planner is set".
+
+Two older paths were removed on 09-24: the plan path (`loop: plan`, one plan,
+Jev finds each target) and the Jev loop (Jev asks "what now" at every step).
+`loop: plan` in an older config runs the agent, and the app log says so.
 
 ```yaml
 actions:
@@ -309,8 +310,7 @@ async client, with the same settings, through Pydantic AI, on the Responses
 API (`<base>/responses`): every call sends `reasoning: {effort: <reasoning>}`.
 On `/v1/chat/completions`, gpt-6-luna answers 400 to any effort but `none`
 when tools are sent (09-23); `/v1/responses` takes `low` with strict tools.
-The plan path (`loop: plan`) and grounding stay on chat completions, with
-`reasoning_effort`. Both clients ask for gzip
+Grounding stays on chat completions, with `reasoning_effort`. Both clients ask for gzip
 only: httpx2 2.13 cannot read a brotli answer with brotli 1.1, and every call
 failed with a `TypeError` (09-23). Its base URL is `endpoint`
 without the trailing `/chat/completions`: `https://api.openai.com/v1`. An
@@ -331,52 +331,11 @@ before: "The planner answered 500: …", with the key cut out of the body,
 and "The planner timed out after 3 tries."
 
 **What leaves the Mac.** The request, the app name and bundle ID, the window
-title, the item you look at, and the names of the controls Jev is offered: the
-40 nearest and any further one whose name shares a word with the request.
-Names only, as `Role "name"` lines. Field values are not sent. A row's name can
-hold the first words of a message, because Slack names its rows that way.
-Per-app notes go too. `--check-config` prints the host.
-
-**What it answers.** At most 8 steps, each `{do, target, value, expect}`.
-`do` is `click`, `pick`, `type`, `write`, `key` or `scroll`. Strict JSON
-schema, from the `PlanReply` model in `planner.py`, so the answer always
-parses.
-
-**How a step is done.** Jev finds the target with one question, "which of
-these is `<target>`?", over the same offered items plus any that share a word
-with the target. `click` and `pick` press it. A press that changes nothing is
-tried once more as a real click. `type` presses the field, then types into a
-lookup field or pastes into any other. `write` presses the box and pastes the
-planner's text. Neither presses Return. A `key` step needs no target. After
-the step the window is read again, and Jev answers "is `<expect>` on screen
-now?".
-
-**When it asks again.** Any of these:
-
-- Jev picks none of the items, and the target's words are somewhere in the window;
-- a pick below 0.8;
-- the target is on `never_press`, or the app refused the press;
-- two steps in a row changed nothing (`type` and `write` do not count);
-- the same step three times;
-- `expect` answered below 0.5;
-- a `type` step with a word the user did not say, or a `cmd+a` outside a
-  one-line field (see below);
-- the user answered a guard's question with other words. The reason is
-  `Not done — the user said: "…"`, so the new plan reads them.
-
-It asks once, with the window as it is now, each step taken and what it
-changed, and why it stalled. The answer replaces the steps left. **One re-plan
-per request.** A second stall stops the run, and the alert names the step:
-`Stopped at “click General” — expected “a menu” and it is not on screen`.
-
-**A seeing failure stops at once.** When Jev picks none and no word of the
-target is anywhere in the window, the target was never read. Asking again
-would not help. The log says
-
-    planner: target not in the tree: "Mute channel" — Slack “general”, 241 items
-
-and the run stops with "Could not find … on screen". So a grep for `not in the
-tree` finds the walk's gaps, apart from the planner's mistakes.
+title, the item you look at, and the screen lines the agent reads: names, and
+what a text field holds, cut to 60 characters. A row's name can hold the
+first words of a message, because Slack names its rows that way. A 512 px
+picture of the area being worked in. Per-app notes and memories go too.
+`--check-config` prints the host.
 
 **⌘A.** The select-all guard asks the app for the focused element's role
 first. In a text field, a combo box or a search field, ⌘A selects only what
@@ -395,37 +354,10 @@ or a seen line: that Return would close the list the click is for. The
 Return is marked as the app's own. The send guard does not fire on it, since
 a combo box is not a message box.
 
-**Plan only.** `--recipe-probe "<request>" --app X` without `--execute` prints
-the plan, and which item Jev would pick for the first step. Nothing is done.
-
-**Measured 09-22**, 20 requests over Slack, Outlook, Notion, Chrome, Finder
-and Spotify: 1.0-4.2 s per plan, median 1.7 s, 850-1,850 input tokens. The
-first call of a run took 1.8, 3.3 and 10.2 s in three runs. Keeping the
-connection open did not show: 5 calls each, 1.17 s median on a fresh
-connection, 1.25 s on a kept one. It still invents: a "Friday"
-entry in Slack's "Clear after" menu, and once it rewrote a Notion page after
-⌘A. The ⌘A and unsaid-words guards exist because of that second one.
-
-**Live, Outlook, once:** "write an email to Peter with the subject test".
-"New Email" was found at 0.98 and opened the draft, but "is New message window
-on screen" came back 0.49, so it asked again. The new plan clicked "To
-Recipients" (0.96) and typed Peter. Outlook's suggestion list is not inside
-the window, so "Peter recipient suggestion" scored 0.04 and the run stopped,
-as the one-re-plan rule says. Vague `expect` text ("… active", "… focused")
-is the weak part. The expect question now also carries what the step changed:
-0.50 to 0.66 on that window, one case.
-
 ### The agent loop
 
-`loop: agent` under `actions: planner:` replaces the plan with a model that
-calls tools. The default is `plan`.
-
-```yaml
-actions:
-  planner:
-    model: gpt-5.6-luna
-    loop: agent              # agent | plan
-```
+The agent is the planner's model, calling tools. `loop: agent` is the
+default and the only value; `loop: plan` runs the agent too.
 
 The model gets the request, the app, its notes, and the screen as
 `[ID] Role "name"` lines: the items Jev would be offered, every item in a
@@ -433,16 +365,17 @@ pop-up, and the focused one. A text field, combo box or search field that
 holds something shows it: `[20] ComboBox "Start time" = "16:00"`, cut to 60
 characters. IDs belong to one read. It has seven tools, and the plan tools:
 
-- `act(why, steps)`: steps `{do, id, value, expect}` run in order, `do` as for
-  the plan. `why` is what the batch is for, in a few words. It goes in the app
+- `act(why, steps)`: steps `{do, id, value, expect}` run in order, `do` one
+  of `click`, `pick`, `type`, `write`, `key` or `scroll`. `why` is what the
+  batch is for, in a few words. It goes in the app
   log line and the trace. A call without it still runs. `expect`, optional,
   is what should be true after the step, such as "To holds Alex Moreau and
-  Antonio Ruiz". See [Surprises](#surprises).
-  Each step goes through the same code and guards as a planned step. The
+  Antonio Ruiz". It is recorded with the step and not checked.
+  Each step goes through `Loop._planned_step` and its guards. The
   batch stops at the first surprise: a step failed, a step changed nothing
-  (`type` and `write` do not count, as in the plan path), a step's `expect`
-  is not true, a step took a name out of its field, or something opened
-  that the next step does not target. The result says which steps
+  (`type`, `write` and `key` do not count: the tree does not show the caret
+  or a selection), a step took a name out of its field,
+  or something opened that the next step does not target. The result says which steps
   ran, why it stopped, what changed (as `changes()` gives it), and the new
   screen with new IDs.
 - `read()`: the screen again, nothing done.
@@ -513,7 +446,7 @@ tree): [101] "…"` and `still on screen, no longer in the tree (a panel may be
 hiding them): [105] ComboBox "…"`. The IDs click at the line's centre with
 `click_at`, until the next read. Text that appeared ends the batch when the
 next step does not click one of its lines, as a pop-up does; a control still
-on screen does not. The plan path re-plans on it (`_surprise`). Seen 09-23 in
+on screen does not. Seen 09-23 in
 Teams: the attendee suggestions were on screen and not in the tree, and the
 next step clicked the date.
 
@@ -553,7 +486,7 @@ A guard refusal (never_press, words not said, `cmd+a`) comes back as a tool
 result, and so does a covered target. Words the user gave a guard instead of
 yes or no come back as the step's result, `Not done — the user said: "…"`,
 and the run goes on. Escape, the front-app check and the send rule's no end
-the run, as they do on the plan path. Limits: 25 model calls, `max_steps`
+the run. Limits: 25 model calls, `max_steps`
 steps (30 by default), 120 s, not counting the time the user takes to answer.
 Only the newest screen is sent in full; earlier tool results are cut to the
 steps that ran. There is no re-plan: the model decides each move from what
@@ -562,14 +495,13 @@ came back.
 ### Surprises
 
 A surprise is a step that failed, the same batch run twice, a refused
-`done`, a step whose `expect` is not true, or a step that took a name or
-words out of its field. The last two are checked after every step that ran,
-without a model call:
+`done`, or a step that took a name or words out of its field. The last is
+checked after every step that ran, without a model call.
 
-- `expect`: Jev is asked "Is this true now: <expect>?" about the window, the
-  change sentence and what each text field holds. Below 0.5, the step's line
-  ends with `— expected "<expect>", not what happened`. About 0.3 s, added to
-  the step's ms.
+A step's `expect` is not checked. Asking Jev "Is this true now: <expect>?"
+cost 0.6-1.0 s a step, and on 09-24 it said no to three steps that had
+worked. It was removed on 09-24; the step still records `expect`.
+
 - Loss (`loop.lost`): the text the target field held, split into names, and
   the items drawn inside its frame. A part with two letters or more that is
   gone after the step is reported: `— this step removed "Alex Moreau" from
@@ -708,8 +640,8 @@ A guard asks "Yes, go ahead" or "No". The first, or a plain yes ("yes",
 "ok", "sure", "go ahead"…), is yes. "No", a plain no ("nope", "cancel",
 "stop"…), Escape or silence is no, as before. Any other words steer: the step
 is not done, the run does not stop, and the words go to the model as the
-step's result, `Not done — the user said: "move on to the next step"`. On
-the plan path they are the reason for a new plan. The same rule is in Swift
+step's result, `Not done — the user said: "move on to the next step"`. The
+same rule is in Swift
 (`Confirm.verdict`, for the Return and never_press questions) and in Python
 (`loop.verdict`, for the runner's own guards).
 
@@ -734,7 +666,7 @@ in place of the pill's "Looking…", and shows:
   user said…"), a repeated batch, a refused `done`, why the run stopped.
   These are our own texts; the model writes nothing extra;
 - one line for what the run does now: the step, "thinking…" or
-  "asking you…". The plan path and recipes have no checklist, only this line.
+  "asking you…". Recipes have no checklist, only this line.
 
 A question appears in the same panel, under the checklist, next to what it is
 about. After the answer the panel goes back to its place. That place is
@@ -817,7 +749,8 @@ proposals shown, those dropped and why, and what was kept.
 
 ## Measuring it
 
-`--act` runs the whole path without a microphone.
+`--act` runs the whole path without a microphone. `--execute` runs the
+agent, so it needs `actions: planner:`.
 
 ```sh
 PF=/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow
@@ -866,7 +799,7 @@ A run's folder, written by `built-in/recipes/runlog.py`:
 | --- | --- |
 | `run.json` | The request, the app, the loop (agent, plan, loop or recipe), the model, the settings, start and end, the outcome and the steps shown. Rewritten as the run goes. |
 | `calls/NN.json` | One model call: the messages exactly as sent (for the agent, the instructions as a system message, then the Responses `input` items), the tool calls with `why`, the results, ms, tokens, and the agent's plan after the call. `steer` is what the user typed or said to the run that this call got. `ids` maps each `[ID]` the model saw to the item's id in `tree`, as the agent numbered them. They are recorded, not recomputed. A line `look` saw is in `seen`, whole. |
-| `steps/NN.json` | One step: what was asked, the target item, the point, an accessibility press or a real click, `under` (what the hit test found at the point before), the trees before and after, the change and its sentence, a guard's question and answer, the verbs sent to the app and their replies, errors and ms. The agent adds `expect`, Jev's `expect_p` and `expect_ms`, and `lost`, what the step took out of its field. |
+| `steps/NN.json` | One step: what was asked, the target item, the point, an accessibility press or a real click, `under` (what the hit test found at the point before), the trees before and after, the change and its sentence, a guard's question and answer, the verbs sent to the app and their replies, errors and ms. The agent adds `expect` and `lost`, what the step took out of its field. `expect_p` and `expect_ms`, Jev's check of `expect`, are in runs before 09-24 only. |
 | `trees/NN.json` | Every read of the window, raw: all items, not only those shown, with the window frame. `shot` is the screenshot's file, its frame in screen points (top left and size), its scale in pixels per point and its size in pixels. `seen` is every line of text read from it, and `seen_ms` the time; a step's `change.seen` and `change.still` are the lines it reported. |
 | `shots/NN.jpg` | The screenshot of that read, cut to the window, JPEG at 0.7. Taken right after the walk, without ParrotFlow's own panels. Without Screen Recording there is none: `shot` is null and `shot_error` says why. |
 | `looks/NN.json` | A `look`: the region and the lines read. |
@@ -874,9 +807,8 @@ A run's folder, written by `built-in/recipes/runlog.py`:
 | `grounds/NN.jpg` | The JPEG the model got for it. |
 | `review.json` | The review after the run: the digest, the report, the proposals shown and those dropped with why, whether it was shown, what was kept and how it ended (`answered`, `closed`, `timeout`, `superseded`). The review's model call is `calls/NN.json` with `kind: review`. |
 
-The agent records everything. The plan path records its call, its steps and
-its trees. A recipe and the Jev loop record the run, the trees and one step
-per verb that touches the screen. The one-line trace in
+The agent records everything. A recipe records the run, the trees and one
+step per verb that touches the screen. The one-line trace in
 `ParrotFlow-Dev-agent.jsonl` is still written.
 
 **Private.** A recording holds what was on screen: names, messages, mail. It
@@ -953,7 +885,8 @@ it.
 
 ## What is known to be wrong
 
-Measured, or seen once and not yet measured. None of it is fixed.
+Measured, or seen once and not yet measured. None of it is fixed. Most of it
+is about the decider and the Jev loop, from before the agent.
 
 - **A sequence is one step at a time, and only the first step is decided.**
   "Send a message to Antonio and Peter" from an open DM has no right one-step
@@ -987,7 +920,8 @@ Measured, or seen once and not yet measured. None of it is fixed.
 | Reading text from the pixels, `--look-image` | `ScreenText.swift` |
 | The question to Jev, and what the answers mean | `built-in/recipes/decider.py` |
 | Asking Jev: Pydantic AI's TypeSafe model, the connection | `built-in/recipes/judge.py` |
-| The loop: steps, what changed, the stop rules | `built-in/recipes/loop.py` |
+| A step and its guards, what changed | `built-in/recipes/loop.py` |
+| The agent: tools, batches, surprises | `built-in/recipes/agent.py` |
 | Per-app notes, `apps/<app>.md` in the config folder | `built-in/recipes/decider.py` |
 | Clicks, keys and the paste | `ScreenAction.swift` |
 | `--act` | `ActCommand.swift` |
@@ -995,7 +929,6 @@ Measured, or seen once and not yet measured. None of it is fixed.
 | Recipes: loading, picking, running one | `built-in/recipes/runner.py` |
 | The process, the steps, Escape, the send check | `RecipeRunner.swift`, `Recipes.swift` |
 | What a recipe gets | `built-in/recipes/parrotflow.py` |
-| The planner: context, prompt, the call | `built-in/recipes/planner.py` |
-| Following a plan, the re-plan triggers | `built-in/recipes/loop.py` (`_planned`) |
+| The planner's client | `built-in/recipes/planner.py` |
 | Recording a run, the run viewer | `built-in/recipes/runlog.py`, `scripts/trace-viewer/` |
 | The review after a run, the proposals | `built-in/recipes/review.py`, `QuestionPanel.swift` |

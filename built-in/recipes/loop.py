@@ -1,16 +1,9 @@
 """The loop: one request, as many steps as it takes, when no recipe fits.
 
-Read the window, ask Jev for one step, do it, read the window again. Jev is
-never asked for a plan. It is told what was done and what changed, which
-is the only way it can tell a step that worked from one that did nothing.
-
-Ways out, in the order they are checked: Escape; nothing changed twice; the
-same step asked for three times; `finished` over 0.5; action `none`; a step
-that cannot act; the caret waiting for words; `max_steps`.
-
-With a planner configured, `_planned` runs instead: the planner gives the
-steps, Jev only finds each target, and the planner is asked again once when
-a step stalls. See the Planner section of docs/actions.md.
+`Loop.run` hands the run to the agent (`agent.py`). This file holds what the
+agent's steps go through: `_planned_step` and its guards, the reads, and
+`changes`, what a step changed. `decide_only` is the decider bench behind
+`--act` and `scripts/check-actions.sh`.
 """
 
 import difflib
@@ -23,10 +16,10 @@ import planner as planning
 import runlog as recording
 
 ESCAPED = "Stopped — you pressed escape"
-# A planned target picked below this asks the planner again. The narrow pick
-# scored 0.95-0.99 when it was right.
+NO_PLANNER = "No planner is set: add actions.planner to the config"
+# A target Jev picks below this is not acted on. The narrow pick scored
+# 0.95-0.99 when it was right.
 PICK_FLOOR = 0.8
-MAX_REPLANS = 3
 UNCHANGED = ("nothing in the accessibility tree changed — not verified: it may still have "
              "worked (a part of a field selected, a field already focused); check the picture")
 YES = "Yes, go ahead"
@@ -109,22 +102,6 @@ class Report:
     def as_dict(self):
         return {"said": self.said, "markdown": self.markdown, "acted": self.acted,
                 "stopped": self.stopped, "steps": self.steps, "shown": self.shown}
-
-
-class Outcome:
-    def __init__(self, said, step=None, is_action=True, ends=False):
-        self.said = said
-        self.step = step if step is not None else said.lower()
-        self.is_action = is_action
-        self.ends = ends
-
-
-def did(said, step=None, ends=False):
-    return Outcome(said, step, True, ends)
-
-
-def nothing(said):
-    return Outcome(said, None, False)
 
 
 def frame(*items):
@@ -509,11 +486,6 @@ def sentence(change):
     return "; ".join(out)
 
 
-def difference(before, after):
-    """What the last step did, in a sentence; "" when nothing changed."""
-    return sentence(changes(before, after))
-
-
 # Slack's To: holds "\xa0 Alex Moreau \xa0 \xa0": one name per run of spaces.
 _PARTS = re.compile(r"[,;\n ]|\s{2,}")
 _LETTERS = re.compile(r"[^\W\d_]{2}")
@@ -560,9 +532,7 @@ class Loop:
         self.utterance = request.get("run", "")
         settings = request.get("loop") or {}
         self.max_steps = int(settings.get("max_steps", 30))
-        self.send = bool(settings.get("send", False))
         self.spotlight = float(settings.get("spotlight", 0))
-        self.lookup_letters = int(settings.get("lookup_letters", 2))
         self.execute = request.get("execute", True)
         self.app = request.get("read_app")
         self.change = {}
@@ -600,17 +570,15 @@ class Loop:
     def run(self):
         report = Report()
         self.report = report
-        self.recorder.update(kind="agent" if self.planner is not None and self.planner.loop == "agent"
-                             else "plan" if self.planner is not None else "loop")
+        self.recorder.update(kind="agent")
         try:
-            if self.planner is not None and self.planner.loop == "agent":
-                import agent
-                self.agent = agent.Agent(self)
-                self.agent.run(report)
-            elif self.planner is not None:
-                self._planned(report)
-            else:
-                self._run(report)
+            if self.planner is None:
+                raise Stop(NO_PLANNER, broke=True)
+            if self.planner.loop != "agent":
+                self.log(f"action loop: loop \"{self.planner.loop}\" is gone; running the agent")
+            import agent
+            self.agent = agent.Agent(self)
+            self.agent.run(report)
         except Stop as stop:
             report.stopped = stop.text
             report.broke = report.broke or stop.broke
@@ -635,334 +603,6 @@ class Loop:
         if self.agent is not None and report.ending() in ("stopped", "failed"):
             self.agent._note(report.stopped)
         return report
-
-    def _run(self, report):
-        if self.execute:
-            self.call("watch")
-        gaze = self.request.get("gaze")
-        # Distances are measured from the gaze until something has happened,
-        # then from wherever the work is now.
-        aim = list(gaze) if gaze else [0, 0]
-        previous = None
-        quiet = 0
-        last = ""
-        repeats = 0
-        # Shortcuts already taken. Offering one twice is how a run spends
-        # itself pressing ⌘N.
-        spent = []
-        after_lookup = False
-        # Chrome answers AXPress on a web element and does nothing: "click on
-        # this image" pressed twice at two points and changed nothing.
-        press_did_nothing = False
-        pressed = False
-        revealed = False
-        steps = max(1, self.max_steps)
-
-        for step in range(1, steps + 1):
-            # The app this started in, every time. A misdirected ⌘N once put
-            # the loop in a terminal and it carried on working there.
-            named = previous["app"] if previous else self.app
-            reply = self.call("snapshot", at=aim, app=named)
-            if reply.get("error"):
-                report.stopped = reply["error"]
-                report.broke = True
-                self.log(f"action loop: could not read the window at step {step} — {report.stopped}")
-                return
-            snapshot = reply["snapshot"]
-            offers = decider.candidates(snapshot, self.utterance)
-            self.log(f"action loop: step {step} reads {snapshot['app']} “{snapshot['window']}”"
-                     f" — {len(snapshot['items'])} items, {len(offers)} offered")
-
-            changed = difference(previous, snapshot) if previous is not None else None
-            unchanged = changed == ""
-            if unchanged:
-                # Said out loud, the empty diff is the most useful sentence in
-                # the state: the step was posted, reported, and moved nothing.
-                changed = UNCHANGED
-                if pressed:
-                    press_did_nothing = True
-                    self.log("action loop: the press did nothing; using the pointer next")
-            if changed is not None:
-                self.log(f"action loop: changed — {decider.prefix(changed, 160)}")
-            if unchanged:
-                quiet += 1
-                if quiet >= 2:
-                    report.stopped = "Nothing changed twice over — stopping"
-                    self.log(f"action loop: {report.stopped}")
-                    return
-            else:
-                quiet = 0
-
-            if self.spotlight > 0 and self.execute:
-                self.call("spotlight", snapshot=snapshot["id"], offers=[o["id"] for o in offers],
-                          aim=aim, seconds=self.jev.timeout + 1)
-
-            fresh = appeared(previous, snapshot) if revealed and previous else []
-            if fresh:
-                self.log(f"action loop: asking only about the {len(fresh)} new item(s)")
-
-            self.show(now=True, activity="thinking…")
-            try:
-                decision = decider.decide(
-                    self.jev, self.utterance, snapshot, done=report.steps, changed=changed,
-                    # Without this, "open the Demo App conversation" answered
-                    # click with no target and stopped: the row was below the fold.
-                    can_scroll=step < steps, spent=spent,
-                    notes=decider.notes_of(snapshot["app"], self.log), only=fresh,
-                )
-            except decider.Failure as failure:
-                report.stopped = str(failure)
-                report.broke = True
-                self.log(f"action loop: the decider failed at step {step} — {report.stopped}")
-                return
-            print(f"jev decide {decision.ms} ms")
-            self.log(f"action loop: step {step} · {decision.line} · finished "
-                     f"{decision.finished:.2f} · {decision.ms} ms")
-
-            if not self.execute:
-                self.say(f"loop       step {step} · {decision.line} · {decision.ms} ms")
-                if decision.target:
-                    self.say(f"target     {decider.describe(decision.target, snapshot)}")
-                if decision.text:
-                    self.say(f"text       “{decision.text}”")
-                self.say("(planned only)")
-                report.stopped = "(planned only)"
-                return
-
-            # "open a new message to Antonio and Peter" pressed ⌘N five times:
-            # every ⌘N redraws the window, so something always changed.
-            target_name = decision.target["name"] if decision.target else ""
-            signature = decision.action + (
-                "" if decision.action in decider.IGNORES_TARGET else "\x01" + target_name)
-            if signature == last and not press_did_nothing:
-                repeats += 1
-                if repeats >= 2:
-                    report.stopped = "Asked for the same step three times — stopping"
-                    self.log(f"action loop: repeated {decision.action} again; stopping")
-                    return
-                self.log(f"action loop: repeated {decision.action}; skipping it")
-                previous = snapshot
-                continue
-            repeats = 0
-            last = signature
-
-            if decision.finished > 0.5:
-                report.stopped = "Nothing to do" if not report.steps else "Done"
-                self.log(f"action loop: {report.stopped} — finished {decision.finished:.2f}")
-                return
-            if decision.action == "none":
-                report.stopped = "Nothing to do on screen" if not report.steps else "Done"
-                self.log(f"action loop: {report.stopped} — nothing left to act on")
-                return
-
-            self.show(activity=f"{decision.action} “{decider.prefix(decision.target['name'], 40)}”…"
-                      if decision.target and decision.target.get("name") else f"{decision.action}…")
-            if self.spotlight > 0:
-                chosen = decision.target["id"] if decision.target else None
-                self.call("spotlight", snapshot=snapshot["id"], offers=[o["id"] for o in offers],
-                          aim=aim, chosen=chosen, seconds=self.spotlight)
-                time.sleep(self.spotlight)
-                self.call("spotlight_dismiss")
-
-            # After typing into a lookup field the next step picks from the
-            # list it filtered, and that list only takes a real click.
-            outcome = self.perform(decision, snapshot, aim, after_lookup or press_did_nothing)
-            after_lookup = bool(decision.target and decision.target.get("lookup"))
-            pressed = outcome.is_action and not (after_lookup or press_did_nothing)
-            press_did_nothing = False
-            revealed = decision.action in ("select", "show_menu")
-            if not outcome.is_action:
-                report.stopped = outcome.said
-                self.log(f"action loop: stopped at step {step} — {outcome.said}")
-                return
-            report.acted = True
-            # The caret is in an empty box words go into: the words are not
-            # the loop's to supply.
-            if not outcome.ends:
-                box = self.call("ready_for_words", app=snapshot["app"]).get("box")
-                if box:
-                    report.steps.append(outcome.step)
-                    report.shown.append(outcome.said)
-                    report.stopped = f"{box} is ready — dictate"
-                    self.log(f"action loop: the caret is in {box} and it is empty; your turn")
-                    return
-            if outcome.ends:
-                report.steps.append(outcome.step)
-                report.shown.append(outcome.said)
-                report.stopped = "Waiting for the words"
-                self.log("action loop: nothing left to do without the words")
-                return
-            if decision.action in decider.IGNORES_TARGET and decision.action not in spent:
-                spent.append(decision.action)
-            # The outcome, not the intention: "Opened a new message — say who
-            # it is to" read to the model like an instruction still to carry out.
-            report.steps.append(outcome.step)
-            report.shown.append(outcome.said)
-            previous = snapshot
-
-            # A shortcut leaves the caret in what it opened; otherwise the
-            # thing just acted on.
-            focus = self.call("focus", app=snapshot["app"]).get("point")
-            if focus:
-                aim = focus
-            elif decision.target:
-                aim = decider.point(decision.target)
-            self.log(f"action loop: measuring from {int(aim[0])},{int(aim[1])} now")
-            time.sleep(0.5)
-
-        report.stopped = f"Stopped after {self.max_steps} steps"
-        self.log(f"action loop: {report.stopped}")
-
-    # Following a plan
-
-    def _planned(self, report):
-        """The planner says what to do; Jev finds each target with a narrow
-        question; the window says whether it worked. Re-planned when a step fails or opens
-        something the plan does not use; stopped when a reason repeats."""
-        if self.execute:
-            self.call("watch")
-        gaze = self.request.get("gaze")
-        aim = list(gaze) if gaze else [0, 0]
-        snapshot = self._read(aim, self.app)
-        offers = decider.candidates(snapshot, self.utterance)
-        notes = decider.notes_of(snapshot["app"], self.log)
-        bundle = self.request.get("bundle", "")
-        self.log(f"planner: reads {snapshot['app']} “{snapshot['window']}” — "
-                 f"{len(snapshot['items'])} items, {len(offers)} sent to {self.planner.host}")
-        self.show(now=True, activity="thinking…")
-        plan = self.planner.plan(planning.context(self.utterance, snapshot, offers, bundle, notes))
-        self._log_plan("planned", plan)
-
-        if not self.execute:
-            self.say(f"plan       {len(plan.steps)} steps · {plan.ms} ms")
-            for line in plan.lines():
-                self.say(f"           {line}")
-            if plan.unsure:
-                self.say(f"unsure     {plan.unsure}")
-            first = plan.steps[0] if plan.steps else None
-            if first and first["target"] and first["do"] != "key":
-                try:
-                    item, why = self._find(first, snapshot)
-                    if item is not None and item.get("refused"):
-                        item, why = None, f"{decider.short(item, snapshot)} is on never_press"
-                    self.say(f"target     “{first['target']}” → "
-                             + (decider.short(item, snapshot) if item else f"✗ {why}"))
-                except Stop as stop:
-                    self.say(f"target     ✗ {stop.text}")
-            self.say("(planned only)")
-            report.stopped = "(planned only)"
-            return
-        if not plan.steps:
-            report.stopped = f"No plan: {plan.unsure}" if plan.unsure else "Nothing to do"
-            return
-
-        steps = list(plan.steps)
-        self.change = {}
-        self.fresh = set()
-        self.renamed = {}
-        taken = []        # (step, what came of it), for the advice call
-        counts = {}
-        quiet = 0
-        replans, whys = 0, set()
-        index = 0
-        done = 0
-        while index < len(steps):
-            if done >= max(1, self.max_steps):
-                report.stopped = f"Stopped after {self.max_steps} steps"
-                self.log(f"planner: {report.stopped}")
-                return
-            step = steps[index]
-            done += 1
-            self.log(f"planner: step {done} · {planning.describe_step(step)}")
-            why, snapshot, aim, outcome = self._planned_step(step, snapshot, aim, report)
-            if why is None:
-                taken.append((step, outcome))
-                signature = (step["do"], step["target"].lower(), step["value"])
-                counts[signature] = counts.get(signature, 0) + 1
-                unchanged = outcome.endswith(UNCHANGED)
-                quiet = quiet + 1 if unchanged and step["do"] not in ("type", "write") else 0
-                if counts[signature] >= 3:
-                    why = "the same step three times"
-                elif quiet >= 2:
-                    why = "nothing changed twice"
-                elif step["expect"] and not (step["do"] == "click" and self.target_kind == "text"):
-                    # Teams: "Message compose box focused" scored 0.47 with the
-                    # caret in it. Focus is not in the read.
-                    seen = decider.visible(self.jev, step["expect"], snapshot, outcome)
-                    self.log(f"planner: expected “{step['expect']}” — {seen:.2f}")
-                    if seen < 0.5:
-                        why = f"expected “{step['expect']}” and it is not on screen ({seen:.2f})"
-                if why is None:
-                    why = self._surprise(step, steps[index + 1] if index + 1 < len(steps) else None)
-            else:
-                taken.append((step, f"failed: {why}"))
-            if why is None:
-                index += 1
-                continue
-            if replans >= MAX_REPLANS or why in whys:
-                report.stopped = f"Stopped at “{self._short(step)}” — {why}"
-                self.log(f"planner: {report.stopped}; "
-                         + ("the same way twice" if why in whys else f"asked {replans} times already"))
-                return
-            replans += 1
-            whys.add(why)
-            self.log(f"planner: asking again — {why}")
-            offers = decider.candidates(snapshot, self.utterance)
-            screen = planning.context(self.utterance, snapshot, offers, bundle, notes,
-                                      change=self.change)
-            self.show(now=True, activity="thinking…")
-            advice = self.planner.advise(screen, taken, why)
-            self._log_plan("re-planned", advice)
-            if not advice.steps:
-                report.stopped = f"Stopped at “{self._short(step)}” — {why}"
-                return
-            steps, index, quiet = list(advice.steps), 0, 0
-
-        box = self.call("ready_for_words", app=snapshot["app"]).get("box")
-        report.stopped = f"{box} is ready — dictate" if box else "Done"
-        self.log(f"planner: {report.stopped}")
-
-    def _surprise(self, step, following):
-        """A part that opened and that the plan does not use, or None. Asked of
-        the read, not of a model: an expect check passed at 0.96 on a typed
-        name while Outlook's suggestion row went unpicked."""
-        for part in self.change.get("appeared", ()):
-            # "To" matched Outlook's row "To change selection, press Control-Option".
-            target = {w for w in decider._words(following["target"]) if len(w) > 2} \
-                if following else set()
-            if target and any(target <= set(decider._words(row)) for row in part["rows"]):
-                continue
-            if following is None and step["do"] not in ("type", "write"):
-                continue
-            rows = ", ".join(f"“{decider.prefix(r, 40)}”" for r in part["rows"][:4])
-            near = f" near “{part['near']}”" if part.get("near") else ""
-            nxt = f"the next step, “{self._short(following)}”, does not use it" if following \
-                else "the plan ends with it open"
-            return f"a {part['kind']} opened{near} with {rows}, and {nxt}"
-        for block in self.change.get("seen", ()):
-            target = {w for w in decider._words(following["target"]) if len(w) > 2} \
-                if following else set()
-            if target and any(target <= set(decider._words(line["text"])) for line in block["lines"]):
-                continue
-            if following is None and step["do"] not in ("type", "write"):
-                continue
-            lines = ", ".join(f"“{decider.prefix(line['text'], 40)}”" for line in block["lines"][:4])
-            near = f" near “{block['near']}”" if block.get("near") else ""
-            nxt = f"the next step, “{self._short(following)}”, does not use it" if following \
-                else "the plan ends with it open"
-            return f"text appeared{near} (seen, not in the tree): {lines}, and {nxt}"
-        return None
-
-    def _log_plan(self, how, plan):
-        self.log(f"planner: {how} {len(plan.steps)} steps in {plan.ms} ms, {plan.tokens} tokens in")
-        for line in plan.lines():
-            self.log(f"planner:   {line}")
-        if plan.unsure:
-            self.log(f"planner:   unsure — {decider.prefix(plan.unsure, 200)}")
-
-    @staticmethod
-    def _short(step):
-        return f"{step['do']} {step['target'] or step['value']}".strip()
 
     def _read(self, aim, app):
         """The window, with `seen`, its text read from the pixels, when the
@@ -1306,132 +946,6 @@ class Loop:
         """A chord goes to whatever is frontmost. ⌘N for a Slack message once
         opened a terminal window instead."""
         self.act("front")
-
-    def perform(self, decision, snapshot, aim, click_rather_than_press):
-        target = decision.target
-        # never_press, before anything is posted. The app refuses it again at
-        # the moment of acting.
-        if target and target.get("refused"):
-            self.log(f"action: refused — \"{decider.prefix(target['name'], 40)}\" matches "
-                     f"\"{target['refused']}\"")
-            return nothing(f"Won't press \"{decider.prefix(target['name'], 30)}\" — that is yours to do")
-        action = decision.action
-
-        if action == "none":
-            return nothing("Nothing to do on screen")
-
-        if action == "scroll":
-            # Which way is in the words. Where is the gaze: an arrow key
-            # scrolled the conversation when the sidebar was asked for.
-            words = self.utterance.lower()
-            down = "down" in words or "bas" in words or "descend" in words
-            spot = decider.point(target) if target else aim
-            self.act("scroll", x=spot[0], y=spot[1], down=down, turns=6)
-            return did("Scrolled down where you were looking" if down
-                       else "Scrolled up where you were looking")
-
-        if action == "new_message":
-            # The picker is opened by a shortcut: a target not on screen can
-            # never be offered.
-            self.front()
-            self.act("key", keys="cmd+n")
-            return did("Opened a new message — say who it is to",
-                       step="opened a new message; its recipient field is now on screen")
-
-        if action == "search":
-            # Slack's search bar is not a text field to the accessibility API,
-            # so it is never offered: the model chose the composer at 0.80.
-            # ⌘G is Slack's own shortcut, and wrong in another app.
-            self.front()
-            self.act("key", keys="cmd+g", wait=400)
-            if not decision.text:
-                return did("Opened search")
-            self.act("paste", text=decision.text)
-            if self.send:
-                self.act("key", keys="return")
-            return did(f"Searched for {decision.text}")
-
-        if action == "show_menu":
-            # A web image with no alt text has no name and no item: where you
-            # looked is the answer a right-click always wanted.
-            spot = decider.point(target) if target else aim
-            name = decider.label(target) if target else "what you were looking at"
-            self.front()
-            if target:
-                self.act("show_menu", id=target["id"])
-            else:
-                self.act("show_menu", x=spot[0], y=spot[1])
-            time.sleep(0.4)
-            return did(f"Opened the menu on {name}",
-                       step=f"opened the menu on \"{name}\"; its choices are on screen now")
-
-        if action == "select":
-            if not target:
-                return nothing("Nothing here to select")
-            name = decider.label(target)
-            self.front()
-            self.act("select", id=target["id"])
-            time.sleep(0.3)
-            return did(f"Selected {name}", step=f"selected the text of \"{name}\"; it is highlighted now")
-
-        # click, type, send_message
-        if not target:
-            return nothing(f"Nothing here matches \"{self.utterance}\"")
-        self.act("press", id=target["id"], click=click_rather_than_press)
-        name = decider.label(target)
-        # Picking from an open list is the whole step. Running on added Peter
-        # and went straight to the message box with Samir still to add.
-        if action == "click" or target.get("in_list"):
-            return did(f"Picked {name}",
-                       step=f"picked \"{name}\" from the list; that is one recipient in")
-        time.sleep(0.5)
-
-        # The message goes in the composer, and the thing clicked was the
-        # conversation. Found again: the window has changed.
-        if action == "send_message" and target["kind"] != "text":
-            time.sleep(0.6)
-            composer = self.composer(snapshot["app"])
-            if composer is None:
-                return nothing(f"Opened {name}, but found no message box")
-            self.act("press", id=composer["id"], click=False)
-            time.sleep(0.3)
-
-        # A name only goes into a field that looks names up: the model once
-        # picked the composer and "Peter", and "Pe" was typed as the message.
-        # First letters only; see lookup_letters.
-        looked = None
-        if target.get("lookup") and decision.word:
-            looked = (decision.word[:self.lookup_letters] if self.lookup_letters > 0
-                      else decision.word)
-        text = decision.text or looked
-        if not text:
-            if target.get("lookup"):
-                return did("Put the caret in the lookup field — no name to type",
-                           step="put the caret in the lookup field; no name was picked to type")
-            return did(f"{name} is ready — dictate the message",
-                       step=f"put the caret in \"{name}\"; there were no words to type", ends=True)
-        # Pasting "Pe" into Slack's recipient field made a token, not a list:
-        # a lookup field gets keystrokes.
-        if target.get("lookup"):
-            self.act("type", text=text)
-            what = f"typed \"{text}\" into the lookup field; the list below it has narrowed"
-        else:
-            self.act("paste", text=text)
-            what = f"typed \"{text}\" into \"{name}\""
-        if not self.send:
-            return did(f"Typed “{text}” into {name}", step=what)
-        self.act("key", keys="return")
-        return did(f"Sent to {name}", step=what + " and pressed Return")
-
-    def composer(self, app):
-        """The message box: a text field in the bottom fifth of the window.
-        It has no name in Slack, so where it is is all there is."""
-        reply = self.call("snapshot", at=[0, 0], app=app)
-        if reply.get("error"):
-            return None
-        now = reply["snapshot"]
-        return next((i for i in now["items"]
-                     if i["kind"] == "text" and decider.relative_y(now, i) > 0.8), None)
 
 
 def run(request, channel, jev, planner=None):

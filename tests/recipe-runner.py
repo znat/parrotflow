@@ -24,10 +24,6 @@ jev_calls = []
 # The loop's answers, one per call: action, target, and the noul questions.
 loop_answers = []
 loop_bodies = []
-# The planner path: Jev's answer to "is <expect> on screen", and the pick's p.
-visible_answers = []
-visible_bodies = []
-pick_p = {"p": 0.97}
 PLANNER_KEY = "sk-test-planner-key-1234"
 planner_plans = []
 planner_bodies = []
@@ -58,8 +54,7 @@ def plain(body):
         if isinstance(instructions, dict):
             instructions = instructions["question"]
         if key == "response":
-            key = ("visible" if question["type"] == "noul" else
-                   "recipe" if instructions == "Which of these is the user asking for?" else "pick")
+            key = "recipe" if instructions == "Which of these is the user asking for?" else "pick"
         questions[key] = dict(question, instructions=instructions)
     return {"state": json.loads(body["state"]), "model": body["model"], "questions": questions}
 
@@ -93,17 +88,12 @@ class FakeJev(http.server.BaseHTTPRequestHandler):
                            if k != "none" and wanted in v]
                 chosen = matches[0] if matches else "none"
                 if len(matches) > 1:
-                    answers[key] = choice(chosen, {k: pick_p["p"] for k in matches})
+                    answers[key] = choice(chosen, {k: 0.97 for k in matches})
                     continue
-            elif key == "visible":
-                visible_bodies.append(body)
-                answers[key] = {"type": "noul",
-                                "noul": visible_answers.pop(0) if visible_answers else 0.9}
-                continue
             else:
                 word = body["state"]["words"][key]
                 chosen = "who" if word in NAMES else "none"
-            p = 1.0 if key == "recipe" else pick_p["p"] if key == "pick" else 0.97
+            p = 1.0 if key == "recipe" else 0.97
             answers[key] = choice(chosen, {chosen: p})
         if "response" in sent["questions"]:
             answers = {"response": next(iter(answers.values()))}
@@ -360,108 +350,11 @@ class Screen:
 LOOP = {"max_steps": 15, "send": False, "spotlight": 0, "lookup_letters": 2}
 UNCHANGED = ("nothing in the accessibility tree changed — not verified: it may still have "
              "worked (a part of a field selected, a field already focused); check the picture")
+NO_PLANNER = "No planner is set: add actions.planner to the config"
 
 
-def loop_checks(runner):
-    def run(utterance, windows, answers, override=None, execute=True, **loop):
-        loop_answers[:] = answers
-        del loop_bodies[:]
-        fake = Screen(windows, override)
-        end, fake = runner.run(utterance, "Test", fake=fake, execute=execute,
-                               loop=dict(LOOP, **loop), recipes=False)
-        return end, fake, end.get("loop") or {}
-
-    end, fake, report = run("click on Checkout", [window(1), window(2)],
-                            [loop_answer("click", "t0"), loop_answer("none", finished=0.9)])
-    check("loop: finished over 0.5 ends it, done",
-          end["end"] == "done" and report["stopped"] == "Done" and report["acted"]
-          and report["said"] == "Picked Checkout", (end, fake.did()))
-    check("loop: the second question carries done and finished",
-          loop_bodies[1]["state"]["done"] == ['picked "Checkout" from the list; that is one recipient in']
-          and "finished" in loop_bodies[1]["questions"] and "finished" not in loop_bodies[0]["questions"],
-          [sorted(b["questions"]) for b in loop_bodies])
-    check("loop: an ignored press never touches the screen twice",
-          [s["click"] for s in fake.steps if s["do"] == "press"] == [False], fake.did())
-
-    end, fake, report = run("what time is it", [window(1)], [loop_answer("none")])
-    check("loop: action none on the first step does nothing",
-          end["end"] == "done" and report["stopped"] == "Nothing to do on screen"
-          and not report["acted"] and fake.did() == ["snapshot"], (report, fake.did()))
-
-    end, fake, report = run("click on Checkout", [window(1), window(2), window(3)],
-                            [loop_answer("click", "t0")] * 3)
-    check("loop: the same step three times stops it, pressed once",
-          report["stopped"] == "Asked for the same step three times — stopping"
-          and fake.did().count("press") == 1 and end["end"] == "stopped", (report, fake.did()))
-
-    end, fake, report = run("scroll down", [window(1)] * 3,
-                            [loop_answer("scroll"), loop_answer("show_menu", "t0")])
-    check("loop: nothing changed twice stops it",
-          report["stopped"] == "Nothing changed twice over — stopping"
-          and [d for d in fake.did() if d not in ("ready_for_words", "focus")]
-          == ["snapshot", "scroll", "snapshot", "front", "show_menu", "snapshot"],
-          (report, fake.did()))
-    check("loop: a step that changed nothing is said to the model",
-          loop_bodies[1]["state"].get("changed") == UNCHANGED, loop_bodies[1]["state"].get("changed"))
-
-    end, fake, report = run("open a new message and scroll", [window(1), window(2)],
-                            [loop_answer("new_message"), loop_answer("scroll")], max_steps=2)
-    check("loop: max_steps stops it",
-          report["stopped"] == "Stopped after 2 steps" and len(report["steps"]) == 2, report)
-    check("loop: a shortcut taken is not offered again",
-          "new_message" in loop_bodies[0]["questions"]["action"]["criteria"]
-          and "new_message" not in loop_bodies[1]["questions"]["action"]["criteria"],
-          [list(b["questions"]["action"]["criteria"]) for b in loop_bodies])
-    check("loop: scrolling is offered only while another step can follow",
-          "scrolling brings more" in loop_bodies[0]["state"]["note"]
-          and "scrolling brings more" not in loop_bodies[1]["state"]["note"])
-    check("loop: new_message brings the app forward, then ⌘N",
-          [s for s in fake.steps if s["do"] == "key"] == [{"do": "key", "keys": "cmd+n"}]
-          and fake.did()[:3] == ["snapshot", "front", "key"], fake.did())
-
-    escape = {("snapshot", 2): {"error": "escape", "said": True}}
-    end, fake, report = run("scroll down", [window(1), window(2)], [loop_answer("scroll")], escape)
-    check("loop: Escape mid-loop stops it before the next step",
-          end["end"] == "stopped" and report["stopped"] == "Stopped — you pressed escape"
-          and fake.steps[-1]["do"] == "snapshot" and report["steps"] == ["scrolled down where you were looking"],
-          (report, fake.steps[-3:]))
-
-    end, fake, report = run("click on Checkout", [window(1), window(1), window(2)],
-                            [loop_answer("click", "t0"), loop_answer("click", "t0"), loop_answer("none")])
-    check("loop: a press that changed nothing is clicked for real next",
-          [s["click"] for s in fake.steps if s["do"] == "press"] == [False, True]
-          and "action loop: the press did nothing; using the pointer next" in fake.logs,
-          ([s for s in fake.steps if s["do"] == "press"], report))
-
-    refused = {("key", 1): {"error": "send is off", "said": True,
-                            "text": "Won't press Return in the message box — send is off"}}
-    end, fake, report = run("reply here: on it", [window(1)],
-                            [loop_answer("send_message", "t2", has_text=0.9)], refused, send=True)
-    check("loop: Return refused in a message box ends it, said",
-          end["end"] == "stopped"
-          and report["stopped"] == "Won't press Return in the message box — send is off"
-          and fake.did()[-2:] == ["paste", "key"] and fake.steps[-1]["do"] != "key"
-          and [s["text"] for s in fake.steps if s["do"] == "paste"] == ["on it"],
-          (report, fake.did()))
-    end, fake, report = run("reply here: on it", [window(1), window(2)],
-                            [loop_answer("send_message", "t2", has_text=0.9), loop_answer("none")])
-    check("loop: with send off it never asks for Return",
-          "key" not in fake.did() and report["said"] == "Typed “on it” into Message to Ann",
-          (report, fake.did()))
-
-    end, fake, report = run("click on Checkout", [window(1, refused="send")],
-                            [loop_answer("click", "t0")])
-    check("loop: a target on never_press is not pressed",
-          "press" not in fake.did() and report["stopped"] == 'Won\'t press "Checkout" — that is yours to do',
-          (report, fake.did()))
-
-    end, fake, report = run("click on Checkout", [window(1)], [loop_answer("click", "t0")],
-                            execute=False)
-    check("loop: plan only reads and decides, and does nothing",
-          end == {"end": "planned", "ok": True, "loop": report} and fake.did() == ["snapshot"]
-          and fake.lines[-1] == "(planned only)" and fake.lines[0].startswith("loop       step 1 · click 0.90"),
-          (end, fake.did(), fake.lines))
-
+def decide_checks(runner):
+    """`decide_only`, the decider bench behind `--act`."""
     snapshot = dict(window(1), id=0)
     runner.send({"decide": "click on Checkout", "snapshot": snapshot, "mode": "request"})
     answer = runner.read()
@@ -517,8 +410,10 @@ def change_checks():
     sys.path.insert(0, os.path.join(ROOT, "built-in", "recipes"))
     import decider
     import loop
-
     import planner
+
+    def said(before, after):
+        return loop.sentence(loop.changes(before, after))
     check("line: an unnamed field shows its state, as a named one does",
           planner._line({"role": "AXTextArea", "name": "", "kind": "text", "value": "",
                          "state": ["focused"]}) == "TextArea (no name) (focused)")
@@ -588,20 +483,20 @@ def change_checks():
     check("change: a pop-up's rows are named, with the field they hang from",
           change == {"appeared": [{"kind": "pop-up", "rows": ["Peter Holm", "Peter Smith"],
                                    "near": "To"}]}
-          and loop.difference(draft("Pe"), draft("Pe", popup=True))
+          and said(draft("Pe"), draft("Pe", popup=True))
           == 'a pop-up opened near "To": "Peter Holm", "Peter Smith"', change)
     change = loop.changes(draft(""), draft("Peter"))
     check("change: typing into a field is a change, not nothing",
           change == {"values": {"To": "Peter"}}
-          and loop.difference(draft(""), draft("Peter")) == '"To" now holds "Peter"', change)
+          and said(draft(""), draft("Peter")) == '"To" now holds "Peter"', change)
     check("change: a field emptied is said so",
-          loop.difference(draft("Peter"), draft("")) == '"To" is now empty')
+          said(draft("Peter"), draft("")) == '"To" is now empty')
     import copy
     focused = copy.deepcopy(draft("Peter"))
     focused["items"][0]["state"] = ["focused"]
     check("change: focus moving into a field is said",
-          loop.difference(draft("Peter"), focused) == 'the caret is now in "To"',
-          loop.difference(draft("Peter"), focused))
+          said(draft("Peter"), focused) == 'the caret is now in "To"',
+          said(draft("Peter"), focused))
     renamed = copy.deepcopy(draft())
     renamed["items"][0]["name"] = "Look for people"
     change = loop.changes(draft(), renamed)
@@ -610,10 +505,10 @@ def change_checks():
     tabbed = copy.deepcopy(draft(filler=1))
     tabbed["items"][2]["state"] = ["selected"]
     check("change: an item becoming selected is said",
-          loop.difference(draft(filler=1), tabbed) == '"Tool 0" is now selected',
-          loop.difference(draft(filler=1), tabbed))
+          said(draft(filler=1), tabbed) == '"Tool 0" is now selected',
+          said(draft(filler=1), tabbed))
     check("change: a wide element's count moving is not a change",
-          loop.difference(draft(more=3140), draft(more=3141)) == "")
+          said(draft(more=3140), draft(more=3141)) == "")
     slack = "\u00a0 Alex Moreau \u00a0 \u00a0"
     check("lost: a field that held Alex Moreau and now holds Antonio lost him",
           loop.lost(draft(slack)["items"][0], draft(slack), draft("\u00a0 Antonio \u00a0"))
@@ -691,284 +586,10 @@ def change_checks():
     check("seen: a line over a target that is not its own text covers it",
           [l["text"] for l in loop.covering(end, over)] == ["18:30"]
           and loop.covering(end, dict(over, seen=[line("17:30", 390, 200, 40)])) == [])
-    lp = loop.Loop({"run": ""}, object(), None)
-    lp.change = {"seen": [{"near": "To", "lines": [line("Peter Quill", 330, 130)]}]}
-    typed = {"do": "type", "target": "To", "value": "Pe", "expect": ""}
-    check("seen: on the plan path, text that appeared and the next step skips is a surprise",
-          (lp._surprise(typed, {"do": "click", "target": "Date", "value": "", "expect": ""}) or "")
-          .startswith('text appeared near “To” (seen, not in the tree): “Peter Quill”, and the next')
-          and lp._surprise(typed, {"do": "click", "target": "Peter Quill", "value": "", "expect": ""})
-          is None)
-
-
-def seeing_checks(runner):
-    """The loop is told what opened and what was typed."""
-    def run(utterance, windows, answers):
-        loop_answers[:] = answers
-        del loop_bodies[:]
-        fake = Screen(windows)
-        end, fake = runner.run(utterance, "Test", fake=fake, loop=LOOP, recipes=False)
-        return end, fake, end.get("loop") or {}
-
-    end, fake, report = run("write to Peter", [draft("Pe", filler=45), draft("Pe", popup=True, filler=45)],
-                            [loop_answer("scroll"), loop_answer("none")])
-    state = loop_bodies[1]["state"]
-    check("loop: a pop-up that opened is in `changed`, and its rows are targets",
-          state["changed"] == 'a pop-up opened near "To": "Peter Holm", "Peter Smith"'
-          and any(v.startswith("Cell “Peter Smith”") and "in the pop-up" in v
-                  for v in state["targets"].values()), state)
-
-    end, fake, report = run("write to Peter", [draft(""), draft("Pe"), draft("Pe")],
-                            [loop_answer("scroll"), loop_answer("click", "t0"), loop_answer("none")])
-    check("loop: typing into a field counts as a change",
-          loop_bodies[1]["state"]["changed"] == '"To" now holds "Pe"'
-          and loop_bodies[2]["state"]["changed"] == UNCHANGED, [b["state"].get("changed") for b in loop_bodies])
-
-
-def planner_checks(runner, stderr_path):
-    def run(utterance, windows, plans, override=None, execute=True, visible=(), p=0.97):
-        planner_plans[:] = plans
-        del planner_bodies[:]
-        visible_answers[:] = list(visible)
-        pick_p["p"] = p
-        calls = len(jev_calls)
-        fake = Screen(windows, override)
-        end, fake = runner.run(utterance, "Test", fake=fake, execute=execute, loop=LOOP,
-                               recipes=False)
-        return end, fake, end.get("loop") or {}, [c[0] for c in jev_calls[calls:]]
-
-    def pressed(fake):
-        return [s["id"] for s in fake.steps if s["do"] == "press"]
-
-    home = panel("Home", ["General", "Settings", "Leave"])
-    menu = panel("Home", ["General", "Settings", "Leave", "Mute channel"])
-    muted = panel("Home — muted", ["General", "Settings", "Leave", "Unmute channel"])
-
-    end, fake, report, asked = run(
-        "mute this channel", [home, menu, muted],
-        [[{"do": "click", "target": "Settings", "expect": "a Mute channel item"},
-          {"do": "pick", "target": "Mute channel"}]])
-    check("planner: a plan is followed step by step",
-          end["end"] == "done" and report["stopped"] == "Done" and len(planner_bodies) == 1
-          and asked == ["pick", "visible", "pick"] and len(pressed(fake)) == 2
-          and report["shown"] == ["Clicked Settings", "Clicked Mute channel"],
-          (report, asked, fake.did()))
-    check("planner: the request carries the window and names, not values",
-          'Window: "Home"' in planner_bodies[0]["messages"][1]["content"]
-          and '- Button "Settings"' in planner_bodies[0]["messages"][1]["content"]
-          and planner_bodies[0].get("reasoning_effort") == "none",
-          planner_bodies[0]["messages"][1]["content"])
-    check("planner: no loop question to Jev", "action" not in asked, asked)
-
-    compose = panel("New message", ["General", "Message to Ann"])
-    end, fake, report, asked = run(
-        "write to Ann saying hello", [home, compose, compose],
-        [[{"do": "key", "value": "⌘N", "expect": "a message box"},
-          {"do": "write", "target": "Message to Ann", "value": "hello"}]])
-    check("planner: a key step, then write pastes into the box, and no Return",
-          [s.get("keys") for s in fake.steps if s["do"] == "key"] == ["cmd+n"]
-          and [s["text"] for s in fake.steps if s["do"] == "paste"] == ["hello"]
-          and end["end"] == "done", (report, fake.did()))
-
-    end, fake, report, asked = run(
-        "mute this channel", [home, menu, muted],
-        [[{"do": "click", "target": "Settings menu"}],
-         [{"do": "click", "target": "Settings"}]])
-    check("planner: Jev's none, when the words are on screen, asks again",
-          len(planner_bodies) == 2 and "Stalled: none of the" in planner_bodies[1]["messages"][1]["content"]
-          and end["end"] == "done" and len(pressed(fake)) == 1, (report, asked))
-
-    end, fake, report, asked = run(
-        "mute this channel", [home, home, home, home, home],
-        [[{"do": "click", "target": "General"}, {"do": "click", "target": "Settings"}],
-         [{"do": "click", "target": "Leave"}]])
-    check("planner: nothing changed twice asks again",
-          "Stalled: nothing changed twice" in planner_bodies[1]["messages"][1]["content"],
-          (report, [b["messages"][1]["content"][-80:] for b in planner_bodies]))
-    check("planner: a press that did nothing is clicked for real",
-          [s["click"] for s in fake.steps if s["do"] == "press"][:2] == [False, True], fake.steps)
-
-    end, fake, report, asked = run(
-        "mute this channel", [panel("Home", ["General", "Settings", f"Row {n}"]) for n in range(6)],
-        [[{"do": "click", "target": "Settings"}] * 3, []])
-    check("planner: the same step three times asks again",
-          len(planner_bodies) == 2
-          and "Stalled: the same step three times" in planner_bodies[1]["messages"][1]["content"]
-          and report["stopped"].startswith("Stopped at “click Settings”"), report)
-
-    end, fake, report, asked = run(
-        "mute this channel", [home, menu], [[{"do": "click", "target": "Setting"}], []],
-        p=0.6)
-    check("planner: a pick below 0.8 asks again, and nothing is pressed",
-          "at only 0.60" in planner_bodies[1]["messages"][1]["content"] and pressed(fake) == [],
-          (report, fake.did()))
-
-    twins = panel("Calendar", ["Today", "Create a new event.", "Week", "Create a new event."])
-    end, fake, report, asked = run(
-        "new meeting", [twins, twins], [[{"do": "click", "target": "Create a new event."}]],
-        p=0.45)
-    check("planner: two items with one name add their scores and the first is pressed",
-          len(planner_bodies) == 1 and len(set(pressed(fake))) == 1
-          and any("0.90" in line and "Create a new event." in line for line in fake.logs),
-          (report, fake.logs[-4:]))
-
-    end, fake, report, asked = run(
-        "leave this channel", [panel("Home", ["General", "Settings", "Leave"], refused="leave")],
-        [[{"do": "click", "target": "Leave"}], []])
-    check("planner: a target on never_press is asked about, and no answer asks the planner again",
-          len(planner_bodies) == 2
-          and "the app refused to press it" in planner_bodies[1]["messages"][1]["content"],
-          (report, fake.did()))
-
-    refusal = {("press", 1): {"error": "refused", "said": True, "text": "Won't press"}}
-    end, fake, report, asked = run(
-        "mute this channel", [home, menu], [[{"do": "click", "target": "Settings"}], []], refusal)
-    check("planner: a click the app refused asks again",
-          "the app refused to press it" in planner_bodies[1]["messages"][1]["content"], report)
-
-    end, fake, report, asked = run(
-        "mute this channel", [home, menu, muted],
-        [[{"do": "click", "target": "Settings", "expect": "a Mute channel item"}],
-         [{"do": "pick", "target": "Mute channel"}]], visible=[0.1])
-    check("planner: an expect answered no asks again, then carries on",
-          "and it is not on screen (0.10)" in planner_bodies[1]["messages"][1]["content"]
-          and end["end"] == "done" and len(pressed(fake)) == 2, (report, asked))
-
-    end, fake, report, asked = run(
-        "mute this channel", [home, home, home, home],
-        [[{"do": "click", "target": "Settings", "expect": "a menu"}],
-         [{"do": "click", "target": "General", "expect": "a menu"},
-          {"do": "click", "target": "Settings"}]], visible=[0.1, 0.1])
-    check("planner: the same reason twice stops it and names the failed step",
-          len(planner_bodies) == 2 and end["end"] == "stopped"
-          and report["stopped"] == "Stopped at “click General” — expected “a menu” and it is not "
-                                   "on screen (0.10)", report)
-
-    del visible_bodies[:]
-    end, fake, report, asked = run(
-        "write to Peter", [draft(""), draft("Pe", popup=True)],
-        [[{"do": "type", "target": "To", "value": "Peter", "expect": "a list of people"}], []],
-        visible=[0.1])
-    replan = planner_bodies[1]["messages"][1]["content"] if len(planner_bodies) > 1 else ""
-    check("planner: the re-plan is told what opened and what the field holds",
-          'Just opened: a pop-up near "To" with "Peter Holm", "Peter Smith"' in replan
-          and 'Now in "To": "Pe"' in replan and '- Cell "Peter Smith" (in the pop-up)' in replan,
-          replan)
-    check("planner: the expect check sees the pop-up and what changed",
-          'a pop-up opened near "To"' in visible_bodies[0]["state"]["changed_by_the_last_step"]
-          and "Cell “Peter Smith”" in visible_bodies[0]["state"]["on_screen"],
-          visible_bodies[:1])
-
-    end, fake, report, asked = run(
-        "write to Peter", [draft(""), draft("Pe", popup=True), draft("Pe", popup=True)],
-        [[{"do": "type", "target": "To", "value": "Peter"}, {"do": "click", "target": "Subject"}],
-         [{"do": "pick", "target": "Peter Smith"}]])
-    advice = planner_bodies[1]["messages"][1]["content"] if len(planner_bodies) > 1 else ""
-    check("planner: a pop-up the next step does not use asks again before the step",
-          'a pop-up opened near “To” with “Peter Holm”, “Peter Smith”, and the next step, '
-          '“click Subject”, does not use it' in advice and "Subject" not in str(pressed(fake)),
-          (advice[-400:], fake.did()))
-
-    end, fake, report, asked = run(
-        "write to Peter", [draft(""), draft("Pe", popup=True), draft("Pe", popup=True)],
-        [[{"do": "type", "target": "To", "value": "Peter"},
-          {"do": "pick", "target": "Peter Smith"}]])
-    check("planner: a pop-up the next step picks from is not a surprise",
-          len(planner_bodies) == 1, planner_bodies[1:])
-
-    end, fake, report, asked = run(
-        "write to Peter", [draft(""), draft("Pe", popup=True)],
-        [[{"do": "type", "target": "To", "value": "Peter"}], []])
-    check("planner: a plan that ends on a typed field with a pop-up open asks again",
-          len(planner_bodies) == 2 and "the plan ends with it open" in
-          planner_bodies[1]["messages"][1]["content"], report)
-
-    end, fake, report, asked = run(
-        "mute this channel", [home, menu, muted],
-        [[{"do": "click", "target": "Settings"}, {"do": "pick", "target": "Mute channel"}]])
-    clicks = [s["click"] for s in fake.steps if s["do"] == "press"]
-    check("planner: an item the last step brought up is clicked, not pressed",
-          clicks == [False, True], clicks)
-
-    end, fake, report, asked = run(
-        "make this a checklist", [home, home],
-        [[{"do": "key", "value": "cmd+a"}, {"do": "type", "value": "☐ one"}], []])
-    check("planner: select all is refused and asks again",
-          "select all would put" in planner_bodies[1]["messages"][1]["content"]
-          and "key" not in fake.did(), (report, fake.did()))
-    focused = {("focus", 1): {"point": None, "described": "", "role": "AXComboBox"}}
-    end, fake, report, asked = run(
-        "set the end time to five", [home, menu], [[{"do": "key", "value": "cmd+a"}]], focused)
-    check("planner: ⌘A in a combo box runs without asking",
-          "ask" not in fake.did() and [s.get("keys") for s in fake.steps if s["do"] == "key"]
-          == ["cmd+a"] and end["end"] == "done", (report, fake.did()))
-    focused = {("focus", 1): {"point": None, "described": "", "role": "AXTextArea"}}
-    end, fake, report, asked = run(
-        "make this a checklist", [home, home], [[{"do": "key", "value": "cmd+a"}], []], focused)
-    check("planner: ⌘A in a text area still asks",
-          "ask" in fake.did() and "key" not in fake.did(), (report, fake.did()))
-
-    end, fake, report, asked = run(
-        "make this a checklist", [home, menu],
-        [[{"do": "key", "value": "cmd+a"}], [{"do": "click", "target": "Settings"}]],
-        {("ask", 1): {"answer": "move on to the next step", "via": "voice"}})
-    replan = planner_bodies[1]["messages"][1]["content"] if len(planner_bodies) > 1 else ""
-    check("planner: other words to a guard ask again, with the words in the reason",
-          'Stalled: Not done — the user said: "move on to the next step"' in replan
-          and "key" not in fake.did() and end["end"] == "done" and len(pressed(fake)) == 1,
-          (replan[-200:], report, fake.did()))
-
-    end, fake, report, asked = run(
-        "mute this channel", [home, menu, muted],
-        [500, [{"do": "click", "target": "Settings"}, {"do": "pick", "target": "Mute channel"}]])
-    check("planner: a 500 is tried again by the SDK, and the second answer is used",
-          len(planner_bodies) == 2 and end["end"] == "done" and len(pressed(fake)) == 2,
-          (report, len(planner_bodies)))
-    end, fake, report, asked = run(
-        "search for invoices", [home, home],
-        [[{"do": "type", "target": "Settings", "value": "invoices from March"}], []])
-    check("planner: type refuses words that were not said",
-          "not said: from, march" in planner_bodies[1]["messages"][1]["content"]
-          and "type" not in fake.did() and "press" not in fake.did(), (report, fake.did()))
-
-    end, fake, report, asked = run(
-        "open the zebra panel", [home], [[{"do": "click", "target": "Zebra panel"}], []])
-    check("planner: a target not in the tree stops it, and is not re-planned",
-          len(planner_bodies) == 1 and end["end"] == "stopped"
-          and report["stopped"] == "Could not find “Zebra panel” on screen"
-          and any(line.startswith('planner: target not in the tree: "Zebra panel" — Test “Home”')
-                  for line in fake.logs), (report, fake.logs[-3:]))
-
-    end, fake, report, asked = run(
-        "reply in the zebra thread", [panel("Home", ["Sign in", "General"])],
-        [[{"do": "click", "target": "Reply in zebra thread"}], []])
-    check("planner: a function word on screen does not hide a target not in the tree",
-          len(planner_bodies) == 1 and report["stopped"].startswith("Could not find")
-          and any("target not in the tree" in line for line in fake.logs), (report, fake.logs[-2:]))
-
-    end, fake, report, asked = run(
-        "mute this channel", [home], [[{"do": "click", "target": "Settings"}]], execute=False)
-    check("planner: plan only says the plan and does nothing",
-          end["end"] == "planned" and fake.did() == ["snapshot"]
-          and "           1. click “Settings”" in fake.lines, (fake.lines, fake.did()))
-
-    end, fake, report, asked = run(
-        "mute this channel", [home], [f"invalid key {PLANNER_KEY}"])
-    check("planner: an error that echoes the key does not repeat it",
-          end["end"] == "failed" and PLANNER_KEY not in json.dumps(end)
-          and "invalid key …" in report["stopped"], report)
-
-    runner.process.stdin.close()
-    runner.process.wait(timeout=5)
-    with open(stderr_path, encoding="utf-8") as handle:
-        printed = handle.read()
-    check("planner: the key never appears in what the runner printed or sent",
-          PLANNER_KEY not in printed and "jev pick" in printed,
-          printed[-300:])
 
 
 def messages(body):
-    """What a request sent, as chat messages: the plan path's own, or the
+    """What a request sent, as chat messages: a chat completion's own, or the
     agent's Responses instructions and input items."""
     if "messages" in body:
         return body["messages"]
@@ -1036,6 +657,24 @@ def agent_checks(runner, stderr_path, trace_path):
           and "Request: mute this channel" in messages(body)[1]["content"],
           messages(body)[1]["content"])
     check("agent: Jev is never asked", asked == [], asked)
+
+    end, fake, report, asked = run(
+        "mute this channel", [home, home, menu],
+        [[act({"do": "key", "value": "tab"}, {"do": "click", "id": 2})],
+         [("done", {"summary": "ok"})]])
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("agent: a key that changed nothing in the tree does not stop the batch, and says so softly",
+          "Ran 2 of 2" in got and "Stopped:" not in got and UNCHANGED not in got
+          and "1. key = “tab” — no change in the accessibility tree, which does not show the caret"
+          in got and [s["do"] for s in fake.steps if s["do"] in ("key", "press")] == ["key", "press"],
+          (got, fake.did()))
+    end, fake, report, asked = run(
+        "mute this channel", [home],
+        [[act({"do": "click", "id": 1}, {"do": "click", "id": 2})], [("done", {"summary": "ok"})]])
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("agent: a click that changed nothing still stops the batch",
+          "Ran 1 of 2" in got and "Stopped: step 1 changed nothing" in got and UNCHANGED in got,
+          got)
     check("agent: the first message says today's date",
           "\nNow: " in messages(body)[1]["content"], messages(body)[1]["content"][:200])
 
@@ -1497,7 +1136,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 149 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 153 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
@@ -1610,16 +1249,11 @@ def inline(node, defs=None):
 
 
 def schema_checks(tools):
-    """The agent's tools as the fake planner received them, and the plan's
-    schema read directly."""
-    sys.path.insert(0, os.path.join(ROOT, "built-in", "recipes"))
-    import planner
-
+    """The agent's tools as the fake planner received them."""
     ours = {t["name"]: t for t in tools
             if t["name"] in ("act", "read", "look", "ask", "done", "stuck")}
     errors = {name: strict_errors(inline(f["parameters"])) for name, f in ours.items()}
-    errors["plan"] = strict_errors(planner.SCHEMA)
-    check("schema: every tool and the plan pass strict mode's rules",
+    check("schema: every tool passes strict mode's rules",
           len(ours) == 6 and not any(errors.values())
           and all(f.get("strict") for f in ours.values()), errors)
     step = inline(ours["act"]["parameters"])["properties"]["steps"]["items"]
@@ -1812,19 +1446,15 @@ def recorder_checks(url, user, plans_url):
     runner.process.stdin.close()
     runner.process.wait(timeout=5)
 
-    root = tempfile.mkdtemp()
-    runner = Runner(url, user, extra=planner_env(plans_url, PARROTFLOW_RUNS=root))
-    planner_plans[:] = [[{"do": "click", "target": "Settings"}, {"do": "pick", "target": "Mute channel"}]]
+    runner = Runner(url, user, extra=planner_env(plans_url, PARROTFLOW_PLANNER_LOOP="plan",
+                                                 PARROTFLOW_PLANNER_TRACE=trace))
+    agent_turns[:] = [[act({"do": "click", "id": 2})], [("done", {"summary": "ok"})]]
     end, fake = runner.run("mute this channel", "Test", fake=Screen([home, menu, muted]),
                            loop=LOOP, recipes=False)
-    folder = os.path.join(root, recorded(root)[-1])
-    info = read_json(folder, "run.json")
-    call = read_json(folder, "calls", "01.json")
-    step = read_json(folder, "steps", "02.json")
-    check("recorder: the plan path records its call, its steps and its trees",
-          end["end"] == "done" and info["kind"] == "plan" and call["kind"] == "plan"
-          and '"Settings"' in call["reply"] and step["target"]["name"] == "Mute channel"
-          and (info["calls"], info["steps"], info["trees"]) == (1, 2, 3), (info, step))
+    reads = [s for s in fake.steps if s["do"] == "snapshot"]
+    check("loop plan runs the agent, with its screenshots, and the log says so",
+          end["end"] == "done" and reads and all(s.get("shot") for s in reads)
+          and 'action loop: loop "plan" is gone; running the agent' in fake.logs, (end, reads))
     runner.process.stdin.close()
     runner.process.wait(timeout=5)
 
@@ -1914,6 +1544,15 @@ def client_checks(plans_url):
     check("client: a 500 on every try fails after three, and the body does not leak the key",
           len(planner_bodies) == 3 and said.startswith("The planner answered 500: fake 500 for …")
           and PLANNER_KEY not in said, (len(planner_bodies), said))
+
+    planner_plans[:] = [f"invalid key {PLANNER_KEY}"]
+    try:
+        client.chat([{"role": "user", "content": "hi"}])
+        said = ""
+    except planner.Failure as failure:
+        said = str(failure)
+    check("client: an error that echoes the key does not repeat it",
+          "invalid key …" in said and PLANNER_KEY not in said, said)
 
     slow = http.server.ThreadingHTTPServer(("127.0.0.1", 0), SlowPlanner)
     threading.Thread(target=slow.serve_forever, daemon=True).start()
@@ -2116,11 +1755,9 @@ def surprise_checks(url, user, plans_url):
         PARROTFLOW_GROUND_SERVER=helper, PARROTFLOW_GROUND_MODEL=folder,
         FAKE_GROUND_LOG=os.path.join(folder, "asked.jsonl"), PARROTFLOW_RUNS=root))
 
-    def run(windows, turns, verdicts=(), override=None):
+    def run(windows, turns, override=None):
         agent_turns[:] = turns
-        visible_answers[:] = verdicts
         del planner_bodies[:]
-        del visible_bodies[:]
         fake = Pictured(windows, override)
         end, fake = runner.run("write to Alex and Antonio", "Test", fake=fake, loop=LOOP,
                                recipes=False)
@@ -2142,30 +1779,14 @@ def surprise_checks(url, user, plans_url):
     expect = "To holds Alex"
     typed = act({"do": "type", "id": 1, "value": "Alex", "expect": expect})
 
+    calls = len(jev_calls)
     end, fake, report = run([draft(""), draft("Alex")] * 3,
-                            [[plan(("Add Alex", "in_progress"))], [typed], [("read", {})]] + finish,
-                            [0.9])
+                            [[plan(("Add Alex", "in_progress"))], [typed], [("read", {})]] + finish)
     step = read_json(root, recorded(root)[-1], "steps", "01.json")
-    sent = visible_bodies[0] if visible_bodies else {}
-    check("expect: a true expect says nothing",
-          "not what happened" not in result(2)
-          and end["end"] == "done", (result(2), efforts()))
-    check("expect: Jev is asked about it with the fields' values, and the step records it",
-          sent.get("questions", {}).get("visible", {}).get("instructions")
-          == f"Is this true now: {expect}?"
-          and sent["state"]["fields"] == {"To": "Alex"}
-          and "changed_by_the_last_step" in sent["state"]
-          and step["expect"] == expect and step["expect_p"] == 0.9
-          and step["ms"] >= step["expect_ms"] >= 0, (sent, step))
-
-    end, fake, report = run([draft(""), draft("Alex")] * 3,
-                            [[plan(("Add Alex", "in_progress"))], [typed], [("read", {})]] + finish,
-                            [0.2])
-    got = result(2)
-    step = read_json(root, recorded(root)[-1], "steps", "01.json")
-    check("expect: a false expect is recorded and says nothing to the model",
-          "not what happened" not in got and "Stopped" not in got
-          and step["expect_p"] == 0.2, (got, step))
+    check("expect: recorded with the step, never sent to Jev, and says nothing",
+          jev_calls[calls:] == [] and "Stopped" not in result(2) and end["end"] == "done"
+          and step["expect"] == expect and step["expect_p"] is None and step["expect_ms"] == 0,
+          (jev_calls[calls:], result(2), step))
     check("reasoning: every request reasons at low; each after the typing has one picture",
           efforts() == [("low", 0), ("low", 0)] + [("low", 1)] * (len(efforts()) - 2), efforts())
 
@@ -2193,8 +1814,7 @@ def surprise_checks(url, user, plans_url):
         [[plan(("Add both", "in_progress"))],
          [act({"do": "type", "id": 1, "value": "Antonio"})],
          [act({"do": "type", "id": 1, "value": "Alex", "expect": both})],
-         [plan(("Add both", "completed"))], [("done", {"summary": "ok"})]],
-        [0.1])
+         [plan(("Add both", "completed"))], [("done", {"summary": "ok"})]])
     check("surprises: two on one task do not make anyone ask the user",
           not [s for s in fake.steps if s["do"] == "ask"] and "Call `ask`" not in result(3)
           and end["end"] == "done", (result(3), fake.did()))
@@ -2471,27 +2091,23 @@ def main():
           (end, fake.lines[-1:]))
 
     calls = len(jev_calls)
-    loop_answers[:] = [loop_answer("none")]
     end, fake = runner.run("click on the Checkout tab", "Microsoft Outlook", fake=Screen([window(1)]))
-    check("no fit: the loop takes it",
-          end["end"] == "done" and end["loop"]["stopped"] == "Nothing to do on screen"
-          and [c[0] for c in jev_calls[calls:]] == ["recipe", "action"], (end, jev_calls[calls:]))
+    check("no fit and no planner: the run fails and says why",
+          end["end"] == "failed" and end["loop"]["stopped"] == NO_PLANNER
+          and [c[0] for c in jev_calls[calls:]] == ["recipe"] and fake.did() == [],
+          (end, jev_calls[calls:], fake.did()))
     calls = len(jev_calls)
-    loop_answers[:] = [loop_answer("none")]
     end, fake = runner.run("write an email to Peter", "Finder", fake=Screen([window(1)]))
-    check("no recipes for the app: the loop, and no recipe question",
-          end["end"] == "done" and [c[0] for c in jev_calls[calls:]] == ["action"],
-          (end, jev_calls[calls:]))
+    check("no recipes for the app: no recipe question",
+          end["end"] == "failed" and jev_calls[calls:] == [], (end, jev_calls[calls:]))
 
     calls = len(jev_calls)
-    loop_answers[:] = [loop_answer("none")]
     end, fake = runner.run("write an email to Peter", "Microsoft Outlook", bundle="com.other.App",
                            fake=Screen([window(1)]))
     check("a recipe declared by bundle ID is matched by the ID, not the name",
-          [c[0] for c in jev_calls[calls:]] == ["action"], (end, jev_calls[calls:]))
+          jev_calls[calls:] == [], (end, jev_calls[calls:]))
 
-    loop_checks(runner)
-    seeing_checks(runner)
+    decide_checks(runner)
     change_checks()
 
     end, fake = runner.run("write an email to Peter and Antonio", "Test")
@@ -2510,13 +2126,6 @@ def main():
 
     plans = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakePlanner)
     threading.Thread(target=plans.serve_forever, daemon=True).start()
-    printed = os.path.join(tempfile.mkdtemp(), "stderr.txt")
-    with open(printed, "w") as stderr:
-        planned = Runner(url, user, extra={
-            "PARROTFLOW_PLANNER_MODEL": "test-model", "PARROTFLOW_PLANNER_KEY": PLANNER_KEY,
-            "PARROTFLOW_PLANNER_URL": f"http://127.0.0.1:{plans.server_address[1]}/v1/chat/completions",
-            "PARROTFLOW_PLANNER_REASONING": "none"}, stderr=stderr)
-        planner_checks(planned, printed)
     trace = os.path.join(tempfile.mkdtemp(), "agent.jsonl")
     printed = os.path.join(tempfile.mkdtemp(), "stderr.txt")
     with open(printed, "w") as stderr:

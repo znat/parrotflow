@@ -1,5 +1,5 @@
 """The agent: a chat model with tools, when no recipe fits and
-`actions.planner.loop` is `agent`.
+`actions.planner` is set.
 
 The loop is Pydantic AI's: the calls to the model, the tool calls, their
 argument checks, the retries and the limit on calls. `Planning` from
@@ -8,10 +8,11 @@ sees it at the end of every request. `done` is refused while a task is open.
 
 The model gets the request and the screen as `[ID] Role "name"` lines. It
 calls `act` with a batch of steps, `read`, `look`, `ask`, the plan tools,
-`done` or `stuck`. Each step runs through `Loop._planned_step`, so the guards
-are the planner's. A batch stops at the first surprise: a step failed,
-changed nothing, or opened something the next step does not use. The model
-then decides from what came back.
+`done` or `stuck`. Each step runs through `Loop._planned_step` and its
+guards. A batch stops at the first surprise: a step failed, changed
+nothing, or opened something the next step does not use. A key that
+changed nothing does not stop it: the tree does not show the caret or a
+selection. The model then decides from what came back.
 
 `ask` puts a question in the app's panel, next to what the last step acted
 on. The answer comes back as the tool result, and so does no answer.
@@ -40,7 +41,7 @@ drops the one before. No screenshot, no picture.
 What went wrong (a step failed, the same batch ran twice, a step took a name
 or words out of its field) is a note under the task in the run panel. The
 model decides what to do; the user is asked only before a step that commits.
-A step's `expect` goes to Jev and is recorded, and changes nothing.
+A step's `expect` is recorded with the step, and never checked.
 
 No automatic `ground` call: an `act` step names its target by ID only, so a
 step aimed at something without an ID carries no words to look for. The
@@ -84,6 +85,8 @@ FAR = 400
 MAX_SEEN = 40
 # Around a list that opened, before the crop grows to 600×400.
 LIST_MARGIN = 20
+KEY_UNCHANGED = ("no change in the accessibility tree, which does not show the caret or a "
+                 "selection; check the picture")
 ANCHOR = {"below": "top", "above": "bottom", "right": "left", "left": "right"}
 GROUNDER = grounding.Grounder.from_env()
 _LOOKS_UP = re.compile(r"\b(attendees?|to|cc|bcc|search|invite|recipients?|participants?|people)\b")
@@ -158,8 +161,8 @@ class Progress(Strict):
 
 class Act(Strict):
     """Do steps in order. IDs are those of the newest screen; every screen gives new IDs. Stops
-    at the first step that fails, changes nothing, or opens something the next step does not
-    target. Returns the steps that ran, what changed, and the screen with new IDs."""
+    at the first step that fails, changes nothing (a key may), or opens something the next
+    step does not target. Returns the steps that ran, what changed, and the screen with new IDs."""
     plan: Optional[Progress] = None
     why: str = ""
     steps: List[Step]
@@ -739,7 +742,7 @@ class Agent:
             self.opened = [i for i in looping.appeared(before, self.snapshot) if i.get("in")]
             if lp.change.get("seen") or lp.change.get("still"):
                 saw = (len(ran) - 1, lp.change, self.snapshot)
-            surprise = self._check(step.do, expect, item, before, outcome)
+            surprise = self._check(step.do, expect, item, before)
             if surprise:
                 ran[-1] += f" — {surprise}"
                 stop = f"step {n} did not go as expected"
@@ -754,7 +757,11 @@ class Agent:
                     stop = f"a list opened after step {n}, seen on screen only"
                     break
             following = steps[n] if n < len(steps) else None
-            if outcome.endswith(looping.UNCHANGED) and step.do not in ("type", "write"):
+            # Seen 09-24 in Teams: cmd+a before a date changed nothing in the
+            # tree, and each stop cost a model call.
+            if outcome.endswith(looping.UNCHANGED) and step.do == "key":
+                ran[-1] = ran[-1].replace(looping.UNCHANGED, KEY_UNCHANGED)
+            elif outcome.endswith(looping.UNCHANGED) and step.do not in ("type", "write"):
                 self._note(f"{planning.describe_step(planned)} changed nothing")
                 stop = f"step {n} changed nothing"
                 break
@@ -797,29 +804,19 @@ class Agent:
         change = json.dumps(change, ensure_ascii=False)
         return f"{short}\nChange: {change}\n{screen}", short
 
-    def _check(self, do, expect, item, before, outcome):
+    def _check(self, do, expect, item, before):
         """What went wrong in a step that ran, or "": a name or words gone
-        from the field it acted in. Jev's answer on `expect` is only recorded:
-        it reads text, and on 09-24 said no to three steps that had worked."""
-        lp, said, record = self.loop, [], {}
+        from the field it acted in. Asking Jev about `expect` cost 0.6-1.0 s
+        a step, and on 09-24 it said no to three steps that had worked."""
+        said, record = [], {}
         gone = looping.lost(item, before, self.snapshot) if item and do != "key" else []
         if gone:
             record["lost"] = ", ".join(f"\"{g}\"" for g in gone)
             said.append(f"this step removed {record['lost']} from \"{decider.label(item)}\"")
-        # The tree did not change, so Jev can only say no.
-        if expect and not outcome.endswith(looping.UNCHANGED):
-            began = time.monotonic()
-            try:
-                p = decider.true_now(lp.jev, expect, self.snapshot, outcome)
-            except decider.Failure as error:
-                p = None
-                lp.log(f"agent: could not check “{expect}” — {error}")
-            ms = int((time.monotonic() - began) * 1000)
-            record.update(expect=expect, expect_p=p, expect_ms=ms)
-            if p is not None:
-                lp.log(f"agent: expected “{expect}” — {p:.2f}, {ms} ms")
+        if expect:
+            record["expect"] = expect
         if record:
-            lp.recorder.add_to_step(record.get("expect_ms", 0), **record)
+            self.loop.recorder.add_to_step(**record)
         return "; ".join(said)
 
     def _task(self):

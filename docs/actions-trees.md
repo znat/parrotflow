@@ -4,7 +4,7 @@ Every rule the "act where you look" agent applies, as the code does it today. Di
 
 ## 0. A request arrives
 
-The runner tries a recipe first. The agent runs only when no recipe fits and `actions.planner.loop` is `agent`.
+The runner tries a recipe first. The agent runs when no recipe fits. `loop: plan` from an older config runs the agent too.
 
 ```mermaid
 flowchart TD
@@ -15,8 +15,8 @@ flowchart TD
   Q1 -->|no| LP
   Q2 -->|yes| RC["Run the recipe<br/><i>recipe-run</i>"]
   Q2 -->|none| LP["Start the loop<br/><i>to-loop</i>"]
-  LP --> Q3{"Planner loop is agent?<br/><i>agent-branch</i>"}
-  Q3 -->|no| OT["Plan or Jev loop<br/><i>other-loops</i>"]
+  LP --> Q3{"Planner set?<br/><i>agent-branch</i>"}
+  Q3 -->|no| OT["Run fails: no planner<br/><i>no-planner</i>"]:::user
   Q3 -->|yes| Q4{"Planner key set?<br/><i>no-key</i>"}
   Q4 -->|no| F1["Run fails"]:::user
   Q4 -->|yes| AG["Watch, read, first prompt<br/><i>agent-start</i>"]
@@ -334,13 +334,9 @@ flowchart TD
   Q2 -->|yes| SU["Surprise, batch stops"]
   Q2 -->|no| Q3{"Words gone from field?<br/><i>lost</i>"}
   Q3 -->|yes| SU
-  Q3 -->|no| Q4{"expect, tree changed?<br/><i>expect-skip</i>"}
-  Q4 -->|yes| Q5{"Jev says under 0.5?<br/><i>expect-jev</i>"}
-  Q5 -->|yes| SU
-  Q5 -->|no| Q6
-  Q4 -->|no| Q6{"Lookup list seen below?<br/><i>lookup-below</i>"}
+  Q3 -->|no| Q6{"Lookup list seen below?<br/><i>lookup-below</i>"}
   Q6 -->|yes| ST
-  Q6 -->|no| Q7{"Unchanged, not type/write?<br/><i>unchanged-stop</i>"}
+  Q6 -->|no| Q7{"Unchanged, not type/write/key?<br/><i>unchanged-stop</i>"}
   Q7 -->|yes| ST
   Q7 -->|no| Q8{"New part, next elsewhere?<br/><i>opened-stop</i>"}
   Q8 -->|yes| ST
@@ -439,8 +435,8 @@ Python files are in `built-in/recipes/`. Swift files are in `Sources/ParrotFlow/
 | recipe-pick | runner.py:439 |
 | recipe-run | runner.py:468 |
 | to-loop | runner.py:400 |
-| agent-branch | loop.py:606 |
-| other-loops | loop.py:611 |
+| agent-branch | loop.py:575 |
+| no-planner | loop.py:576 |
 | no-key | agent.py:306 |
 | agent-start | agent.py:290 |
 | walk-window | ScreenTargets.swift:218 |
@@ -536,10 +532,8 @@ Python files are in `built-in/recipes/`. Swift files are in `Sources/ParrotFlow/
 | redirect-stop | agent.py:602 |
 | fail-stop | agent.py:607 |
 | lost | loop.py:527 |
-| expect-skip | agent.py:685 |
-| expect-jev | decider.py:505 |
 | lookup-below | agent.py:594 |
-| unchanged-stop | agent.py:632 |
+| unchanged-stop | agent.py:765 |
 | opened-stop | agent.py:636, 640 |
 | result | agent.py:668 |
 | p-batch | agent.py:106 |
