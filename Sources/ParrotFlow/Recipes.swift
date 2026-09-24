@@ -106,7 +106,7 @@ enum Recipes {
          "x": item.x, "y": item.y, "w": item.w, "h": item.h, "cm": item.cm,
          "actions": item.actions, "lookup": item.looksThingsUp, "in_list": item.isChoiceInAList,
          "clickable": item.isClickable, "in": item.origin as Any? ?? NSNull(),
-         "state": item.states ?? [],
+         "state": item.states ?? [], "key": item.key as Any? ?? NSNull(),
          "refused": ScreenAction.refuses(item.name, never) as Any? ?? NSNull()]
     }
 

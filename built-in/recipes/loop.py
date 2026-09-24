@@ -30,6 +30,7 @@ _PLAIN_NO = {"no", "nope", "nah", "no thanks", "dont", "do not", "cancel", "stop
 ONE_LINE = {"AXTextField", "AXComboBox", "AXSearchField"}
 OPENS_A_LIST = {"AXComboBox", "AXPopUpButton"}
 COVER_HEIGHT = 60
+MOVED = 20  # points an item may shift and still be where it was
 
 
 def verdict(answer):
@@ -125,9 +126,9 @@ def appeared(before, after):
 
 
 def _fields(snapshot):
-    """Text fields by what they are called, and what is in them. Fields with
-    the same name are told apart top to bottom, not by distance: the aim
-    moves between reads."""
+    """What each text field is called, by `id`. Fields with the same name
+    are told apart top to bottom, not by distance: the aim moves between
+    reads."""
     by_name = {}
     for item in snapshot["items"]:
         if item["kind"] == "text":
@@ -136,25 +137,93 @@ def _fields(snapshot):
     for called, items in by_name.items():
         items.sort(key=lambda i: (i["y"], i["x"]))
         for n, item in enumerate(items):
-            fields[called if len(items) == 1 else f"{called} {n + 1}"] = item["value"]
+            fields[id(item)] = called if len(items) == 1 else f"{called} {n + 1}"
     return fields
+
+
+def identity(item):
+    """What stays the same for one control across reads: the walk's key
+    without its twin number. A tree read before keys: kind and name. Not
+    the role: those walks kept a Slack row as an AXRow in one read and an
+    AXGroup in the next. Not `in`: Outlook's event form is the window in one
+    read and a part that opened in the next."""
+    key = item.get("key")
+    if key:
+        return key.split(".")[0]
+    return f"{item['kind']}\x01{item['name']}"
+
+
+def _distance(a, b):
+    return (a["x"] - b["x"]) ** 2 + (a["y"] - b["y"]) ** 2
+
+
+def _matched(before, after, by=identity):
+    """(pairs, gone, added) between two reads' items. Items match on
+    `identity`; twins pair nearest first, and the extra ones on either side
+    are gone or added. Seen 09-24 in Notion: a hidden copy of the New menu
+    stayed in the tree, and opening it doubled four names. What is left
+    matches on kind and name, for a key that changed with its path."""
+    groups = {}
+    for item in before:
+        groups.setdefault(by(item), ([], []))[0].append(item)
+    for item in after:
+        groups.setdefault(by(item), ([], []))[1].append(item)
+    pairs, gone, added = [], [], []
+    for was, now in groups.values():
+        if len(was) == 1 and len(now) == 1:
+            pairs.append((was[0], now[0]))
+            continue
+        options = sorted(((_distance(a, b), i, j) for i, a in enumerate(was)
+                          for j, b in enumerate(now)), key=lambda o: o[0])
+        left, right = set(range(len(was))), set(range(len(now)))
+        for _, i, j in options:
+            if i in left and j in right:
+                pairs.append((was[i], now[j]))
+                left.discard(i)
+                right.discard(j)
+        gone += [was[i] for i in sorted(left)]
+        added += [now[j] for j in sorted(right)]
+    if by is identity and gone and added:
+        more, gone, added = _matched(gone, added, lambda i: f"{i['kind']}\x01{i['name']}")
+        pairs += more
+    return pairs, gone, added
+
+
+def refind(item, snapshot):
+    """The same control in `snapshot`: its key, or else kind, role and name
+    nearest to where it was."""
+    items = snapshot["items"]
+    if item.get("key"):
+        same = next((i for i in items if i.get("key") == item["key"]), None)
+        if same is not None:
+            return same
+    same = [i for i in items if (i["kind"], i["role"], i["name"])
+            == (item["kind"], item["role"], item["name"])]
+    return min(same, key=lambda i: _distance(i, item)) if same else None
+
+
+def _states(item):
+    return {s for s in item.get("state") or () if s != "focused"}
 
 
 def changes(before, after):
     """What the last step did, as data. `window`: its new title. `appeared`:
     per part of the app that opened, its kind, the field it is near and its
     rows. `values`: fields whose text changed. `new`: other names that
-    appeared. `gone`: how many names went."""
+    appeared. `gone`: how many items went. `moved`: how many that stayed
+    moved. Items are counted, so a second copy of a name is new."""
     change = {}
     if before["window"] != after["window"]:
         change["window"] = after["window"]
-    was = {f"{i['kind']}\x01{i['name']}" for i in before["items"] if i["kind"] != "more"}
-    new, counted, opened = [], set(), {}
-    for item in after["items"]:
-        if item["kind"] == "more":
-            continue
+    pairs, gone_items, added = _matched(
+        [i for i in before["items"] if i["kind"] != "more"],
+        [i for i in after["items"] if i["kind"] != "more"])
+    # One more nameless label says nothing: a nameless kind is new only when none was there.
+    counted = {f"{i['kind']}\x01" for i in before["items"] if not i["name"]}
+    new, opened = [], {}
+    for item in added:
         joined = f"{item['kind']}\x01{item['name']}"
-        if joined in was or joined in counted:
+        if joined in counted:
             continue
         counted.add(joined)
         if item.get("in"):
@@ -165,9 +234,9 @@ def changes(before, after):
         parts = [p for p in joined.split("\x01") if p]
         if parts and parts[-1]:
             new.append(parts[-1])
-    earlier, now = _fields(before), _fields(after)
-    values = {name: value for name, value in now.items()
-              if name in earlier and earlier[name] != value}
+    called = _fields(after)
+    values = {called[id(b)]: b["value"] for a, b in pairs
+              if id(b) in called and a["value"] != b["value"]}
     fields = [i for i in after["items"] if i["kind"] == "text" and not i.get("in")]
     appeared = []
     for kind, rows in opened.items():
@@ -180,19 +249,19 @@ def changes(before, after):
             field = min(fields, key=lambda f: (f["x"] - first["x"]) ** 2 + (f["y"] - first["y"]) ** 2)
             part["near"] = field["name"] or field["role"].replace("AX", "")
         appeared.append(part)
-    gone_items = [i for i in before["items"] if i["kind"] != "more"
-                  and f"{i['kind']}\x01{i['name']}" not in
-                  {f"{a['kind']}\x01{a['name']}" for a in after["items"]}]
-    renamed = _renamed(gone_items, [i for i in after["items"] if i["kind"] != "more"
-                                    and f"{i['kind']}\x01{i['name']}" not in was])
+    renamed = _renamed(gone_items, added)
     if renamed:
         change["renamed"] = renamed
         new = [n for n in new if n not in renamed.values()]
     gone = len(gone_items) - len(renamed)
+    # Nameless twins pair by distance alone, so their moves mean nothing.
+    moved = sum(1 for a, b in pairs if b["name"]
+                and (abs(a["x"] - b["x"]) > MOVED or abs(a["y"] - b["y"]) > MOVED))
     focus = _focused(after)
     if focus is not None and focus != _focused(before):
         change["focus"] = focus
-    states = _states(before, after)
+    states = {b["name"]: sorted(_states(b)) for a, b in pairs
+              if b["name"] and _states(a) != _states(b)}
     if states:
         change["states"] = states
     if appeared:
@@ -203,6 +272,8 @@ def changes(before, after):
         change["new"] = new
     if gone:
         change["gone"] = gone
+    if moved:
+        change["moved"] = moved
     blocks, still = seen_changes(before, after, values)
     if blocks:
         change["seen"] = blocks
@@ -219,6 +290,7 @@ def _renamed(gone, added):
     for old in gone:
         for item in added:
             if item["role"] == old["role"] and item["name"] and old["name"] \
+                    and item["name"] != old["name"] \
                     and abs(item["x"] - old["x"]) <= 20 and abs(item["y"] - old["y"]) <= 20 \
                     and item["name"] not in out.values():
                 out[old["name"]] = item["name"]
@@ -231,17 +303,6 @@ def _focused(snapshot):
     if item is None:
         return None
     return item["name"] or item["role"].replace("AX", "")
-
-
-def _states(before, after):
-    """Name to its states now, for items whose selected, expanded or checked
-    changed. Focus is told apart."""
-    def of(snapshot):
-        return {(i["kind"], i["name"]): {s for s in i.get("state") or () if s != "focused"}
-                for i in snapshot["items"] if i["name"]}
-    was, now = of(before), of(after)
-    return {key[1]: sorted(state) for key, state in now.items()
-            if key in was and was[key] != state}
 
 
 # Seen lines: text read from the window's pixels at each read, in
@@ -476,6 +537,8 @@ def sentence(change):
         out.append(f"{len(new)} new: {names}")
     if change.get("gone"):
         out.append(f"{change['gone']} gone")
+    if change.get("moved"):
+        out.append(f"{change['moved']} moved")
     for block in change.get("seen", ()):
         near = f" near \"{decider.prefix(block['near'], 30)}\"" if block.get("near") else ""
         lines = ", ".join(_seen_line(line) for line in block["lines"][:SEEN_SHOWN])

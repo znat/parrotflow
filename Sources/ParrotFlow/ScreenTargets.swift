@@ -44,9 +44,12 @@ enum ScreenTargets {
         /// "focused", "selected", "expanded", "checked": what the name does
         /// not say. Optional so that saved snapshots still read.
         var states: [String]?
+        /// The same control across reads: a hash of role, name and the roles
+        /// above it, then `.2`, `.3` for twins in walk order. No position.
+        var key: String? = nil
 
         enum CodingKeys: String, CodingKey {
-            case kind, role, name, value, cm, x, y, w, h, actions
+            case kind, role, name, value, cm, x, y, w, h, actions, key
             case origin = "in"
             case states = "state"
         }
@@ -821,6 +824,7 @@ enum ScreenTargets {
         let actions: [String]
         var origin: String? = nil
         var states: [String] = []
+        var path = ""
     }
 
     /// What one walk carries down the tree.
@@ -849,7 +853,7 @@ enum ScreenTargets {
         // cannot reach inside one step.
         var state = Walk(budget: budget, deadline: started.addingTimeInterval(3),
                          near: chains(pid: pid, pointer: pointer))
-        collect(window, into: &found, state: &state)
+        collect(window, into: &found, path: "", state: &state)
         if Date() >= state.deadline {
             Log.write("actions: the walk stopped after 3 s with \(budget - state.budget) elements read")
         } else if state.budget <= 0 {
@@ -865,7 +869,7 @@ enum ScreenTargets {
         for part in opened {
             state.origin = origin(of: part)
             let before = found.count
-            collect(part, into: &found, state: &state)
+            collect(part, into: &found, path: "", state: &state)
             extra.append("\(string(part, kAXRoleAttribute) ?? "?") as \(state.origin ?? "") (\(found.count - before) found)")
         }
         if !extra.isEmpty {
@@ -905,22 +909,33 @@ enum ScreenTargets {
                     x: Int(item.frame.midX), y: Int(item.frame.midY),
                     w: Int(item.frame.width), h: Int(item.frame.height),
                     actions: item.actions.filter { $0 != "AXScrollToVisible" },
-                    origin: item.origin, states: item.states.isEmpty ? nil : item.states
+                    origin: item.origin, states: item.states.isEmpty ? nil : item.states,
+                    key: shortHash("\(item.role)\u{1}\(item.name)\u{1}\(item.path)")
                 )
             )
         }
-        items.sort { $0.cm < $1.cm }
 
         // A row and the group inside it carry the same name and nearly the
-        // same frame. Keep the outer one, which is what a click wants.
+        // same frame. Keep the outer one, which is what a click wants: the
+        // walk adds a parent after its children. Seen 09-23 in Slack: kept
+        // by distance, a sidebar row was an AXRow in one read and an AXGroup
+        // in the next.
         var kept: [Item] = []
-        for item in items {
+        for item in items.reversed() {
             let duplicate = kept.contains {
                 $0.name == item.name && $0.kind == item.kind
                     && abs($0.x - item.x) < 20 && abs($0.y - item.y) < 20
             }
             if !duplicate { kept.append(item) }
         }
+        kept.reverse()
+        var twins: [String: Int] = [:]
+        for index in kept.indices {
+            guard let key = kept[index].key else { continue }
+            twins[key, default: 0] += 1
+            if twins[key]! > 1 { kept[index].key = "\(key).\(twins[key]!)" }
+        }
+        kept.sort { $0.cm < $1.cm }
 
         return Snapshot(
             app: name(of: pid),
@@ -934,6 +949,19 @@ enum ScreenTargets {
             items: kept
         )
     }
+
+    /// FNV-1a, 32 bits: Swift's `Hasher` is seeded per process.
+    private static func shortHash(_ text: String) -> String {
+        var hash: UInt32 = 2_166_136_261
+        for byte in text.utf8 {
+            hash = (hash ^ UInt32(byte)) &* 16_777_619
+        }
+        return String(format: "%08x", hash)
+    }
+
+    /// Roles that wrap everything in web apps, left out of a key's path so
+    /// that a wrapper added or removed does not change it.
+    private static let plainRoles: Set<String> = [kAXGroupRole, "AXGenericElement", kAXUnknownRole]
 
     /// The element under the pointer and the focused one, each with its
     /// ancestors, deepest first. Only this app's elements.
@@ -1041,7 +1069,7 @@ enum ScreenTargets {
     @discardableResult
     private static func collect(
         _ element: AXUIElement, into out: inout [Found], depth: Int = 0, inRow: Bool = false,
-        state: inout Walk
+        path: String, state: inout Walk
     ) -> String {
         guard depth < 40, state.budget > 0, Date() < state.deadline else { return "" }
         state.budget -= 1
@@ -1049,8 +1077,10 @@ enum ScreenTargets {
         let (children, more) = children(of: element, role: role, state: &state)
         let isRow = state.origin != nil && role != kAXStaticTextRole && Item.rowRoles.contains(role)
         var text = ""
+        let inner = plainRoles.contains(role) || path.hasSuffix("/\(role)") ? path : "\(path)/\(role)"
         for child in children {
-            let below = collect(child, into: &out, depth: depth + 1, inRow: inRow || isRow, state: &state)
+            let below = collect(child, into: &out, depth: depth + 1, inRow: inRow || isRow,
+                                path: inner, state: &state)
             if !below.isEmpty && text.count < 120 {
                 text += (text.isEmpty ? "" : " ") + below
             }
@@ -1102,7 +1132,7 @@ enum ScreenTargets {
                     Found(
                         frame: box, kind: kind, name: clean(name), role: role,
                         value: value, actions: actions, origin: state.origin,
-                        states: states(of: element, role: role, state: &state)
+                        states: states(of: element, role: role, state: &state), path: path
                     )
                 )
             }
