@@ -501,6 +501,44 @@ def pick(jev, question, among, snapshot, utterance):
     return None, p, ms
 
 
+def visible(jev, what, snapshot, changed=None, limit=80):
+    """Jev's yes to "is <what> on screen now", 0 to 1. `changed` is what the
+    step changed: live on Outlook, a compose window that had opened scored
+    0.49 on the window's items alone."""
+    state = _screen_state(snapshot, changed, limit)
+    answer = jev.ask(state, {"visible": Chance(f"Is this on screen now: {what}?")}).get("visible")
+    return answer.value if answer is not None else 0.0
+
+
+def true_now(jev, what, snapshot, changed=None, limit=80):
+    """Jev's yes to "is <what> true now", 0 to 1: `visible` with what the
+    text fields hold, which its lines leave out for a named field."""
+    state = _screen_state(snapshot, changed, limit)
+    fields = {}
+    for item in snapshot["items"]:
+        value = " ".join(str(item["value"] or "").split())
+        if item["kind"] == "text" and value:
+            fields.setdefault(item["name"] or item["role"].replace("AX", ""), prefix(value, 200))
+    state["fields"] = fields
+    answer = jev.ask(state, {"true": Chance(f"Is this true now: {what}?")}).get("true")
+    return answer.value if answer is not None else 0.0
+
+
+def _screen_state(snapshot, changed, limit):
+    lines = []
+    shown = snapshot["items"][:limit]
+    shown += [i for i in snapshot["items"][limit:] if i.get("in")]
+    for item in shown:
+        name = item["name"] or (_trim_spaces(item["value"]) if item["kind"] in ("text", "label") else "")
+        lines.append(f"{item['role'].replace('AX', '')} “{prefix(' '.join(name.split()), 60)}”"
+                     if name else item["role"].replace("AX", ""))
+    state = {"app": snapshot["app"], "window": snapshot["window"]}
+    if changed:
+        state["changed_by_the_last_step"] = changed
+    state["on_screen"] = lines
+    return state
+
+
 def words_seen(words, snapshot):
     """Whether any word of `words` is in the name or text of anything read."""
     wanted = {w for w in _words(words) if len(w) > 2}

@@ -525,9 +525,17 @@ def change_checks():
           and loop.lost(chip["items"][0], chip, chip) == [])
     wide = draft(more=3140)
     offered = decider.candidates(wide, "write to Peter")
+    lines = []
+
+    class Jev:
+        def ask(self, state, questions):
+            lines.extend(state["on_screen"])
+            return {}
+    decider.visible(Jev(), "a list", wide)
     check("change: the summary line is read, never offered",
           "and 3,140 more" in [i["name"] for i in wide["items"]]
-          and all(i["kind"] != "more" for i in offered), offered)
+          and all(i["kind"] != "more" for i in offered)
+          and "Group “and 3,140 more”" in lines, (offered, lines))
     far = draft(popup=True, filler=45)
     offered = decider.candidates(far, "write to Tool")
     check("change: a pop-up's rows are offered however far they are",
