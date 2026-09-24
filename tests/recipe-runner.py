@@ -513,7 +513,7 @@ def change_checks():
     change = loop.changes(menu(900), menu(900, 200))
     check("change: a second copy of a menu opening is a change, named once each",
           change == {"new": ["Page", "Database", "Chat"]}
-          and loop.difference(menu(900), menu(900, 200)) == '3 new: "Page", "Database", "Chat"',
+          and loop.sentence(loop.changes(menu(900), menu(900, 200))) == '3 new: "Page", "Database", "Chat"',
           change)
     change = loop.changes(menu(900, 200), menu(900))
     check("change: the shown copy closing is 3 gone, the hidden one stays matched",
@@ -522,7 +522,7 @@ def change_checks():
           loop.changes(menu(900, 200), menu(900, 200)) == {})
     check("change: an item that stayed and moved is counted",
           loop.changes(menu(900), menu(950)) == {"moved": 3}
-          and loop.difference(menu(900), menu(950)) == "3 moved"
+          and loop.sentence(loop.changes(menu(900), menu(950))) == "3 moved"
           and loop.changes(menu(900), menu(910)) == {})
     keyed = menu(900, 200)
     for item, key in zip(keyed["items"], ["a", "b", "c", "d", "e", "c.2", "d.2", "e.2"]):
