@@ -64,6 +64,7 @@ from pydantic_ai_harness import Planning
 from pydantic_ai_harness.planning import InMemoryPlanStore
 from pydantic_ai_harness.planning import _capability as _plan_reminder
 from pydantic_ai_harness.planning import _toolset as _plan_tools
+from pydantic_ai_harness.planning._types import TaskStatus
 
 import decider
 import ground as grounding
@@ -117,7 +118,7 @@ Rules:
 - Prefer the app's keyboard shortcut when it has one.
 - Never invent a menu item or a label. Work out dates and times like "tomorrow at 10" from the date and time you are given, then find them on screen. When unsure, act one step at a time.
 - A step after which nothing in the tree changed is not verified. Check the picture: it may have worked. If it did not, do not repeat it: try another way.
-- A request with several parts starts with `write_plan`: the parts as a few short steps. A request with one part needs no plan. Keep a plan current: one step `in_progress`, a step `completed` once the screen shows it done, `cancelled` when it is not needed. Update the plan in the same turn as your next `act` or `use`.
+- A request with several parts starts with `write_plan`: the parts as a few short steps. A request with one part needs no plan. With a plan, every call that has a `plan` field fills it: the tasks the screen now shows done, the tasks dropped and why, and the task this call is for. Without a plan, `plan` is null. Call `write_plan` again only to change the plan itself.
 - When the last result shows the task done, call `done`. Do not read again to check.
 - Call `done` when the task is done, `stuck` when it cannot be done here and no question would help. `done` is refused while a plan step is open.
 - The picture shows the area you are working in: check it for what the screen lines cannot say (which part of a field is selected, highlighted rows, chips, what covers what)."""
@@ -140,10 +141,25 @@ class Step(Strict):
 
 # A missing `why`, `summary` or option list is taken as empty: strict mode
 # sends them, the test fakes do not.
+class Dropped(Strict):
+    id: str
+    why: str
+
+
+class Progress(Strict):
+    """The plan as the newest screen shows it. `now_done`: task IDs the screen shows finished.
+    `dropped`: tasks not needed or not possible, with why. `working_on`: the task this call is
+    for; naming a finished task opens it again. Null when there is no plan."""
+    now_done: List[str]
+    dropped: List[Dropped]
+    working_on: Optional[str] = None
+
+
 class Act(Strict):
     """Do steps in order. IDs are those of the newest screen; every screen gives new IDs. Stops
     at the first step that fails, changes nothing, or opens something the next step does not
     target. Returns the steps that ran, what changed, and the screen with new IDs."""
+    plan: Optional[Progress] = None
     why: str = ""
     steps: List[Step]
 
@@ -153,6 +169,7 @@ class Use(Strict):
     against the screen, with no model call. `values` fill its inputs, in the order listed.
     Stops at the first check that fails, and says what it expected and what it found.
     Returns the steps and the screen with new IDs."""
+    plan: Optional[Progress] = None
     skill: str
     values: List[str]
 
@@ -165,6 +182,7 @@ class Look(Strict):
     """Read the text in a part of the screen from its pixels, for what the screen lines miss.
     Give `id` and `side` to look next to an item, or x, y, w, h: the centre and size in
     points. Returns the lines seen, with IDs `act` can click. They may be misread."""
+    plan: Optional[Progress] = None
     id: Optional[int] = None
     side: Optional[Side] = None
     x: Optional[float] = None
@@ -179,6 +197,7 @@ class Ground(Strict):
     item `id` (`side`, around when null), in x, y, w, h (centre and size in points), or, with
     neither, in the list or pop-up that opened last. After a picture was shown, image_x and
     image_y are the target's centre in its pixels. Returns a point ID `act` can click."""
+    plan: Optional[Progress] = None
     description: str
     id: Optional[int] = None
     side: Optional[Side] = None
@@ -200,6 +219,7 @@ class Ask(Strict):
 
 class Done(Strict):
     """The task is done, or done up to where the user takes over."""
+    plan: Optional[Progress] = None
     summary: str = ""
 
 
@@ -263,6 +283,9 @@ def _render_plan(items):
 
 
 _plan_tools.render_plan = _plan_reminder.render_plan = _render_plan
+# Its "keep it updated with the planning tools" drew one status call per step.
+_plan_reminder._reminder_text = lambda plan: (
+    f"The plan (say its progress in the `plan` field of your next call):\n\n{plan}\n</plan-reminder>")
 
 
 class PlanStore(InMemoryPlanStore):
@@ -525,7 +548,10 @@ class Agent:
             full = short = "Not run: one tool per turn."
         else:
             self.ran += 1
+            said = self._progress(getattr(args, "plan", None))
             full, short, ended = self._run_tool(name, args)
+            if said:
+                full, short = f"{said}\n{full}", f"{said}\n{short}"
             self.over = self.over or ended
         metadata = {"short": short} if short != full else {}
         if name == "look":
@@ -1024,6 +1050,35 @@ class Agent:
             return {k: clean(v) for k, v in node.items()}
         return clean(head + list(body.get("input") or []))
 
+    def _progress(self, progress):
+        """Applies the model's `plan` field to the plan. What it could not
+        apply, or ""."""
+        if progress is None:
+            return ""
+        items = {i.id: i for i in self.plan.now()}
+        status, unknown = {}, []
+        for task in progress.now_done:
+            status[task] = TaskStatus.completed
+        for drop in progress.dropped:
+            status[drop.id] = TaskStatus.cancelled
+            if drop.id in items:
+                self._note(f"dropped: {drop.why}", task=drop.id)
+        if progress.working_on:
+            status[progress.working_on] = TaskStatus.in_progress
+        unknown = [t for t in status if t not in items]
+        changed = False
+        for n, item in enumerate(self.plan._items):
+            new = status.get(item.id)
+            if new is None and item.status == TaskStatus.in_progress and progress.working_on \
+                    and progress.working_on in items:
+                new = TaskStatus.pending
+            if new is not None and new != item.status:
+                self.plan._items[n] = item.model_copy(update={"status": new})
+                changed = True
+        if changed:
+            self.plan.changed()
+        return f"Plan: no task {', '.join(unknown)}." if unknown else ""
+
     def _covering(self, item):
         skill = skilling.covering(self.skills, item) if item and self.skills else None
         return skill if skill and skill.name not in self.failed else None
@@ -1213,6 +1268,10 @@ async def _check_end(ctx: pai.RunContext[Agent], output):
     """`done` with a plan task open is refused. `stuck` asks the user once
     first; an answer other than Stop goes back to the model."""
     deps = ctx.deps
+    if isinstance(output, Done):
+        said = deps._progress(output.plan)
+        if said:
+            raise pai.ModelRetry(said)
     if isinstance(output, Done) and deps.ran:
         raise pai.ModelRetry("Not done: this turn acted. Read its result first.")
     if isinstance(output, Done):
@@ -1264,5 +1323,6 @@ AGENT = pai.Agent(
     retries={"tools": MAX_CALLS, "output": MAX_CALLS},
     capabilities=[ProcessHistory(_prepare),
                   # Its guidance says "for multi-step work"; SYSTEM asks for the plan first.
-                  Planning(guidance="", store_resolver=lambda ctx: ctx.deps.plan)])
+                  Planning(guidance="", store_resolver=lambda ctx: ctx.deps.plan,
+                           tools=["write_plan"])])
 AGENT.output_validator(_check_end)

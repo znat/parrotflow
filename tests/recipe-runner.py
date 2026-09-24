@@ -1013,7 +1013,7 @@ def agent_checks(runner, stderr_path, trace_path):
     names = [t["name"] for t in body["tools"]]
     check("agent: tools, strict, required, parallel calls, reasoning none, on /v1/responses",
           names[:4] == ["act", "read", "look", "ask"] and names[-2:] == ["done", "stuck"]
-          and set(names[4:-2]) == PLAN_TOOLS
+          and set(names[4:-2]) == {"write_plan"}
           and all(t["strict"] for t in body["tools"] if t["name"] not in PLAN_TOOLS)
           and body["tool_choice"] == "required" and body["parallel_tool_calls"] is True
           and body["reasoning"] == {"effort": "none"} and "input" in body, names)
@@ -1435,9 +1435,10 @@ def agent_checks(runner, stderr_path, trace_path):
             {"id": "b", "content": "Mute the channel", "status": "pending"}]})],
          [act({"do": "click", "id": 2})],
          [act({"do": "click", "id": 2}, {"do": "click", "id": 1})],
-         [("update_task_status", {"task_id": "a", "status": "completed"})],
-         [("update_task_status", {"task_id": "b", "status": "completed"})],
-         [("done", {"summary": "ok"})]],
+         [("act", {"plan": {"now_done": ["a"], "dropped": [], "working_on": "b"},
+                   "steps": [{"do": "click", "id": 2}]})],
+         [("done", {"plan": {"now_done": ["b"], "dropped": [], "working_on": None},
+                    "summary": "ok"})]],
         {("press", 1): {"error": "refused"}})
     shown = runner.progress
     statuses = [[t["status"] for t in p["plan"]] for p in shown if p.get("plan")]
@@ -1445,8 +1446,8 @@ def agent_checks(runner, stderr_path, trace_path):
     check("progress: the run's title comes first, with no plan yet",
           shown and shown[0]["title"] == "mute this channel" and shown[0]["plan"] is None
           and runner.order[0].get("do") == "progress", shown[:1])
-    check("progress: the plan with its statuses after write_plan and update_task_status",
-          ["in_progress", "pending"] in statuses and ["completed", "pending"] in statuses
+    check("progress: the plan with its statuses after write_plan and each call's plan field",
+          ["in_progress", "pending"] in statuses and ["completed", "in_progress"] in statuses
           and statuses[-1] == ["completed", "completed"]
           and shown[-1]["plan"][0]["content"] == "Open the settings", statuses)
     check("progress: thinking while the model is asked, and the step before it runs",
@@ -1457,7 +1458,7 @@ def agent_checks(runner, stderr_path, trace_path):
     notes = next((p["plan"][0]["notes"] for p in shown if p.get("plan") and p["plan"][0]["notes"]),
                  [])
     check("progress: a failed step is a note on the task in progress",
-          notes == [covered] and shown[-1]["plan"][1]["notes"] == [], (notes, shown[-1]))
+          notes == [covered], (notes, shown[-1]))
     check("progress: the end says how it ended, after the last step",
           shown[-1]["outcome"] == "Done" and shown[-1]["activity"] is None
           and runner.order[-1] is shown[-1] and end["end"] == "done", (shown[-1:], end))
@@ -1483,7 +1484,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 150 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 149 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
