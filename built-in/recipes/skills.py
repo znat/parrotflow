@@ -43,9 +43,13 @@ PAUSE = 0.3
 class Skill:
     def __init__(self, name, goal, params, steps):
         self.name, self.goal, self.params, self.steps = name, goal, params, steps
+        # The controls its clicks name, as (role, name): the skill sets them.
+        self.covers = {m.groups()[:2] for m in (_CLICK.match(g) for g, _ in steps) if m}
 
     def line(self):
-        return f"{self.name}({', '.join(self.params)}): {self.goal}"
+        covers = ", ".join(f'"{name}"' for _, name in sorted(self.covers))
+        return f"{self.name}({', '.join(self.params)}): {self.goal}" \
+            + (f" Sets {covers}; never set it with `act`." if covers else "")
 
 
 def parse(path):
@@ -83,6 +87,12 @@ def of_app(root, folder):
     """The skills in `<root>/<folder>/`, by name."""
     found = (parse(p) for p in sorted(glob.glob(os.path.join(root, folder or "-", "*.md"))))
     return {s.name: s for s in found if s}
+
+
+def covering(found, item):
+    """The skill in `found` that sets `item`, or None."""
+    key = (item["role"].replace("AX", ""), item["name"])
+    return next((s for s in found.values() if key in s.covers), None)
 
 
 def _fill(text, values):

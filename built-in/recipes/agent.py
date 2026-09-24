@@ -313,6 +313,8 @@ class Agent:
         self.asked_when_stuck = False
         self.tried = {}
         self.skills = {}
+        # Skills that failed this run: their controls are the model's again.
+        self.failed = set()
         self.plan = PlanStore(lambda: self.loop.show(plan=self._plan()))
         # Plan item ID: what went wrong while it was in progress, newest last.
         self.notes = {}
@@ -609,6 +611,12 @@ class Agent:
     def _act(self, steps, report):
         lp = self.loop
         for n, step in enumerate(steps, 1):
+            skill = self._covering(self.ids.get(step.id)) if step.do != "scroll" else None
+            if skill:
+                text = (f"Nothing ran: step {n} acts on \"{self.ids[step.id]['name']}\", which is "
+                        f"set with `use {skill.name}`.")
+                self._note(text)
+                return text, text
             if step.id is not None and step.id not in self.ids:
                 text = f"Nothing ran: step {n} names ID {step.id}, not on the newest screen."
                 if self.grounder.on:
@@ -1016,6 +1024,14 @@ class Agent:
             return {k: clean(v) for k, v in node.items()}
         return clean(head + list(body.get("input") or []))
 
+    def _covering(self, item):
+        skill = skilling.covering(self.skills, item) if item and self.skills else None
+        return skill if skill and skill.name not in self.failed else None
+
+    def _covered_note(self, item):
+        skill = self._covering(item)
+        return f" — set it with `use {skill.name}`" if skill else ""
+
     def _use(self, args):
         """The `use` tool. (result, the result cut for history)."""
         skill = self.skills.get(args.skill)
@@ -1027,6 +1043,7 @@ class Agent:
             return said, said
         ok, lines = skilling.play(skill, args.values, self)
         if not ok:
+            self.failed.add(skill.name)
             self._note(lines[-1])
         head = f"Skill {skill.name}: " + ("every check passed." if ok else "stopped.")
         short = "\n".join([head] + lines)
@@ -1098,6 +1115,7 @@ class Agent:
             lines.append("On screen, top to bottom. New IDs; earlier ones no longer work:")
         lines += [f"[{n}] {planning._line(item)}"
                   + (f" ×{self.twins[id(item)]}" if self.twins.get(id(item), 1) > 1 else "")
+                  + self._covered_note(item)
                   for n, item in self.ids.items()]
         return "\n".join(lines)
 

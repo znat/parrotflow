@@ -542,6 +542,12 @@ def change_checks():
     check("skills: a memory with steps is a skill, one without is not",
           list(found) == ["set-time"] and found["set-time"].params == ["hour", "minute"]
           and found["set-time"].steps[2] == ("key right", ""), {k: v.steps for k, v in found.items()})
+    check("skills: a skill sets the controls its clicks name, and says so",
+          found["set-time"].covers == {("DateTimeArea", "Start time")}
+          and 'Sets "Start time"; never set it with `act`.' in found["set-time"].line()
+          and skills.covering(found, {"role": "AXDateTimeArea", "name": "Start time"})
+          is found["set-time"]
+          and skills.covering(found, {"role": "AXPopUpButton", "name": "Start time"}) is None)
     field = {"name": "Start time", "role": "AXDateTimeArea", "value": "25/09/2026, 11:30",
              "state": ["focused"], "x": 1, "y": 1, "in": None}
     button = {"name": "Start time", "role": "AXPopUpButton", "value": "", "state": [],
