@@ -281,8 +281,8 @@ enum ScreenTargets {
     /// The hit test lands on the deepest element, which is usually the label
     /// inside the button rather than the button, so it walks up until
     /// something advertises the action.
-    static func press(at point: CGPoint) -> Bool {
-        perform(kAXPressAction, at: point)
+    static func press(at point: CGPoint) -> AXError {
+        performing(kAXPressAction, at: point)
     }
 
     /// Opens the element's own menu — what a right-click gives you.
@@ -301,19 +301,25 @@ enum ScreenTargets {
     /// inside the button rather than the button, so it walks up until
     /// something advertises the action.
     static func perform(_ action: String, at point: CGPoint) -> Bool {
+        performing(action, at: point) == .success
+    }
+
+    /// As `perform`, with the error. `.actionUnsupported` when nothing under
+    /// the point has the action.
+    static func performing(_ action: String, at point: CGPoint) -> AXError {
         let system = AXUIElementCreateSystemWide()
         var under: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &under) == .success,
-              let element = under else { return false }
+        let hit = AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &under)
+        guard hit == .success, let element = under else { return hit == .success ? .failure : hit }
         var current = element
         for _ in 0..<6 {
             if actionNames(current).contains(action) {
-                return AXUIElementPerformAction(current, action as CFString) == .success
+                return AXUIElementPerformAction(current, action as CFString)
             }
-            guard let parent = attribute(current, kAXParentAttribute) else { return false }
+            guard let parent = attribute(current, kAXParentAttribute) else { return .actionUnsupported }
             current = parent as! AXUIElement
         }
-        return false
+        return .actionUnsupported
     }
 
     /// The box the caret is in, when it is one that words go into and is

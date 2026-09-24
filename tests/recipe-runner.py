@@ -526,6 +526,12 @@ def change_checks():
                 del os.environ["PARROTFLOW_APP_NOTES"]
             else:
                 os.environ["PARROTFLOW_APP_NOTES"] = was
+    behind = {"y": 517, "x": 1451, "in": "window", "state": []}
+    front = {"y": 546, "x": 1480, "in": None, "state": ["focused"]}
+    check("twins: the focused one wins over the one first in reading order",
+          min([behind, front], key=agent.twin_rank) is front)
+    check("twins: the focused window's wins over another window's",
+          min([dict(behind), dict(front, state=[])], key=agent.twin_rank)["in"] is None)
     check("memories: the app's files, and a person's only when the request names them",
           got == "Click New first.\n\nAlex is Alex Moreau.", got)
     check("loop: max_steps is 30 when the app does not say",

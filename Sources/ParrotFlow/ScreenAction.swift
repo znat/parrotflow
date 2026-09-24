@@ -57,11 +57,20 @@ enum ScreenAction {
             && !target.isChoiceInAList
             && target.actions.contains(kAXPressAction)
             && target.kind != ScreenTargets.Kind.text
-        if canPress, ScreenTargets.press(at: point) {
+        guard canPress else { return false }
+        let error = ScreenTargets.press(at: point)
+        if error == .success {
             Log.write("action: pressed at \(Int(point.x)),\(Int(point.y)) — the pointer did not move")
             return true
         }
-        if canPress { Log.write("action: the press was refused at \(Int(point.x)),\(Int(point.y))") }
+        // Seen 09-24: Outlook's "New Event" answered cannotComplete and opened
+        // the form anyway, so the click that followed opened a second one.
+        // The caller's read of the tree decides whether it worked.
+        if error == .cannotComplete {
+            Log.write("action: the press at \(Int(point.x)),\(Int(point.y)) timed out — not confirmed, no click")
+            return true
+        }
+        Log.write("action: the press was refused at \(Int(point.x)),\(Int(point.y)) — AXError \(error.rawValue)")
         return false
     }
 

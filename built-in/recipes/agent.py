@@ -208,6 +208,14 @@ def _doc(model):
     return " ".join(model.__doc__.split())
 
 
+def twin_rank(item):
+    """Which of two same-named items gets the line: the focused one, then
+    one in the focused window, then the first in reading order. Seen 09-24:
+    two Outlook event forms, and the first in reading order was behind."""
+    return ("focused" not in (item.get("state") or ()), item.get("in") == "window",
+            item["y"], item["x"])
+
+
 def memories(app, utterance, log):
     """Every file in `<config>/memories/<app>/`, and each `people/<name>.md`
     whose name the request says, whole. `<config>` is the app notes' parent,
@@ -1059,14 +1067,14 @@ class Agent:
         if not first:
             offers.sort(key=lambda i: (i["y"] // 20, i["x"]))
         offers = offers[:SHOWN]
-        # Same name, same kind: one line, and the first in reading order.
-        # Teams draws "Create a new event." twice.
+        # Same name, same kind: one line, the first by `twin_rank`. Teams
+        # draws "Create a new event." twice.
+        rank = twin_rank
         earliest, count = {}, {}
         for item in offers:
             name = (item["kind"], tuple(decider._words(item["name"])))
             count[name] = count.get(name, 0) + 1
-            if not item["name"] or name not in earliest \
-                    or (item["y"], item["x"]) < (earliest[name]["y"], earliest[name]["x"]):
+            if not item["name"] or name not in earliest or rank(item) < rank(earliest[name]):
                 earliest[name] = item
         offers = [i for i in offers if not i["name"]
                   or earliest[(i["kind"], tuple(decider._words(i["name"])))] is i]
