@@ -794,6 +794,21 @@ def agent_checks(runner, stderr_path, trace_path):
           and "1. key = “tab” — no change in the accessibility tree, which does not show the caret"
           in got and [s["do"] for s in fake.steps if s["do"] in ("key", "press")] == ["key", "press"],
           (got, fake.did()))
+    focused = dict(home, focus={"point": None, "described": "", "role": "AXComboBox", "id": None})
+    end, fake, report, asked = run(
+        "set the end time to five", [focused, menu],
+        [[act({"do": "key", "value": "cmd+a"})], [("done", {"summary": "ok"})]], per_read=False)
+    check("agent: ⌘A in a combo box, by the read's focus, runs without asking",
+          "ask" not in fake.did() and [s.get("keys") for s in fake.steps if s["do"] == "key"]
+          == ["cmd+a"] and end["end"] == "done", (report, fake.did()))
+    focused = dict(home, focus={"point": None, "described": "", "role": "AXTextArea", "id": None})
+    end, fake, report, asked = run(
+        "make this a checklist", [focused],
+        [[act({"do": "key", "value": "cmd+a"})], [("done", {"summary": "ok"})]])
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("agent: ⌘A in a text area still asks, and no is said to the model",
+          "ask" in fake.did() and "key" not in fake.did() and "select all would put" in got,
+          (got, fake.did()))
     end, fake, report, asked = run(
         "mute this channel", [home],
         [[act({"do": "click", "id": 1}, {"do": "click", "id": 2})], [("done", {"summary": "ok"})]])
@@ -1262,7 +1277,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 153 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 157 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
