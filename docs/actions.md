@@ -251,6 +251,7 @@ recipe steps.
 | `show_menu {id}` or `{x, y}` | the item's own menu, else a right-click |
 | `front` | brings the app forward, for a chord |
 | `focus`, `ready_for_words` | where the caret is, its `role`, and whether it waits in an empty box |
+| `observe {at, app, see}` | `snapshot`, plus `focus` (`point`, `role`, `id`, `described`) and `ready_box` from the same read. The loop's step reads use it |
 | `spotlight {snapshot, offers, aim, chosen, seconds}`, `spotlight_dismiss` | the outlines |
 | `watch` | starts watching for Escape |
 | `log {text, plain}` | a log line; `plain` leaves out the `recipe:` prefix |

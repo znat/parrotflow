@@ -317,7 +317,7 @@ class Recorder:
         if self.dead or not isinstance(reply, dict):
             return
         try:
-            if do == "snapshot" and isinstance(reply.get("snapshot"), dict):
+            if do in ("snapshot", "observe") and isinstance(reply.get("snapshot"), dict):
                 self._tree(reply)
             elif do == "look":
                 self._look(args, reply)

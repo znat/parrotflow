@@ -973,13 +973,16 @@ class Loop:
 
     def _read(self, aim, app):
         """The window, with `seen`, its text read from the pixels, when the
-        app read it."""
-        reply = self.call("snapshot", at=aim, app=app, see=True)
+        app read it, and `focus` and `ready_box` from the same read."""
+        reply = self.call("observe", at=aim, app=app, see=True)
         if reply.get("error"):
             raise Stop(reply["error"], broke=True)
         snapshot = reply["snapshot"]
         if isinstance(reply.get("seen"), list):
             snapshot["seen"] = reply["seen"]
+        if isinstance(reply.get("focus"), dict):
+            snapshot["focus"] = reply["focus"]
+            snapshot["ready_box"] = reply.get("ready_box")
         # Its picture, for `ground`: {file, frame, scale, w, h}.
         if isinstance(reply.get("shot"), dict) and reply["shot"].get("file"):
             snapshot["shot"] = reply["shot"]
@@ -1083,11 +1086,19 @@ class Loop:
         """Whether the caret is already in `target`: then typing needs no click."""
         if "focused" in (target.get("state") or ()):
             return True
-        point = self.call("focus", app=snapshot["app"]).get("point")
+        focus = self._focus(snapshot)
+        if focus.get("id") is not None and focus["id"] == target.get("id"):
+            return True
+        point = focus.get("point")
         if not point:
             return False
         x, y = point
         return abs(x - target["x"]) <= target["w"] / 2 + 2 and abs(y - target["y"]) <= target["h"] / 2 + 2
+
+    def _focus(self, snapshot):
+        """Where the caret was when `snapshot` was read: {point, role, id}.
+        Asked for when the read did not carry it."""
+        return snapshot.get("focus") or self.call("focus", app=snapshot["app"])
 
     def _click_at(self, target):
         """A real click at the centre of a line `look` saw: it has no element
@@ -1140,7 +1151,7 @@ class Loop:
                 return (self._refused(answer, "would type words that were not said: "
                                       + ", ".join(unsaid[:4])), snapshot, aim, "")
         if do == "key" and value == "cmd+a":
-            role = self.call("focus", app=snapshot["app"]).get("role")
+            role = self._focus(snapshot).get("role")
             if role in ONE_LINE:
                 self.log(f"planner: ⌘A in a one-line field ({role}), not asked")
             else:
@@ -1240,7 +1251,7 @@ class Loop:
         said = planning.describe_step(dict(step, expect=""))
         report.steps.append(f"{said}; {decider.prefix(outcome, 120)}")
         report.shown.append(self._shown(step))
-        focus = self.call("focus", app=now["app"]).get("point")
+        focus = self._focus(now).get("point")
         if focus:
             aim = focus
         elif target is not None:
