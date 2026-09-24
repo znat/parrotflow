@@ -337,12 +337,10 @@ enum ScreenTargets {
     /// the caret in Slack's recipient field and the request is nowhere near
     /// finished — that field is a step, not a destination.
     static func readyForWords(ofApp name: String) -> String? {
-        guard let running = NSWorkspace.shared.runningApplications.first(where: {
-            $0.localizedName == name || $0.bundleIdentifier == name
-        }) else { return nil }
-        let app = AXUIElementCreateApplication(running.processIdentifier)
-        guard let element = attribute(app, kAXFocusedUIElementAttribute) as! AXUIElement?
-        else { return nil }
+        focusedElement(ofApp: name).flatMap(readyForWords)
+    }
+
+    private static func readyForWords(_ element: AXUIElement) -> String? {
         let role = string(element, kAXRoleAttribute) ?? ""
         guard role == kAXTextAreaRole || role == kAXTextFieldRole else { return nil }
         let called = (string(element, kAXTitleAttribute)
@@ -410,12 +408,13 @@ enum ScreenTargets {
     /// The focused element as one line, for a log that has to say where the
     /// keystrokes went.
     static func focusDescription(ofApp name: String) -> String {
-        guard let running = NSWorkspace.shared.runningApplications.first(where: {
+        guard NSWorkspace.shared.runningApplications.contains(where: {
             $0.localizedName == name || $0.bundleIdentifier == name
         }) else { return "no such app" }
-        let app = AXUIElementCreateApplication(running.processIdentifier)
-        guard let element = attribute(app, kAXFocusedUIElementAttribute) as! AXUIElement?
-        else { return "nothing has focus" }
+        return focusedElement(ofApp: name).map(describe) ?? "nothing has focus"
+    }
+
+    private static func describe(_ element: AXUIElement) -> String {
         let role = string(element, kAXRoleAttribute) ?? "?"
         let called = [kAXTitleAttribute, kAXDescriptionAttribute, "AXPlaceholderValue"]
             .lazy.compactMap { string(element, $0) }.first { !$0.isEmpty } ?? ""
@@ -576,14 +575,36 @@ enum ScreenTargets {
 
     /// The focused element's role, or nil.
     static func focusRole(ofApp name: String) -> String? {
+        focusedElement(ofApp: name).flatMap(role)
+    }
+
+    private static func role(_ element: AXUIElement) -> String? {
+        let role = string(element, kAXRoleAttribute)
+        return string(element, kAXSubroleAttribute) == "AXSearchField" ? "AXSearchField" : role
+    }
+
+    private static func focusedElement(ofApp name: String) -> AXUIElement? {
         guard let running = NSWorkspace.shared.runningApplications.first(where: {
             $0.localizedName == name || $0.bundleIdentifier == name
         }) else { return nil }
         let app = AXUIElementCreateApplication(running.processIdentifier)
-        guard let element = attribute(app, kAXFocusedUIElementAttribute) as! AXUIElement?
-        else { return nil }
-        let role = string(element, kAXRoleAttribute)
-        return string(element, kAXSubroleAttribute) == "AXSearchField" ? "AXSearchField" : role
+        return attribute(app, kAXFocusedUIElementAttribute) as! AXUIElement?
+    }
+
+    /// The focused element, read once: its frame, role, a line describing
+    /// it, and the empty box words go into when it is one.
+    struct Focus {
+        var frame: CGRect?
+        var role: String?
+        var described: String
+        var readyBox: String?
+    }
+
+    static func focused(ofApp name: String) -> Focus? {
+        guard let element = focusedElement(ofApp: name) else { return nil }
+        let box = frame(of: element).flatMap { $0.width > 1 && $0.height > 1 ? $0 : nil }
+        return Focus(frame: box, role: role(element), described: describe(element),
+                     readyBox: readyForWords(element))
     }
 
     /// The name of what is at a point, for the never-press check on a click

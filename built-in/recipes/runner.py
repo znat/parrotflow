@@ -96,7 +96,16 @@ screenshot written there, `shot: {file, frame, scale, w, h}`, or `shot: null`
 and `shot_error`; `press` and `click_at` add `under`, what the hit test found
 at the point before.
 
-A `snapshot` with `see: true` also carries, when `actions.see` is on and
+    runner  {"do": "observe", "at": [x, y], "app": "..", "see": true}
+    app     {"snapshot": {..}, "focus": {"point": [x, y] | null, "role": .., "id": .. | null,
+             "described": ".."}, "ready_box": ".." | null, ...}
+
+A `snapshot` and, from the same read, what `focus` and `ready_for_words`
+answer: one round trip where a step made three. `id` is the snapshot item
+that holds the caret, when one does. It takes `shot` and `see` as a snapshot
+does.
+
+A `snapshot` or `observe` with `see: true` also carries, when `actions.see` is on and
 Screen Recording is granted, `seen`: the window's text lines as `look` gives
 them, read from the same capture, and `seen_ms`. Without it there is no
 `seen`.
@@ -379,9 +388,9 @@ class Channel:
         """One step, and the reply as it came."""
         self._flush()
         recorder = self.recorder
-        if do == "snapshot" and recorder.live:
+        if do in ("snapshot", "observe") and recorder.live:
             args["shot"] = recorder.shot_path()
-        elif do == "snapshot" and self.shots:
+        elif do in ("snapshot", "observe") and self.shots:
             args["shot"] = self.shots
         args["do"] = do
         started = time.monotonic()

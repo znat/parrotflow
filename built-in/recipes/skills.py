@@ -22,7 +22,6 @@ import fnmatch
 import glob
 import os
 import re
-import time
 
 import decider
 
@@ -35,9 +34,6 @@ _APPEARS = re.compile(r'^appears\s+"([^"]*)"$')
 # Points in from the edge for `at left`. Measured 09-24 on Outlook's date and
 # time fields: 10 lands before the hour's first digit, 18 on both parts.
 EDGE = 16
-# Reads after a gesture before a check fails: the app redraws late.
-TRIES = 3
-PAUSE = 0.3
 
 
 class Skill:
@@ -182,12 +178,12 @@ def play(skill, values, agent):
             return False, said
         report.acted = True
         report.shown.append(gesture)
-        for attempt in range(TRIES):
-            time.sleep(PAUSE)
-            agent.snapshot = lp._read(agent.aim, agent.snapshot["app"])
-            ok, found = check(expect, agent.snapshot)
-            if ok:
-                break
+        if expect:
+            agent.snapshot = lp.settle(agent.snapshot, agent.aim, "skill_check",
+                                       until=lambda now: check(expect, now)[0])
+        else:
+            agent.snapshot = lp.settle(agent.snapshot, agent.aim, "skill_step")
+        ok, found = check(expect, agent.snapshot)
         lp.log(f"skill: {skill.name} {n}. {gesture}" + (f" | {expect} — "
                + ("ok" if ok else f"no: {found}") if expect else ""))
         if not ok:

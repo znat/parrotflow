@@ -724,39 +724,20 @@ private final class RecipeSession {
             return ["waited": waited, "items": found.map(register)]
 
         case "snapshot":
-            let at = (r["at"] as? [NSNumber]).map {
-                CGPoint(x: $0[0].doubleValue, y: $0[1].doubleValue)
-            } ?? .zero
-            let snapshot: ScreenTargets.Snapshot
-            do {
-                if let named = r["app"] as? String, !named.isEmpty {
-                    snapshot = try ScreenTargets.snapshot(ofApp: named, at: at, since: &parts)
-                } else {
-                    snapshot = try ScreenTargets.snapshot(
-                        at: at, ignoring: Set(config.ignoreApps), since: &parts
-                    )
-                }
-            } catch {
-                return ["error": error.localizedDescription]
-            }
-            app = snapshot.app
-            let id = nextID
-            nextID += 1
-            snapshots[id] = snapshot
-            var reply: [String: Any] = [
-                "snapshot": Recipes.encode(snapshot, id: id, items: snapshot.items.map(register)),
+            return await read(r)
+
+        case "observe":
+            var reply = await read(r)
+            guard reply["error"] == nil else { return reply }
+            let focus = ScreenTargets.focused(ofApp: app)
+            let items = (reply["snapshot"] as? [String: Any])?["items"] as? [[String: Any]] ?? []
+            reply["focus"] = [
+                "point": focus?.frame.map { [$0.midX, $0.midY] } as Any? ?? NSNull(),
+                "role": focus?.role as Any? ?? NSNull(),
+                "described": focus?.described ?? "nothing has focus",
+                "id": Self.focusedID(items, frame: focus?.frame) as Any? ?? NSNull(),
             ]
-            let window = CGRect(x: snapshot.frame.x, y: snapshot.frame.y,
-                                width: snapshot.frame.w, height: snapshot.frame.h)
-            let see = config.see && r["see"] as? Bool == true
-            await ScreenText.window(window, shot: r["shot"] as? String, see: see, into: &reply)
-            if let ms = reply["seen_ms"] as? Int, ms > 80 {
-                Log.write("action: reading the window's text took \(ms) ms"
-                          + " (\(Int(window.width))×\(Int(window.height)) pt)")
-            }
-            if let error = reply["seen_error"] as? String {
-                Log.write("action: could not read the window's text — \(error)")
-            }
+            reply["ready_box"] = focus?.readyBox as Any? ?? NSNull()
             return reply
 
         case "ask":
@@ -978,6 +959,59 @@ private final class RecipeSession {
     private func pause(_ value: Any?) async {
         let ms = min(max(value as? Int ?? 0, 0), 10_000)
         if ms > 0 { try? await Task.sleep(nanoseconds: UInt64(ms) * 1_000_000) }
+    }
+
+    /// `snapshot`: the window, its items registered, and its text and
+    /// picture when asked.
+    private func read(_ r: [String: Any]) async -> [String: Any] {
+        let at = (r["at"] as? [NSNumber]).map {
+            CGPoint(x: $0[0].doubleValue, y: $0[1].doubleValue)
+        } ?? .zero
+        let snapshot: ScreenTargets.Snapshot
+        do {
+            if let named = r["app"] as? String, !named.isEmpty {
+                snapshot = try ScreenTargets.snapshot(ofApp: named, at: at, since: &parts)
+            } else {
+                snapshot = try ScreenTargets.snapshot(
+                    at: at, ignoring: Set(config.ignoreApps), since: &parts
+                )
+            }
+        } catch {
+            return ["error": error.localizedDescription]
+        }
+        app = snapshot.app
+        let id = nextID
+        nextID += 1
+        snapshots[id] = snapshot
+        var reply: [String: Any] = [
+            "snapshot": Recipes.encode(snapshot, id: id, items: snapshot.items.map(register)),
+        ]
+        let window = CGRect(x: snapshot.frame.x, y: snapshot.frame.y,
+                            width: snapshot.frame.w, height: snapshot.frame.h)
+        let see = config.see && r["see"] as? Bool == true
+        await ScreenText.window(window, shot: r["shot"] as? String, see: see, into: &reply)
+        if let ms = reply["seen_ms"] as? Int, ms > 80 {
+            Log.write("action: reading the window's text took \(ms) ms"
+                      + " (\(Int(window.width))×\(Int(window.height)) pt)")
+        }
+        if let error = reply["seen_error"] as? String {
+            Log.write("action: could not read the window's text — \(error)")
+        }
+        return reply
+    }
+
+    /// The id of the focused item: the one marked focused, or the one with
+    /// the focused element's frame.
+    private static func focusedID(_ items: [[String: Any]], frame: CGRect?) -> Int? {
+        if let marked = items.first(where: { ($0["state"] as? [String])?.contains("focused") == true }) {
+            return marked["id"] as? Int
+        }
+        guard let frame else { return nil }
+        return items.first(where: {
+            $0["x"] as? Int == Int(frame.midX.rounded()) && $0["y"] as? Int == Int(frame.midY.rounded())
+                && $0["w"] as? Int == Int(frame.width.rounded())
+                && $0["h"] as? Int == Int(frame.height.rounded())
+        })?["id"] as? Int
     }
 
     private func register(_ item: ScreenTargets.Item) -> [String: Any] {
