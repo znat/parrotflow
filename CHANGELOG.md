@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.14.0](https://github.com/znat/parrotflow/compare/v0.13.1...v0.14.0) (2026-09-24)
+
+
+### Features
+
+* add Context theme preference ([3f60503](https://github.com/znat/parrotflow/commit/3f6050366b53f135ce1f48f4cfc7c9ea35495620))
+* extend the Context identity ([ea766b7](https://github.com/znat/parrotflow/commit/ea766b7f6ab3398b00dbeb1e92e1dbae66964b83))
+* redesign native onboarding and builder documentation ([c95b496](https://github.com/znat/parrotflow/commit/c95b4967d0d10f75fa5d26317dc3579100fd6467))
+* redesign native onboarding, setup, and builder docs ([4e4b200](https://github.com/znat/parrotflow/commit/4e4b2004c439a429f8087d1160098d19082efa2f))
+* redesign the context pill ([79b2169](https://github.com/znat/parrotflow/commit/79b2169b45c88ad60cdfb1c0881fb5632aab83b2))
+* redesign the Context surfaces and status identity ([786a095](https://github.com/znat/parrotflow/commit/786a095ef7b3e6d68cbba9340f10792377977bb9))
+
+
+### Fixes
+
+* address onboarding review feedback ([a6c6330](https://github.com/znat/parrotflow/commit/a6c63308c724a00406fe2157bf2908374c7e0767))
+* brew can read the cask again ([#326](https://github.com/znat/parrotflow/issues/326)) ([f881125](https://github.com/znat/parrotflow/commit/f881125cfb212519bf0aeca2e9727d27bc03cdd6))
+* fold expanded offers into the tab ([1169f56](https://github.com/znat/parrotflow/commit/1169f5628f3a749d8b627bafdc45391118706ca1))
+* make listening state unmistakable ([1084246](https://github.com/znat/parrotflow/commit/108424608bd38303325f5674621ea2b04b81e711))
+* refine Context action panels ([84acdea](https://github.com/znat/parrotflow/commit/84acdea3c9936da60c61ccf0b4fe4f54eaa7f119))
+* show the offer fold in onboarding ([6998cf1](https://github.com/znat/parrotflow/commit/6998cf1857faac98b94d087da7cf55ebee4ebb58))
+
 ## [0.13.1](https://github.com/znat/parrotflow/compare/v0.13.0...v0.13.1) (2026-09-18)
 
 
