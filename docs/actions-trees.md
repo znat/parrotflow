@@ -336,7 +336,7 @@ flowchart TD
   Q3 -->|yes| SU
   Q3 -->|no| Q6{"Lookup list seen below?<br/><i>lookup-below</i>"}
   Q6 -->|yes| ST
-  Q6 -->|no| Q7{"Unchanged, not type/write?<br/><i>unchanged-stop</i>"}
+  Q6 -->|no| Q7{"Unchanged, not type/write/key?<br/><i>unchanged-stop</i>"}
   Q7 -->|yes| ST
   Q7 -->|no| Q8{"New part, next elsewhere?<br/><i>opened-stop</i>"}
   Q8 -->|yes| ST
@@ -533,7 +533,7 @@ Python files are in `built-in/recipes/`. Swift files are in `Sources/ParrotFlow/
 | fail-stop | agent.py:607 |
 | lost | loop.py:527 |
 | lookup-below | agent.py:594 |
-| unchanged-stop | agent.py:632 |
+| unchanged-stop | agent.py:765 |
 | opened-stop | agent.py:636, 640 |
 | result | agent.py:668 |
 | p-batch | agent.py:106 |

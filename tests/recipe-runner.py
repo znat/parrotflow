@@ -649,6 +649,24 @@ def agent_checks(runner, stderr_path, trace_path):
           and "Request: mute this channel" in messages(body)[1]["content"],
           messages(body)[1]["content"])
     check("agent: Jev is never asked", asked == [], asked)
+
+    end, fake, report, asked = run(
+        "mute this channel", [home, home, menu],
+        [[act({"do": "key", "value": "tab"}, {"do": "click", "id": 2})],
+         [("done", {"summary": "ok"})]])
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("agent: a key that changed nothing in the tree does not stop the batch, and says so softly",
+          "Ran 2 of 2" in got and "Stopped:" not in got and UNCHANGED not in got
+          and "1. key = “tab” — no change in the accessibility tree, which does not show the caret"
+          in got and [s["do"] for s in fake.steps if s["do"] in ("key", "press")] == ["key", "press"],
+          (got, fake.did()))
+    end, fake, report, asked = run(
+        "mute this channel", [home],
+        [[act({"do": "click", "id": 1}, {"do": "click", "id": 2})], [("done", {"summary": "ok"})]])
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("agent: a click that changed nothing still stops the batch",
+          "Ran 1 of 2" in got and "Stopped: step 1 changed nothing" in got and UNCHANGED in got,
+          got)
     check("agent: the first message says today's date",
           "\nNow: " in messages(body)[1]["content"], messages(body)[1]["content"][:200])
 
@@ -1110,7 +1128,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 149 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 153 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",

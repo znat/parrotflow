@@ -9,9 +9,10 @@ sees it at the end of every request. `done` is refused while a task is open.
 The model gets the request and the screen as `[ID] Role "name"` lines. It
 calls `act` with a batch of steps, `read`, `look`, `ask`, the plan tools,
 `done` or `stuck`. Each step runs through `Loop._planned_step` and its
-guards. A batch stops at the first surprise: a step failed,
-changed nothing, or opened something the next step does not use. The model
-then decides from what came back.
+guards. A batch stops at the first surprise: a step failed, changed
+nothing, or opened something the next step does not use. A key that
+changed nothing does not stop it: the tree does not show the caret or a
+selection. The model then decides from what came back.
 
 `ask` puts a question in the app's panel, next to what the last step acted
 on. The answer comes back as the tool result, and so does no answer.
@@ -84,6 +85,8 @@ FAR = 400
 MAX_SEEN = 40
 # Around a list that opened, before the crop grows to 600×400.
 LIST_MARGIN = 20
+KEY_UNCHANGED = ("no change in the accessibility tree, which does not show the caret or a "
+                 "selection; check the picture")
 ANCHOR = {"below": "top", "above": "bottom", "right": "left", "left": "right"}
 GROUNDER = grounding.Grounder.from_env()
 _LOOKS_UP = re.compile(r"\b(attendees?|to|cc|bcc|search|invite|recipients?|participants?|people)\b")
@@ -158,8 +161,8 @@ class Progress(Strict):
 
 class Act(Strict):
     """Do steps in order. IDs are those of the newest screen; every screen gives new IDs. Stops
-    at the first step that fails, changes nothing, or opens something the next step does not
-    target. Returns the steps that ran, what changed, and the screen with new IDs."""
+    at the first step that fails, changes nothing (a key may), or opens something the next
+    step does not target. Returns the steps that ran, what changed, and the screen with new IDs."""
     plan: Optional[Progress] = None
     why: str = ""
     steps: List[Step]
@@ -754,7 +757,11 @@ class Agent:
                     stop = f"a list opened after step {n}, seen on screen only"
                     break
             following = steps[n] if n < len(steps) else None
-            if outcome.endswith(looping.UNCHANGED) and step.do not in ("type", "write"):
+            # Seen 09-24 in Teams: cmd+a before a date changed nothing in the
+            # tree, and each stop cost a model call.
+            if outcome.endswith(looping.UNCHANGED) and step.do == "key":
+                ran[-1] = ran[-1].replace(looping.UNCHANGED, KEY_UNCHANGED)
+            elif outcome.endswith(looping.UNCHANGED) and step.do not in ("type", "write"):
                 self._note(f"{planning.describe_step(planned)} changed nothing")
                 stop = f"step {n} changed nothing"
                 break

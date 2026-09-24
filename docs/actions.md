@@ -373,7 +373,8 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   Antonio Ruiz". It is recorded with the step and not checked.
   Each step goes through `Loop._planned_step` and its guards. The
   batch stops at the first surprise: a step failed, a step changed nothing
-  (`type` and `write` do not count), a step took a name out of its field,
+  (`type`, `write` and `key` do not count: the tree does not show the caret
+  or a selection), a step took a name out of its field,
   or something opened that the next step does not target. The result says which steps
   ran, why it stopped, what changed (as `changes()` gives it), and the new
   screen with new IDs.
