@@ -508,6 +508,7 @@ private final class RecipeSession {
             // A step only says "Return", so the caret decides. A lookup field
             // (Slack's search, a To field) still takes it.
             if !config.send, code == CGKeyCode(kVK_Return),
+               config.returnSends.contains(ScreenTargets.bundle(ofApp: app) ?? ""),
                ScreenTargets.focusIsMessageBox(ofApp: app) {
                 switch await confirm("Press Return in the message box? It may send.",
                                      near: ScreenTargets.focusFrame(ofApp: app)) {

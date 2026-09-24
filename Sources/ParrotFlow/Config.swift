@@ -3006,6 +3006,14 @@ struct Config: Decodable, Equatable {
         /// that types is a mess to clear up; a wrong target that sends cannot
         /// be taken back.
         var send: Bool = false
+        /// Apps, by bundle ID, where Return in a message box sends. With
+        /// `send` off, Return there asks first. Elsewhere Return is a key
+        /// like any other: in a date, a title or an email body it sends
+        /// nothing.
+        var returnSends: [String] = [
+            "com.tinyspeck.slackmacgap", "com.microsoft.teams2", "net.whatsapp.WhatsApp",
+            "com.apple.MobileSMS", "com.hnc.Discord", "ru.keepcoder.Telegram",
+        ]
         /// Whether each run is recorded for `scripts/trace-viewer`: the model
         /// calls, the steps, every read of the window and its screenshot, in
         /// `~/Library/Logs/<app>-runs`. On for the dev build, off for release.
@@ -3176,6 +3184,7 @@ struct Config: Decodable, Equatable {
             case gazeFile = "gaze"
             case ignoreApps = "ignore_apps"
             case neverPress = "never_press"
+            case returnSends = "return_sends"
             case maxSteps = "max_steps"
             case lookupLetters = "lookup_letters"
         }
@@ -3210,6 +3219,7 @@ struct Config: Decodable, Equatable {
                 ground = v
             }
             if let v = try c.decodeIfPresent([String].self, forKey: .neverPress) { neverPress = v }
+            if let v = try c.decodeIfPresent([String].self, forKey: .returnSends) { returnSends = v }
             if let v = try c.decodeIfPresent(Int.self, forKey: .lookupLetters) {
                 lookupLetters = max(0, min(v, 40))
             }

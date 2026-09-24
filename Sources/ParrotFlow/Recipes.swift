@@ -112,7 +112,8 @@ enum Recipes {
     static func encode(
         _ snapshot: ScreenTargets.Snapshot, id: Int, items: [[String: Any]]
     ) -> [String: Any] {
-        ["id": id, "app": snapshot.app, "window": snapshot.window,
+        ["id": id, "app": snapshot.app, "bundle": ScreenTargets.bundle(ofApp: snapshot.app) ?? "",
+         "window": snapshot.window,
          "pointer": ["x": snapshot.pointer.x, "y": snapshot.pointer.y],
          "pxPerCm": snapshot.pxPerCm,
          "frame": ["x": snapshot.frame.x, "y": snapshot.frame.y,

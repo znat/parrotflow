@@ -376,6 +376,13 @@ enum ScreenTargets {
         return Item.fieldsThatFilter.contains { called.contains($0) }
     }
 
+    /// The running app's bundle ID, by its name or its bundle ID.
+    static func bundle(ofApp name: String) -> String? {
+        NSWorkspace.shared.runningApplications.first {
+            $0.localizedName == name || $0.bundleIdentifier == name
+        }?.bundleIdentifier
+    }
+
     /// Whether the caret is in a box a message is written in, where Return
     /// would send it: a text area, or a text field in the bottom fifth of
     /// its window (the composer test the loop used). A field that narrows a

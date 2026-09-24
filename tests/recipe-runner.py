@@ -511,6 +511,7 @@ def change_checks():
                          "state": ["focused"]}) == "TextArea (no name) (focused)")
     with tempfile.TemporaryDirectory() as config:
         for path, text in (("memories/test-app/one.md", "Click New first."),
+                           ("memories/com.test.app/two.md", "Type the day first."),
                            ("memories/people/alex.md", "Alex is Alex Moreau."),
                            ("memories/people/sam.md", "Sam is Sam Lee.")):
             os.makedirs(os.path.dirname(os.path.join(config, path)), exist_ok=True)
@@ -521,6 +522,7 @@ def change_checks():
         try:
             import agent
             got = agent.memories("Test App", "write to Alex", lambda line: None)
+            by_bundle = agent.memories("com.test.app", "nothing", lambda line: None)
         finally:
             if was is None:
                 del os.environ["PARROTFLOW_APP_NOTES"]
@@ -534,6 +536,7 @@ def change_checks():
           min([dict(behind), dict(front, state=[])], key=agent.twin_rank)["in"] is None)
     check("memories: the app's files, and a person's only when the request names them",
           got == "Click New first.\n\nAlex is Alex Moreau.", got)
+    check("memories: a bundle ID names its own folder", by_bundle == "Type the day first.", by_bundle)
     check("loop: max_steps is 30 when the app does not say",
           loop.Loop({"run": ""}, object(), None).max_steps == 30)
     change = loop.changes(draft("Pe"), draft("Pe", popup=True))
@@ -1057,9 +1060,10 @@ def agent_checks(runner, stderr_path, trace_path):
     end, fake, report, asked = run(
         "write to Peter", typed,
         [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})]])
-    check("agent: no answer stops the run, and the model is not asked again",
-          report["stopped"] == "Stopped — no answer" and end["end"] == "stopped"
-          and len(planner_bodies) == 2, (report, len(planner_bodies)))
+    got = results(2)[-1] if len(planner_bodies) == 3 else ""
+    check("agent: no answer goes back to the model, which must not commit",
+          got.startswith("No answer. Do not commit anything") and end["end"] == "done",
+          (got, report, len(planner_bodies)))
 
     end, fake, report, asked = run(
         "write to Peter", typed,
@@ -1438,7 +1442,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 147 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 148 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
@@ -2035,10 +2039,10 @@ def surprise_checks(url, user, plans_url):
                             [[plan(("Add Alex", "in_progress"))], [typed], [("read", {})]] + finish,
                             [0.2])
     got = result(2)
-    check("expect: a false expect ends the step's line, and is a note on the task",
-          f'type “To” = “Alex” — "To" now holds "Alex" — expected "{expect}", not what happened'
-          in got and any(f'expected "{expect}", not what happened' in " ".join(t["notes"])
-                         for p in runner.progress for t in p.get("plan") or ()), got)
+    step = read_json(root, recorded(root)[-1], "steps", "01.json")
+    check("expect: a false expect is recorded and says nothing to the model",
+          "not what happened" not in got and "Stopped" not in got
+          and step["expect_p"] == 0.2, (got, step))
     check("reasoning: every request reasons at low; each after the typing has one picture",
           efforts() == [("low", 0), ("low", 0)] + [("low", 1)] * (len(efforts()) - 2), efforts())
 
@@ -2066,32 +2070,11 @@ def surprise_checks(url, user, plans_url):
         [[plan(("Add both", "in_progress"))],
          [act({"do": "type", "id": 1, "value": "Antonio"})],
          [act({"do": "type", "id": 1, "value": "Alex", "expect": both})],
-         [act({"do": "click", "id": 2})], [("done", {"summary": "ok"})]],
-        [0.1], {("ask", 1): {"answer": "Stop", "via": "option"}})
-    asked = [s for s in fake.steps if s["do"] == "ask"]
-    check("ask: the second surprise on a task tells the model to ask",
-          result(3).endswith("Two steps surprised you on this task. Call `ask` now: say what "
-                             "happened in one sentence and ask how to proceed."), result(3))
-    check("ask: when the model acts instead, the runner asks, and Stop ends the run",
-          len(asked) == 1
-          and asked[0]["question"] == f'Expected "{both}", not what happened. What should I do?'
-          and asked[0]["options"] == ["Stop"] and report["stopped"] == "Stopped — you said stop"
-          and fake.did().count("press") == 2 and fake.did()[-1] == "ask", (asked, report, fake.did()))
-
-    end, fake, report = run(
-        [draft(slack), draft("\u00a0 Antonio \u00a0"), draft("\u00a0 Antonio \u00a0"),
-         draft("\u00a0 Antonio Alex \u00a0")] + [draft("\u00a0 Antonio Alex \u00a0")] * 4,
-        [[plan(("Add Antonio", "in_progress"), ("Add Alex", "pending"))],
-         [act({"do": "type", "id": 1, "value": "Antonio"})],
-         [plan(("Add Antonio", "completed"), ("Add Alex", "in_progress"))],
-         [act({"do": "type", "id": 1, "value": "Alex", "expect": both})],
-         [plan(("Add Antonio", "completed"), ("Add Alex", "completed"))],
-         [("done", {"summary": "ok"})]],
+         [plan(("Add both", "completed"))], [("done", {"summary": "ok"})]],
         [0.1])
-    check("ask: a new task starts the count again",
-          "not what happened" in result(4) and "Call `ask` now" not in result(4)
-          and not [s for s in fake.steps if s["do"] == "ask"] and end["end"] == "done",
-          (result(4), fake.did()))
+    check("surprises: two on one task do not make anyone ask the user",
+          not [s for s in fake.steps if s["do"] == "ask"] and "Call `ask`" not in result(3)
+          and end["end"] == "done", (result(3), fake.did()))
 
     runner.process.stdin.close()
     runner.process.wait(timeout=10)

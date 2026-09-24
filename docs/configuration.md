@@ -829,6 +829,7 @@ actions:
     timeout_seconds: 10
   send: false
   never_press: [Send, Delete]
+  return_sends: [com.tinyspeck.slackmacgap, com.microsoft.teams2]   # and more, see below
   max_steps: 30
   lookup_letters: 2
   spotlight: 0
@@ -852,6 +853,7 @@ twice before turning on.
 | `decider.*` | What picks the action and the target. Not a `models:` entry — it answers questions with probabilities rather than writing text — but `api_key:` takes the same `file:`, `env:` and literal forms. The Keychain is per model name, so it does not apply here. |
 | `send` | Whether Return is pressed after a message is typed. Off by default: the words land in the composer and you send them. |
 | `never_press` | Names this will not click, whatever the model picks. A guarantee, not a request: the model is never asked to avoid them. |
+| `return_sends` | Apps, by bundle ID, where Return in a message box sends. With `send` off, Return there asks first. In every other app Return is an ordinary key. Default: Slack, Teams, WhatsApp, Messages, Discord, Telegram. |
 | `max_steps` | How many steps one request may take before it stops on its own. 30 by default. The backstop, not the guard — a step that changes nothing stops it sooner. |
 | `lookup_letters` | How many letters it may type into a field that narrows a list, to make the name appear. It is picking from the list, not writing. |
 | `record` | Record each run for the run viewer: model calls, steps, every read of the window and its screenshot, in `~/Library/Logs/ParrotFlow-Dev-runs` (`ParrotFlow-runs` for release). The last 50 runs are kept. On by default in the dev build, off in release. See [Recording a run](actions.md#recording-a-run). |

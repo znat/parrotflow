@@ -14,7 +14,7 @@ changed nothing, or opened something the next step does not use. The model
 then decides from what came back.
 
 `ask` puts a question in the app's panel, next to what the last step acted
-on. The answer comes back as the tool result. No answer ends the run.
+on. The answer comes back as the tool result, and so does no answer.
 
 Every read also reads the window's text from its pixels, when the app can.
 A step's result names the text that appeared and is not in the tree, and
@@ -37,12 +37,10 @@ Every request carries a picture of the area being worked in: a 512 px JPEG,
 on the first call, around the focused item or the gaze point. `_prepare`
 drops the one before. No screenshot, no picture.
 
-A surprise: a step failed, the same batch ran twice, `done` was refused, a
-step's `expect` is not true after it (Jev, about 0.3 s, no model call), or a
-step took a name or words out of the field it acted in (`loop.lost`). A
-second surprise on the same plan task tells the model to `ask` the user; if its
-next call is not `ask` or `read`, the runner asks instead: what surprised,
-and "What should I do?".
+What went wrong (a step failed, the same batch ran twice, a step took a name
+or words out of its field) is a note under the task in the run panel. The
+model decides what to do; the user is asked only before a step that commits.
+A step's `expect` goes to Jev and is recorded, and changes nothing.
 
 No automatic `ground` call: an `act` step names its target by ID only, so a
 step aimed at something without an ID carries no words to look for. The
@@ -97,7 +95,7 @@ SYSTEM = """You do a task in a macOS app for the user. You see the app's control
 - write: put the body of a message or comment into box `id`. `value` is the text. With `id` null it goes where the caret is.
 - key: press a key or a shortcut. `value` in plus form: "cmd+shift+n", "return", "escape", "tab", "down". `id` is null.
 - scroll: `id` is the list or pane, or null for where the user looks. `value` is "up" or "down".
-`expect`: on a step whose outcome matters, what should be on screen after it, in a few words, such as "To holds Alex Moreau and Antonio Ruiz". Otherwise null.
+`expect`: on a step whose outcome matters, a value or text that should be on screen after it, such as "To holds Alex Moreau and Antonio Ruiz" or "Start date = 25/09/2026". Not a look, such as "the day is highlighted". Otherwise null.
 
 Rules:
 - IDs belong to one read. After each `act` or `read`, use only the IDs of the newest screen.
@@ -110,11 +108,11 @@ Rules:
 - Type only words the user said. `write` only what the user asked to say. If they did not say it, click in the box and call `done`: the user will dictate it.
 - Never select all in a message, a comment or a document, and never replace or delete text there.
 - Never archive, leave or pay. Stop just before it and call `done`.
-- `ask` the user a short question, with up to 4 short options, only when:
-  - several items on screen could be what the user meant, such as two people with the same first name. The options are those items as the screen names them;
-  - the next step would send, post, delete, start a call or invite people. Ask before that step, never after;
-  - you cannot go on. Say what blocks you and ask what to do, instead of calling `stuck`.
-- Do not ask anything else, and never ask the same thing twice. The answer is the tool result: act on it.
+- `ask` the user a short question, with up to 4 short options, only:
+  - right before a step that commits: send, post, invite, share, delete, pay, publish, start a call;
+  - when several people or items match what the user said and nothing in the notes settles it. The options are those items as the screen names them;
+  - when you are stuck after trying other ways. Say what blocks you and ask what to do, instead of calling `stuck`.
+- Never ask to confirm a step that can be undone: do it, check the result, fix it if needed. Never ask the same thing twice. The answer is the tool result: act on it. No answer: do not commit; go on with the rest, or call `done` with the draft ready.
 - Prefer the app's keyboard shortcut when it has one.
 - Never invent a menu item or a label. Work out dates and times like "tomorrow at 10" from the date and time you are given, then find them on screen. When unsure, act one step at a time.
 - A step after which nothing in the tree changed is not verified. Check the picture: it may have worked. If it did not, do not repeat it: try another way.
@@ -129,8 +127,6 @@ SAME_POINT = 20
 PLAN_TOOLS = {"write_plan", "read_plan", "add_task", "update_task_status", "update_task_statuses",
               "remove_task"}
 OPEN = {"pending", "in_progress"}
-ASK_NOW = ("Two steps surprised you on this task. Call `ask` now: say what happened in one "
-           "sentence and ask how to proceed.")
 
 
 class Step(Strict):
@@ -217,7 +213,8 @@ def twin_rank(item):
 
 
 def memories(app, utterance, log):
-    """Every file in `<config>/memories/<app>/`, and each `people/<name>.md`
+    """Every file in `<config>/memories/<app>/`, `app` being the bundle ID
+    (`com.microsoft.Outlook`) or else the name, and each `people/<name>.md`
     whose name the request says, whole. `<config>` is the app notes' parent,
     so the app passes no new path."""
     notes = os.environ.get("PARROTFLOW_APP_NOTES", "")
@@ -225,7 +222,8 @@ def memories(app, utterance, log):
         return ""
     root = os.path.join(os.path.dirname(notes.rstrip("/")), "memories")
     words = set(decider._words(utterance))
-    paths = sorted(glob.glob(os.path.join(root, decider.slug(app) or "-", "*.md")))
+    folder = app if "." in app else decider.slug(app)
+    paths = sorted(glob.glob(os.path.join(root, folder or "-", "*.md")))
     paths += [p for p in sorted(glob.glob(os.path.join(root, "people", "*.md")))
               if os.path.splitext(os.path.basename(p))[0].lower() in words]
     texts = []
@@ -300,10 +298,6 @@ class Agent:
         self.opened = []
         self.asked_when_stuck = False
         self.tried = {}
-        # The task in progress at the last surprise, and how many it had.
-        self.surprised = (None, 0)
-        # The surprise the model was told to ask about.
-        self.must_ask = None
         self.plan = PlanStore(lambda: self.loop.show(plan=self._plan()))
         # Plan item ID: what went wrong while it was in progress, newest last.
         self.notes = {}
@@ -334,7 +328,7 @@ class Agent:
         notes = decider.notes_of(app, lp.log)
         if notes:
             head.append(f"How this app works: {notes}")
-        remembered = memories(app, lp.utterance, lp.log)
+        remembered = memories(self.snapshot.get("bundle") or app, lp.utterance, lp.log)
         if remembered:
             head.append("Notes from earlier runs. Follow what worked, avoid what failed:\n"
                         + remembered)
@@ -505,9 +499,7 @@ class Agent:
             full = short = "Not run: one tool per turn."
         else:
             self.ran += 1
-            forced = self.must_ask and name not in ("ask", "read") \
-                and self._task() == self.surprised[0]
-            full, short, ended = self._forced_ask() if forced else self._run_tool(name, args)
+            full, short, ended = self._run_tool(name, args)
             self.over = self.over or ended
         metadata = {"short": short} if short != full else {}
         if name == "look":
@@ -581,11 +573,9 @@ class Agent:
         self.tried[said] = outcome
         if seen == outcome:
             note = ("This exact batch already ran and did the same thing. Do not repeat it: "
-                    "try another way, or ask the user.")
-            ask = self._surprise("this exact batch already ran and did the same thing",
-                                 "This exact batch already ran and did the same thing")
-            return f"{note}\n{text}" + (f"\n{ask}" if ask else ""), \
-                f"{note} {short}" + (f" {ask}" if ask else "")
+                    "try another way.")
+            self._note("This exact batch already ran and did the same thing")
+            return f"{note}\n{text}", f"{note} {short}"
         return text, short
 
     def _act(self, steps, report):
@@ -602,7 +592,7 @@ class Agent:
                 text = f"Nothing ran: step {n} would {step.do} into a seen line; seen lines can only be clicked."
                 self._note(text)
                 return text, text
-        start, ran, stop, ask = self.snapshot, [], "", ""
+        start, ran, stop = self.snapshot, [], ""
         # (index in `ran`, the step as said, the field, lines seen below it after typing)
         listed = None
         # (index in `ran`, its change, the read after it): its seen lines get IDs.
@@ -645,7 +635,7 @@ class Agent:
             if why:
                 ran.append(f"{said} — failed: {why}")
                 stop = f"step {n} failed"
-                ask = self._surprise(f"\"{planning.describe_step(planned)}\" failed", why)
+                self._note(why)
                 break
             ran.append(f"{said} — {outcome}")
             self.acted_on = item
@@ -656,7 +646,7 @@ class Agent:
             if surprise:
                 ran[-1] += f" — {surprise}"
                 stop = f"step {n} did not go as expected"
-                ask = self._surprise(surprise)
+                self._note(surprise)
                 break
             if was is not None and outcome.endswith(looping.UNCHANGED):
                 seen = {self._norm(line["text"]) for line in was}
@@ -708,12 +698,12 @@ class Agent:
         change = {k: v for k, v in looping.changes(start, self.snapshot).items()
                   if k not in ("seen", "still")}
         change = json.dumps(change, ensure_ascii=False)
-        ask = f"\n{ask}" if ask else ""
-        return f"{short}\nChange: {change}\n{screen}{ask}", short + ask
+        return f"{short}\nChange: {change}\n{screen}", short
 
     def _check(self, do, expect, item, before, outcome):
         """What went wrong in a step that ran, or "": a name or words gone
-        from the field it acted in, or its `expect` not true now."""
+        from the field it acted in. Jev's answer on `expect` is only recorded:
+        it reads text, and on 09-24 said no to three steps that had worked."""
         lp, said, record = self.loop, [], {}
         gone = looping.lost(item, before, self.snapshot) if item and do != "key" else []
         if gone:
@@ -731,42 +721,12 @@ class Agent:
             record.update(expect=expect, expect_p=p, expect_ms=ms)
             if p is not None:
                 lp.log(f"agent: expected “{expect}” — {p:.2f}, {ms} ms")
-            if p is not None and p < 0.5:
-                said.append(f"expected \"{expect}\", not what happened")
         if record:
             lp.recorder.add_to_step(record.get("expect_ms", 0), **record)
         return "; ".join(said)
 
     def _task(self):
         return next((i.id for i in self.plan.now() if i.status.value == "in_progress"), None)
-
-    def _surprise(self, why, note=None):
-        """Something did not go as the model expected. A second surprise on
-        the same task: the instruction to ask the user, else ""."""
-        if note is not False:
-            self._note(note or why)
-        task = self._task()
-        if task is None:
-            return ""
-        count = self.surprised[1] + 1 if self.surprised[0] == task else 1
-        self.surprised = (task, count)
-        if count < 2:
-            return ""
-        self.must_ask = why
-        return ASK_NOW
-
-    def _forced_ask(self):
-        """The model was told to ask and did something else: the runner asks."""
-        line = decider.prefix(self.must_ask, 200)
-        text, short, ends = self._ask(
-            Ask(question=f"{line[:1].upper()}{line[1:]}. What should I do?",
-                options=["Stop"]), self.report)
-        if text == "The user answered: Stop":
-            self.report.stopped = "Stopped — you said stop"
-            self.loop.log(f"agent: {self.report.stopped}")
-            ends = True
-        said = "Not run: you were told to ask the user first, so the runner asked. "
-        return said + text, said + short, ends
 
     def _look(self, args):
         """The `look` tool. (result, the result cut for history)."""
@@ -1030,16 +990,17 @@ class Agent:
 
     def _ask(self, args, report):
         lp = self.loop
-        self.must_ask, self.surprised = None, (None, 0)
         options = [o.strip() for o in args.options if o.strip()]
         asked = time.monotonic()
         answer, via = lp.ask(args.question.strip(), options[:MAX_OPTIONS], self._near())
         # The user's time is not the run's.
         self.started += time.monotonic() - asked
+        # Escape stops the run in `ask`. Seen 09-24: a confirmation nobody
+        # needed timed out and ended a run that was one step from done.
         if answer is None:
-            report.stopped = "Stopped — no answer"
-            lp.log(f"agent: {report.stopped} ({via})")
-            return "No answer: the run stops.", "No answer.", True
+            lp.log(f"agent: no answer ({via})")
+            text = "No answer. Do not commit anything; go on with the rest, or call `done`."
+            return text, text, False
         text = f"The user answered: {answer}"
         return text, text, False
 
@@ -1190,9 +1151,8 @@ async def _check_end(ctx: pai.RunContext[Agent], output):
         still = [i for i in await deps.plan.get_items() if i.status.value in OPEN]
         if still:
             deps._note("`done` refused: this task is still open", task=still[0].id)
-            ask = deps._surprise("`done` was refused", False)
             raise pai.ModelRetry(f"Not done: '{still[0].content}' is still open. Finish it, "
-                                 "or cancel it with a reason." + (f" {ask}" if ask else ""))
+                                 "or cancel it with a reason.")
     elif deps.loop.execute and not deps.asked_when_stuck:
         # Seen 09-23: stuck after leaving the event form by mistake. The
         # user could have said "go back to the form".
@@ -1201,7 +1161,9 @@ async def _check_end(ctx: pai.RunContext[Agent], output):
         text, _, ends = deps._ask(
             Ask(question=f"{decider.prefix(why, 200)} What should I do?", options=["Stop"]),
             deps.report)
-        if not ends and text != "The user answered: Stop":
+        # No answer to `stuck`'s own question: stuck it is.
+        if not ends and text.startswith("The user answered:") \
+                and text != "The user answered: Stop":
             raise pai.ModelRetry(text)
         deps.report.stopped = f"Stuck — {decider.prefix(why, 120)}"
         deps.loop.log(f"agent: {deps.report.stopped}")
