@@ -2,9 +2,9 @@
 at a time. It decides; the app only touches the screen.
 
 It imports the recipe files, asks Jev which recipe fits and what was said, and
-calls the recipe in this process. When no recipe fits it runs the loop
-(`loop.py`, deciding with `decider.py`). Every screen action is a step the
-app does and answers.
+calls the recipe in this process. When no recipe fits it runs the agent
+(`loop.py`, `agent.py`). Every screen action is a step the app does and
+answers.
 
 Protocol, one JSON object per line. The runner writes on stdout, the app on
 stdin:
@@ -88,8 +88,8 @@ Vision's confidence. Needs Screen Recording; without it the error is
 Set by the app at start: PARROTFLOW_JEV_KEY, PARROTFLOW_JEV_KEY_SOURCE,
 PARROTFLOW_JEV_URL, PARROTFLOW_JEV_MODEL, PARROTFLOW_JEV_TIMEOUT,
 PARROTFLOW_RECIPES_USER, PARROTFLOW_APP_NOTES. When `actions.planner` is set,
-also the PARROTFLOW_PLANNER_* settings (see `planner.py`): the loop then asks
-the planner for steps and Jev only finds each target. When `actions.record` is
+also the PARROTFLOW_PLANNER_* settings (see `planner.py`), which the agent
+needs: without them a request no recipe fits fails. When `actions.record` is
 on, PARROTFLOW_RUNS: the folder each run is recorded in (see `runlog.py`). The
 app then answers a `snapshot` that carries `shot` (a file path) with the
 screenshot written there, `shot: {file, frame, scale, w, h}`, or `shot: null`

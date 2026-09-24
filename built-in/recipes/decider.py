@@ -501,18 +501,9 @@ def pick(jev, question, among, snapshot, utterance):
     return None, p, ms
 
 
-def visible(jev, what, snapshot, changed=None, limit=80):
-    """Jev's yes to "is <what> on screen now", 0 to 1. `changed` is what the
-    step changed: live on Outlook, a compose window that had opened scored
-    0.49 on the window's items alone."""
-    state = _screen_state(snapshot, changed, limit)
-    answer = jev.ask(state, {"visible": Chance(f"Is this on screen now: {what}?")}).get("visible")
-    return answer.value if answer is not None else 0.0
-
-
 def true_now(jev, what, snapshot, changed=None, limit=80):
-    """Jev's yes to "is <what> true now", 0 to 1: `visible` with what the
-    text fields hold, which its lines leave out for a named field."""
+    """Jev's yes to "is <what> true now", 0 to 1. `changed` is what the step
+    changed; the state also holds what the text fields hold."""
     state = _screen_state(snapshot, changed, limit)
     fields = {}
     for item in snapshot["items"]:

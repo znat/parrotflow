@@ -830,7 +830,6 @@ actions:
   planner:                  # off unless set
     model: gpt-5.6-luna
     api_key: file:~/.openai_api_key
-    loop: agent             # agent | plan
     reasoning: none
     review_reasoning: high  # the review after an agent run
   send: false
@@ -857,7 +856,7 @@ twice before turning on.
 | `gaze` | A file another app writes: one line, `x y ms`, in screen coordinates. Older than 1.5 s, unreadable or absent, and the mouse pointer is used instead. |
 | `ignore_apps` | Apps whose windows are never the target. A tracker draws its dot at the point being asked about, so a hit test there finds the tracker. ParrotFlow always ignores itself. |
 | `decider.*` | What picks the action and the target. Not a `models:` entry — it answers questions with probabilities rather than writing text — but `api_key:` takes the same `file:`, `env:` and literal forms. The Keychain is per model name, so it does not apply here. |
-| `planner.*` | A remote chat model that plans the steps (`loop: plan`) or calls tools (`loop: agent`). `api_key:` takes the same forms as `decider.api_key`. See [Planner](actions.md#planner). |
+| `planner.*` | A remote chat model that runs the agent: it calls tools to act on the window. Without it, a request no recipe fits fails. `api_key:` takes the same forms as `decider.api_key`. `loop:` is `agent`; `plan` from an older config runs the agent too. See [Planner](actions.md#planner). |
 | `planner.review_reasoning` | The reasoning effort of the review after an agent run: one call that reads the run's recording and proposes memory files, which you keep or drop in the run panel. `high` by default; empty leaves it out. Needs `record: true`. See [The review after a run](actions.md#the-review-after-a-run). |
 | `send` | Whether Return is pressed after a message is typed. Off by default: the words land in the composer and you send them. |
 | `never_press` | Names this will not click, whatever the model picks. A guarantee, not a request: the model is never asked to avoid them. |

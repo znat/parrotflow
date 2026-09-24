@@ -4,7 +4,7 @@ Every rule the "act where you look" agent applies, as the code does it today. Di
 
 ## 0. A request arrives
 
-The runner tries a recipe first. The agent runs only when no recipe fits and `actions.planner.loop` is `agent`.
+The runner tries a recipe first. The agent runs when no recipe fits. `loop: plan` from an older config runs the agent too.
 
 ```mermaid
 flowchart TD
@@ -15,8 +15,8 @@ flowchart TD
   Q1 -->|no| LP
   Q2 -->|yes| RC["Run the recipe<br/><i>recipe-run</i>"]
   Q2 -->|none| LP["Start the loop<br/><i>to-loop</i>"]
-  LP --> Q3{"Planner loop is agent?<br/><i>agent-branch</i>"}
-  Q3 -->|no| OT["Plan or Jev loop<br/><i>other-loops</i>"]
+  LP --> Q3{"Planner set?<br/><i>agent-branch</i>"}
+  Q3 -->|no| OT["Run fails: no planner<br/><i>no-planner</i>"]:::user
   Q3 -->|yes| Q4{"Planner key set?<br/><i>no-key</i>"}
   Q4 -->|no| F1["Run fails"]:::user
   Q4 -->|yes| AG["Watch, read, first prompt<br/><i>agent-start</i>"]
@@ -439,8 +439,8 @@ Python files are in `built-in/recipes/`. Swift files are in `Sources/ParrotFlow/
 | recipe-pick | runner.py:439 |
 | recipe-run | runner.py:468 |
 | to-loop | runner.py:400 |
-| agent-branch | loop.py:606 |
-| other-loops | loop.py:611 |
+| agent-branch | loop.py:575 |
+| no-planner | loop.py:576 |
 | no-key | agent.py:306 |
 | agent-start | agent.py:290 |
 | walk-window | ScreenTargets.swift:218 |

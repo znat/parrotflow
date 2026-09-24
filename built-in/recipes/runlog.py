@@ -73,7 +73,7 @@ class Call(BaseModel):
     tool_calls: List[Any] = Field(default_factory=list)
     tools: List[Any] = Field(default_factory=list)    # {name, args}, args parsed
     results: List[Any] = Field(default_factory=list)
-    reply: Any = None               # the plan path's answer
+    reply: Any = None               # the removed plan path's answer, in old runs
     ms: int = 0
     tokens: Dict[str, Optional[int]] = Field(default_factory=dict)
     # The screen the model saw: its tree, and model ID to item id. A line

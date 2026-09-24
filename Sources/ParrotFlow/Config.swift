@@ -3134,9 +3134,9 @@ struct Config: Decodable, Equatable {
             var reasoning: String = "none"
             /// Per attempt. The runner's `openai` client tries twice more.
             var timeoutSeconds: Double = 15
-            /// "plan": one plan, Jev finds each target. "agent": the model calls
-            /// tools and sees the screen after each batch (`agent.py`).
-            var loop: String = "plan"
+            /// "agent": the model calls tools and sees the screen after each
+            /// batch (`agent.py`). "plan" is gone; the runner runs the agent.
+            var loop: String = "agent"
             /// The reasoning effort of the review after an agent run
             /// (`review.py`). Empty leaves it out.
             var reviewReasoning: String = "high"

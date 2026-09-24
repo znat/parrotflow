@@ -307,8 +307,9 @@ enum CheckConfigCommand {
             if let planner = actions.planner {
                 emit("      ⚠︎ sends the request and the names of visible controls to \(planner.host)"
                      + " — planner \(planner.model), key from \(planner.apiKey.described)")
-                emit("      planner loop    \(planner.loop)")
-                if planner.loop == "agent" {
+                emit("      planner loop    " + (planner.loop == "plan"
+                    ? "plan is gone; the agent runs instead" : planner.loop))
+                if ["plan", "agent"].contains(planner.loop) {
                     // Same as Accessibility below: macOS credits this check to the shell.
                     emit("  · screen recording  needed for the agent's look, but not checkable from a terminal")
                     groundLines(actions, planner: planner, emit: emit)
@@ -321,7 +322,7 @@ enum CheckConfigCommand {
                     ok = false
                 }
                 if !["plan", "agent"].contains(planner.loop) {
-                    emit("  ✗ actions.planner   loop is \"\(planner.loop)\"; it is plan or agent")
+                    emit("  ✗ actions.planner   loop is \"\(planner.loop)\"; it is agent")
                     ok = false
                 }
             }

@@ -1,5 +1,5 @@
 """The agent: a chat model with tools, when no recipe fits and
-`actions.planner.loop` is `agent`.
+`actions.planner` is set.
 
 The loop is Pydantic AI's: the calls to the model, the tool calls, their
 argument checks, the retries and the limit on calls. `Planning` from
@@ -8,8 +8,8 @@ sees it at the end of every request. `done` is refused while a task is open.
 
 The model gets the request and the screen as `[ID] Role "name"` lines. It
 calls `act` with a batch of steps, `read`, `look`, `ask`, the plan tools,
-`done` or `stuck`. Each step runs through `Loop._planned_step`, so the guards
-are the planner's. A batch stops at the first surprise: a step failed,
+`done` or `stuck`. Each step runs through `Loop._planned_step` and its
+guards. A batch stops at the first surprise: a step failed,
 changed nothing, or opened something the next step does not use. The model
 then decides from what came back.
 
