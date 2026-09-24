@@ -27,7 +27,8 @@ ESCAPED = "Stopped — you pressed escape"
 # scored 0.95-0.99 when it was right.
 PICK_FLOOR = 0.8
 MAX_REPLANS = 3
-UNCHANGED = "the last step changed nothing on screen — it did not work, try another way"
+UNCHANGED = ("nothing in the accessibility tree changed — not verified: it may still have "
+             "worked (a part of a field selected, a field already focused); check the picture")
 YES = "Yes, go ahead"
 _PLAIN_YES = {"yes", "yeah", "yep", "yup", "sure", "ok", "okay", "go ahead", "yes go ahead",
               "do it", "oui"}

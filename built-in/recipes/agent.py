@@ -62,6 +62,8 @@ from pydantic import ValidationError
 from pydantic_ai.capabilities import ProcessHistory
 from pydantic_ai_harness import Planning
 from pydantic_ai_harness.planning import InMemoryPlanStore
+from pydantic_ai_harness.planning import _capability as _plan_reminder
+from pydantic_ai_harness.planning import _toolset as _plan_tools
 
 import decider
 import ground as grounding
@@ -113,7 +115,7 @@ Rules:
 - Do not ask anything else, and never ask the same thing twice. The answer is the tool result: act on it.
 - Prefer the app's keyboard shortcut when it has one.
 - Never invent a menu item or a label. Work out dates and times like "tomorrow at 10" from the date and time you are given, then find them on screen. When unsure, act one step at a time.
-- A step that changed nothing did not work. Do not repeat it: try another way.
+- A step after which nothing in the tree changed is not verified. Check the picture: it may have worked. If it did not, do not repeat it: try another way.
 - Your first call is `write_plan`: the task as a few short steps. Keep the plan current: one step `in_progress`, a step `completed` once the screen shows it done, `cancelled` when it is not needed.
 - Call `done` when the task is done, `stuck` when it cannot be done here and no question would help. `done` is refused while a plan step is open.
 - The picture shows the area you are working in: check it for what the screen lines cannot say (which part of a field is selected, highlighted rows, chips, what covers what)."""
@@ -121,6 +123,7 @@ GROUNDING = ("When a target you need has no ID in the screen lines, such as a ro
              "that opened, call `ground` with what it looks like before trying another way. It "
              "returns a point ID that `act` can click.")
 NOTES = 2
+SAME_POINT = 20
 PLAN_TOOLS = {"write_plan", "read_plan", "add_task", "update_task_status", "update_task_statuses",
               "remove_task"}
 OPEN = {"pending", "in_progress"}
@@ -201,6 +204,19 @@ MODELS = {model.__name__.lower(): model for model in (Act, Read, Look, Ground, A
 
 def _doc(model):
     return " ".join(model.__doc__.split())
+
+
+def _render_plan(items):
+    """The harness's checklist, with each task's ID. Without them the model
+    guessed IDs for `update_task_statuses`: three calls lost per run, 09-24."""
+    if not items:
+        return "No plan yet."
+    done = sum(1 for i in items if i.status.value == "completed")
+    return "\n".join([f"{n}. {_plan_tools.status_icon(i.status)} [{i.id}] {i.content}"
+                      for n, i in enumerate(items, 1)] + [f"({done}/{len(items)} completed)"])
+
+
+_plan_tools.render_plan = _plan_reminder.render_plan = _render_plan
 
 
 class PlanStore(InMemoryPlanStore):
@@ -665,7 +681,8 @@ class Agent:
         if gone:
             record["lost"] = ", ".join(f"\"{g}\"" for g in gone)
             said.append(f"this step removed {record['lost']} from \"{decider.label(item)}\"")
-        if expect:
+        # The tree did not change, so Jev can only say no.
+        if expect and not outcome.endswith(looping.UNCHANGED):
             began = time.monotonic()
             try:
                 p = decider.true_now(lp.jev, expect, self.snapshot, outcome)
@@ -837,9 +854,7 @@ class Agent:
             said = (f"Not found: no \"{decider.prefix(text, 60)}\" {where}. Look elsewhere, "
                     "scroll, or try another way.")
             return said, said
-        n = self._point(text, found["point"], found["method"])
-        said = f"[{n}] point for \"{decider.prefix(text, 60)}\" (from pixels)"
-        return said, said
+        return self._pointed(text, found["point"], found["method"], "from pixels")
 
     def _ground_area(self, args):
         """(region, anchor, where) for `ground`, or why not."""
@@ -883,12 +898,26 @@ class Agent:
                  round(box[1] + y / h * (box[3] - box[1]), 1)]
         self.loop.recorder.ground({"method": "image", "description": text, "point": point,
                                    "region": self._centred(box)})
-        n = self._point(text, point, "image")
-        said = f"[{n}] point for \"{decider.prefix(text, 60)}\" (from the picture)"
+        return self._pointed(text, point, "image", "from the picture")
+
+    def _pointed(self, text, point, method, source):
+        had = set(self.ids)
+        n = self._point(text, point, method)
+        if n in had:
+            said = (f"[{n}] already points there. Click it with `act`, or try another way: "
+                    "asking again gives the same point.")
+        else:
+            said = f"[{n}] point for \"{decider.prefix(text, 60)}\" ({source})"
         return said, said
 
     def _point(self, text, point, method):
-        """A point ID `act` can click, as a seen line is clicked."""
+        """A point ID `act` can click, as a seen line is clicked. The ID it
+        already has when the same point was asked for before."""
+        # Seen 09-24 in Notion: nine grounds in a row within 8 px of each other.
+        for n, item in self.ids.items():
+            if item.get("role") == "Point" and abs(item["x"] - point[0]) <= SAME_POINT \
+                    and abs(item["y"] - point[1]) <= SAME_POINT:
+                return n
         n = (max(self.ids, default=0) // 100 + 1) * 100 + 1
         self.ids[n] = {"kind": "seen", "role": "Point", "name": text, "value": "", "state": [],
                        "p": None, "x": point[0], "y": point[1], "w": 0.0, "h": 0.0,
@@ -1011,7 +1040,8 @@ class Agent:
                 earliest[name] = item
         offers = [i for i in offers if not i["name"]
                   or earliest[(i["kind"], tuple(decider._words(i["name"])))] is i]
-        self.twins = {id(i): count[(i["kind"], tuple(decider._words(i["name"])))] for i in offers}
+        self.twins = {id(i): count[(i["kind"], tuple(decider._words(i["name"])))]
+                      for i in offers if i["name"]}
         self.loop.among = offers
         self.ids = {n: item for n, item in enumerate(offers, 1)}
         lines = [f"Window: \"{snapshot['window']}\""]

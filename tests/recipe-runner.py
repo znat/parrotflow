@@ -9,6 +9,7 @@ script, and checks the steps it asked for, the lines it said and how it ended.
 import http.server
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -344,7 +345,8 @@ class Screen:
 
 
 LOOP = {"max_steps": 15, "send": False, "spotlight": 0, "lookup_letters": 2}
-UNCHANGED = "the last step changed nothing on screen — it did not work, try another way"
+UNCHANGED = ("nothing in the accessibility tree changed — not verified: it may still have "
+             "worked (a part of a field selected, a field already focused); check the picture")
 
 
 def loop_checks(runner):
@@ -503,6 +505,10 @@ def change_checks():
     import decider
     import loop
 
+    import planner
+    check("line: an unnamed field shows its state, as a named one does",
+          planner._line({"role": "AXTextArea", "name": "", "kind": "text", "value": "",
+                         "state": ["focused"]}) == "TextArea (no name) (focused)")
     check("loop: max_steps is 30 when the app does not say",
           loop.Loop({"run": ""}, object(), None).max_steps == 30)
     change = loop.changes(draft("Pe"), draft("Pe", popup=True))
@@ -1343,7 +1349,7 @@ def agent_checks(runner, stderr_path, trace_path):
     reminder = text(messages(second)[-1]) if messages(second) else ""
     check("agent: a plan written on the first call is shown at the end of the next request",
           "<plan-reminder>" not in json.dumps(first) and messages(second)[-1]["role"] == "user"
-          and "1. [~] Open the settings\n2. [ ] Mute the channel" in reminder, reminder)
+          and re.search(r"1\. \[~\] \[\w+\] Open the settings\n2\. \[ \] \[\w+\] Mute the channel", reminder), reminder)
     refused = results(3)[-1] if len(planner_bodies) > 3 else ""
     check("agent: done with a task open is refused, the model is asked again, and done then passes",
           refused.startswith("Not done: 'Open the settings' is still open. Finish it, or cancel it "
@@ -1394,7 +1400,7 @@ def agent_checks(runner, stderr_path, trace_path):
     check("agent: with a plan, only the newest screen goes in full and the plan is never cut",
           sum("earlier ones no longer work" in c for c in last) == 1
           and "earlier ones no longer work" in last[-2] and "<plan-reminder>" in last[-1]
-          and "[~] Mute the channel" in last[-1]
+          and re.search(r"\[~\] \[\w+\] Mute the channel", last[-1])
           and last[1].endswith("(the screen is in the newest tool result)")
           and last.count("Read the screen.") == 1 and report["stopped"] == "Stuck — no mute here",
           last)
@@ -1867,6 +1873,14 @@ def grounding_checks(url, user, plans_url):
           grounded["method"] == "tinyclick" and grounded["point"] == [470, 310]
           and grounded["crop"] == crops[0] and grounded["description"] == "Peter Holm"
           and grounded["call"] == 1, grounded)
+
+    end, fake, report = run(tiny, [draft("")] * 4, [
+        [("ground", {"description": "Peter Holm", "id": 1, "side": "below"})],
+        [("ground", {"description": "the name Peter Holm", "id": 1, "side": "below"})],
+        [("done", {"summary": "ok"})]])
+    got = results(2)[-1] if len(results(2)) else ""
+    check("ground: the same point asked for again comes back as the ID it has",
+          got.startswith("[101] already points there."), got)
 
     end, fake, report = run(tiny, [draft("")] * 3, [
         [("ground", {"description": "Nobody Here", "id": 1, "side": "below"})],

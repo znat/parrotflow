@@ -195,15 +195,16 @@ def _value(item):
 def _line(item):
     role = item["role"].replace("AX", "") or "Item"
     name = decider.prefix(" ".join(item["name"].split()), NAME_CHARS)
+    notes = [f"in the {item['in']}"] if item.get("in") else []
+    notes += item.get("state") or []
+    notes = f" ({', '.join(notes)})" if notes else ""
     if name:
-        notes = [f"in the {item['in']}"] if item.get("in") else []
-        notes += item.get("state") or []
-        return f"{role} \"{name}\"{_value(item)}" + (f" ({', '.join(notes)})" if notes else "")
+        return f"{role} \"{name}\"{_value(item)}{notes}"
     if item["kind"] == "text":
         if item["role"] == "AXComboBox":
-            return f"{role} (no name: looks people and channels up as you type){_value(item)}"
-        return f"{role} (no name){_value(item)}"
-    return role
+            return f"{role} (no name: looks people and channels up as you type){_value(item)}{notes}"
+        return f"{role} (no name){_value(item)}{notes}"
+    return role + notes
 
 
 GAZE_CM = 1.5
