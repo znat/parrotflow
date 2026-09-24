@@ -509,6 +509,25 @@ def change_checks():
     check("line: an unnamed field shows its state, as a named one does",
           planner._line({"role": "AXTextArea", "name": "", "kind": "text", "value": "",
                          "state": ["focused"]}) == "TextArea (no name) (focused)")
+    with tempfile.TemporaryDirectory() as config:
+        for path, text in (("memories/test-app/one.md", "Click New first."),
+                           ("memories/people/alex.md", "Alex is Alex Moreau."),
+                           ("memories/people/sam.md", "Sam is Sam Lee.")):
+            os.makedirs(os.path.dirname(os.path.join(config, path)), exist_ok=True)
+            with open(os.path.join(config, path), "w") as handle:
+                handle.write(text)
+        was = os.environ.get("PARROTFLOW_APP_NOTES")
+        os.environ["PARROTFLOW_APP_NOTES"] = os.path.join(config, "apps")
+        try:
+            import agent
+            got = agent.memories("Test App", "write to Alex", lambda line: None)
+        finally:
+            if was is None:
+                del os.environ["PARROTFLOW_APP_NOTES"]
+            else:
+                os.environ["PARROTFLOW_APP_NOTES"] = was
+    check("memories: the app's files, and a person's only when the request names them",
+          got == "Click New first.\n\nAlex is Alex Moreau.", got)
     check("loop: max_steps is 30 when the app does not say",
           loop.Loop({"run": ""}, object(), None).max_steps == 30)
     change = loop.changes(draft("Pe"), draft("Pe", popup=True))

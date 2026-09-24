@@ -51,7 +51,9 @@ prompt and the result of a step on an unknown ID point to `ground` instead.
 
 import dataclasses
 import datetime
+import glob
 import json
+import os
 import re
 import time
 from typing import List, Literal, Optional
@@ -206,6 +208,30 @@ def _doc(model):
     return " ".join(model.__doc__.split())
 
 
+def memories(app, utterance, log):
+    """Every file in `<config>/memories/<app>/`, and each `people/<name>.md`
+    whose name the request says, whole. `<config>` is the app notes' parent,
+    so the app passes no new path."""
+    notes = os.environ.get("PARROTFLOW_APP_NOTES", "")
+    if not notes:
+        return ""
+    root = os.path.join(os.path.dirname(notes.rstrip("/")), "memories")
+    words = set(decider._words(utterance))
+    paths = sorted(glob.glob(os.path.join(root, decider.slug(app) or "-", "*.md")))
+    paths += [p for p in sorted(glob.glob(os.path.join(root, "people", "*.md")))
+              if os.path.splitext(os.path.basename(p))[0].lower() in words]
+    texts = []
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8") as handle:
+                texts.append(handle.read().strip())
+        except (OSError, UnicodeDecodeError):
+            continue
+    if texts:
+        log(f"agent: memories — {', '.join(os.path.relpath(p, root) for p in paths)}")
+    return "\n\n".join(texts)
+
+
 def _render_plan(items):
     """The harness's checklist, with each task's ID. Without them the model
     guessed IDs for `update_task_statuses`: three calls lost per run, 09-24."""
@@ -300,6 +326,10 @@ class Agent:
         notes = decider.notes_of(app, lp.log)
         if notes:
             head.append(f"How this app works: {notes}")
+        remembered = memories(app, lp.utterance, lp.log)
+        if remembered:
+            head.append("Notes from earlier runs. Follow what worked, avoid what failed:\n"
+                        + remembered)
         head = "\n".join(head)
         self.prompt = f"{head}\n{self._screen(first=True)}"
         self.short = f"{head}\n(the screen is in the newest tool result)"
