@@ -547,7 +547,7 @@ def main():
         return refuse(channel, NEEDS)
     jev = judge.Jev.from_env()
     planner = planning.Planner.from_env()
-    if planner is not None and planner.loop == "agent":
+    if planner is not None:
         channel.shots = os.path.join(tempfile.gettempdir(), f"parrotflow-shot-{os.getpid()}.jpg")
     channel.send({"up": os.getpid()})
     while True:

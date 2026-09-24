@@ -1438,16 +1438,15 @@ def recorder_checks(url, user, plans_url):
     runner.process.stdin.close()
     runner.process.wait(timeout=5)
 
-    root = tempfile.mkdtemp()
     runner = Runner(url, user, extra=planner_env(plans_url, PARROTFLOW_PLANNER_LOOP="plan",
-                                                 PARROTFLOW_PLANNER_TRACE=trace, PARROTFLOW_RUNS=root))
+                                                 PARROTFLOW_PLANNER_TRACE=trace))
     agent_turns[:] = [[act({"do": "click", "id": 2})], [("done", {"summary": "ok"})]]
     end, fake = runner.run("mute this channel", "Test", fake=Screen([home, menu, muted]),
                            loop=LOOP, recipes=False)
-    info = read_json(os.path.join(root, recorded(root)[-1]), "run.json")
-    check("recorder: loop plan runs the agent, and the log says so",
-          end["end"] == "done" and info["kind"] == "agent"
-          and 'action loop: loop "plan" is gone; running the agent' in fake.logs, (end, info["kind"]))
+    reads = [s for s in fake.steps if s["do"] == "snapshot"]
+    check("loop plan runs the agent, with its screenshots, and the log says so",
+          end["end"] == "done" and reads and all(s.get("shot") for s in reads)
+          and 'action loop: loop "plan" is gone; running the agent' in fake.logs, (end, reads))
     runner.process.stdin.close()
     runner.process.wait(timeout=5)
 

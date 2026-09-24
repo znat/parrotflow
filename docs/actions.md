@@ -749,7 +749,8 @@ proposals shown, those dropped and why, and what was kept.
 
 ## Measuring it
 
-`--act` runs the whole path without a microphone.
+`--act` runs the whole path without a microphone. `--execute` runs the
+agent, so it needs `actions: planner:`.
 
 ```sh
 PF=/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow
