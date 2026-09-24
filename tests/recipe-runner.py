@@ -296,19 +296,26 @@ def window(n, refused=None):
                       item("Message to Ann", "text", "AXTextArea", 500, 750)]}
 
 
-class Screen:
-    """Replies to the loop's steps. `windows` are read in turn; the last one
-    stays on screen."""
+READS = {"snapshot"}
+GESTURES = {"press", "click", "click_at", "right_click", "hover", "drag", "ready", "key", "type",
+            "paste", "scroll", "select", "show_menu"}
 
-    def __init__(self, windows, override=None):
+
+class Screen:
+    """Replies to the loop's steps. `windows` come in turn, one per gesture
+    (one per read with `per_read`); the last one stays on screen."""
+
+    def __init__(self, windows, override=None, per_read=False):
         self.windows = list(windows)
         self.override = override or {}
+        self.per_read = per_read
         self.steps = []
         self.lines = []
         self.logs = []
         self.reads = 0
         self.by_id = {}
         self.next = 100
+        self.moved = False
 
     def reply(self, step):
         do = step["do"]
@@ -320,9 +327,15 @@ class Screen:
             self.lines.append(step["text"])
         if do == "log":
             self.logs.append(step["text"])
-        if do == "snapshot":
-            shown = json.loads(json.dumps(self.windows[min(self.reads, len(self.windows) - 1)]))
-            self.reads += 1
+        if do in GESTURES:
+            self.moved = True
+        if do in READS:
+            # The window moves on after a gesture, not because it was read
+            # again: `settle` reads until something changed.
+            if self.moved or self.per_read or not self.reads:
+                self.reads += 1
+                self.moved = False
+            shown = json.loads(json.dumps(self.windows[min(self.reads - 1, len(self.windows) - 1)]))
             # The app reads the text from the pixels when asked and allowed.
             seen = shown.pop("seen", None)
             shown["id"] = self.next
@@ -366,7 +379,7 @@ def loop_checks(runner):
     def run(utterance, windows, answers, override=None, execute=True, **loop):
         loop_answers[:] = answers
         del loop_bodies[:]
-        fake = Screen(windows, override)
+        fake = Screen(windows, override, per_read=True)
         end, fake = runner.run(utterance, "Test", fake=fake, execute=execute,
                                loop=dict(LOOP, **loop), recipes=False)
         return end, fake, end.get("loop") or {}
@@ -701,6 +714,39 @@ def change_checks():
           is None)
 
 
+def settle_checks():
+    """`Loop.settle` against a window whose To field fills `at` seconds in."""
+    import time
+    import loop
+
+    class Channel:
+        def __init__(self, at):
+            self.began, self.at, self.reads = time.monotonic(), at, 0
+
+        def ask(self, do, **args):
+            self.reads += 1
+            filled = self.at is not None and time.monotonic() - self.began >= self.at
+            return {"snapshot": draft("Pe" if filled else "")}
+
+    def settled(at, policy, until=None):
+        channel = Channel(at)
+        now = loop.Loop({"run": ""}, channel, None).settle(draft(""), [0, 0], policy, until)
+        return now["items"][0]["value"], channel.reads, time.monotonic() - channel.began
+
+    value, reads, took = settled(0.1, "after_press")
+    check("settle: a window that changed is taken at the first read after it",
+          value == "Pe" and reads == 1 and took < 0.3, (value, reads, took))
+    value, reads, took = settled(None, "after_press")
+    check("settle: a window that never changes is read until the policy's time, not less",
+          value == "" and reads == 4 and 0.49 <= took < 0.7, (value, reads, took))
+    value, reads, took = settled(0.35, "after_type")
+    check("settle: a late change is still caught",
+          value == "Pe" and reads == 3 and took < 0.6, (value, reads, took))
+    value, reads, took = settled(0.1, "skill_check", until=lambda now: False)
+    check("settle: `until` decides when it is done, not the change",
+          reads == 6 and took >= 0.89, (value, reads, took))
+
+
 def seeing_checks(runner):
     """The loop is told what opened and what was typed."""
     def run(utterance, windows, answers):
@@ -1000,7 +1046,7 @@ def agent_checks(runner, stderr_path, trace_path):
         agent_turns[:] = turns
         del planner_bodies[:]
         calls = len(jev_calls)
-        fake = Screen(windows, override)
+        fake = Screen(windows, override, per_read=True)
         end, fake = runner.run(utterance, "Test", fake=fake, execute=execute,
                                loop=dict(LOOP, **loop), recipes=False)
         return end, fake, end.get("loop") or {}, [c[0] for c in jev_calls[calls:]]
@@ -2142,7 +2188,7 @@ def surprise_checks(url, user, plans_url):
     expect = "To holds Alex"
     typed = act({"do": "type", "id": 1, "value": "Alex", "expect": expect})
 
-    end, fake, report = run([draft(""), draft("Alex")] * 3,
+    end, fake, report = run([draft(""), draft(""), draft("Alex")],
                             [[plan(("Add Alex", "in_progress"))], [typed], [("read", {})]] + finish,
                             [0.9])
     step = read_json(root, recorded(root)[-1], "steps", "01.json")
@@ -2158,7 +2204,7 @@ def surprise_checks(url, user, plans_url):
           and step["expect"] == expect and step["expect_p"] == 0.9
           and step["ms"] >= step["expect_ms"] >= 0, (sent, step))
 
-    end, fake, report = run([draft(""), draft("Alex")] * 3,
+    end, fake, report = run([draft(""), draft(""), draft("Alex")],
                             [[plan(("Add Alex", "in_progress"))], [typed], [("read", {})]] + finish,
                             [0.2])
     got = result(2)
@@ -2170,7 +2216,7 @@ def surprise_checks(url, user, plans_url):
           efforts() == [("low", 0), ("low", 0)] + [("low", 1)] * (len(efforts()) - 2), efforts())
 
     slack = "\u00a0 Alex Moreau \u00a0 \u00a0"
-    end, fake, report = run([draft(slack), draft("\u00a0 Antonio \u00a0")] * 3,
+    end, fake, report = run([draft(slack), draft(slack), draft("\u00a0 Antonio \u00a0")],
                             [[plan(("Add Antonio", "in_progress"))],
                              [act({"do": "type", "id": 1, "value": "Antonio"})], [("read", {})],
                              [plan(("Add Antonio", "completed"))], [("done", {"summary": "ok"})]])
@@ -2179,7 +2225,7 @@ def surprise_checks(url, user, plans_url):
     check("lost: a step that took a name out of its field says so",
           'this step removed "Alex Moreau" from "To"' in got
           and step["lost"] == '"Alex Moreau"', (got, efforts(), step.get("lost")))
-    end, fake, report = run([draft("Alex"), draft("Alex, Antonio")] * 3,
+    end, fake, report = run([draft("Alex"), draft("Alex"), draft("Alex, Antonio")],
                             [[plan(("Add Antonio", "in_progress"))],
                              [act({"do": "type", "id": 1, "value": "Antonio"})], [("read", {})],
                              [plan(("Add Antonio", "completed"))], [("done", {"summary": "ok"})]])
@@ -2493,6 +2539,7 @@ def main():
     loop_checks(runner)
     seeing_checks(runner)
     change_checks()
+    settle_checks()
 
     end, fake = runner.run("write an email to Peter and Antonio", "Test")
     check("a recipe declared by name, next to a file that fails to import, still runs",

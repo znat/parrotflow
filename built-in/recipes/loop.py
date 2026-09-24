@@ -37,6 +37,12 @@ _PLAIN_NO = {"no", "nope", "nah", "no thanks", "dont", "do not", "cancel", "stop
 ONE_LINE = {"AXTextField", "AXComboBox", "AXSearchField"}
 OPENS_A_LIST = {"AXComboBox", "AXPopUpButton"}
 COVER_HEIGHT = 60
+# After a gesture the window is read every SETTLE_EVERY seconds until it
+# changes, for at most the policy's seconds. Each cap is the fixed wait it
+# replaced, so a step that changes nothing waits no less than before.
+SETTLE_EVERY = 0.15
+SETTLE = {"before_type": 0.3, "after_press": 0.5, "after_key": 0.5, "after_type": 1.7,
+          "skill_step": 0.3, "skill_check": 0.9}
 
 
 def verdict(answer):
@@ -568,6 +574,7 @@ class Loop:
         self.change = {}
         self.recorder = getattr(channel, "recorder", recording.OFF)
         self.agent = None
+        self.began, self.reads = time.monotonic(), 0
 
     # Talking to the app
 
@@ -978,6 +985,25 @@ class Loop:
             snapshot["shot"] = reply["shot"]
         return snapshot
 
+    def settle(self, before, aim, policy, until=None):
+        """The window once the app has answered a gesture: the first read for
+        which `until(read)` holds (by default: it differs from `before`), or
+        the first read that starts once the policy's time is up."""
+        until = until or (lambda now: bool(changes(before, now)))
+        at_most = SETTLE[policy]
+        began = time.monotonic()
+        n = 0
+        while True:
+            n += 1
+            wait = began + min(n * SETTLE_EVERY, at_most) - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            started = time.monotonic() - began
+            now = self._read(aim, before["app"])
+            self.reads += 1
+            if until(now) or started >= at_most - 0.01:
+                return now
+
     def _find(self, step, snapshot):
         """The planned target on screen, or why not. Raises Stop when its
         words are nowhere in what was read: a seeing failure, not re-planned."""
@@ -1082,6 +1108,7 @@ class Loop:
         finds `step["target"]`."""
         self.show(activity=planning.doing(step))
         self.recorder.begin_step(step, item)
+        self.began, self.reads = time.monotonic(), 0
         try:
             why, now, aim, outcome = self._step(step, snapshot, aim, report, item)
         except Stop as stop:
@@ -1099,7 +1126,7 @@ class Loop:
 
     def _step(self, step, snapshot, aim, report, item):
         do, value = step["do"], step["value"]
-        target = None
+        target = typed_on = None
         closed = ""
         self.target_kind = None
         if do == "type":
@@ -1163,13 +1190,14 @@ class Loop:
             # Teams' search results and Outlook's suggestions: pressing the
             # row closed the list and chose nobody. A real click chose.
             fresh = (target["kind"], target["name"]) in self.fresh
+            pressed = True
             if target["kind"] == "seen":
                 self.front()
                 why = self._click_at(target)
             elif do in ("type", "write") and self._caret_in(target, snapshot):
                 # Seen 09-23 in Slack: clicking To's centre selected the first
                 # recipient's chip, and typing the second name replaced it.
-                why = None
+                why, pressed = None, False
             else:
                 why = self._press(target, click=bool(target.get("in_list") or target.get("in")
                                                      or fresh or target["role"] == "AXStaticText"))
@@ -1178,23 +1206,18 @@ class Loop:
             if do in ("type", "write"):
                 if not value:
                     return "nothing to type", snapshot, aim, ""
-                time.sleep(0.3)
+                if pressed:
+                    typed_on = self.settle(snapshot, aim, "before_type")
                 self.front()
                 # Key presses for `type`, the paste for `write`. Seen 09-23 in
                 # Outlook: the time field's hour ignored a pasted "11" three times.
                 self.act("type" if do == "type" else "paste", text=value)
         report.acted = True
-        time.sleep(0.5)
-        now = self._read(aim, snapshot["app"])
+        # Teams' attendee list came late after typing. Settled against the
+        # read after the press, so the press's focus change does not end it.
+        now = self.settle(typed_on or snapshot, aim, "after_key" if do == "key" else
+                          "after_type" if do in ("type", "write") else "after_press")
         change = changes(snapshot, now)
-        # Teams' attendee list came after the read: "nothing changed", and
-        # the name was typed again. Lookups wait before they filter.
-        for _ in range(3 if do in ("type", "write") and not change else 0):
-            time.sleep(0.4)
-            now = self._read(aim, snapshot["app"])
-            change = changes(snapshot, now)
-            if change:
-                break
         changed = sentence(change)
         self.fresh = {(i["kind"], i["name"]) for i in appeared(snapshot, now)}
         self.renamed.update(change.get("renamed", {}))
@@ -1205,15 +1228,15 @@ class Loop:
             why = self._press(target, click=True)
             if why:
                 return why, now, aim, ""
-            time.sleep(0.5)
-            now = self._read(aim, snapshot["app"])
+            now = self.settle(now, aim, "after_press")
             change = changes(snapshot, now)
             changed = sentence(change)
         self.change = change
         outcome = changed or UNCHANGED
         if closed:
             outcome = f"{closed}; {outcome}"
-        self.log(f"planner: changed — {decider.prefix(outcome, 160)}")
+        ms = int((time.monotonic() - self.began) * 1000)
+        self.log(f"planner: changed ({ms} ms, {self.reads} reads) — {decider.prefix(outcome, 160)}")
         said = planning.describe_step(dict(step, expect=""))
         report.steps.append(f"{said}; {decider.prefix(outcome, 120)}")
         report.shown.append(self._shown(step))
