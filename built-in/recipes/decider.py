@@ -271,6 +271,14 @@ def slug(app):
     return "-".join(parts)
 
 
+def twin_rank(item):
+    """Which of two same-named items wins: the focused one, then one in the
+    focused window, then the first in reading order. Seen 09-24: two Outlook
+    event forms, and the first in reading order was behind."""
+    return ("focused" not in (item.get("state") or ()), item.get("in") == "window",
+            item["y"], item["x"])
+
+
 def notes_of(app, log):
     """`<config>/apps/<app>.md`, headings and comment lines dropped. Read again
     when the file changes. Not capped: a page of rules is ~350 tokens against

@@ -528,6 +528,32 @@ def change_checks():
                 del os.environ["PARROTFLOW_APP_NOTES"]
             else:
                 os.environ["PARROTFLOW_APP_NOTES"] = was
+    import skills
+    with tempfile.TemporaryDirectory() as folder:
+        os.makedirs(os.path.join(folder, "com.test.app"))
+        with open(os.path.join(folder, "com.test.app", "set-time.md"), "w") as handle:
+            handle.write('---\ngoal: set the time\nparams: [hour, minute]\nsteps:\n'
+                         '  - click DateTimeArea "Start time" at left | focus "Start time"\n'
+                         '  - type {hour} | value "Start time" ~ "*, {hour}:*"\n'
+                         '  - key right\n---\nProse.\n')
+        with open(os.path.join(folder, "com.test.app", "notes.md"), "w") as handle:
+            handle.write("---\ngoal: no steps\n---\nProse only.\n")
+        found = skills.of_app(folder, "com.test.app")
+    check("skills: a memory with steps is a skill, one without is not",
+          list(found) == ["set-time"] and found["set-time"].params == ["hour", "minute"]
+          and found["set-time"].steps[2] == ("key right", ""), {k: v.steps for k, v in found.items()})
+    field = {"name": "Start time", "role": "AXDateTimeArea", "value": "25/09/2026, 11:30",
+             "state": ["focused"], "x": 1, "y": 1, "in": None}
+    button = {"name": "Start time", "role": "AXPopUpButton", "value": "", "state": [],
+              "x": 2, "y": 1, "in": None}
+    shown = {"window": "New Event", "items": [button, field]}
+    check("skills: checks read values, focus and the window from the tree",
+          skills.check('value "Start time" ~ "*, 11:*"', shown)[0]
+          and not skills.check('value "Start time" ~ "*, 16:*"', shown)[0]
+          and skills.check('focus "Start time"', shown)[0]
+          and skills.check('window ~ "New*"', shown)[0]
+          and skills.check('value "Start time" ~ "*, 16:*"', shown)[1]
+          == "'Start time' = '25/09/2026, 11:30'")
     behind = {"y": 517, "x": 1451, "in": "window", "state": []}
     front = {"y": 546, "x": 1480, "in": None, "state": ["focused"]}
     check("twins: the focused one wins over the one first in reading order",

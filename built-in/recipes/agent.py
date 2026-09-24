@@ -69,6 +69,7 @@ import decider
 import ground as grounding
 import loop as looping
 import planner as planning
+import skills as skilling
 from planner import Strict
 
 MAX_CALLS = 50
@@ -146,6 +147,15 @@ class Act(Strict):
     steps: List[Step]
 
 
+class Use(Strict):
+    """Play a skill listed in the request: the program does its steps and checks each one
+    against the screen, with no model call. `values` fill its inputs, in the order listed.
+    Stops at the first check that fails, and says what it expected and what it found.
+    Returns the steps and the screen with new IDs."""
+    skill: str
+    values: List[str]
+
+
 class Read(Strict):
     """Read the screen again without acting. Returns it with new IDs."""
 
@@ -197,19 +207,24 @@ class Stuck(Strict):
     why: str = ""
 
 
-MODELS = {model.__name__.lower(): model for model in (Act, Read, Look, Ground, Ask, Done, Stuck)}
+MODELS = {model.__name__.lower(): model for model in (Act, Use, Read, Look, Ground, Ask, Done, Stuck)}
 
 
 def _doc(model):
     return " ".join(model.__doc__.split())
 
 
-def twin_rank(item):
-    """Which of two same-named items gets the line: the focused one, then
-    one in the focused window, then the first in reading order. Seen 09-24:
-    two Outlook event forms, and the first in reading order was behind."""
-    return ("focused" not in (item.get("state") or ()), item.get("in") == "window",
-            item["y"], item["x"])
+twin_rank = decider.twin_rank
+
+
+def memory_root():
+    """`<config>/memories`, the app notes' sibling, or None."""
+    notes = os.environ.get("PARROTFLOW_APP_NOTES", "")
+    return os.path.join(os.path.dirname(notes.rstrip("/")), "memories") if notes else None
+
+
+def memory_folder(app):
+    return app if "." in app else decider.slug(app)
 
 
 def memories(app, utterance, log):
@@ -217,13 +232,11 @@ def memories(app, utterance, log):
     (`com.microsoft.Outlook`) or else the name, and each `people/<name>.md`
     whose name the request says, whole. `<config>` is the app notes' parent,
     so the app passes no new path."""
-    notes = os.environ.get("PARROTFLOW_APP_NOTES", "")
-    if not notes:
+    root = memory_root()
+    if not root:
         return ""
-    root = os.path.join(os.path.dirname(notes.rstrip("/")), "memories")
     words = set(decider._words(utterance))
-    folder = app if "." in app else decider.slug(app)
-    paths = sorted(glob.glob(os.path.join(root, folder or "-", "*.md")))
+    paths = sorted(glob.glob(os.path.join(root, memory_folder(app) or "-", "*.md")))
     paths += [p for p in sorted(glob.glob(os.path.join(root, "people", "*.md")))
               if os.path.splitext(os.path.basename(p))[0].lower() in words]
     texts = []
@@ -298,6 +311,7 @@ class Agent:
         self.opened = []
         self.asked_when_stuck = False
         self.tried = {}
+        self.skills = {}
         self.plan = PlanStore(lambda: self.loop.show(plan=self._plan()))
         # Plan item ID: what went wrong while it was in progress, newest last.
         self.notes = {}
@@ -328,10 +342,17 @@ class Agent:
         notes = decider.notes_of(app, lp.log)
         if notes:
             head.append(f"How this app works: {notes}")
-        remembered = memories(self.snapshot.get("bundle") or app, lp.utterance, lp.log)
+        key = self.snapshot.get("bundle") or app
+        remembered = memories(key, lp.utterance, lp.log)
+        root = memory_root()
+        self.skills = skilling.of_app(root, memory_folder(key)) if root else {}
         if remembered:
             head.append("Notes from earlier runs. Follow what worked, avoid what failed:\n"
                         + remembered)
+        if self.skills:
+            head.append("Skills. The program plays these itself and checks each step; call `use` "
+                        "when one fits, instead of doing its steps with `act`:\n"
+                        + "\n".join(f"- {s.line()}" for s in self.skills.values()))
         head = "\n".join(head)
         self.prompt = f"{head}\n{self._screen(first=True)}"
         self.short = f"{head}\n(the screen is in the newest tool result)"
@@ -516,6 +537,8 @@ class Agent:
             return self._ask(args, self.report)
         if name == "act" and args.steps:
             return self._repeated(args.steps, *self._act(args.steps, self.report)) + (False,)
+        if name == "use":
+            return self._use(args) + (False,)
         if name == "look":
             return self._look(args) + (False,)
         if name == "ground":
@@ -550,6 +573,8 @@ class Agent:
             if args.id is not None:
                 return f"look {args.side or 'below'} [{args.id}]"
             return f"look {args.x} {args.y} {args.w} {args.h}"
+        if isinstance(args, Use):
+            return f"use {args.skill}({', '.join(args.values)})"
         if isinstance(args, Ground):
             said = f"ground \"{decider.prefix(args.description, 60)}\""
             if args.image_x is not None:
@@ -988,6 +1013,22 @@ class Agent:
             return {k: clean(v) for k, v in node.items()}
         return clean(head + list(body.get("input") or []))
 
+    def _use(self, args):
+        """The `use` tool. (result, the result cut for history)."""
+        skill = self.skills.get(args.skill)
+        if skill is None:
+            said = f"Not run: no skill {args.skill!r}. Skills: {', '.join(self.skills) or 'none'}."
+            return said, said
+        if len(args.values) != len(skill.params):
+            said = f"Not run: {skill.line()} takes {len(skill.params)} values."
+            return said, said
+        ok, lines = skilling.play(skill, args.values, self)
+        if not ok:
+            self._note(lines[-1])
+        head = f"Skill {skill.name}: " + ("every check passed." if ok else "stopped.")
+        short = "\n".join([head] + lines)
+        return f"{short}\n{self._screen()}", short
+
     def _ask(self, args, report):
         lp = self.loop
         options = [o.strip() for o in args.options if o.strip()]
@@ -1143,6 +1184,10 @@ async def _ground_on(ctx: pai.RunContext[Agent], tool):
     return tool if ctx.deps.grounder.on else None
 
 
+async def _use_on(ctx: pai.RunContext[Agent], tool):
+    return tool if getattr(ctx.deps, "skills", None) else None
+
+
 async def _check_end(ctx: pai.RunContext[Agent], output):
     """`done` with a plan task open is refused. `stuck` asks the user once
     first; an answer other than Stop goes back to the model."""
@@ -1189,7 +1234,8 @@ AGENT = pai.Agent(
     tools=[_tool("act", Act),
            pai.Tool(_read, takes_ctx=True, name="read", description=_doc(Read), strict=True,
                     sequential=True),
-           _tool("look", Look), _tool("ground", Ground, _ground_on), _tool("ask", Ask)],
+           _tool("use", Use, _use_on), _tool("look", Look), _tool("ground", Ground, _ground_on),
+           _tool("ask", Ask)],
     output_type=[pai.ToolOutput(Done, name="done", strict=True),
                  pai.ToolOutput(Stuck, name="stuck", strict=True)],
     retries={"tools": MAX_CALLS, "output": MAX_CALLS},
