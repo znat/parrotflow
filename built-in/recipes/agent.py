@@ -1163,10 +1163,7 @@ class Agent:
 
     def _refind(self, item):
         """The same control in the newest read: IDs change with every read."""
-        same = [i for i in self.snapshot["items"] if (i["kind"], i["role"], i["name"])
-                == (item["kind"], item["role"], item["name"])]
-        return min(same, key=lambda i: (i["x"] - item["x"]) ** 2 + (i["y"] - item["y"]) ** 2) \
-            if same else None
+        return looping.refind(item, self.snapshot)
 
     def _screen(self, first=False):
         """The newest read as numbered lines: every item, up to SHOWN. The

@@ -607,6 +607,46 @@ def change_checks():
     change = loop.changes(draft(), renamed)
     check("change: a field renamed in place is one rename, not new and gone",
           change == {"renamed": {"To": "Look for people"}}, change)
+
+    def menu(*ys):
+        """Notion's New menu, one copy per `y`: the first copy is hidden."""
+        shown = copy.deepcopy(draft())
+        shown["items"] += [dict(shown["items"][0], name=name, kind="click", role="AXMenuItem",
+                                x=300, y=y + 30 * n, value="")
+                           for y in ys for n, name in enumerate(["Page", "Database", "Chat"])]
+        return shown
+    change = loop.changes(menu(900), menu(900, 200))
+    check("change: a second copy of a menu opening is a change, named once each",
+          change == {"new": ["Page", "Database", "Chat"]}
+          and loop.difference(menu(900), menu(900, 200)) == '3 new: "Page", "Database", "Chat"',
+          change)
+    change = loop.changes(menu(900, 200), menu(900))
+    check("change: the shown copy closing is 3 gone, the hidden one stays matched",
+          change == {"gone": 3}, change)
+    check("change: the same twins in the same places are no change",
+          loop.changes(menu(900, 200), menu(900, 200)) == {})
+    check("change: an item that stayed and moved is counted",
+          loop.changes(menu(900), menu(950)) == {"moved": 3}
+          and loop.difference(menu(900), menu(950)) == "3 moved"
+          and loop.changes(menu(900), menu(910)) == {})
+    keyed = menu(900, 200)
+    for item, key in zip(keyed["items"], ["a", "b", "c", "d", "e", "c.2", "d.2", "e.2"]):
+        item["key"] = key
+    swapped = copy.deepcopy(keyed)
+    for item in swapped["items"]:
+        item["name"] = {"c": "One", "c.2": "Two"}.get(item["key"], item["name"])
+    check("change: with keys, twins match on the key, not the name",
+          loop.changes(keyed, swapped) == {}, loop.changes(keyed, swapped))
+    rekeyed = copy.deepcopy(keyed)
+    for item in rekeyed["items"]:
+        item["key"] = "x" + item["key"]
+    check("change: a key that changed with its path falls back to kind and name",
+          loop.changes(keyed, rekeyed) == {}, loop.changes(keyed, rekeyed))
+    near = dict(keyed["items"][2], x=300, y=190)
+    check("refind: the key wins over the nearer twin",
+          loop.refind(dict(keyed["items"][5], x=300, y=900), keyed) is keyed["items"][5]
+          and loop.refind(dict(near, key=None), keyed) is keyed["items"][5]
+          and loop.refind(dict(near, key="gone"), keyed) is keyed["items"][5])
     tabbed = copy.deepcopy(draft(filler=1))
     tabbed["items"][2]["state"] = ["selected"]
     check("change: an item becoming selected is said",
