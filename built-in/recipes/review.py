@@ -55,7 +55,7 @@ You get a digest of the run: the request, the plan, each model call with its too
 Answer with a short report and proposals for memory files. The next run in this app reads the memory files first.
 
 The report:
-- next_time: what you would do next time, in one or two lines.
+- next_time: what you would do next time, in one or two lines. Sending, inviting and posting are the user's to decide: never say to do them without asking.
 - learned: one short line per thing this run taught. Empty when nothing.
 - went_wrong: one short line per failed step and how it was fixed, or what blocked the run. Empty when nothing went wrong.
 Say nothing about time: the program adds the timings.
@@ -67,11 +67,13 @@ A proposal is {file, content, why}:
 
 Rules for proposals:
 - Record the path that finally worked. Never record a detour, a retry, or a way around the program's own limits as the method.
-- Be specific and actionable: where to click (for example "the left edge of Start date"), what to type, and what the screen shows when it worked.
+- Be specific and actionable: where to click (for example "the left edge of Start date"), the exact keys and what to type (for example "⌘A, then type 25/09/26"), and what the screen shows when it worked.
+- Record only what stays true next time: how the app works. Never a date, a time slot, who was free, or anything else true only of this run.
 - Prefer updating an existing file over adding a new one. To update a file, give its whole new content under the same name, and keep what is still true.
 - Facts about people come only from the user's answers: which email, how a name is spelled.
-- Add a `steps:` block only when those exact gestures succeeded in this run, and each step has a check that a value in the tree can prove. Otherwise write prose.
-- No proposal when the run taught nothing new. An empty list is a good answer.
+- Add a `steps:` block only when those exact gestures succeeded in this run, and each step has a check that a value in the tree can prove. Otherwise write prose. A file with `steps:` is a skill the agent calls with values: its `params` are exactly the `{param}`s its steps use, and its `goal` says what the steps do, so put other advice in a separate file.
+- Each line of went_wrong that ends with a fix that worked is a lesson: propose it, unless a memory file already says it. So is each line of learned that the next run could act on.
+- No proposal only when the run taught nothing the memory files do not already say.
 - Keep files short: at most 15 lines of prose.
 
 A file starts with front matter between `---` lines, then prose:

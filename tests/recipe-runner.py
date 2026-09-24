@@ -2297,7 +2297,7 @@ def review_checks(url, user, plans_url):
     rules = ["Never record a detour", "Be specific and actionable",
              "Prefer updating an existing file", "Facts about people come only from the user's answers",
              "Add a `steps:` block only when those exact gestures succeeded in this run",
-             "No proposal when the run taught nothing new", "Keep files short"]
+             "No proposal only when the run taught nothing", "Keep files short"]
     check("review: the prompt says the rules for proposals",
           all(rule in (body.get("instructions") or "") for rule in rules),
           [r for r in rules if r not in (body.get("instructions") or "")])
