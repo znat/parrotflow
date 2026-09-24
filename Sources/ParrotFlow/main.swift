@@ -578,6 +578,18 @@ if let index = arguments.firstIndex(of: "--peek") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--tree-read") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --tree-read <bundle-id>")
+        exit(2)
+    }
+    exit(TreeReadCommand.run(bundleID: arguments[index + 1]))
+}
+
+if arguments.contains("--tree-test") {
+    exit(TreeContextCommand.run())
+}
+
 if let index = arguments.firstIndex(of: "--context-test") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --context-test \"<screen>\" [limit]")

@@ -169,6 +169,10 @@ enum PeekCommand {
         case .success(let got):
             report("as context: \(got.chars) chars, \(got.lines) line(s)"
                 + (got.truncated ? " (truncated to the last \(Context.maxChars))" : ""))
+            if !got.place.isEmpty { report("  place   \(got.place)") }
+            if !got.people.isEmpty { report("  people  \(got.people.joined(separator: "; "))") }
+            if !got.code.isEmpty { report("  code    \(got.code.joined(separator: "; "))") }
+            if !got.roster.isEmpty { report("  roster  \(got.roster.joined(separator: "; "))") }
             for row in got.text.components(separatedBy: "\n") {
                 report("  | \(row)")
             }

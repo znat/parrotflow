@@ -1259,7 +1259,7 @@ pipeline:
     when: context.ok && context.chars > 200
 ```
 
-It publishes five things, on top of the four every stage gets:
+It publishes nine things, on top of the four every stage gets:
 
 | | |
 |---|---|
@@ -1267,6 +1267,10 @@ It publishes five things, on top of the four every stage gets:
 | `context.chars` | how much of it there is |
 | `context.lines` | how many rows |
 | `context.truncated` | whether the cap cut anything off the front |
+| `context.place` | which conversation this is — the channel or direct message in Slack, empty in a terminal |
+| `context.people` | who is named on screen, joined on `; ` — message authors and the members the header lists |
+| `context.code` | what was written as code, joined on `; ` — a backticked run in Slack, empty in a terminal |
+| `context.roster` | every channel and person the window offers, joined on `; ` — Slack's sidebar, empty in a terminal |
 | `context.declined` | why nothing was read, when nothing was |
 
 **It never changes the transcript.** `context.changed` is false on every run and
@@ -1274,15 +1278,28 @@ means it — the stage returns its input by construction, not by outcome. A stag
 that could put the screen into the transcript is a stage that could paste your
 terminal into a chat message.
 
-**Terminals only, for now.** A terminal's accessibility value *is* its visible
+**Terminals and Slack.** A terminal's accessibility value *is* its visible
 screen, so the whole context costs one call — the same call the app already
-makes to edit a line in place. No other app works that way. A Slack composer
-publishes its own contents and nothing above it, so the messages would have to
-come from walking the window's children: hundreds of round trips, per app, for a
-flat run of text with no author attached. That may still be worth building. It
-is not the same feature, and one stage that means "cheap" in one app and
-"expensive" in the next is not a stage anybody can budget for. So everything
-else is declined out loud.
+makes to edit a line in place, about 1ms. No other app works that way. A Slack
+composer publishes its own contents and nothing above it, so the messages come
+from walking the window's children: 973 nodes for one window and 130–150ms,
+measured 2026-09-18. Both run off the main thread once recording has started, so
+neither is on the path that makes the hotkey feel fast.
+
+The walk pays for itself by answering what a flat screen cannot. Slack labels
+each message group with its author, so `context.people` holds names the text
+alone does not give — a name at the start of a line before a colon is exactly
+what a tagger reads as a heading. And the list naming the conversation gives
+`context.place`, so "the eng platform channel" has a spelling on screen.
+
+Only the messages are published. The composer's formatting bar, the channel
+header and the sidebar are in the same window and are dropped: the author label
+is the boundary, and everything under it is language rather than the app talking
+about itself.
+
+An app that is neither is declined out loud. Adding one means measuring it and
+naming it in `AppProfile.treeBundleIDs`, because the walk picks its subtree by
+the labels that app writes.
 
 **The screen is read when the hotkey goes down, not when the stage runs.** The
 press is the last moment the pane is known. By the time the pipeline reaches
