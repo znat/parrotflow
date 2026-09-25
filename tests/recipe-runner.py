@@ -2184,16 +2184,18 @@ def grounding_checks(url, user, plans_url):
 
     focused = draft("")
     focused["items"][0]["state"] = ["focused"]
-    end, fake, report = run(tiny, [focused] * 2, [
-        [("ground", {"description": "Loading indicator", "image_x": 156, "image_y": 314})],
-        [("ground", {"description": "the loading spinner", "image_x": 158, "image_y": 312})],
-        [("ground", {"description": "small spinner, bottom left", "image_x": 156, "image_y": 314})],
-        [("done", {"summary": "ok"})]])
-    got = [results(n)[-1] if results(n) else "" for n in (1, 2, 3)]
-    check("ground: Teams' spinner, the same picture point in new words, is a repeat each time",
-          got[0].startswith("[101] point for") and got[1] == got[2]
+    spinner = [[("ground", {"description": f"the loading spinner {n}", "image_x": 156 + n % 3,
+                            "image_y": 314})] for n in range(60)]
+    end, fake, report = run(tiny, [focused] * 2, spinner)
+    got = [results(n)[-1] if results(n) else "" for n in (1, 2)]
+    check("ground: Teams' spinner, the same picture point in new words, is a repeat",
+          got[0].startswith("[101] point for")
           and got[1].startswith('Not run: the same ground as the last call, and nothing changed '
                                 'on screen: window "Untitled", the caret in "To".'), got)
+    check("ground: a model that grounds the same point forever is stopped at the third call",
+          len(planner_bodies) == 3 and end["end"] == "stopped"
+          and report["stopped"] == "Stopped: asked for the same point 3 times: "
+                                   "the loading spinner 2", (len(planner_bodies), report))
 
     end, fake, report = run(tiny, [draft(""), draft("", popup=True)], [
         [("_sleep", 1.1), ("ground", {"description": "Peter Holm", "id": 1, "side": "below"})],

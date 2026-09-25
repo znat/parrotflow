@@ -45,7 +45,7 @@ on the first call, around the focused item. `_prepare`
 drops the one before. No screenshot, no picture.
 
 What went wrong (a step failed, the same batch ran twice, the same ground or
-look three times in a row, a step took a name
+look three times in a row, which also stops the run, a step took a name
 or words out of its field) is a note under the task in the run panel. The
 model decides what to do; the user is asked only before a step that commits.
 A step's `expect` is recorded with the step, and never checked.
@@ -861,7 +861,7 @@ class Agent:
                 return text, text
             where = "at {x:.0f},{y:.0f}, {w:.0f}×{h:.0f}".format(**region)
         if self._again("look", self._facets(args, "below")):
-            return self._repeat("look")
+            return self._repeat("look", where)
         lines, error = self._seen(region)
         if error:
             text = f"Could not look: {error}"
@@ -950,7 +950,7 @@ class Agent:
         if args.image_x is not None and args.image_y is not None and self.shown is not None:
             facets.append(("point", *self._picture_point(args.image_x, args.image_y)))
         if self._again("ground", facets):
-            return self._repeat("ground")
+            return self._repeat("ground", text)
         if args.image_x is not None and args.image_y is not None:
             return self._from_picture(text, args.image_x, args.image_y)
         area = self._ground_area(args)
@@ -1091,8 +1091,9 @@ class Agent:
                           "was": was}
         return same
 
-    def _repeat(self, tool):
-        """The one line a repeated call gets. The third in a row is a note."""
+    def _repeat(self, tool, what):
+        """The one line a repeated call gets. The third in a row stops the
+        run: seen 09-25 in Teams, 28 grounds on one spinner."""
         window = decider.prefix(self.snapshot.get("window") or "", 60)
         focus = looping._focused(self.snapshot)
         where = f"window \"{window}\"" + (f", the caret in \"{decider.prefix(focus, 40)}\""
@@ -1102,7 +1103,13 @@ class Agent:
         said = (f"Not run: the same {tool} as the last call, and nothing changed on screen: "
                 f"{where}. Either {target}, or `read` to wait for the screen.")
         if self.again >= 2:
-            self._note(f"the same {tool} {self.again + 1} times in a row")
+            asked = "point" if tool == "ground" else "look"
+            said = (f"Stopped: asked for the same {asked} {self.again + 1} times: "
+                    f"{decider.prefix(what, 60)}")
+            self._note(said)
+            self.report.stopped = said
+            self.over = True
+            self.loop.log(f"agent: {said}")
         return said, said
 
     def _pointed(self, text, point, method, source):
@@ -1112,7 +1119,7 @@ class Agent:
             self.last_call["point"] = n
             if n == self.last_call["was"]:
                 self.again += 1
-                return self._repeat("ground")
+                return self._repeat("ground", text)
         if n in had:
             said = (f"[{n}] already points there. Click it with `act`, or try another way: "
                     "asking again gives the same point.")
