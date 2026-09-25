@@ -973,6 +973,18 @@ def agent_checks(runner, stderr_path, trace_path):
           '"Message Body" already holds "Nathan Z."' in got and "paste" not in fake.did(),
           (got, fake.did()))
 
+    unlisted = compose()
+    unlisted["items"] = unlisted["items"][:1]
+    unlisted["focus"] = {"point": None, "described": "", "role": "AXTextArea", "id": None}
+    end, fake, report, asked = run(
+        "write Bonjour here", [unlisted],
+        [[act({"do": "write", "value": "Bonjour"})], [("done", {"summary": "ok"})]],
+        {("field_text", 1): {"text": signature, "source": "value"}})
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("at: a focused text area the walk did not list is read and refused the same way",
+          'the focused field already holds "Nathan Z. +33 6 12 34 78 11"' in got
+          and "paste" not in fake.did(), (got, fake.did()))
+
     end, fake, report, asked = run(
         "write to Peter", [draft("Antonio"), draft("Antonio")],
         [[act({"do": "type", "id": 1, "value": "Peter"})], [("done", {"summary": "ok"})]])
@@ -1560,7 +1572,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 198 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 200 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",

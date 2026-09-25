@@ -1140,9 +1140,18 @@ class Loop:
         where the words go. Seen 09-25 in Gmail: the body held the signature
         and the message landed after it. What it holds is the app's whole
         text, or else the walk's, cut, with `partial` set."""
+        if field is None:
+            # A focused text area the walk did not list: the app still reads it.
+            if self._focus(snapshot).get("role") != "AXTextArea":
+                return None, None
+            text = self._field_text(None)
+            if at or text is None or not text.strip():
+                return None, None
+            shown = decider.prefix(" ".join(text.split()), 60)
+            return None, (f"the focused field already holds \"{shown}\". Say where the "
+                          "text goes: at start, end or replace.")
         # A date or time field takes typing over one part: Outlook's hour.
-        if field is None or field["kind"] != "text" or looks_up(field) \
-                or field["role"] == "AXDateTimeArea":
+        if field["kind"] != "text" or looks_up(field) or field["role"] == "AXDateTimeArea":
             return None, None
         self.typed_placed = not at and self.placed == identity(field)
         text = self._field_text(field)
