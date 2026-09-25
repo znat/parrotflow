@@ -587,10 +587,12 @@ def suggested(field, before, after):
     if now is not None and "expanded" in (now.get("state") or ()):
         return True
     change = changes(before, after)
-    bottom = field["y"] + field["h"] / 2
+    # Where the field is now: a press can move it, as Gmail folds To away.
+    at = now or field
+    bottom = at["y"] + at["h"] / 2
 
     def below(p):
-        return abs(p["x"] - field["x"]) <= field["w"] / 2 + LIST_SIDE \
+        return abs(p["x"] - at["x"]) <= at["w"] / 2 + LIST_SIDE \
             and bottom - 4 < p["y"] <= bottom + LIST_BELOW
     return any(i["kind"] != "text" and i["name"] and below(i) for i in appeared(before, after)) \
         or any(below(line) for block in change.get("seen", ()) for line in block["lines"])
