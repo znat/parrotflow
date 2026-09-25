@@ -3085,9 +3085,8 @@ struct Config: Decodable, Equatable {
             var apiKey: KeySource = KeySource(written: "file:~/.typesafe_api_key")
             var timeoutSeconds: Double = 10
 
-            var url: URL {
-                URL(string: endpoint) ?? URL(string: "https://api.typesafe.ai/v1/systemone")!
-            }
+            /// `endpoint` is checked when read, so this cannot fail.
+            var url: URL { URL(string: endpoint)! }
 
             /// The host the window's contents go to, for `--check-config`.
             var host: String { url.host ?? endpoint }
@@ -3104,7 +3103,18 @@ struct Config: Decodable, Equatable {
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 self.init()
                 if let v = try c.decodeIfPresent(String.self, forKey: .model) { model = v }
-                if let v = try c.decodeIfPresent(String.self, forKey: .endpoint) { endpoint = v }
+                if let v = try c.decodeIfPresent(String.self, forKey: .endpoint) {
+                    // A typo must not fall back to the vendor: the window's contents go here.
+                    guard let parsed = URL(string: v),
+                          ["http", "https"].contains(parsed.scheme?.lowercased() ?? ""),
+                          parsed.host != nil else {
+                        throw ConfigError.invalidValue(
+                            key: "actions.decider.endpoint", value: v,
+                            expected: "an absolute http:// or https:// URL with a host"
+                        )
+                    }
+                    endpoint = v
+                }
                 if let v = try c.decodeIfPresent(String.self, forKey: .apiKey) {
                     apiKey = KeySource(written: v)
                 }
