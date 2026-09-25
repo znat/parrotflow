@@ -43,9 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 
 <div align="center">
 
-<img src="Resources/hero.webp" width="940" alt="ParrotFlow's native components in motion:
-learn Mik and Mick in context, then use YAML to turn dictation into PR links,
-Slack mentions, dates, times, currencies, priorities, and corrected grammar.">
+[Watch the demo — 54 seconds](Resources/demo.mp4)
 
 <sub>The native app, in motion. Configuration on the left. What it changes on the right.</sub>
 
