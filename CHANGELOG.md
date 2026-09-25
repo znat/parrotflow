@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/znat/parrotflow/compare/v0.14.0...v0.14.1) (2026-09-25)
+
+
+### Fixes
+
+* refresh README demo and make Ollama opt-in ([#331](https://github.com/znat/parrotflow/issues/331)) ([8eedd7c](https://github.com/znat/parrotflow/commit/8eedd7c14a26bf847a9e6163b5566e46b2dda630))
+
 ## [0.14.0](https://github.com/znat/parrotflow/compare/v0.13.1...v0.14.0) (2026-09-24)
 
 
