@@ -50,7 +50,6 @@ class Run(BaseModel):
     recipe: str = ""
     model: str = ""
     settings: Dict[str, Any] = Field(default_factory=dict)
-    gaze: Any = None
     screen: Any = None
     ended: Optional[str] = None     # null while the run goes on
     end: Optional[str] = None       # planned | ready | done | stopped | failed
@@ -229,7 +228,7 @@ class Recorder:
                 settings=dict(request.get("loop") or {}, execute=request.get("execute", True),
                               recipes=request.get("recipes", True),
                               read_app=request.get("read_app")),
-                gaze=request.get("gaze"), screen=request.get("screen"))
+                screen=request.get("screen"))
         except Exception as error:
             recorder._failed(error)
             return recorder

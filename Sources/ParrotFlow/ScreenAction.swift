@@ -220,7 +220,7 @@ enum ScreenAction {
         // position without posting a move, so nothing reads it as the mouse
         // travelling across the window. It is put back afterwards, because
         // the pointer is the user's and a scroll should not steal it.
-        let wasAt = Gaze.mouse()
+        let wasAt = CGEvent(source: nil)?.location ?? point
         CGWarpMouseCursorPosition(point)
         usleep(50_000)
         let source = CGEventSource(stateID: .combinedSessionState)

@@ -1,20 +1,19 @@
 # Acting on what is on screen
 
-Hold the action key, look at something, say what to do. "Click on Antonio."
-"Open the thread with Ian." "Reply here: on it, thanks."
+Hold the action key, say what to do. "Click on Antonio." "Open the thread
+with Ian." "Reply here: on it, thanks."
 
 This is not dictation and it is not a transform. Nothing is typed, nothing is
-rewritten, and the words never reach the document — they say what to do to the
-window you are looking at.
+rewritten, and the words never reach the document — they say what to do in the
+focused window of the app in front.
 
-Off by default, and off completely: no key registered, no file read, nothing
-sent.
+Off by default, and off completely: no key registered, nothing sent.
 
 The agent's rules as decision trees: [actions-trees.md](actions-trees.md).
 
 ## Before you turn it on
 
-**It sends the window you are looking at off this Mac.** Not what you
+**It sends the window you are working in off this Mac.** Not what you
 dictated — the window: its buttons, its labels, the names in the sidebar, the
 messages visible in it. That is what the decider needs to pick a target, and
 it is a different bargain from every other model in this config.
@@ -22,9 +21,8 @@ it is a different bargain from every other model in this config.
 `--check-config` prints it whenever the block is on:
 
 ```
-  ✓ actions           Right ⌃ acts on what is on screen where you look
-      gaze from       ~/Documents/gaze-overlay/gaze.pos (the mouse when it is stale)
-      ⚠︎ sends the window you are looking at to api.typesafe.ai
+  ✓ actions           Right ⌃ acts in the focused window of the app in front
+      ⚠︎ sends the window you are working in to api.typesafe.ai
          its buttons, labels and visible text — not only what you said.
          model jev-latest, key from ~/.typesafe_api_key
       sends messages  no — typed, not sent
@@ -37,7 +35,6 @@ actions:
   enabled: true
   hotkey:
     key: right_control
-  gaze: ~/Documents/gaze-overlay/gaze.pos
   decider:
     api_key: file:~/.typesafe_api_key
 ```
@@ -50,12 +47,9 @@ and left there for you to send. On, Return is pressed.
 
 ## What happens, in order
 
-1. **The key goes down.** The gaze is read *now*, from `actions.gaze` — one
-   line, `x y ms`, in screen coordinates, written by whatever is tracking you.
-   Older than 1.5 s means it is not tracking, and the mouse pointer is used.
-
-   Read at the press and not later, because the transcript arrives about a
-   second after you let go and by then you are looking at something else.
+1. **The key goes down.** The app in front is noted *now*. The transcript
+   arrives about a second after you let go, and by then another app can be in
+   front. ParrotFlow itself is never that app.
 
 2. **You speak, you let go, it decodes.** The same recorder, the same model,
    the same vocabulary as a dictation — names matter here more than anywhere.
@@ -67,9 +61,9 @@ and left there for you to send. On, Return is pressed.
    Without it, a request no recipe fits fails with "No planner is set".
 
 4. **The window is read.** The runner asks the app for it. `ScreenTargets`
-   walks the window under the gaze and comes back with everything worth
-   naming: buttons, rows, labels, text fields, each with its distance from
-   where you were looking. About 0.4 s on a Slack window of 224 targets.
+   walks that app's focused window (`kAXFocusedWindow`) and comes back with
+   everything worth naming: buttons, rows, labels, text fields, in reading
+   order. About 0.4 s on a Slack window of 224 targets.
 
 5. **The agent decides.** The planner's model gets the request and the
    window as `[ID] Role "name"` lines, and calls tools: `act` with a batch
@@ -80,7 +74,7 @@ and left there for you to send. On, Return is pressed.
    uses. Then the window is read again, and the model gets what changed,
    until it calls `done` or a stop rule fires.
 
-Anything that fails — no window under the gaze, no key, the decider times out
+Anything that fails — no window to read, no key, the decider times out
 — leaves the screen exactly as it was and says why on the pill.
 
 ## What a read holds, and what a step changed
@@ -92,14 +86,14 @@ front window, plus every part that was not on that first list. A window that
 was already open is never walked. Items from such a part carry `"in"`:
 `pop-up`, `menu`, `dialog`, `sheet` or `window`. Outlook's suggestion list is
 one: it is outside the compose window. Its rows (cells, rows, menu items, and
-in a pop-up a bare text) take a real click, like a menu item, and are always offered to Jev and to the planner, however far from
-the gaze. All the new parts together get 3,000 elements and 1 s at most.
+in a pop-up a bare text) take a real click, like a menu item, and are always offered to Jev and to the planner, however late
+they come in reading order. All the new parts together get 3,000 elements and 1 s at most.
 
 **Wide elements.** A list, table or outline gives only the rows on screen. Any
 other element with more than 20 children (`ScreenTargets.wideChildren`) gives
 its visible children if it lists them. Otherwise its first 20 are read, plus 3
-each side of the child under the pointer or the caret, or, when either is
-outside it, its last 7: Slack's newest messages are the last children. The rest becomes one item of kind `more`,
+each side of the child that holds the caret, or, when the caret is outside
+it, its last 7: Slack's newest messages are the last children. The rest becomes one item of kind `more`,
 "and 3,140 more". It is never offered and never counts as a change. The log
 says each time: `actions: capped 1 wide element(s) at 20 children — AXGroup 23`.
 
@@ -134,8 +128,7 @@ measure. The Jev loop that ran on it, one question per step, was removed on
 | Question | Decided by | Why |
 | --- | --- | --- |
 | Which action | the model | six choices, one answer, no arguments to get wrong |
-| Which target | the model, from the list it was shown | a name in the utterance beats distance: John's button at 7.5 cm wins over his message at 5.1 |
-| Which target, when you said "this one" | the gaze | the model cannot: over the three nearest it answered 0.27 / 0.24 / 0.20 |
+| Which target | the model, from the list it was shown | a name in the utterance picks it |
 | What to type | the utterance itself | the model is never asked to write anything |
 | Where the search field is | code | Slack's is not a text field in the accessibility API, so it can never be offered — `search` is mapped to ⌘G |
 | Opening a new message | code | the picker is a shortcut, not a target, so `new_message` is mapped to ⌘N. Who it is to is a second step, over the window the picker draws |
@@ -153,12 +146,6 @@ spotlight, Escape, and the checks at the moment of acting.
 | the per-app notes in `apps/<app>.md` | the front-app check before a key or a click |
 | the guards before each step | Return refused in a message box when `send` is off |
 | whether a name is on the recipient line | Escape, and the outlines |
-
-The gaze only overrides a target the model could not use — a label, or none at
-all. It used to override every deictic, and on the twelve measured utterances
-that cost two of them: "reply here: on it, thanks" and "reply to this message:
-sounds good" both reach the composer through the model, and both were dragged
-onto a pressable group 0.7 cm nearer.
 
 ## Recipes
 
@@ -221,7 +208,7 @@ def message_people(app, ask):
 - `name` defaults to the function's name. It is what a user recipe replaces.
 
 The recipe never touches the screen. The app sends the runner one line,
-`{"run": "<what you said>", "app": …, "bundle": …, "gaze": …, "execute": …,
+`{"run": "<what you said>", "app": …, "bundle": …, "execute": …,
 "recipes": …, "read_app": …, "loop": {…}}`. The runner answers with one
 `{"do": …}` line per step, the app replies to each, and the runner ends with
 `{"end": "planned|ready|done|stopped|failed"}`. When no recipe fits, or
@@ -241,7 +228,7 @@ recipe steps.
 
 | Step | What the app does |
 | --- | --- |
-| `snapshot {at, app}` | reads the window: the app's front window, or the one under `at` when `app` is null. Items come back with ids, `cm`, `actions` and the app's verdicts |
+| `snapshot {app}` | reads the focused window of `app`, or of the app in front when `app` is null. Items come back in reading order, with ids, `actions` and the app's verdicts |
 | `press {id, click}` | the accessibility press, or a real click when `click` is true or the press is refused. Says `pressed` |
 | `look {x, y, w, h}` | the text in that part of the screen, from its pixels: `{"lines": [{text, x, y, w, h, p}]}`, frames as for items, or `{"error": …}`. Needs Screen Recording |
 | `click_at {x, y, name}` | a real click at a point. `name`, when given, is checked against `never_press` too |
@@ -332,7 +319,7 @@ before: "The planner answered 500: …", with the key cut out of the body,
 and "The planner timed out after 3 tries."
 
 **What leaves the Mac.** The request, the app name and bundle ID, the window
-title, the item you look at, and the screen lines the agent reads: names, and
+title, and the screen lines the agent reads: names, and
 what a text field holds, cut to 60 characters. A row's name can hold the
 first words of a message, because Slack names its rows that way. A 512 px
 picture of the area being worked in. Per-app notes and memories go too.
@@ -598,7 +585,7 @@ at 512 px, so it is asked for a point.
 
 **Every request gets a picture** of the area being worked in: the list that
 opened, else around the last target, else, on the first call, around the
-focused item or the gaze point. 512 px on its long side, `detail: low`, about
+focused item. 512 px on its long side, `detail: low`, about
 300 tokens. A line says what it shows; with `ground` on, it adds that the
 model may answer with `ground`, by description, or by `image_x` and `image_y`
 in the picture. The system prompt asks the model to check it for what the
@@ -672,7 +659,7 @@ in place of the pill's "Looking…", and shows:
 A question appears in the same panel, under the checklist, next to what it is
 about. After the answer the panel goes back to its place. That place is
 chosen once per run: beside the app's window when there is room, else the
-screen corner farthest from where you looked. It then only grows or shrinks.
+screen corner farthest from the window's centre. It then only grows or shrinks.
 
 During an agent run, a field at the bottom takes words for the agent. Type
 and press Return, or hold the action key and speak: a press during a run
@@ -756,18 +743,18 @@ agent, so it needs `actions: planner:`.
 ```sh
 PF=/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow
 
-# Look, decide, do nothing. --at a point, --gaze the tracker's, --app a window.
+# Look, decide, do nothing. --app the app to read; the one in front without it.
 $PF --act "click on Antonio" --app Slack
 
 # Read a window and keep it. --look stops before the decision, so it costs
 # nothing: this is how a case set is built.
 $PF --act "" --app Slack --look --save slack.json
 
-# Decide against a saved window. No screen, no gaze, same answer.
+# Decide against a saved window. No screen, same answer.
 $PF --act "clique sur Antonio" --snapshot slack.json
 
 # The live path, with the click.
-$PF --act "open the thread with Ian" --gaze --execute
+$PF --act "open the thread with Ian" --app Slack --execute
 
 # Outline what the model would be offered, on the window itself, for 6 s.
 $PF --act "" --app Slack --look --show 6
@@ -826,15 +813,14 @@ of its text in `seen_ms`. With recording on,
 ## Seeing what it was offered
 
 `spotlight: 1.5` in the `actions:` block outlines every offered target on the
-window it came from, numbered `t0`, `t1`, …, with the aim as a pink dot — while
-the model is being asked, then again with its choice filled in green, held for
-that many seconds before the step happens. Text fields are teal: they are in the
-list whatever their distance, so their presence is not explained by the aim.
+window it came from, numbered `t0`, `t1`, …, with the last step's aim as a pink
+dot — while the model is being asked, then again with its choice filled in
+green, held for that many seconds before the step happens. Text fields are
+teal: they are always in the list.
 
 That list is the whole answer to "why did it pick that". A target missing from
-the outlines could never have been chosen; one outlined at 12 cm is competing
-with one at 2 cm. The log prints three lines of forty-odd, and `--look` prints
-twelve.
+the outlines could never have been chosen. The log prints three lines of
+forty-odd, and `--look` prints twelve.
 
 `0` is off, and off is the default. On, it costs those seconds per step.
 
@@ -863,7 +849,7 @@ Twelve of twelve, on the model's own choice:
 | 2 | click on antonio | click | t40 Group "Antonio Ruiz, …", 12 cm |
 | 3 | search for "media" | search | t2 composer — and the target is ignored, ⌘G |
 | 4 | reply here: on it, thanks | send_message | t2 composer |
-| 5 | open this one | click | t0, by the gaze — the model chose a label |
+| 5 | open this one | click | t0, by the gaze — the model chose a label. With the gaze gone (09-25) the case expects no target |
 | 6 | reply to this message: sounds good | send_message | t2 composer |
 | 7 | envoie un message à John | send_message | t25 Button "John Bledsoe" |
 | 8 | clique sur Antonio | click | t40 Group "Antonio Ruiz, …" |
@@ -903,20 +889,16 @@ is about the decider and the Jev loop, from before the agent.
 - **A full-window text area** was dropped by the 12 % container rule until
   TextEdit showed it: a text field is now exempt, because it holds no targets
   — it is one.
-- **The deictic threshold is 0.5** and "the nearest thing that can be clicked"
-  is a guess. Only the narrowing above was measured.
+- **"This one" names nothing.** With no gaze there is nothing to point at, so
+  a deictic request with no name in it has no right target.
 - **The words to type come from a regex** — quotes, or after
   "saying"/"that"/":". Clicking first and dictating afterwards needs no
   extraction at all, and already works.
-- **The gaze is a point, not a region.** At 4-7 cm of error it lands on a
-  neighbour often enough that the name in what you say is doing most of the
-  work.
 
 ## Where the pieces are
 
 | Piece | File |
 | --- | --- |
-| The gaze file, and the mouse when it is stale | `Gaze.swift` |
 | The accessibility walk | `ScreenTargets.swift` |
 | Reading text from the pixels, `--look-image` | `ScreenText.swift` |
 | The question to Jev, and what the answers mean | `built-in/recipes/decider.py` |

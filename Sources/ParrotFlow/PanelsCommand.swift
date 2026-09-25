@@ -1396,7 +1396,7 @@ enum PanelsCommand {
         }
         Task { @MainActor in
             while true {
-                panel.begin(title: "Meeting with Peter at 6 pm", window: nil, aim: nil)
+                panel.begin(title: "Meeting with Peter at 6 pm", window: nil)
                 panel.update(["plan": NSNull(), "activity": "reading the screen…"])
                 await pause(1)
                 panel.update(["plan": plan("p-----"), "activity": "thinking…"])
@@ -1497,20 +1497,16 @@ enum PanelsCommand {
                 + (covers ? " — covers the anchor" : "") + (ok ? "" : ", wanted \(want)"))
         }
         let run = CGSize(width: 462, height: 320)
-        let runs: [(String, CGRect?, CGPoint?, String)] = [
-            ("run, window with room on its right", CGRect(x: 40, y: 60, width: 800, height: 700), nil,
+        let runs: [(String, CGRect?, String)] = [
+            ("run, window with room on its right", CGRect(x: 40, y: 60, width: 800, height: 700),
              "right of the window"),
-            ("run, window with room on its left", CGRect(x: 600, y: 60, width: 800, height: 700), nil,
+            ("run, window with room on its left", CGRect(x: 600, y: 60, width: 800, height: 700),
              "left of the window"),
-            ("run, whole-screen window, looking top left", CGRect(x: 0, y: 0, width: 1440, height: 875),
-             CGPoint(x: 300, y: 700), "bottom right"),
-            ("run, whole-screen window, looking bottom right", CGRect(x: 0, y: 0, width: 1440, height: 875),
-             CGPoint(x: 1200, y: 100), "top left"),
+            ("run, whole-screen window", CGRect(x: 0, y: 0, width: 1440, height: 875), "bottom right"),
         ]
-        for (name, window, aim, want) in runs {
-            let (frame, side, _) = QuestionPlacement.aside(run, window: window, aim: aim, on: screen)
-            let covers = aim.map { frame.contains($0) } ?? false
-            let ok = side == want && screen.contains(frame) && !covers
+        for (name, window, want) in runs {
+            let (frame, side, _) = QuestionPlacement.aside(run, window: window, on: screen)
+            let ok = side == want && screen.contains(frame)
             if !ok { failed += 1 }
             print("\(ok ? "ok  " : "FAIL") \(name): \(side) at \(describe(frame))"
                 + (ok ? "" : ", wanted \(want)"))

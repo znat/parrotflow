@@ -1,17 +1,16 @@
 import AppKit
 
 /// Draws what the decider is about to be shown: every offered target, outlined
-/// and numbered, with the aim on top.
+/// and numbered, with the aim on top when there is one.
 ///
 /// The list is the whole answer to "why did it pick that". A target that is not
-/// in it could never have been chosen, and a target that is in it at 12 cm is
-/// competing with one at 2 cm. Both facts are invisible: the log prints three
-/// of forty-odd lines, and `--look` prints twelve. On screen they are one
-/// glance.
+/// in it could never have been chosen. That is invisible in the log, which
+/// prints three of forty-odd lines, and `--look` prints twelve. On screen it is
+/// one glance.
 ///
 /// It draws nothing the accessibility walk can see. The panel ignores mouse
-/// events, and `ScreenTargets.skip` drops our own pid before anything else —
-/// so a snapshot taken while this is up still reads the window underneath.
+/// events and never activates, so a snapshot taken while this is up still
+/// reads the app's window underneath.
 /// Drawn after the walk regardless, never before.
 enum ActionSpotlight {
 
@@ -26,19 +25,18 @@ enum ActionSpotlight {
     /// question. Returns the panel's frame in screen coordinates, for the log.
     @discardableResult
     static func flash(
-        offers: [ScreenTargets.Item], aim: CGPoint, in snapshot: ScreenTargets.Snapshot,
+        offers: [ScreenTargets.Item], aim: CGPoint?, in snapshot: ScreenTargets.Snapshot,
         chosen: ScreenTargets.Item? = nil, seconds: Double = 2.5
     ) -> CGRect {
         dismiss()
 
-        // The window, plus room for an aim that is outside it — a gaze 4 cm
-        // off lands in the next window along often enough to matter, and an
-        // aim clipped out of the picture is the one thing worth seeing.
         var area = CGRect(
             x: Double(snapshot.frame.x), y: Double(snapshot.frame.y),
             width: Double(snapshot.frame.w), height: Double(snapshot.frame.h)
         )
-        area = area.union(CGRect(x: aim.x - 60, y: aim.y - 60, width: 120, height: 120))
+        if let aim {
+            area = area.union(CGRect(x: aim.x - 60, y: aim.y - 60, width: 120, height: 120))
+        }
         for item in offers { area = area.union(rect(of: item)) }
         area = area.insetBy(dx: -2, dy: -2)
 
@@ -85,8 +83,7 @@ enum ActionSpotlight {
         panel = nil
     }
 
-    /// An item's rectangle. `x` and `y` are its centre, which is what the
-    /// model is given distances from.
+    /// An item's rectangle. `x` and `y` are its centre.
     static func rect(of item: ScreenTargets.Item) -> CGRect {
         CGRect(
             x: Double(item.x) - Double(item.w) / 2, y: Double(item.y) - Double(item.h) / 2,
@@ -117,7 +114,7 @@ private final class SpotlightView: NSView {
     var area: CGRect = .zero
     var offers: [ScreenTargets.Item] = []
     var chosen: ScreenTargets.Item?
-    var aim: CGPoint = .zero
+    var aim: CGPoint?
 
     override var isFlipped: Bool { true }
 
@@ -133,9 +130,7 @@ private final class SpotlightView: NSView {
             let box = local(ActionSpotlight.rect(of: item)).insetBy(dx: 0.5, dy: 0.5)
             guard box.width > 2, box.height > 2 else { continue }
             let mine = item == chosen
-            // Teal for the places words can go. They are in the list whatever
-            // their distance, so they are the ones whose presence is not
-            // explained by where the aim is.
+            // Teal for the places words can go.
             let colour: NSColor = mine
                 ? .systemGreen
                 : (item.kind == ScreenTargets.Kind.text ? .systemTeal : .systemOrange)
@@ -150,6 +145,7 @@ private final class SpotlightView: NSView {
 
         // The aim last, over everything: it is the one mark that has to be
         // findable in a window with forty boxes in it.
+        guard let aim else { return }
         let point = CGPoint(x: aim.x - area.minX, y: aim.y - area.minY)
         for (radius, alpha) in [(22.0, 0.25), (11.0, 0.5)] {
             let circle = NSBezierPath(ovalIn: CGRect(
@@ -181,74 +177,5 @@ private final class SpotlightView: NSView {
         colour.withAlphaComponent(0.95).setFill()
         NSBezierPath(roundedRect: box, xRadius: 3, yRadius: 3).fill()
         label.draw(at: CGPoint(x: box.minX + 3, y: box.minY))
-    }
-}
-
-/// A dot that follows the gaze, drawn by ParrotFlow itself.
-///
-/// The tracker draws its own dot, but that is the tracker's business and it
-/// tells you nothing about what this app read. This one is the number in
-/// `gaze.pos` as ParrotFlow sees it, staleness rule included: pink while the
-/// tracker is answering, grey the moment it stops and the mouse takes over.
-/// So the dot is also the answer to "is it tracking right now".
-enum GazeDot {
-    private static var panel: NSPanel?
-    private static var timer: Timer?
-
-    static func show(file: String) {
-        let size: CGFloat = 64
-        let view = DotView(frame: CGRect(x: 0, y: 0, width: size, height: size))
-        let window = NSPanel(
-            contentRect: CGRect(x: 0, y: 0, width: size, height: size),
-            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false
-        )
-        window.contentView = view
-        window.isFloatingPanel = true
-        window.level = .screenSaver
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = false
-        window.ignoresMouseEvents = true
-        window.hidesOnDeactivate = false
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        window.orderFrontRegardless()
-        panel = window
-
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { _ in
-            let point = Gaze.now(file: file)
-            view.tracking = point.source == .tracker
-            view.needsDisplay = true
-            let primary = NSScreen.screens.first?.frame ?? .zero
-            window.setFrameOrigin(CGPoint(
-                x: point.location.x - size / 2,
-                y: primary.maxY - point.location.y - size / 2
-            ))
-        }
-    }
-
-    static func hide() {
-        timer?.invalidate(); timer = nil
-        panel?.orderOut(nil); panel = nil
-    }
-}
-
-private final class DotView: NSView {
-    var tracking = false
-
-    override func draw(_ dirty: NSRect) {
-        let colour: NSColor = tracking ? .systemPink : .systemGray
-        let middle = CGPoint(x: bounds.midX, y: bounds.midY)
-        for (radius, alpha) in [(26.0, 0.22), (13.0, 0.45)] {
-            colour.withAlphaComponent(alpha).setFill()
-            NSBezierPath(ovalIn: CGRect(
-                x: middle.x - radius, y: middle.y - radius, width: radius * 2, height: radius * 2
-            )).fill()
-        }
-        colour.setFill()
-        let dot = NSBezierPath(ovalIn: CGRect(x: middle.x - 4, y: middle.y - 4, width: 8, height: 8))
-        dot.fill()
-        NSColor.white.setStroke()
-        dot.lineWidth = 1.5
-        dot.stroke()
     }
 }

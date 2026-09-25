@@ -1,16 +1,16 @@
 import AppKit
 import ApplicationServices
 
-/// What is on screen around a point, in the shape a model can read.
+/// What is on screen in an app's focused window, in the shape a model can read.
 ///
-/// A port of the gaze prototype's `tools/axsnap.swift`, moved in here because
+/// A port of the prototype's `tools/axsnap.swift`, moved in here because
 /// ParrotFlow already holds the Accessibility grant that walk needs and a
 /// second binary would need its own. The item shape is unchanged on purpose:
 /// a snapshot this writes can be read by `tools/jev_probe.py`, and the
 /// snapshot that scored 8/8 on 2026-09-20 can be read by this. Same file,
 /// same decision, or the port is wrong.
 ///
-/// It reads one window — the one under the point — and not the screen. A
+/// It reads one window — the app's focused one — and not the screen. A
 /// window is what an instruction is about, it is what the accessibility API
 /// is fast at, and the alternative is every window of every app for a
 /// sentence that names one thing. During a run it also reads the parts of
@@ -22,15 +22,12 @@ enum ScreenTargets {
     /// One thing on screen worth naming out loud.
     ///
     /// `x`/`y` are the centre and `w`/`h` the size, in accessibility
-    /// coordinates, because that is what a click needs. `cm` is the distance
-    /// from the point to the nearest *edge*, so anything the gaze is inside of
-    /// is 0 rather than however wide it happens to be.
+    /// coordinates, because that is what a click needs.
     struct Item: Codable, Equatable {
         var kind: String
         var role: String
         var name: String
         var value: String
-        var cm: Double
         var x: Int
         var y: Int
         var w: Int
@@ -49,7 +46,7 @@ enum ScreenTargets {
         var key: String? = nil
 
         enum CodingKeys: String, CodingKey {
-            case kind, role, name, value, cm, x, y, w, h, actions, key
+            case kind, role, name, value, x, y, w, h, actions, key
             case origin = "in"
             case states = "state"
         }
@@ -106,9 +103,9 @@ enum ScreenTargets {
     }
 
     /// An element with more children than this, and no list of the visible
-    /// ones, has only this many read, plus the ones next to the pointer or
-    /// the caret when either is inside it, and otherwise its last few. The
-    /// rest become one `Kind.more` item.
+    /// ones, has only this many read, plus the ones next to the caret when
+    /// it is inside it, and otherwise its last few. The rest become one
+    /// `Kind.more` item.
     static let wideChildren = 20
 
     /// The app's top-level parts — windows, pop-ups, menus, sheets — at the
@@ -120,13 +117,10 @@ enum ScreenTargets {
     }
 
     struct Rect: Codable, Equatable { var x: Int; var y: Int; var w: Int; var h: Int }
-    struct Spot: Codable, Equatable { var x: Int; var y: Int }
 
     struct Snapshot: Codable, Equatable {
         var app: String
         var window: String
-        var pointer: Spot
-        var pxPerCm: Int
         var frame: Rect
         var items: [Item]
 
@@ -152,15 +146,15 @@ enum ScreenTargets {
 
     enum Failure: LocalizedError {
         case notTrusted
-        case nothingThere(CGPoint)
+        case noWindow(String)
         case noSuchApp(String)
 
         var errorDescription: String? {
             switch self {
             case .notTrusted:
                 return "Accessibility is not granted, so nothing on screen can be read."
-            case .nothingThere(let p):
-                return "Nothing at \(Int(p.x)),\(Int(p.y)) — the desktop, or a window that publishes nothing."
+            case .noWindow(let name):
+                return "\(name) has no window that publishes anything."
             case .noSuchApp(let name):
                 return "\(name) is not running."
             }
@@ -169,47 +163,24 @@ enum ScreenTargets {
 
     // MARK: - Taking one
 
-    /// Everything in the window under `point`.
-    ///
-    /// `ignoring` holds app names whose windows are not what anyone means —
-    /// the gaze overlay draws its dot at exactly the point being asked about,
-    /// so a hit test there finds the tracker rather than the window under it.
-    /// Measured by the prototype: a gaze at the control panel's corner
-    /// returned "GazeOverlay"; over the dot it returned the app below,
-    /// because that window ignores mouse events. Which flag does it was never
-    /// isolated, so the pid is skipped rather than the flag trusted.
-    static func snapshot(
-        at point: CGPoint, ignoring ignored: Set<String> = [], budget: Int = 8000
-    ) throws -> Snapshot {
-        var parts: Parts?
-        return try snapshot(at: point, ignoring: ignored, budget: budget, since: &parts)
-    }
-
-    /// The same, plus whatever part of the app opened since `parts` was
-    /// taken. With `parts` nil, it is taken now and nothing extra is read.
-    static func snapshot(
-        at point: CGPoint, ignoring ignored: Set<String> = [], budget: Int = 8000,
-        since parts: inout Parts?
-    ) throws -> Snapshot {
-        guard AXIsProcessTrusted() else { throw Failure.notTrusted }
-        guard let found = windowUnder(point, ignoring: ignored) else {
-            throw Failure.nothingThere(point)
+    /// The app in front, whose focused window an action works in. Nil when
+    /// that is ParrotFlow itself.
+    static func frontmostApp() -> String? {
+        NSWorkspace.shared.frontmostApplication.flatMap {
+            $0.processIdentifier == getpid() ? nil : $0.localizedName
         }
-        return read(found.window, pid: found.pid, pointer: point, budget: budget, since: &parts)
     }
 
-    /// The front window of a named app, wherever the pointer is. `--app` in
+    /// The focused window of a named app, else its first window. `--app` in
     /// the prototype: it is how a snapshot is taken of something that is not
     /// in front, and how the same window can be snapshotted twice.
-    static func snapshot(
-        ofApp name: String, at point: CGPoint, budget: Int = 8000
-    ) throws -> Snapshot {
+    static func snapshot(ofApp name: String, budget: Int = 8000) throws -> Snapshot {
         var parts: Parts?
-        return try snapshot(ofApp: name, at: point, budget: budget, since: &parts)
+        return try snapshot(ofApp: name, budget: budget, since: &parts)
     }
 
     static func snapshot(
-        ofApp name: String, at point: CGPoint, budget: Int = 8000, since parts: inout Parts?
+        ofApp name: String, budget: Int = 8000, since parts: inout Parts?
     ) throws -> Snapshot {
         guard AXIsProcessTrusted() else { throw Failure.notTrusted }
         guard let running = NSWorkspace.shared.runningApplications.first(where: {
@@ -220,20 +191,20 @@ enum ScreenTargets {
         let app = AXUIElementCreateApplication(pid)
         let window = (attribute(app, kAXFocusedWindowAttribute) as! AXUIElement?)
             ?? (attribute(app, kAXWindowsAttribute) as? [AXUIElement])?.first
-        guard let window else { throw Failure.nothingThere(point) }
-        return read(window, pid: pid, pointer: point, budget: budget, since: &parts)
+        guard let window else { throw Failure.noWindow(name) }
+        return read(window, pid: pid, budget: budget, since: &parts)
     }
 
     /// The front window, and the parts of the app that were not there when
     /// `parts` was taken. Only the list of parts is read to tell: windows
     /// that were already open are never walked.
     private static func read(
-        _ window: AXUIElement, pid: pid_t, pointer: CGPoint, budget: Int, since parts: inout Parts?
+        _ window: AXUIElement, pid: pid_t, budget: Int, since parts: inout Parts?
     ) -> Snapshot {
         let now = topLevel(of: AXUIElementCreateApplication(pid))
         guard let known = parts, known.pid == pid else {
             parts = Parts(pid: pid, elements: now)
-            return walk(window, pid: pid, pointer: pointer, budget: budget)
+            return walk(window, pid: pid, budget: budget)
         }
         let front = frame(of: window)
         let opened = now.filter { part in
@@ -243,7 +214,7 @@ enum ScreenTargets {
             if let box, box == front { return false }
             return box.map { $0.width > 0 && $0.height > 0 } ?? true
         }
-        return walk(window, pid: pid, pointer: pointer, budget: budget, opened: opened)
+        return walk(window, pid: pid, budget: budget, opened: opened)
     }
 
     /// Windows, pop-ups, menus and sheets: the app element's windows and its
@@ -424,31 +395,6 @@ enum ScreenTargets {
         return "\(role) “\(called)” holding “\(inside.prefix(30))”, inside \(parent)"
     }
 
-    /// The scrollable area under a point, and whose it is.
-    ///
-    /// Walks up from the deepest element under the point to the first
-    /// `AXScrollArea`, which is how a list, a conversation or a page says it
-    /// scrolls. Our own windows are skipped — the pill and the gaze dot sit
-    /// exactly where the eyes are.
-    static func scrollArea(at point: CGPoint) -> (frame: CGRect, pid: pid_t)? {
-        let system = AXUIElementCreateSystemWide()
-        var under: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &under) == .success,
-              var current = under else { return nil }
-        var pid: pid_t = 0
-        AXUIElementGetPid(current, &pid)
-        guard pid != getpid() else { return nil }
-        for _ in 0..<30 {
-            if string(current, kAXRoleAttribute) == kAXScrollAreaRole,
-               let box = frame(of: current), box.height > 80 {
-                return (box, pid)
-            }
-            guard let parent = attribute(current, kAXParentAttribute) else { return nil }
-            current = parent as! AXUIElement
-        }
-        return nil
-    }
-
     /// The frames of every element with a role, in the app's focused window.
     ///
     /// For things the snapshot does not keep because nothing can be pressed
@@ -537,7 +483,7 @@ enum ScreenTargets {
                     abs($0.y - Int(box.midY)) < 6 && abs($0.x - Int(box.midX)) < 6
                 }) {
                     found.append(Item(
-                        kind: Kind.click, role: role, name: clean(text), value: "", cm: 0,
+                        kind: Kind.click, role: role, name: clean(text), value: "",
                         x: Int(box.midX), y: Int(box.midY), w: Int(box.width), h: Int(box.height),
                         actions: []
                     ))
@@ -717,17 +663,14 @@ enum ScreenTargets {
                   !known.contains(where: { abs($0.minX - box.minX) < 2 && abs($0.minY - box.minY) < 2
                                           && abs($0.width - box.width) < 2 && abs($0.height - box.height) < 2 })
             else { return [] }
-            return walk(window, pid: pid, pointer: CGPoint(x: box.midX, y: box.minY), budget: 3000).items
+            return walk(window, pid: pid, budget: 3000).items
         }
     }
 
     /// Where the keyboard is, in the app's front window.
     ///
     /// After a step, this is where the work is: ⌘N leaves the caret in the
-    /// recipient field, a click leaves it in what was clicked. It is the
-    /// honest reference for "nearest" on the step that follows — measured
-    /// from the gaze instead, the recipient field sat 13 cm away and ranked
-    /// 87th of 127, so it was never offered at all.
+    /// recipient field, a click leaves it in what was clicked.
     static func focus(ofApp name: String) -> CGPoint? {
         focusFrame(ofApp: name).map { CGPoint(x: $0.midX, y: $0.midY) }
     }
@@ -742,83 +685,6 @@ enum ScreenTargets {
               let box = frame(of: focused), box.width > 1, box.height > 1
         else { return nil }
         return box
-    }
-
-    // MARK: - Finding the window
-
-    private static func windowUnder(
-        _ point: CGPoint, ignoring ignored: Set<String>
-    ) -> (window: AXUIElement, pid: pid_t)? {
-        if let hit = hitTest(point), !skip(hit.pid, ignored) {
-            return hit
-        }
-        // The hit test landed on something nobody meant. Take the frontmost
-        // window at that point that belongs to somebody else, and ask its app
-        // for it — `CGWindowListCopyWindowInfo` is front to back.
-        for pid in pidsAt(point) where !skip(pid, ignored) {
-            wake(pid)
-            let app = AXUIElementCreateApplication(pid)
-            let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
-            if let window = windows.first(where: { frame(of: $0)?.contains(point) == true }) {
-                return (window, pid)
-            }
-            if let focused = attribute(app, kAXFocusedWindowAttribute) as! AXUIElement? {
-                return (focused, pid)
-            }
-        }
-        return nil
-    }
-
-    private static func hitTest(_ point: CGPoint) -> (window: AXUIElement, pid: pid_t)? {
-        let system = AXUIElementCreateSystemWide()
-        var under: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &under) == .success,
-              let element = under else { return nil }
-        var pid: pid_t = 0
-        AXUIElementGetPid(element, &pid)
-        wake(pid)
-        var current = element
-        for _ in 0..<60 {
-            if string(current, kAXRoleAttribute) == kAXWindowRole { return (current, pid) }
-            guard let parent = attribute(current, kAXParentAttribute) else { break }
-            current = parent as! AXUIElement
-        }
-        return nil
-    }
-
-    /// The pids owning ordinary on-screen windows containing the point, front
-    /// first.
-    ///
-    /// Layer 0 only. Everything above it is system furniture and floating
-    /// panels — the menu bar, Notification Centre's full-height window, a
-    /// tracker's dot — and this list is consulted precisely when the topmost
-    /// thing at the point turned out to be one of those. Measured: without
-    /// the filter, a point over the gaze panel resolved to Notification
-    /// Centre and its three items.
-    private static func pidsAt(_ point: CGPoint) -> [pid_t] {
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        guard let listing = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]]
-        else { return [] }
-        var pids: [pid_t] = []
-        for window in listing {
-            guard let bounds = window[kCGWindowBounds as String] as? [String: Any],
-                  let x = bounds["X"] as? Double, let y = bounds["Y"] as? Double,
-                  let w = bounds["Width"] as? Double, let h = bounds["Height"] as? Double,
-                  CGRect(x: x, y: y, width: w, height: h).contains(point),
-                  (window[kCGWindowLayer as String] as? Int) == 0,
-                  let pid = window[kCGWindowOwnerPID as String] as? pid_t,
-                  !pids.contains(pid)
-            else { continue }
-            pids.append(pid)
-        }
-        return pids
-    }
-
-    /// Our own windows are never the target. The pill floats over whatever is
-    /// being dictated into, which is precisely where somebody is looking when
-    /// they say what to do about it.
-    private static func skip(_ pid: pid_t, _ ignored: Set<String>) -> Bool {
-        pid == getpid() || ignored.contains(name(of: pid))
     }
 
     private static func name(of pid: pid_t) -> String {
@@ -852,10 +718,10 @@ enum ScreenTargets {
     private struct Walk {
         var budget: Int
         let deadline: Date
-        /// The element under the pointer and the focused one, each with its
-        /// ancestors up to the app: how a wide element knows which of its
-        /// children are near. Empty when the pointer is over another app.
-        let near: [[AXUIElement]]
+        /// The focused element and its ancestors up to the app: how a wide
+        /// element knows which of its children are near. Empty when nothing
+        /// is focused.
+        let near: [AXUIElement]
         var origin: String? = nil
         var capped: [String] = []
         /// Set once the focused element, or its nearest kept ancestor, has
@@ -864,7 +730,7 @@ enum ScreenTargets {
     }
 
     private static func walk(
-        _ window: AXUIElement, pid: pid_t, pointer: CGPoint, budget: Int,
+        _ window: AXUIElement, pid: pid_t, budget: Int,
         opened: [AXUIElement] = []
     ) -> Snapshot {
         var found: [Found] = []
@@ -873,7 +739,7 @@ enum ScreenTargets {
         // Seen 09-22: Finder's Downloads list took 27 s to walk, and Escape
         // cannot reach inside one step.
         var state = Walk(budget: budget, deadline: started.addingTimeInterval(3),
-                         near: chains(pid: pid, pointer: pointer))
+                         near: focusChain(pid: pid))
         collect(window, into: &found, path: "", state: &state)
         if Date() >= state.deadline {
             Log.write("actions: the walk stopped after 3 s with \(budget - state.budget) elements read")
@@ -903,7 +769,6 @@ enum ScreenTargets {
         Log.write("actions: walked \(walked + 3000 - state.budget) elements in"
             + " \(Int(Date().timeIntervalSince(started) * 1000)) ms")
 
-        let scale = pixelsPerCm(at: pointer)
         // A container is not a target: at some size it holds the thing meant
         // rather than being it. 12 % of the window is where the prototype put
         // the line.
@@ -926,7 +791,6 @@ enum ScreenTargets {
             items.append(
                 Item(
                     kind: item.kind, role: item.role, name: item.name, value: item.value,
-                    cm: (distance(from: pointer, to: item.frame) / scale * 10).rounded() / 10,
                     x: Int(item.frame.midX), y: Int(item.frame.midY),
                     w: Int(item.frame.width), h: Int(item.frame.height),
                     actions: item.actions.filter { $0 != "AXScrollToVisible" },
@@ -938,9 +802,8 @@ enum ScreenTargets {
 
         // A row and the group inside it carry the same name and nearly the
         // same frame. Keep the outer one, which is what a click wants: the
-        // walk adds a parent after its children. Seen 09-23 in Slack: kept
-        // by distance, a sidebar row was an AXRow in one read and an AXGroup
-        // in the next.
+        // walk adds a parent after its children. Seen 09-23 in Slack: a
+        // sidebar row was an AXRow in one read and an AXGroup in the next.
         var kept: [Item] = []
         for item in items.reversed() {
             let duplicate = kept.contains {
@@ -956,13 +819,12 @@ enum ScreenTargets {
             twins[key, default: 0] += 1
             if twins[key]! > 1 { kept[index].key = "\(key).\(twins[key]!)" }
         }
-        kept.sort { $0.cm < $1.cm }
+        // Reading order.
+        kept.sort { ($0.y, $0.x) < ($1.y, $1.x) }
 
         return Snapshot(
             app: name(of: pid),
             window: string(window, kAXTitleAttribute) ?? "",
-            pointer: Spot(x: Int(pointer.x), y: Int(pointer.y)),
-            pxPerCm: Int(scale),
             frame: Rect(
                 x: Int(windowFrame.minX), y: Int(windowFrame.minY),
                 w: Int(windowFrame.width), h: Int(windowFrame.height)
@@ -984,14 +846,11 @@ enum ScreenTargets {
     /// that a wrapper added or removed does not change it.
     private static let plainRoles: Set<String> = [kAXGroupRole, "AXGenericElement", kAXUnknownRole]
 
-    /// The element under the pointer and the focused one, each with its
-    /// ancestors, deepest first. Only this app's elements.
     /// Post-order, so the deepest kept element on the focus chain is the one
     /// marked: Teams focuses a group inside its composer, not the composer.
     private static func states(of element: AXUIElement, role: String, state: inout Walk) -> [String] {
         var out: [String] = []
-        if !state.focusMarked, state.near.count > 1,
-           state.near[1].contains(where: { CFEqual($0, element) }) {
+        if !state.focusMarked, state.near.contains(where: { CFEqual($0, element) }) {
             out.append("focused")
             state.focusMarked = true
         }
@@ -1004,33 +863,22 @@ enum ScreenTargets {
         return out
     }
 
-    private static func chains(pid: pid_t, pointer: CGPoint) -> [[AXUIElement]] {
-        var starts: [AXUIElement?] = []
-        var hit: AXUIElement?
-        var owner: pid_t = 0
-        if AXUIElementCopyElementAtPosition(
-            AXUIElementCreateSystemWide(), Float(pointer.x), Float(pointer.y), &hit
-        ) == .success, let hit {
-            AXUIElementGetPid(hit, &owner)
-        }
-        starts.append(owner == pid ? hit : nil)
+    /// The focused element and its ancestors, deepest first.
+    private static func focusChain(pid: pid_t) -> [AXUIElement] {
         let app = AXUIElementCreateApplication(pid)
-        starts.append(attribute(app, kAXFocusedUIElementAttribute) as! AXUIElement?)
-        return starts.map { start in
-            guard let start else { return [] }
-            var chain = [start]
-            var current = start
-            while chain.count < 60, let parent = attribute(current, kAXParentAttribute) {
-                current = parent as! AXUIElement
-                chain.append(current)
-            }
-            return chain
+        guard let start = attribute(app, kAXFocusedUIElementAttribute) as! AXUIElement? else { return [] }
+        var chain = [start]
+        var current = start
+        while chain.count < 60, let parent = attribute(current, kAXParentAttribute) {
+            current = parent as! AXUIElement
+            chain.append(current)
         }
+        return chain
     }
 
     /// The children to walk. A list, table or outline gives the rows on
     /// screen. Anything else wider than `wideChildren` gives its first ones
-    /// and those next to the pointer or the caret; `more` is how many were
+    /// and those next to the caret; `more` is how many were
     /// left out.
     private static func children(
         of element: AXUIElement, role: String, state: inout Walk
@@ -1064,14 +912,13 @@ enum ScreenTargets {
             for child in more where !picked.contains(where: { CFEqual($0, child) }) { picked.append(child) }
         }
         let side = 3
-        for chain in state.near {
-            if let at = chain.firstIndex(where: { CFEqual($0, element) }), at > 0 {
-                let all = attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
-                if let index = all.firstIndex(where: { CFEqual($0, chain[at - 1]) }) {
-                    add(Array(all[max(0, index - side)...min(all.count - 1, index + side)]))
-                }
-                continue
+        let chain = state.near
+        if let at = chain.firstIndex(where: { CFEqual($0, element) }), at > 0 {
+            let all = attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+            if let index = all.firstIndex(where: { CFEqual($0, chain[at - 1]) }) {
+                add(Array(all[max(0, index - side)...min(all.count - 1, index + side)]))
             }
+        } else {
             // Outside it, the last ones. Seen on Slack: the newest messages
             // are the last children of a group of 23, next to the composer,
             // and its last child is a 1x1 marker, so comparing ends by frame
@@ -1207,28 +1054,6 @@ enum ScreenTargets {
 
     private static func clean(_ text: String) -> String {
         String(text.replacingOccurrences(of: "\n", with: " ").prefix(80))
-    }
-
-    /// To the nearest edge, so a point inside something is 0 away from it.
-    private static func distance(from point: CGPoint, to box: CGRect) -> Double {
-        let dx = max(box.minX - point.x, 0, point.x - box.maxX)
-        let dy = max(box.minY - point.y, 0, point.y - box.maxY)
-        return hypot(dx, dy)
-    }
-
-    /// Centimetres are what the model is told, because a distance in pixels
-    /// means nothing without a screen size and a distance in cm is something
-    /// anybody has an intuition for. 47 is a fallback for a display that does
-    /// not report its physical size.
-    private static func pixelsPerCm(at point: CGPoint) -> Double {
-        let primary = NSScreen.screens.first?.frame ?? .zero
-        let flipped = NSPoint(x: point.x, y: primary.maxY - point.y)
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(flipped) }),
-              let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-        else { return 47 }
-        let mm = CGDisplayScreenSize(number)
-        guard mm.width > 100 else { return 47 }
-        return screen.frame.width / (mm.width / 10)
     }
 
     // MARK: - Accessibility plumbing

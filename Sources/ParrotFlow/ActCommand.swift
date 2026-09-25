@@ -4,14 +4,14 @@ import AppKit
 /// microphone.
 ///
 /// The decision is otherwise only observable by speaking at a screen and
-/// watching what happens, which conflates four different failures: the gaze
-/// was wrong, the window was wrong, the model chose wrong, or the click
-/// landed wrong. Each of those is separable here.
+/// watching what happens, which conflates three different failures: the
+/// window was wrong, the model chose wrong, or the click landed wrong. Each
+/// of those is separable here.
 ///
 /// ```sh
 /// --act "click on Antonio" --app Slack --save /tmp/slack.json   # decide, save what it saw
 /// --act "clique sur Antonio" --snapshot /tmp/slack.json         # decide again, no screen
-/// --act "open the thread with Ian" --gaze --execute             # the live path, with the click
+/// --act "open the thread with Ian" --app Slack --execute        # the live path, with the click
 /// ```
 ///
 /// `--snapshot` is what makes this a measurement rather than a demonstration.
@@ -24,12 +24,13 @@ import AppKit
 /// process, so `--save` from a shell that has the grant works, and from one
 /// that does not it reports nothing at all while the app itself is fine. Same
 /// wrinkle as `--peek`, same way round it:
-/// `open -na ParrotFlowDev --args --act "…"`, and read the log.
+/// `open -na ParrotFlowDev --args --act "…"`, and read the log. Without
+/// `--app` it reads the app in front, which from a shell is the terminal.
 enum ActCommand {
 
     static func run(
-        utterance: String, at: CGPoint?, app: String?, snapshotPath: String?,
-        save: String?, useGaze: Bool, execute: Bool, decide: Bool = true,
+        utterance: String, app: String?, snapshotPath: String?,
+        save: String?, execute: Bool, decide: Bool = true,
         done: [String] = [], loop: Bool = false, request: String? = nil,
         show: Double? = nil, parts: Bool = false
     ) -> Int32 {
@@ -56,12 +57,10 @@ enum ActCommand {
                 print("--execute needs a live screen; --snapshot is one frozen window.")
                 return 2
             }
-            let point = at ?? (useGaze ? Gaze.now(file: actions.gazeFile).location : Gaze.mouse())
-            print("from       \(Int(point.x)),\(Int(point.y))")
             let run = pumped {
                 await Recipes.run(
                     utterance: utterance, app: app ?? "", config: actions, execute: true,
-                    at: point, recipes: false, readApp: app, maxSteps: loop ? nil : 1
+                    recipes: false, readApp: app, maxSteps: loop ? nil : 1
                 )
             }
             guard let report = run.loop else {
@@ -82,9 +81,9 @@ enum ActCommand {
             return report.acted ? 0 : 1
         }
 
-        // Where it is looking, and where the snapshot came from. Every
-        // measurement starts with these two lines, because a decision over the
-        // wrong window is not a decision the model got wrong.
+        // Where the snapshot came from. Every measurement starts with this
+        // line, because a decision over the wrong window is not a decision the
+        // model got wrong.
         let snapshot: ScreenTargets.Snapshot
         if let snapshotPath {
             do { snapshot = try ScreenTargets.Snapshot.read(fromFile: snapshotPath) } catch {
@@ -93,26 +92,17 @@ enum ActCommand {
             }
             print("snapshot   \(snapshotPath) — \(snapshot.app), \(snapshot.items.count) items")
         } else {
-            var where_ = at ?? Gaze.mouse()
-            if useGaze || at == nil {
-                let gaze = Gaze.now(file: useGaze ? actions.gazeFile : "")
-                where_ = at ?? gaze.location
-                let age = gaze.age.map { String(format: "%.1f s old", $0) } ?? "the mouse"
-                print("gaze       \(Int(where_.x)),\(Int(where_.y)) — \(gaze.source.rawValue), \(age)")
+            guard let app = app ?? ScreenTargets.frontmostApp() else {
+                print("✗ no app is in front — name one with --app")
+                return 1
             }
             do {
-                if let app {
-                    // `--parts`: every other window and pop-up is read as if
-                    // it had just opened, the way a run reads a new one.
-                    var known = NSWorkspace.shared.runningApplications
-                        .first { $0.localizedName == app || $0.bundleIdentifier == app }
-                        .flatMap { parts ? ScreenTargets.Parts(pid: $0.processIdentifier, elements: []) : nil }
-                    snapshot = try ScreenTargets.snapshot(ofApp: app, at: where_, since: &known)
-                } else {
-                    snapshot = try ScreenTargets.snapshot(
-                        at: where_, ignoring: Set(actions.ignoreApps)
-                    )
-                }
+                // `--parts`: every other window and pop-up is read as if it
+                // had just opened, the way a run reads a new one.
+                var known = NSWorkspace.shared.runningApplications
+                    .first { $0.localizedName == app || $0.bundleIdentifier == app }
+                    .flatMap { parts ? ScreenTargets.Parts(pid: $0.processIdentifier, elements: []) : nil }
+                snapshot = try ScreenTargets.snapshot(ofApp: app, since: &known)
             } catch {
                 print("✗ \(error.localizedDescription)")
                 return 1
@@ -157,10 +147,8 @@ enum ActCommand {
             // A command never finished launching, and a window ordered in
             // before that can fail to appear at all.
             NSApplication.shared.finishLaunching()
-            // A frozen window draws its own aim, not wherever the mouse is now.
-            let aim = CGPoint(x: Double(snapshot.pointer.x), y: Double(snapshot.pointer.y))
             let frame = ActionSpotlight.flash(
-                offers: shown, aim: aim, in: snapshot, seconds: show
+                offers: shown, aim: nil, in: snapshot, seconds: show
             )
             print("shown      \(shown.count) targets over \(Int(frame.width))x\(Int(frame.height))"
                 + " for \(show) s")
@@ -192,7 +180,7 @@ enum ActCommand {
         }
         guard let answer = ask("decide") else { return 1 }
         let offered = offers(answer)
-        print("offered    \(offered.count) targets, nearest:")
+        print("offered    \(offered.count) targets, first:")
         for (index, offer) in offered.prefix(3).enumerated() {
             print("             t\(index) \(offer.described)")
         }

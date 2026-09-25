@@ -11,7 +11,7 @@ stdin:
 
     runner  {"up": <pid>}                                  once, at start
     app     {"run": "<utterance>", "app": "Slack", "bundle": "com.tinyspeck.slackmacgap",
-             "gaze": [x, y] | null, "letters": 2, "screen": {"w": .., "h": ..},
+             "letters": 2, "screen": {"w": .., "h": ..},
              "execute": true, "recipes": true, "read_app": "Slack" | null,
              "loop": {"max_steps": 30, "send": false, "spotlight": 0, "lookup_letters": 2}}
     runner  {"do": "<step>", ...}                          any number of times
@@ -96,7 +96,7 @@ screenshot written there, `shot: {file, frame, scale, w, h}`, or `shot: null`
 and `shot_error`; `press` and `click_at` add `under`, what the hit test found
 at the point before.
 
-    runner  {"do": "observe", "at": [x, y], "app": "..", "see": true}
+    runner  {"do": "observe", "app": ".." | null, "see": true}
     app     {"snapshot": {..}, "focus": {"point": [x, y] | null, "role": .., "id": .. | null,
              "described": ".."}, "ready_box": ".." | null, ...}
 

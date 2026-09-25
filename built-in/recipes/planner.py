@@ -112,20 +112,6 @@ def _line(item):
     return role + notes
 
 
-GAZE_CM = 1.5
-
-
-def gaze_item(snapshot, offers):
-    """What "this" is: the nearest clickable or text item, when one is close.
-    The snapshot is sorted by distance from the gaze."""
-    for item in offers:
-        if float(item.get("cm", 0)) > GAZE_CM:
-            return None
-        if item.get("clickable", item["kind"] in ("click", "text")):
-            return item
-    return None
-
-
 # The call
 
 

@@ -15,7 +15,8 @@ send a message to john|send_message|John Bledsoe
 click on antonio|click|Antonio Nava
 search for "media"|search|*
 reply here: on it, thanks|send_message|composer
-open this one|click|Also send to
+# Was "Also send to", chosen by the gaze. No gaze since 09-25: nothing to point at.
+open this one|click|none
 reply to this message: sounds good|send_message|composer
 envoie un message à John|send_message|John Bledsoe
 clique sur Antonio|click|Antonio Nava

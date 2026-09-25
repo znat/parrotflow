@@ -146,15 +146,15 @@ models:
   #   reasoning: off
 
 # Saying what to do instead of what to write. Off, and the whole of it —
-# the second key, the gaze, the request — is off with it.
+# the second key, the request — is off with it.
 #
-# Hold the action key, look at something, say "click on Antonio". What is
-# around the gaze is read out of the accessibility API, a model picks the
-# action and the target, and the click is posted. Nothing is ever typed on
+# Hold the action key, say "click on Antonio". The focused window of the app
+# in front is read out of the accessibility API, a model picks the action and
+# the target, and the click is posted. Nothing is ever typed on
 # this path, so a misheard instruction costs you nothing.
 #
 # READ THIS BEFORE TURNING IT ON. Every other cloud model here sends what you
-# dictated. This sends the window you are looking at — its buttons, its
+# dictated. This sends the window you are working in — its buttons, its
 # labels, the messages visible in it — to whoever answers `decider.endpoint`.
 # `--check-config` says so every time it runs. See docs/actions.md.
 #
@@ -166,15 +166,6 @@ models:
 #   hotkey:
 #     key: right_control
 #     modifiers: []
-#
-#   # Where a gaze tracker writes its position — one line, "x y ms", in
-#   # screen coordinates. Older than 1.5s means it is not tracking, and the
-#   # mouse pointer is used instead. Leave it out to always use the mouse.
-#   gaze: ~/Documents/gaze-overlay/gaze.pos
-#
-#   # Apps whose windows are never what you meant. A tracker draws its dot at
-#   # the point being asked about, so a hit test there finds the tracker.
-#   ignore_apps: [GazeOverlay]
 #
 #   # Outline every target the model is offered, on the window they are in,
 #   # for this many seconds before each step is taken. 0 is off. This is how

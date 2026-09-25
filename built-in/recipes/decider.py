@@ -1,6 +1,6 @@
 """One wide question to Jev: which action, on which target.
 
-The model selects, code executes, the gaze breaks ties. The model picks one
+The model selects, code executes. The model picks one
 of the actions and one of the targets it was offered. It never writes text:
 the words to type are cut out of the utterance by `message_text`.
 
@@ -45,8 +45,7 @@ ACTIONS = [
 NAMES = [name for name, _ in ACTIONS]
 IGNORES_TARGET = {"new_message", "search", "scroll", "none"}
 
-# 40 fit in a call of 3.3k tokens. The name match reached John's button at
-# 7.5 cm over his message at 5.1 cm, and "click on Antonio" a row 12 cm away.
+# 40 fit in a call of 3.3k tokens.
 OFFERED = 40
 
 
@@ -131,7 +130,7 @@ def _quoted(text):
 
 def key(item):
     """Swift's `Item ==`: every field it has, none of the ones the app adds."""
-    return (item["kind"], item["role"], item["name"], item["value"], float(item["cm"]),
+    return (item["kind"], item["role"], item["name"], item["value"],
             item["x"], item["y"], item["w"], item["h"], tuple(item.get("actions") or ()),
             item.get("in"), tuple(item.get("state") or ()))
 
@@ -151,11 +150,11 @@ def label(item):
 
 
 def candidates(snapshot, utterance):
-    """The 40 nearest, then anything further whose name shares a word of three
-    letters or more with the utterance, then every text field, then whatever
+    """The first 40 in reading order, then any later one whose name shares a
+    word of three letters or more with the utterance, then every text field, then whatever
     is in a part of the app that opened during the run."""
     spoken = {w for w in _words(utterance) if len(w) > 2}
-    # A timestamp, a read receipt, a line of a message: near and useless.
+    # A timestamp, a read receipt, a line of a message: useless.
     # After one recipient was added, Slack's preview put twenty of them in
     # the list and the next step picked one at 0.41.
     worth = [item for item in snapshot["items"] if item["kind"] not in ("label", "more")]
@@ -163,15 +162,15 @@ def candidates(snapshot, utterance):
     for item in worth[OFFERED:]:
         if spoken & set(_words(item["name"])):
             picked.append(item)
-    # Slack's recipient field sat 12.8 cm from the gaze, 87th of 127, and
-    # has no name: only this rule ever offered it.
+    # Slack's recipient field sat 87th of 127 and has no name: only this rule
+    # ever offered it.
     seen = {key(item) for item in picked}
     for item in snapshot["items"]:
         if item["kind"] == "text" and key(item) not in seen:
             picked.append(item)
             seen.add(key(item))
     # Outlook's suggestion list is outside the compose window; its rows can
-    # be far from the gaze and still be the next step.
+    # come late and still be the next step.
     for item in worth:
         if item.get("in") and key(item) not in seen:
             picked.append(item)
@@ -180,7 +179,7 @@ def candidates(snapshot, utterance):
 
 
 def describe(item, snapshot):
-    """Role, name, distance, and where in the window it sits."""
+    """Role, name, and where in the window it sits."""
     role = item["role"].replace("AX", "")
     name = item["name"] if item["name"] else _trim_spaces(item["value"])
     if item["kind"] == "text" and not name:
@@ -198,7 +197,7 @@ def describe(item, snapshot):
             name = "empty text field"
     where = whereabouts(item, snapshot)
     state = ", ".join(item.get("state") or [])
-    return (f"{role} “{prefix(name, 70)}”, {float(item['cm'])!r} cm from the gaze"
+    return (f"{role} “{prefix(name, 70)}”"
             + (f", {state}" if state else "") + (f", {where}" if where else ""))
 
 
@@ -319,9 +318,8 @@ def notes_of(app, log):
 def request(utterance, snapshot, offers, done=(), changed=None, can_scroll=False, spent=(),
             notes=None):
     """(state, questions) for the one wide question."""
-    note = ("The user looks at a point on the screen and speaks. Each target gives its "
-            "distance from that point in cm; nearer targets are more likely to be meant, but a "
-            "name in the utterance beats distance.")
+    note = ("The user speaks about the window they are working in. Targets are listed top "
+            "to bottom; a name in the utterance says which one is meant.")
     # Only when another step can follow: the single-step request stays word
     # for word the one the twelve cases were measured against.
     if can_scroll:
@@ -364,8 +362,6 @@ def request(utterance, snapshot, offers, done=(), changed=None, can_scroll=False
                        "field.", target_choices),
         "has_text": Chance("Does the utterance contain the words to type or send, not only the "
                            "request to type or send something?"),
-        "deictic": Chance("Does the utterance point at what the user is looking at (\"this\", "
-                          "\"here\", \"that one\", \"ça\", \"ici\") rather than naming it?"),
     }
     names = names_in(utterance)
     if can_scroll and names:
@@ -395,10 +391,7 @@ class Decision(dict):
     def line(self):
         said = f"{self.action} {self.action_p:.2f}"
         said += f" · target {self.target_id} {self.target_p:.2f}"
-        if self.by_gaze:
-            said += f" (gaze, over {self.model_target_id})"
         said += f" · text {self.has_text:.2f}"
-        said += f" · deictic {self.deictic:.2f}"
         return said
 
 
@@ -413,7 +406,6 @@ def read(answers, offers, utterance, ms):
     target = None
     if target_id != "none" and target_id[1:].isdigit() and int(target_id[1:]) < len(offers):
         target = offers[int(target_id[1:])]
-    deictic = noul("deictic")
     has_text = noul("has_text")
     word = None
     if "word" in answers:
@@ -422,26 +414,11 @@ def read(answers, offers, utterance, ms):
         if chosen != "none" and chosen[1:].isdigit() and int(chosen[1:]) < len(names):
             word = names[int(chosen[1:])]
 
-    # The model cannot decide a deictic: over the three nearest it came back
-    # 0.27 / 0.24 / 0.20. Then the gaze decides, but only when the model's
-    # own target cannot take the action: overriding every deictic cost two of
-    # the twelve measured cases ("reply here: on it, thanks" named the
-    # composer at 0.80 and was dragged onto a group 0.7 cm nearer).
-    by_gaze = False
-    chosen_id = target_id
-    if deictic > 0.5 and action != "none" and (target is None or not target.get("clickable")):
-        nearest = next((o for o in offers if o.get("clickable")), None)
-        if nearest is not None:
-            target = nearest
-            wanted = key(nearest)
-            chosen_id = next(f"t{i}" for i, o in enumerate(offers) if key(o) == wanted)
-            by_gaze = True
-
     return Decision(
-        action=action, target=target, target_id=chosen_id, model_target_id=target_id,
-        action_p=action_p, target_p=target_p, has_text=has_text, deictic=deictic,
+        action=action, target=target, target_id=target_id,
+        action_p=action_p, target_p=target_p, has_text=has_text,
         text=message_text(utterance) if has_text > 0.5 else None, word=word,
-        by_gaze=by_gaze, finished=noul("finished"), ms=ms,
+        finished=noul("finished"), ms=ms,
         input_tokens=answers.input_tokens,
     )
 

@@ -39,9 +39,8 @@ PLAN_TOOLS = {"write_plan", "read_plan", "add_task", "update_task_status", "upda
               "remove_task"}
 
 
-def loop_answer(action, target="none", finished=0.0, has_text=0.0, deictic=0.0):
-    return {"action": action, "target": target, "finished": finished, "has_text": has_text,
-            "deictic": deictic}
+def loop_answer(action, target="none", finished=0.0, has_text=0.0):
+    return {"action": action, "target": target, "finished": finished, "has_text": has_text}
 
 
 def plain(body):
@@ -75,7 +74,7 @@ class FakeJev(http.server.BaseHTTPRequestHandler):
                 if want[key] not in offered:
                     print(f"fake Jev: {want[key]!r} is not offered: {list(offered)}", file=sys.stderr)
                 answers[key] = choice(want[key], {want[key]: 0.9})
-            for key in ("has_text", "deictic", "finished"):
+            for key in ("has_text", "finished"):
                 answers[key] = {"type": "noul", "noul": float(want[key])}
             answers["word"] = choice("none", {"none": 0.9})
             questions = {}
@@ -216,12 +215,12 @@ class Outlook:
         if do == "snapshot":
             return {"snapshot": {"id": 30, "app": "Microsoft Outlook", "window": "Draft",
                                  "frame": {"x": 0, "y": 0, "w": 1000, "h": 800},
-                                 "pointer": {"x": 0, "y": 0}, "pxPerCm": 47, "items": [
+                                 "items": [
                 {"id": 31, "role": "AXButton", "name": "Peter Smith", "value": "", "kind": "click",
-                 "x": 300, "y": 205, "w": 80, "h": 20, "cm": 0, "actions": [], "lookup": False,
+                 "x": 300, "y": 205, "w": 80, "h": 20, "actions": [], "lookup": False,
                  "in_list": False, "clickable": True, "refused": None},
                 {"id": 32, "role": "AXButton", "name": "Antonio Ruiz", "value": "", "kind": "click",
-                 "x": 390, "y": 205, "w": 80, "h": 20, "cm": 0, "actions": [], "lookup": False,
+                 "x": 390, "y": 205, "w": 80, "h": 20, "actions": [], "lookup": False,
                  "in_list": False, "clickable": True, "refused": None}]}}
         if do == "find":
             return {"items": [{"id": 20, "role": "AXTextField", "name": "Subject", "value": "",
@@ -255,7 +254,7 @@ class Runner:
         self.progress, self.order = [], []
         if bundle is None:
             bundle = {"Microsoft Outlook": "com.microsoft.Outlook"}.get(app, "")
-        self.send(dict({"run": utterance, "app": app, "bundle": bundle, "gaze": None, "letters": 2,
+        self.send(dict({"run": utterance, "app": app, "bundle": bundle, "letters": 2,
                         "screen": {"w": 1512, "h": 982}, "execute": execute}, **extra))
         while True:
             message = self.read()
@@ -275,10 +274,10 @@ def window(n, refused=None):
     different numbers differ by one item."""
     def item(name, kind, role, x, y):
         return {"role": role, "name": name, "value": "", "kind": kind, "x": x, "y": y,
-                "w": 80, "h": 20, "cm": 1.0, "actions": ["AXPress"], "lookup": False,
+                "w": 80, "h": 20, "actions": ["AXPress"], "lookup": False,
                 "in_list": False, "clickable": kind in ("click", "text"),
                 "refused": refused if name == "Checkout" else None}
-    return {"app": "Test", "window": "Shop", "pointer": {"x": 500, "y": 300}, "pxPerCm": 47,
+    return {"app": "Test", "window": "Shop",
             "frame": {"x": 0, "y": 0, "w": 1000, "h": 800},
             "items": [item("Checkout", "click", "AXButton", 500, 300),
                       item(f"Row {n}", "click", "AXRow", 600, 400),
@@ -387,37 +386,37 @@ def decide_checks(runner):
 
 
 def panel(title, names, refused=None):
-    """A window of buttons, nearest first."""
+    """A window of buttons, top to bottom."""
     items = []
     for i, name in enumerate(names):
         kind, role = ("text", "AXTextArea") if name.startswith("Message") else ("click", "AXButton")
         items.append({"role": role, "name": name, "value": "", "kind": kind, "x": 500,
-                      "y": 100 + 30 * i, "w": 80, "h": 20, "cm": 0.1 * i,
+                      "y": 100 + 30 * i, "w": 80, "h": 20,
                       "actions": ["AXPress"], "lookup": False, "in_list": False,
                       "clickable": True, "refused": refused if name == "Leave" else None})
-    return {"app": "Test", "window": title, "pointer": {"x": 500, "y": 100}, "pxPerCm": 47,
+    return {"app": "Test", "window": title,
             "frame": {"x": 0, "y": 0, "w": 1000, "h": 800}, "items": items}
 
 
 def draft(to="", popup=False, filler=0, more=None):
     """An invented compose window: a To field, a body, `filler` buttons, and
     with `popup` a suggestion list outside the window, as Outlook draws it."""
-    def item(name, kind, role, x, y, value="", origin=None, cm=1.0):
+    def item(name, kind, role, x, y, value="", origin=None):
         return {"role": role, "name": name, "value": value, "kind": kind, "x": x, "y": y,
-                "w": 200, "h": 20, "cm": cm, "actions": [], "lookup": name == "To",
+                "w": 200, "h": 20, "actions": [], "lookup": name == "To",
                 "in_list": origin is not None, "clickable": kind in ("click", "text"),
                 "refused": None, "in": origin}
-    items = [item("To", "text", "AXTextField", 400, 100, to, cm=0.0),
+    items = [item("To", "text", "AXTextField", 400, 100, to),
              item("", "text", "AXTextArea", 700, 500)]
-    items += [item(f"Tool {n}", "click", "AXButton", 800, 40 + n, cm=1.0 + n / 10)
+    items += [item(f"Tool {n}", "click", "AXButton", 800, 40 + n)
               for n in range(filler)]
     if more is not None:
         items.append(dict(item(f"and {more:,} more", "more", "AXGroup", 400, 300), clickable=False))
     if popup:
-        items += [item("Peter Holm", "click", "AXCell", 400, 130, origin="pop-up", cm=20.0),
-                  item("Peter Smith", "click", "AXCell", 400, 150, origin="pop-up", cm=20.1),
-                  item("peter@example.com", "label", "AXStaticText", 400, 131, origin="pop-up", cm=20.0)]
-    return {"app": "Test", "window": "Untitled", "pointer": {"x": 400, "y": 100}, "pxPerCm": 47,
+        items += [item("Peter Holm", "click", "AXCell", 400, 130, origin="pop-up"),
+                  item("Peter Smith", "click", "AXCell", 400, 150, origin="pop-up"),
+                  item("peter@example.com", "label", "AXStaticText", 400, 131, origin="pop-up")]
+    return {"app": "Test", "window": "Untitled",
             "frame": {"x": 0, "y": 0, "w": 1000, "h": 800}, "items": items}
 
 
@@ -594,7 +593,7 @@ def change_checks():
           and "Group “and 3,140 more”" in lines, (offered, lines))
     far = draft(popup=True, filler=45)
     offered = decider.candidates(far, "write to Tool")
-    check("change: a pop-up's rows are offered however far they are",
+    check("change: a pop-up's rows are offered however late they come",
           [i["name"] for i in offered if i.get("in")] == ["Peter Holm", "Peter Smith"]
           and len(offered) > decider.OFFERED, len(offered))
     check("change: a pop-up's row says where it is",

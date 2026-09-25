@@ -35,7 +35,7 @@ there is no `ground` tool.
 
 Every request carries a picture of the area being worked in: a 512 px JPEG,
 `detail: low`, of the list that opened, else around the last target, else,
-on the first call, around the focused item or the gaze point. `_prepare`
+on the first call, around the focused item. `_prepare`
 drops the one before. No screenshot, no picture.
 
 What went wrong (a step failed, the same batch ran twice, a step took a name
@@ -366,8 +366,7 @@ class Agent:
         if lp.execute:
             lp.call("watch")
             lp.show(steers=True)
-        gaze = lp.request.get("gaze")
-        self.aim = list(gaze) if gaze else [0, 0]
+        self.aim = None
         self.snapshot = lp._read(self.aim, lp.app)
         lp.change, lp.fresh, lp.renamed = {}, set(), {}
         app, bundle = self.snapshot["app"], lp.request.get("bundle", "")
@@ -1042,9 +1041,9 @@ class Agent:
                                  if "focused" in (i.get("state") or ())), None)
             if item is not None:
                 what = f"\"{decider.label(item)}\""
-            elif any(self.aim):
+            elif self.aim:
                 item = {"x": self.aim[0], "y": self.aim[1], "w": 0, "h": 0}
-                what = "where the user looks"
+                what = "where the last step left off"
             else:
                 return None
             region = self._region(item, "around")
@@ -1163,15 +1162,14 @@ class Agent:
         return looping.refind(item, self.snapshot)
 
     def _screen(self, first=False):
-        """The newest read as numbered lines: every item, up to SHOWN. The
-        gaze orders the first screen only; after a step it says nothing."""
+        """The newest read as numbered lines, top to bottom: every item, up
+        to SHOWN."""
         snapshot = self.snapshot
         # The filter Jev needs cut Teams' "Create a new event." (52 of 111
         # shown), and the model clicked "Start an instant Teams meeting".
         offers = [i for i in snapshot["items"] if i["kind"] != "more"
                   and (i["name"] or i["kind"] == "text")]
-        if not first:
-            offers.sort(key=lambda i: (i["y"] // 20, i["x"]))
+        offers.sort(key=lambda i: (i["y"] // 20, i["x"]))
         offers = offers[:SHOWN]
         # Same name, same kind: one line, the first by `twin_rank`. Teams
         # draws "Create a new event." twice.
@@ -1190,11 +1188,7 @@ class Agent:
         self.ids = {n: item for n, item in enumerate(offers, 1)}
         lines = [f"Window: \"{snapshot['window']}\""]
         if first:
-            looking = planning.gaze_item(snapshot, offers)
-            at = next((n for n, i in self.ids.items() if i is looking), None)
-            lines += [f"Looking at: [{at}] {planning._line(looking)}" if at else
-                      "Looking at: nothing in particular",
-                      "On screen, nearest the user's gaze first:"]
+            lines.append("On screen, top to bottom:")
         else:
             lines.append("On screen, top to bottom. New IDs; earlier ones no longer work:")
         lines += [f"[{n}] {planning._line(item)}"

@@ -677,7 +677,7 @@ class Loop:
     def _read(self, aim, app):
         """The window, with `seen`, its text read from the pixels, when the
         app read it, and `focus` and `ready_box` from the same read."""
-        reply = self.call("observe", at=aim, app=app, see=True)
+        reply = self.call("observe", app=app, see=True)
         if reply.get("error"):
             raise Stop(reply["error"], broke=True)
         snapshot = reply["snapshot"]

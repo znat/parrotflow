@@ -47,7 +47,7 @@ enum TreeCheckCommand {
         let started = Date()
         let snapshot: ScreenTargets.Snapshot
         do {
-            snapshot = try ScreenTargets.snapshot(ofApp: name, at: Gaze.mouse())
+            snapshot = try ScreenTargets.snapshot(ofApp: name)
         } catch {
             print("✗ \(error.localizedDescription)")
             return 1

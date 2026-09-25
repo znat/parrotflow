@@ -52,7 +52,7 @@ flowchart TD
   Q3 -->|yes| W7["Walk it, 3000, 1 s"]
   Q3 -->|no| W8
   W7 --> W8["Drop big and blank<br/><i>walk-drop</i>"]
-  W8 --> W9["Sort by gaze distance<br/><i>walk-sort</i>"]
+  W8 --> W9["Sort in reading order<br/><i>walk-sort</i>"]
   W9 --> W10["Merge same name, 20 pt<br/><i>walk-dedup</i>"]
 ```
 
@@ -66,12 +66,8 @@ flowchart TD
   classDef user stroke-width:3px
   R0["Read with pixels<br/><i>read-see</i>"] --> Q1{"More, or nameless?<br/><i>line-drop</i>"}
   Q1 -->|yes| X1["Not shown"]
-  Q1 -->|no| Q2{"First read?<br/><i>line-order</i>"}
-  Q2 -->|yes| L1["Nearest gaze first"]
-  L1 --> L2["Looking at, 1.5 cm<br/><i>looking-at</i>"]
-  Q2 -->|no| L3["Top to bottom"]
-  L2 --> L4["Keep first 250<br/><i>line-cap</i>"]
-  L3 --> L4
+  Q1 -->|no| L3["Top to bottom<br/><i>line-order</i>"]
+  L3 --> L4["Keep first 250<br/><i>line-cap</i>"]
   L4 --> Q3{"Same kind and words?<br/><i>twin-line</i>"}
   Q3 -->|yes| L5["One line, ×N, topmost"]
   Q3 -->|no| L6
@@ -105,7 +101,7 @@ flowchart TD
 
 ### 1d. The picture
 
-One picture per request, 512 px on the long side, `detail: low`. The one before is dropped. The aim is the gaze on the first call, then the focus or the last target after each step.
+One picture per request, 512 px on the long side, `detail: low`. The one before is dropped. There is no aim on the first call; after each step it is the focus or the last target.
 
 ```mermaid
 flowchart TD
@@ -118,7 +114,7 @@ flowchart TD
   Q2 -->|yes| C2["Around the target"]
   Q2 -->|no| Q3{"A focused item?<br/><i>pic-focus</i>"}
   Q3 -->|yes| C3["Around the focus"]
-  Q3 -->|no| Q4{"An aim point?<br/><i>pic-gaze</i>"}
+  Q3 -->|no| Q4{"An aim point?<br/><i>pic-aim</i>"}
   Q4 -->|yes| C4["Around the aim"]
   Q4 -->|no| N0
   C1 --> CR["Crop 600×400, JPEG<br/><i>pic-crop</i>"]
@@ -453,7 +449,6 @@ Python files are in `built-in/recipes/`. Swift files are in `Sources/ParrotFlow/
 | read-see | loop.py:970 |
 | line-drop | agent.py:1027 |
 | line-order | agent.py:1029 |
-| looking-at | planner.py:213 |
 | line-cap | agent.py:1031 |
 | twin-line | agent.py:1034 |
 | line-ids | agent.py:1046 |
@@ -472,7 +467,7 @@ Python files are in `built-in/recipes/`. Swift files are in `Sources/ParrotFlow/
 | pic-list | agent.py:946 |
 | pic-target | agent.py:948 |
 | pic-focus | agent.py:949 |
-| pic-gaze | agent.py:953 |
+| pic-aim | agent.py:953 |
 | pic-crop | agent.py:959 |
 | pic-send | agent.py:1113 |
 | p-picture | agent.py:121 |

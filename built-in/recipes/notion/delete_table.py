@@ -8,9 +8,6 @@ def delete_table(app, ask):
     if not tables:
         app.stop("no table on screen")
     table = tables[0]
-    if ask.gaze:
-        gx, gy = ask.gaze
-        table = min(tables, key=lambda t: (t.x - gx) ** 2 + (t.y - gy) ** 2)
     app.say(f"table      {int(table.left)},{int(table.top)} {table.w}x{table.h}, of {len(tables)} on screen")
 
     def still_there():
@@ -34,7 +31,7 @@ def delete_table(app, ask):
     spot = (table.x, min(table.top + 20, bottom - 30))
     items = []
     for attempt in (1, 2):
-        since = app.mark(at=spot)
+        since = app.mark()
         if attempt == 1:
             app.right_click(*spot)
             app.say("step       right-clicked the table")
