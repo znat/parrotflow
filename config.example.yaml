@@ -123,15 +123,17 @@ transcription:
 # A non-ollama model sends dictation off this Mac — `--check-config` says
 # so. api_key: omit it for the keychain, or use `file:~/path`, `env:NAME`
 # (terminal only), or the key written in full.
-models:
-  gemma:
-    api: ollama
-    model: gemma4:e4b-mlx
-    endpoint: http://localhost:11434
-    # Keeps the model in RAM — otherwise Ollama drops it after 5 minutes idle
-    # and the next command waits 7-10s to reload. Ollama only.
-    keep_loaded: true
-    default: true
+# Optional: uncomment this block to enable Ollama for prompts and commands.
+# Local dictation and the built-in code/replacement pipeline do not need it.
+# models:
+#   gemma:
+#     api: ollama
+#     model: gemma4:e4b-mlx
+#     endpoint: http://localhost:11434
+#     # Keeps the model in RAM — otherwise Ollama drops it after 5 minutes idle
+#     # and the next command waits 7-10s to reload. Ollama only.
+#     keep_loaded: true
+#     default: true
 
   # No `api_key:` — keychain. reasoning: off | minimal | low | medium | high.
   # gpt:
