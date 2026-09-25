@@ -6,6 +6,7 @@ agent's steps go through: `_planned_step` and its guards, the reads, and
 `--act` and `scripts/check-actions.sh`.
 """
 
+import collections
 import difflib
 import re
 import time
@@ -31,12 +32,23 @@ ONE_LINE = {"AXTextField", "AXComboBox", "AXSearchField"}
 OPENS_A_LIST = {"AXComboBox", "AXPopUpButton"}
 COVER_HEIGHT = 60
 MOVED = 20  # points an item may shift and still be where it was
-# After a gesture the window is read every SETTLE_EVERY seconds until it
-# changes, for at most the policy's seconds. Each cap is the fixed wait it
-# replaced, so a step that changes nothing waits no less than before.
+# After a gesture the window is read every SETTLE_EVERY seconds, for at most
+# the policy's seconds, then:
+#   "first": ends at the first change (type, write, caret, select).
+#   "items": ends at the first change when it is only values, focus or
+#     states; when items came or went, at two reads in a row with the same
+#     items (click, pick; "wait", a `read` right after a read or a ground).
+#   "stable": ends at two reads in a row with the same items, changed or not
+#     (key: in the recorded runs, 3 of 8 key steps filled or closed a list
+#     after the first change).
+# Items are compared by `identity`. Values and seen lines do not count:
+# clocks tick, and Vision cuts lines differently from one read to the next.
+# Each read past the first change costs a tick and a read, 0.3-0.5 s.
 SETTLE_EVERY = 0.15
-SETTLE = {"before_type": 0.3, "after_press": 0.5, "after_key": 0.5, "after_type": 1.7,
-          "skill_step": 0.3, "skill_check": 0.9}
+SETTLE = {"before_type": (0.3, "first"), "after_press": (0.5, "items"),
+          "after_key": (0.5, "stable"), "after_edit": (0.5, "first"),
+          "after_type": (1.7, "first"), "skill_step": (0.3, "first"),
+          "skill_check": (0.9, "first"), "wait": (3.0, "items")}
 
 
 def verdict(answer):
@@ -157,6 +169,10 @@ def identity(item):
     if key:
         return key.split(".")[0]
     return f"{item['kind']}\x01{item['name']}"
+
+
+def _item_set(snapshot):
+    return collections.Counter(identity(i) for i in snapshot["items"] if i["kind"] != "more")
 
 
 def _distance(a, b):
@@ -722,6 +738,7 @@ class Loop:
         reply = self.call("observe", app=app, see=True)
         if reply.get("error"):
             raise Stop(reply["error"], broke=True)
+        self.read_at = time.monotonic()
         snapshot = reply["snapshot"]
         if isinstance(reply.get("seen"), list):
             snapshot["seen"] = reply["seen"]
@@ -734,13 +751,14 @@ class Loop:
         return snapshot
 
     def settle(self, before, aim, policy, until=None):
-        """The window once the app has answered a gesture: the first read for
-        which `until(read)` holds (by default: it differs from `before`), or
-        the first read that starts once the policy's time is up."""
+        """The window once the app has answered a gesture, as the policy's
+        mode in SETTLE says. A change is a read for which `until(read)`
+        holds (by default: it differs from `before`). The first read that
+        starts once the policy's time is up ends it too."""
         until = until or (lambda now: bool(changes(before, now)))
-        at_most = SETTLE[policy]
+        at_most, mode = SETTLE[policy]
         began = time.monotonic()
-        n = 0
+        n, last, steady = 0, None, mode == "stable"
         while True:
             n += 1
             wait = began + min(n * SETTLE_EVERY, at_most) - time.monotonic()
@@ -749,8 +767,16 @@ class Loop:
             started = time.monotonic() - began
             now = self._read(aim, before["app"])
             self.reads += 1
-            if until(now) or started >= at_most - 0.01:
+            if started >= at_most - 0.01:
                 return now
+            if steady:
+                if last is not None and _item_set(last) == _item_set(now):
+                    return now
+            elif until(now):
+                if mode == "first" or _item_set(now) == _item_set(before):
+                    return now
+                steady = True
+            last = now
 
     def _find(self, step, snapshot):
         """The planned target on screen, or why not. Raises Stop when its
@@ -1016,7 +1042,7 @@ class Loop:
         report.acted = True
         # Teams' attendee list came late after typing. Settled against the
         # read after the press, so the press's focus change does not end it.
-        policy = "after_key" if do in ("key", "caret", "select") else \
+        policy = "after_key" if do == "key" else "after_edit" if do in ("caret", "select") else \
             "after_type" if do in ("type", "write") else "after_press"
         now = self.settle(typed_on or snapshot, aim, policy)
         change = changes(snapshot, now)
@@ -1129,10 +1155,13 @@ class Loop:
                      or "focused" in (i.get("state") or ())), None)
 
     def _field_text(self, field):
-        """The field's whole text as the app reads it, or None when it cannot."""
+        """The field's whole text as the app reads it, or None when it cannot.
+        A field that holds only its own name holds its placeholder: empty."""
         args = {"id": field["id"]} if field and field.get("id") is not None else {}
         text = self.call("field_text", **args).get("text")
-        return text if isinstance(text, str) else None
+        if not isinstance(text, str):
+            return None
+        return "" if field and field["name"] and _plain(text) == _plain(field["name"]) else text
 
     def _where(self, field, snapshot, at):
         """(what `field` holds, why a type or write may not run). Refused

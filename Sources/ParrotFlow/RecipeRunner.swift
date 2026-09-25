@@ -815,7 +815,8 @@ private final class RecipeSession {
             guard let field = TextCaret.field(ofApp: app, box: box) else {
                 return ["error": "no text field there"]
             }
-            let (text, source) = TextCaret.text(of: field)
+            var (text, source) = TextCaret.text(of: field)
+            if ScreenTargets.isOwnName(text, of: field) { (text, source) = ("", "placeholder") }
             return ["text": text, "source": source, "role": TextCaret.role(field),
                     "focused": TextCaret.isFocused(field, ofApp: app)]
 

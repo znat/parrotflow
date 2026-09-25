@@ -993,6 +993,7 @@ enum ScreenTargets {
                     name = spoken
                 }
                 let value = kind == Kind.label ? clean(own)
+                    : kind == Kind.text && isOwnName(own, of: element) ? ""
                     : kind == Kind.text || Self.valueRoles.contains(role)
                     ? String(own.replacingOccurrences(of: "\n", with: " ").prefix(100))
                     : ""
@@ -1014,6 +1015,17 @@ enum ScreenTargets {
             )
         }
         return text
+    }
+
+    /// Whether a field's value is only its own title, description or
+    /// placeholder: then it is empty. Seen 09-25 in Teams: an empty "Invite
+    /// required attendees" read as holding "Invite required attendees".
+    static func isOwnName(_ value: String, of element: AXUIElement) -> Bool {
+        let held = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !held.isEmpty else { return false }
+        return [kAXTitleAttribute, kAXDescriptionAttribute, "AXPlaceholderValue"].contains {
+            string(element, $0)?.trimmingCharacters(in: .whitespacesAndNewlines) == held
+        }
     }
 
     /// The roles whose value is read: small fields, and the text that names

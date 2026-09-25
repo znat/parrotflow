@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNNER = os.path.join(ROOT, "built-in", "recipes", "runner.py")
@@ -142,6 +143,10 @@ class FakePlanner(http.server.BaseHTTPRequestHandler):
                 turn = [("review", review_turns.pop(0))]
             else:
                 turn = agent_turns.pop(0) if agent_turns else [("stuck", {"why": "no turn left"})]
+                # ("_sleep", seconds) first: the model thinks that long.
+                if turn and turn[0][0] == "_sleep":
+                    time.sleep(turn[0][1])
+                    turn = turn[1:]
             k = len(planner_bodies)
             output = [{"type": "function_call", "id": f"fc_{k}_{n}", "call_id": f"call_{k}_{n}",
                        "name": name, "arguments": json.dumps(args), "status": "completed"}
@@ -735,6 +740,46 @@ def settle_checks():
     check("settle: `until` decides when it is done, not the change",
           reads == 6 and took >= 0.89, (value, reads, took))
 
+    class Timeline:
+        """Windows by time: (seconds, window) pairs, the last one reached shown."""
+        def __init__(self, timeline):
+            self.began, self.timeline, self.reads = time.monotonic(), timeline, 0
+
+        def ask(self, do, **args):
+            self.reads += 1
+            at = time.monotonic() - self.began
+            return {"snapshot": [w for s, w in self.timeline if at >= s][-1]}
+
+    def timed(timeline, policy):
+        channel = Timeline(timeline)
+        now = loop.Loop({"run": ""}, channel, None).settle(timeline[0][1], [0, 0], policy)
+        return len(now["items"]), now["items"][0]["value"], channel.reads, \
+            time.monotonic() - channel.began
+
+    one, two = draft("Pe", popup=True), dict(draft("Pe", popup=True))
+    two["items"] = two["items"] + [dict(two["items"][2], name="Peter Parker", y=170)]
+    got = timed([(0, draft("")), (0.1, one)], "after_press")
+    check("settle, click: items that appeared are read once more, and kept when they stay",
+          got[0] == 5 and got[2] == 2 and got[3] < 0.45, got)
+    got = timed([(0, draft("")), (0.1, one), (0.2, two)], "after_press")
+    check("settle, click: a list still filling at the second read is read until it stops",
+          got[0] == 6 and got[2] == 3, got)
+    got = timed([(0, draft("")), (0.1, draft("Pe"))], "after_press")
+    check("settle, click: a change of values only ends at the first change",
+          got[1] == "Pe" and got[2] == 1, got)
+    got = timed([(0, draft(""))], "after_key")
+    check("settle, key: a key that changes nothing ends after two reads alike, not at the cap",
+          got[2] == 2 and got[3] < 0.45, got)
+    got = timed([(0, draft("")), (0.1, draft("Pe"))], "after_key")
+    check("settle, key: a value change still takes a second read",
+          got[1] == "Pe" and got[2] == 2, got)
+    got = timed([(0, draft("Pe", popup=True)), (0.2, draft("Pe"))], "after_key")
+    check("settle, key: a list that closes after the first read is read until it is gone",
+          got[0] == 2 and got[2] == 3, got)
+    got = timed([(0, draft("")), (0.1, one), (0.2, two)], "after_type")
+    check("settle, type: ends at the first change, as before",
+          got[0] == 5 and got[2] == 1, got)
+
 
 def observe_checks():
     """A step's reads, in process: one `observe` carries the focus."""
@@ -820,14 +865,14 @@ def agent_checks(runner, stderr_path, trace_path):
     muted = panel("Home — muted", ["General", "Settings", "Leave", "Unmute channel"])
 
     end, fake, report, asked = run(
-        "mute this channel", [home, menu, muted],
+        "mute this channel", [home, menu, menu, muted],
         [[act({"do": "click", "id": 2}, {"do": "click", "id": 1})], [("done", {"summary": "ok"})]])
     check("agent: one act batch runs and done ends the run",
           end["end"] == "done" and report["stopped"] == "Done" and len(planner_bodies) == 2
           and report["shown"] == ["Clicked Settings", "Clicked General"] and report["acted"],
           (report, fake.did()))
     check("agent: a model ID maps to the runner's item, found again in the next read",
-          [s["id"] for s in fake.steps if s["do"] == "press"] == [102, 105], fake.steps)
+          [s["id"] for s in fake.steps if s["do"] == "press"] == [102, 110], fake.steps)
     body = planner_bodies[0]
     names = [t["name"] for t in body["tools"]]
     check("agent: tools, strict, required, parallel calls, reasoning none, on /v1/responses",
@@ -990,6 +1035,17 @@ def agent_checks(runner, stderr_path, trace_path):
         [[act({"do": "type", "id": 1, "value": "Peter"})], [("done", {"summary": "ok"})]])
     check("at: a field that looks names up takes a second name with no at",
           "type" in fake.did() and "key" not in fake.did(), fake.did())
+
+    invite = panel("Calendar", ["Add title", "Invite required attendees"])
+    invite["items"][1].update(kind="text", role="AXTextArea")
+    end, fake, report, asked = run(
+        "invite Mathieu", [invite, invite],
+        [[act({"do": "type", "id": 2, "value": "Mathieu"})], [("done", {"summary": "ok"})]],
+        {("field_text", 1): {"text": "Invite required attendees", "source": "children"}})
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("at: a field that holds only its own name, Teams' placeholder, is empty",
+          [s.get("text") for s in fake.steps if s["do"] == "type"] == ["Mathieu"]
+          and "already holds" not in got and "failed" not in got, (got, fake.did()))
 
     def text_of(n):
         return {("field_text", k): {"text": signature, "source": "value"} for k in range(1, n + 1)}
@@ -1299,7 +1355,11 @@ def agent_checks(runner, stderr_path, trace_path):
     check("guard: a key after a step carries the steps, for the app's own question",
           key.get("shown") == ["Clicked Settings"], key)
 
-    end, fake, report, asked = run("mute this channel", [home], [[("read", {})]] * 51)
+    # A read right after a read waits: looks between them keep this quick.
+    end, fake, report, asked = run(
+        "mute this channel", [home],
+        [[("read", {})] if n % 2 == 0 else [("look", {"x": 100 + n, "y": 100, "w": 50, "h": 50})]
+         for n in range(51)])
     check("agent: the call limit stops the run",
           len(planner_bodies) == 50 and report["stopped"] == "Stopped after 50 model calls"
           and end["end"] == "stopped", (report, len(planner_bodies)))
@@ -1308,7 +1368,7 @@ def agent_checks(runner, stderr_path, trace_path):
           sum("earlier ones no longer work" in c for c in last) == 1
           and "earlier ones no longer work" in last[-1]
           and last[1].endswith("(the screen is in the newest tool result)")
-          and last.count("Read the screen.") == 48, last)
+          and last.count("Read the screen.") == 24, last)
 
     end, fake, report, asked = run(
         "mute this channel", [home, menu], [[act({"do": "click", "id": 2})]] * 3, max_steps=2)
@@ -1572,7 +1632,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 200 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 202 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
@@ -1776,7 +1836,7 @@ def recorder_checks(url, user, plans_url):
           and info["settings"]["max_steps"] == 15 and info["end"] == "done"
           and info["outcome"] == "Done" and info["ended"]
           and info["shown"] == ["Clicked Settings", "Clicked General"]
-          and (info["calls"], info["steps"], info["trees"]) == (2, 2, 3), info)
+          and (info["calls"], info["steps"], info["trees"]) == (2, 2, 5), info)
     call = read_json(folder, "calls", "01.json")
     tree = read_json(folder, "trees", "01.json")
     settings = next(i for i in tree["snapshot"]["items"] if i["name"] == "Settings")
@@ -1793,7 +1853,7 @@ def recorder_checks(url, user, plans_url):
     check("recorder: a step holds the target, the point, press or click, and the change",
           step["do"] == "click" and step["target"]["name"] == "Settings"
           and step["point"] == [500, 130] and step["pressed"] is True and step["call"] == 1
-          and step["tree_before"] == 1 and step["tree_after"] == 2
+          and step["tree_before"] == 1 and step["tree_after"] == 3
           and step["change"].get("new") == ["Mute channel"] and "Mute channel" in step["sentence"]
           and [a["do"] for a in step["actions"]] == ["press"] and not step["error"], step)
     keys = read_json(ROOT, "tests", "fixtures", "run-keys.json")
@@ -2064,11 +2124,11 @@ def grounding_checks(url, user, plans_url):
             PARROTFLOW_GROUND_SERVER=helper, PARROTFLOW_GROUND_MODEL=folder,
             FAKE_GROUND_LOG=asked, PARROTFLOW_RUNS=runs))
 
-    def run(runner, windows, turns, override=None):
+    def run(runner, windows, turns, override=None, per_read=False):
         agent_turns[:] = turns
         del planner_bodies[:]
         del luna_bodies[:]
-        fake = Pictured(windows, override)
+        fake = Pictured(windows, override, per_read=per_read)
         end, fake = runner.run("write to Peter", "Test", fake=fake, loop=LOOP, recipes=False)
         return end, fake, end.get("loop") or {}
 
@@ -2109,8 +2169,79 @@ def grounding_checks(url, user, plans_url):
         [("ground", {"description": "the name Peter Holm", "id": 1, "side": "below"})],
         [("done", {"summary": "ok"})]])
     got = results(2)[-1] if len(results(2)) else ""
-    check("ground: the same point asked for again comes back as the ID it has",
-          got.startswith("[101] already points there."), got)
+    check("ground: the same item and side twice in a row is not run again, and names the way out",
+          got == 'Not run: the same ground as the last call, and nothing changed on screen: '
+                 'window "Untitled". Either `act` on [101], or `read` to wait for the screen.'
+          and len(open(asked).read().splitlines()) == 2, got)
+
+    end, fake, report = run(tiny, [draft("")] * 3, [
+        [("ground", {"description": "Peter Holm", "id": 1, "side": "below"})],
+        [("ground", {"description": "Peter Holm", "id": 1, "side": "above"})],
+        [("done", {"summary": "ok"})]])
+    got = results(2)[-1] if len(results(2)) else ""
+    check("ground: the same words at another place are not a repeat",
+          not got.startswith("Not run") and len(open(asked).read().splitlines()) == 4, got)
+
+    focused = draft("")
+    focused["items"][0]["state"] = ["focused"]
+    spinner = [[("ground", {"description": f"the loading spinner {n}", "image_x": 156 + n % 3,
+                            "image_y": 314})] for n in range(60)]
+    end, fake, report = run(tiny, [focused] * 2, spinner)
+    got = [results(n)[-1] if results(n) else "" for n in (1, 2)]
+    check("ground: Teams' spinner, the same picture point in new words, is a repeat",
+          got[0].startswith("[101] point for")
+          and got[1].startswith('Not run: the same ground as the last call, and nothing changed '
+                                'on screen: window "Untitled", the caret in "To".'), got)
+    check("ground: a model that grounds the same point forever is stopped at the third call",
+          len(planner_bodies) == 3 and end["end"] == "stopped"
+          and report["stopped"] == "Stopped: asked for the same point 3 times: "
+                                   "the loading spinner 2", (len(planner_bodies), report))
+
+    end, fake, report = run(tiny, [draft(""), draft("", popup=True)], [
+        [("_sleep", 1.1), ("ground", {"description": "Peter Holm", "id": 1, "side": "below"})],
+        [("done", {"summary": "ok"})]], per_read=True)
+    got = results(1)[-1] if results(1) else ""
+    check("ground: a read over 1 s old is read again, and a screen that changed comes back",
+          got.startswith("Not run: the screen changed since the last read: ")
+          and '"Peter Holm"' in got and "earlier ones no longer work" in got
+          and len(open(asked).read().splitlines()) == 4, got)
+    moved = draft("")
+    moved["items"][0]["y"] = 200
+    end, fake, report = run(tiny, [draft(""), moved], [
+        [("_sleep", 1.1), ("ground", {"description": "Peter Holm", "id": 1, "side": "below"})],
+        [("done", {"summary": "ok"})]], per_read=True)
+    got = results(1)[-1] if results(1) else ""
+    check("ground: items that moved since the last read bring the new screen back",
+          got.startswith("Not run: the screen changed since the last read: 1 moved"),
+          got)
+    end, fake, report = run(tiny, [draft("")] * 3, [
+        [("_sleep", 1.1), ("ground", {"description": "Peter Holm", "id": 1, "side": "below"})],
+        [("done", {"summary": "ok"})]], per_read=True)
+    got = results(1)[-1] if results(1) else ""
+    check("ground: a read again that changed nothing keeps the IDs and grounds",
+          got == '[101] point for "Peter Holm" (from pixels)'
+          and [s["do"] for s in fake.steps].count("observe") == 2, (got, fake.did()))
+
+    end, fake, report = run(tiny, [draft("")] * 2, [
+        [("look", {"id": 1, "side": "below"})], [("look", {"id": 1})],
+        [("done", {"summary": "ok"})]])
+    got = results(2)[-1] if results(2) else ""
+    check("look: the same item and side twice in a row is not run again",
+          got.startswith("Not run: the same look as the last call") and "`act` on what it found"
+          in got and [s["do"] for s in fake.steps].count("look") == 1, (got, fake.did()))
+
+    end, fake, report = run(tiny, [draft(""), draft(""), draft("", popup=True)], [
+        [("ground", {"description": "Peter Holm", "id": 1, "side": "below"})], [("read", {})],
+        [("done", {"summary": "ok"})]], per_read=True)
+    got = results(2)[-1] if results(2) else ""
+    check("read: right after a ground it waits for items to come, and says what came",
+          got.startswith("Waited 0.") and '"Peter Holm"' in got.split("\n")[0]
+          and "earlier ones no longer work" in got, got[:300])
+    end, fake, report = run(tiny, [draft("")] * 2, [
+        [("read", {})], [("read", {})], [("done", {"summary": "ok"})]])
+    got = results(2)[-1] if results(2) else ""
+    check("read: right after a read with nothing coming, it waits 3 s and says so",
+          got.startswith("Waited 3.0 s: no item came or went."), got[:200])
 
     end, fake, report = run(tiny, [draft("")] * 3, [
         [("ground", {"description": "Nobody Here", "id": 1, "side": "below"})],
