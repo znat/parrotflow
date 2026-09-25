@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 
 <br>
 
-https://github.com/user-attachments/assets/d00a56ea-3b7f-403b-8021-d858e3be6797
+https://github.com/user-attachments/assets/58bc31ad-96a4-4ca6-a211-75edfe3a6aed
 
 <div align="center">
 
