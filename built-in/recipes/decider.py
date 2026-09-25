@@ -122,6 +122,20 @@ def _words(text):
     return re.findall("[a-zà-ÿ]+", text.lower())
 
 
+_SPELLED = re.compile(r"(?<![^\W\d_'’])[^\W\d_](?:[ .\-]+[^\W\d_](?![^\W\d_'’]))+")
+
+
+def said_words(text):
+    """The words of `text`, and the words its spelled letters make: "A R I"
+    is "ari", "B-O-N-E L L" is "bonell". The first letter may be a word of
+    its own: "à A R I" also gives "ari"."""
+    words = set(_words(text))
+    for run in _SPELLED.findall(text):
+        letters = "".join(re.findall(r"[^\W\d_]", run)).lower()
+        words.update((letters, letters[1:]))
+    return words
+
+
 def _quoted(text):
     return json.dumps(text, ensure_ascii=False)
 

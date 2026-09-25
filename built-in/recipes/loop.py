@@ -886,8 +886,9 @@ class Loop:
         closed = ""
         self.target_kind = None
         if do == "type":
+            said = decider.said_words(self.utterance)
             unsaid = [w for w in decider._words(value)
-                      if len(w) > 2 and w not in decider._words(self.utterance)
+                      if len(w) > 2 and w not in said
                       and not decider.words_seen(w, snapshot)]
             answer = unsaid and self._allowed(
                 f"Type “{decider.prefix(value, 40)}”? You did not say {', '.join(unsaid[:4])}",

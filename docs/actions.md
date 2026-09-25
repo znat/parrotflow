@@ -500,7 +500,8 @@ screenshot, warm: 7 ms for the 201×181 pt list under a Teams time field,
 15 ms for 400×400 pt, 45 ms for the whole screen.
 
 A guard refusal (never_press, words not said, `cmd+a`) comes back as a tool
-result, and so does a covered target. Words the user gave a guard instead of
+result, and so does a covered target. Letters the user spelled count as a
+said word: "Harry s'écrit A R I" says "ari", and "B-O-N-E L L" says "bonell". Words the user gave a guard instead of
 yes or no come back as the step's result, `Not done — the user said: "…"`,
 and the run goes on. Escape, the front-app check and the send rule's no end
 the run. Limits: 25 model calls, `max_steps`

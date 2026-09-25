@@ -451,6 +451,14 @@ def change_checks():
 
     def said(before, after):
         return loop.sentence(loop.changes(before, after))
+
+    spelled = [decider.said_words(t) for t in (
+        "pour mon fils Harry. Harry s'écrit A R I.", "Sonia B-O-N-E L L", "P-R-O-N-O-T-E-S",
+        "c'est A.R.I")]
+    check("said words: spelled letters join into a word, across spaces, hyphens and dots",
+          "ari" in spelled[0] and "bonell" in spelled[1] and "pronotes" in spelled[2]
+          and "ari" in spelled[3] and "sari" not in spelled[0]
+          and "notes" not in spelled[2], spelled)
     chords = {"cmd+home": "cmd+up", "⌘End": "cmd+down", "shift+cmd+home": "shift+cmd+up",
               "Option+Right": "alt+right", "⌥⇧←": "alt+shift+left", "Page Up": "pageup",
               "fn+delete": "forwarddelete", "Home": "home", "end": "end"}
@@ -1249,6 +1257,12 @@ def agent_checks(runner, stderr_path, trace_path):
           and "failed:" not in got.split("Change:")[0] and "type" not in fake.did()
           and len(planner_bodies) == 2 and end["end"] == "done", (got, report))
 
+    end, fake, report, asked = run(
+        "code Pronote pour mon fils Harry. Harry s'écrit A R I.", [home] * 3,
+        [[act({"do": "type", "value": "Code Pronote pour Ari"})], [("done", {"summary": "ok"})]])
+    check("guard: a name the user spelled letter by letter was said",
+          "ask" not in fake.did() and "type" in fake.did(), fake.did())
+
     redirect = {("press", 1): {"error": "redirected", "text": "click General instead"}}
     end, fake, report, asked = run(
         "leave this channel", [home] * 3,
@@ -1584,7 +1598,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 202 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 204 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
