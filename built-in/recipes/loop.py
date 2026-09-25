@@ -36,7 +36,10 @@ MOVED = 20  # points an item may shift and still be where it was
 # replaced, so a step that changes nothing waits no less than before.
 SETTLE_EVERY = 0.15
 SETTLE = {"before_type": 0.3, "after_press": 0.5, "after_key": 0.5, "after_type": 1.7,
-          "skill_step": 0.3, "skill_check": 0.9}
+          "lookup": 1.5, "skill_step": 0.3, "skill_check": 0.9}
+# Points below a lookup field where its list may open, and to either side.
+LIST_BELOW = 400
+LIST_SIDE = 200
 
 
 def verdict(answer):
@@ -575,6 +578,35 @@ def looks_up(item):
         or _LOOKS_UP.search(item["name"].lower()) is not None)
 
 
+def suggested(field, before, after):
+    """Whether a list opened under a lookup field between two reads: a
+    part of the app, the field now expanded, or new items or seen lines
+    below it. Seen 09-25 in Gmail: the contact row came as a new item, and
+    To became expanded."""
+    change = changes(before, after)
+    if change.get("appeared") or "expanded" in change.get("states", {}).get(field["name"], ()):
+        return True
+    bottom = field["y"] + field["h"] / 2
+
+    def below(p):
+        return abs(p["x"] - field["x"]) <= field["w"] / 2 + LIST_SIDE \
+            and bottom - 4 < p["y"] <= bottom + LIST_BELOW
+    return any(i.get("in") or i.get("in_list") or i["kind"] != "text" and i["name"] and below(i)
+               for i in appeared(before, after)) \
+        or any(below(line) for block in change.get("seen", ()) for line in block["lines"])
+
+
+def no_suggestion(value):
+    """The fact said when no list is showing after a type into a lookup field.
+    Seen 09-25 in Gmail: the list showed Sonia while typing, then closed at
+    "Bonnell", as the contact is "Bonell-Granda Sonia"."""
+    words = value.split()
+    shorter = words[0] if len(words) > 1 else value[:3] if len(value) > 3 else ""
+    said = (f"no suggestion is showing for \"{decider.prefix(value, 40)}\": the list can close "
+            "when a later letter does not match")
+    return said + (f"; clear the field and type only \"{shorter}\"" if shorter else "")
+
+
 def _texts_in(field, snapshot):
     return [field["value"]] + [i["name"] or i["value"] for i in snapshot["items"]
                                if i is not field and i["kind"] != "text" and _inside(i, field)]
@@ -647,6 +679,8 @@ class Loop:
         self.placed = None
         # The last type or write went where `caret` or `select` put the caret.
         self.typed_placed = False
+        # The last type into a lookup field ended with no list showing.
+        self.unsuggested = False
         self.recorder = getattr(channel, "recorder", recording.OFF)
         self.agent = None
         self.began, self.reads = time.monotonic(), 0
@@ -885,6 +919,7 @@ class Loop:
         target = typed_on = None
         closed = ""
         self.target_kind = None
+        self.unsuggested = False
         if do == "type":
             said = decider.said_words(self.utterance)
             unsaid = [w for w in decider._words(value)
@@ -1019,7 +1054,13 @@ class Loop:
         # read after the press, so the press's focus change does not end it.
         policy = "after_key" if do in ("key", "caret", "select") else \
             "after_type" if do in ("type", "write") else "after_press"
-        now = self.settle(typed_on or snapshot, aim, policy)
+        until = None
+        # The field's own value changes first; the list comes after.
+        if do == "type" and looks_up(field):
+            policy, until = "lookup", lambda read: suggested(field, snapshot, read)
+        now = self.settle(typed_on or snapshot, aim, policy, until)
+        self.unsuggested = until is not None and now.get("seen") is not None \
+            and not until(now)
         change = changes(snapshot, now)
         changed = sentence(change)
         self.fresh = {(i["kind"], i["name"]) for i in appeared(snapshot, now)}
@@ -1043,6 +1084,8 @@ class Loop:
         outcome = changed or UNCHANGED
         if moved:
             outcome = f"{moved}; {changed}" if changed else moved
+        if self.unsuggested:
+            outcome = f"{no_suggestion(value)}; {outcome}"
         if closed:
             outcome = f"{closed}; {outcome}"
         ms = int((time.monotonic() - self.began) * 1000)

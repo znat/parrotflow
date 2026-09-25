@@ -1146,6 +1146,32 @@ def agent_checks(runner, stderr_path, trace_path):
           and [s["do"] for s in fake.steps if s["do"] in ("press", "type")] == ["press", "type"],
           (got, fake.did()))
 
+    def seeing(window):
+        return dict(window, seen=[])
+
+    end, fake, report, asked = run(
+        "write to Peter", [seeing(w) for w in (draft(""), draft(""), draft(""), draft("Pe"),
+                                               draft("Pe", popup=True))],
+        [[act({"do": "type", "id": 1, "value": "Peter"})], [("done", {"summary": "ok"})]])
+    got = results(1)[0] if len(planner_bodies) > 1 else ""
+    check("lookup: the wait goes past the field's own value to the list that opened",
+          "a pop-up opened" in got and "no suggestion" not in got, got)
+
+    unmatched = [seeing(draft("")), seeing(draft("Sonia Bonnell"))]
+    end, fake, report, asked = run(
+        "write to Sonia Bonnell", unmatched,
+        [[act({"do": "type", "id": 1, "value": "Sonia Bonnell"},
+              {"do": "key", "value": "return"})], [("done", {"summary": "ok"})]])
+    got = results(1)[0] if len(planner_bodies) > 1 else ""
+    reads = [s["do"] for s in fake.steps].count("observe")
+    check("lookup: no list after typing is said as a fact, after waiting for one, and ends "
+          "the batch",
+          '1. type “To” = “Sonia Bonnell” — no suggestion is showing for "Sonia Bonnell": the '
+          'list can close when a later letter does not match; clear the field and type only '
+          '"Sonia"; "To" now holds "Sonia Bonnell"' in got
+          and "Stopped: no suggestion is showing after step 1" in got
+          and "key" not in fake.did() and reads >= 8, (got, reads))
+
     end, fake, report, asked = run(
         "leave this channel", [panel("Home", ["General", "Settings", "Leave"], refused="leave")] * 3,
         [[act({"do": "click", "id": 3})], [act({"do": "type", "value": "goodbye from March"})],
@@ -1598,7 +1624,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 204 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 208 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",

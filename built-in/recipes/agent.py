@@ -750,6 +750,9 @@ class Agent:
                 stop = f"step {n} did not go as expected"
                 self._note(surprise)
                 break
+            if lp.unsuggested and n < len(steps):
+                stop = f"no suggestion is showing after step {n}"
+                break
             if was is not None and outcome.endswith(looping.UNCHANGED):
                 seen = {self._norm(line["text"]) for line in was}
                 new = [line for line in self._seen(region)[0]
