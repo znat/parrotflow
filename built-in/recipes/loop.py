@@ -34,7 +34,8 @@ COVER_HEIGHT = 60
 MOVED = 20  # points an item may shift and still be where it was
 # After a gesture the window is read every SETTLE_EVERY seconds, for at most
 # the policy's seconds, then:
-#   "first": ends at the first change (type, write, caret, select).
+#   "first": ends at the first change (type, write, caret, select; a type
+#     into a lookup field: at the first read with a list under the field).
 #   "items": ends at the first change when it is only values, focus or
 #     states; when items came or went, at two reads in a row with the same
 #     items (click, pick; "wait", a `read` right after a read or a ground).
@@ -47,8 +48,12 @@ MOVED = 20  # points an item may shift and still be where it was
 SETTLE_EVERY = 0.15
 SETTLE = {"before_type": (0.3, "first"), "after_press": (0.5, "items"),
           "after_key": (0.5, "stable"), "after_edit": (0.5, "first"),
-          "after_type": (1.7, "first"), "skill_step": (0.3, "first"),
-          "skill_check": (0.9, "first"), "wait": (3.0, "items")}
+          "after_type": (1.7, "first"), "lookup": (1.5, "first"),
+          "skill_step": (0.3, "first"), "skill_check": (0.9, "first"),
+          "wait": (3.0, "items")}
+# Points below a lookup field where its list may open, and to either side.
+LIST_BELOW = 400
+LIST_SIDE = 200
 
 
 def verdict(answer):
@@ -588,7 +593,80 @@ def looks_up(item):
     """A field that narrows a list as you type: To, a search box, a combo box."""
     return bool(item) and item["kind"] == "text" and item["role"] != "AXTextArea" and (
         item.get("lookup") or item["role"] in ("AXComboBox", "AXSearchField")
-        or _LOOKS_UP.search(item["name"].lower()) is not None)
+        or _LOOKS_UP.search((item["name"] or "").lower()) is not None)
+
+
+def suggested(field, before, after):
+    """Whether a list shows under a lookup field after typing: the field is
+    expanded, or new named items or seen lines are below it, in a part of
+    the app that opened or not. Seen 09-25 in Gmail: the contact
+    row came as a new item, and To became expanded."""
+    now = refind(field, after)
+    if now is not None and "expanded" in (now.get("state") or ()):
+        return True
+    change = changes(before, after)
+    # Where the field is now: a press can move it, as Gmail folds To away.
+    at = now or field
+    bottom = at["y"] + at["h"] / 2
+
+    def below(p):
+        return abs(p["x"] - at["x"]) <= at["w"] / 2 + LIST_SIDE \
+            and bottom - 4 < p["y"] <= bottom + LIST_BELOW
+    return any(i["kind"] != "text" and i["name"] and below(i) for i in appeared(before, after)) \
+        or any(below(line) for block in change.get("seen", ()) for line in block["lines"])
+
+
+def no_list(typed):
+    return f"no list showed for \"{decider.prefix(typed, 40)}\""
+
+
+UNRESOLVED_RECIPIENT = "unresolved-recipient"
+_RECIPIENT = re.compile(r"\b(to|cc|bcc|recipients?|attendees?|invitees?|participants?)\b")
+_EMAIL = re.compile(r"[^@\s,;]+@(?:[^\W_](?:[\w-]*[^\W_])?\.)+[^\W\d_]{2,}")
+# A picked contact is drawn in the field's value as U+FFFC (Outlook) or
+# between no-break spaces (Slack); typed text comes after the last one.
+_CHIP = re.compile("[\ufffc\xa0]")
+
+
+def typed_text(value):
+    """The text typed after the last picked contact in a field's value."""
+    parts = _CHIP.split(value or "")
+    if len(parts) > 1 and not parts[-1].strip():
+        parts.pop()
+    return " ".join(parts[-1].split())
+
+
+def takes_recipients(item):
+    return looks_up(item) and _RECIPIENT.search((item["name"] or "").lower()) is not None
+
+
+def is_address(text):
+    words = [w for w in re.split(r"[,;\s]+", text or "") if w]
+    return bool(words) and all(_EMAIL.fullmatch(w) for w in words)
+
+
+def lookup_text(value, letters):
+    """What to type into a recipient field to open its list: the first word,
+    cut to `letters` when more than 0. An email address goes in whole.
+    Seen 09-25 in Gmail: "Sonia" listed "Bonell-Granda Sonia"; "Sonia
+    Bonnell" closed the list at the second n."""
+    if is_address(value):
+        return value
+    first = re.split(r"[\s,;]+", value.strip())[0]
+    return first[:letters] if letters > 0 else first
+
+
+def not_a_recipient(item):
+    """The typed text a recipient field holds that is not an email address,
+    or "". Seen 09-25 in Gmail: a picked contact left To's value empty; the
+    unmatched "Sonia Bonnell" stayed in it as text, and the run ended done."""
+    typed = typed_text(item["value"])
+    return "" if not typed or is_address(typed) else typed
+
+
+def unresolved_line(label, typed):
+    return (f"\"{decider.prefix(label, 40)}\" still holds the text \"{decider.prefix(typed, 40)}\", "
+            "which is not a recipient: pick the contact from the list or type an email address")
 
 
 def _texts_in(field, snapshot):
@@ -655,6 +733,7 @@ class Loop:
         self.utterance = request.get("run", "")
         settings = request.get("loop") or {}
         self.max_steps = int(settings.get("max_steps", 30))
+        self.lookup_letters = int(settings.get("lookup_letters", 2))
         self.spotlight = float(settings.get("spotlight", 0))
         self.execute = request.get("execute", True)
         self.app = request.get("read_app")
@@ -663,6 +742,16 @@ class Loop:
         self.placed = None
         # The last type or write went where `caret` or `select` put the caret.
         self.typed_placed = False
+        # The last type into a lookup field ended with no list showing.
+        self.unsuggested = False
+        # Recipient fields read in this run, by identity: (label, typed text
+        # that is not a recipient). Kept when the field leaves the tree:
+        # Gmail folds To away once the caret leaves it.
+        self.recipients = {}
+        # The text field the last step acted in, by identity.
+        self.last_field = None
+        # Names of the rules that fired in this step.
+        self.fired = []
         self.recorder = getattr(channel, "recorder", recording.OFF)
         self.agent = None
         self.began, self.reads = time.monotonic(), 0
@@ -740,6 +829,9 @@ class Loop:
             raise Stop(reply["error"], broke=True)
         self.read_at = time.monotonic()
         snapshot = reply["snapshot"]
+        for item in snapshot["items"]:
+            if takes_recipients(item):
+                self.recipients[identity(item)] = (decider.label(item), not_a_recipient(item))
         if isinstance(reply.get("seen"), list):
             snapshot["seen"] = reply["seen"]
         if isinstance(reply.get("focus"), dict):
@@ -902,6 +994,8 @@ class Loop:
         if why is None:
             self.recorder.end_step(change=self.change, sentence=sentence(self.change),
                                    outcome=outcome, shown=report.shown)
+            if self.fired:
+                self.recorder.add_to_step(rules=self.fired)
         else:
             self.recorder.end_step(why=why, shown=report.shown)
         return why, now, aim, outcome
@@ -911,9 +1005,14 @@ class Loop:
         target = typed_on = None
         closed = ""
         self.target_kind = None
+        self.unsuggested = False
+        self.fired = []
+        # What a type into a recipient field typed, when not the whole value.
+        self.cut = ""
         if do == "type":
+            said = decider.said_words(self.utterance)
             unsaid = [w for w in decider._words(value)
-                      if len(w) > 2 and w not in decider._words(self.utterance)
+                      if len(w) > 2 and w not in said
                       and not decider.words_seen(w, snapshot)]
             answer = unsaid and self._allowed(
                 f"Type “{decider.prefix(value, 40)}”? You did not say {', '.join(unsaid[:4])}",
@@ -977,7 +1076,7 @@ class Loop:
             if why:
                 return why, snapshot, aim, ""
             self.act("paste" if do == "write" else "type",
-                     text=self._paragraph(do, field, at, held, value))
+                     text=self._typing(do, field, at, held, value))
         else:
             target, why = (item, None) if item is not None else self._find(step, snapshot)
             if target is None:
@@ -1031,12 +1130,13 @@ class Loop:
                 # Key presses for `type`, the paste for `write`. Seen 09-23 in
                 # Outlook: the time field's hour ignored a pasted "11" three times.
                 self.act("type" if do == "type" else "paste",
-                         text=self._paragraph(do, field, at, held, value))
+                         text=self._typing(do, field, at, held, value))
             elif do in ("caret", "select"):
                 if pressed:
                     typed_on = self.settle(snapshot, aim, "before_type")
                 self.front()
-                why, moved = self._edit(do, target, at, value)
+                why, moved = self._edit(do, refind(target, typed_on) or target if typed_on
+                                        else target, at, value)
                 if why:
                     return why, typed_on or snapshot, aim, ""
         report.acted = True
@@ -1044,7 +1144,13 @@ class Loop:
         # read after the press, so the press's focus change does not end it.
         policy = "after_key" if do == "key" else "after_edit" if do in ("caret", "select") else \
             "after_type" if do in ("type", "write") else "after_press"
-        now = self.settle(typed_on or snapshot, aim, policy)
+        until = None
+        # The field's own value changes first; the list comes after.
+        if do == "type" and looks_up(field):
+            policy, until = "lookup", lambda read: suggested(field, snapshot, read)
+        now = self.settle(typed_on or snapshot, aim, policy, until)
+        self.unsuggested = until is not None and now.get("seen") is not None \
+            and not until(now)
         change = changes(snapshot, now)
         changed = sentence(change)
         self.fresh = {(i["kind"], i["name"]) for i in appeared(snapshot, now)}
@@ -1060,15 +1166,24 @@ class Loop:
             change = changes(snapshot, now)
             changed = sentence(change)
         self.change = change
-        if change.get("window"):
-            self.placed = None
+        self._forget_placed(now)
         if do in ("type", "write") and field is not None:
-            why = self._typed(field, at, value, held)
+            why = self._typed(refind(field, now) or field, at, value, held)
             if why:
                 return why, now, aim, ""
         outcome = changed or UNCHANGED
         if moved:
             outcome = f"{moved}; {changed}" if changed else moved
+        if self.unsuggested:
+            outcome = f"{no_list(self.cut or value)}; {outcome}"
+        if self.cut:
+            outcome = (f"typed \"{self.cut}\" of \"{decider.prefix(value, 40)}\" to open the "
+                       f"list: pick the row; {outcome}")
+        acted = field or target
+        if acted is not None and acted["kind"] == "text":
+            if self.last_field is not None and identity(acted) != self.last_field:
+                outcome = "; ".join(self.unresolved_recipient(self.last_field) + [outcome])
+            self.last_field = identity(acted)
         if closed:
             outcome = f"{closed}; {outcome}"
         ms = int((time.monotonic() - self.began) * 1000)
@@ -1082,6 +1197,31 @@ class Loop:
         elif target is not None:
             aim = decider.point(target)
         return None, now, aim, outcome
+
+    def unresolved_recipient(self, left=None):
+        """Rule unresolved-recipient: a recipient field ends with real
+        recipients, picked contacts or email addresses. A line per field that
+        holds other typed text: every field read in this run, or only `left`,
+        the field the caret just left. Said, never refused here: `done` is
+        refused once on it."""
+        fields = [self.recipients.get(left, ("", ""))] if left else self.recipients.values()
+        lines = [unresolved_line(label, typed) for label, typed in fields if typed]
+        for line in lines:
+            self.log(f"rule {UNRESOLVED_RECIPIENT}: {line}")
+        if lines:
+            self.fired.append(UNRESOLVED_RECIPIENT)
+        return lines
+
+    def _forget_placed(self, snapshot):
+        """Forgets the field a caret or select placed the caret in once it is
+        gone, or another item has the focus. Not on a new window title: Gmail
+        renames the window when it saves the draft, 09-25."""
+        if self.placed is None:
+            return
+        focused = next((i for i in snapshot["items"] if "focused" in (i.get("state") or ())), None)
+        if not any(identity(i) == self.placed for i in snapshot["items"]) \
+                or focused is not None and identity(focused) != self.placed:
+            self.placed = None
 
     def _close_open_list(self, target, snapshot, aim):
         """(the window now, what was done, why it failed): Return in an open
@@ -1156,33 +1296,33 @@ class Loop:
 
     def _field_text(self, field):
         """The field's whole text as the app reads it, or None when it cannot.
+        The app finds the field at its box. Seen 09-25 in Gmail: a press on
+        Subject folded To away, Subject moved up 32 points, and its old box
+        hit the body: "Subject" read back the signature. So `field` must come
+        from the newest read, and a field of another role is not read.
         A field that holds only its own name holds its placeholder: empty."""
         args = {"id": field["id"]} if field and field.get("id") is not None else {}
-        text = self.call("field_text", **args).get("text")
+        reply = self.call("field_text", **args)
+        text = reply.get("text")
+        if field and reply.get("role") and reply["role"] != field["role"]:
+            return None
         if not isinstance(text, str):
             return None
         return "" if field and field["name"] and _plain(text) == _plain(field["name"]) else text
 
     def _where(self, field, snapshot, at):
         """(what `field` holds, why a type or write may not run). Refused
-        without a keystroke when the field holds text and `at` does not say
-        where the words go. Seen 09-25 in Gmail: the body held the signature
-        and the message landed after it. What it holds is the app's whole
-        text, or else the walk's, cut, with `partial` set."""
-        if field is None:
-            # A focused text area the walk did not list: the app still reads it.
-            if self._focus(snapshot).get("role") != "AXTextArea":
-                return None, None
-            text = self._field_text(None)
-            if at or text is None or not text.strip():
-                return None, None
-            shown = decider.prefix(" ".join(text.split()), 60)
-            return None, (f"the focused field already holds \"{shown}\". Say where the "
-                          "text goes: at start, end or replace.")
+        without a keystroke when the field holds text, the caret is not in
+        it, and `at` does not say where the words go. Seen 09-25 in Gmail:
+        the body held the signature and the message landed after it. With
+        the caret in the field, the words go at the caret. What it holds is
+        the app's whole text, or else the walk's, cut, with `partial` set."""
         # A date or time field takes typing over one part: Outlook's hour.
-        if field["kind"] != "text" or looks_up(field) or field["role"] == "AXDateTimeArea":
+        if field is None or field["kind"] != "text" or looks_up(field) \
+                or field["role"] == "AXDateTimeArea":
             return None, None
-        self.typed_placed = not at and self.placed == identity(field)
+        self.typed_placed = not at and (self.placed == identity(field)
+                                        or self._caret_in(field, snapshot))
         text = self._field_text(field)
         held = {"text": text, "partial": False} if text is not None \
             else {"text": holds(field, snapshot), "partial": True}
@@ -1259,6 +1399,14 @@ class Loop:
         if do == "caret":
             return None, f"the caret is {at} \"{decider.prefix(found, 40)}\"{by}"
         return None, f"\"{decider.prefix(found, 40)}\" is selected{by}"
+
+    def _typing(self, do, field, at, held, value):
+        """The text a type or write sends."""
+        if do == "type" and field is not None and takes_recipients(field):
+            typed = lookup_text(value, self.lookup_letters)
+            self.cut = typed if typed != value else ""
+            return typed
+        return self._paragraph(do, field, at, held, value)
 
     @staticmethod
     def _paragraph(do, field, at, held, value):

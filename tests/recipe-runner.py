@@ -456,6 +456,36 @@ def change_checks():
 
     def said(before, after):
         return loop.sentence(loop.changes(before, after))
+
+    spelled = [decider.said_words(t) for t in (
+        "pour mon fils Harry. Harry s'écrit A R I.", "Sonia B-O-N-E L L", "P-R-O-N-O-T-E-S",
+        "c'est A.R.I", "son nom: a-r-i", "c'est à A R I")]
+    check("said words: spelled letters join into a word, across spaces, hyphens and dots",
+          "ari" in spelled[0] and "bonell" in spelled[1] and "pronotes" in spelled[2]
+          and "ari" in spelled[3] and "ari" in spelled[4] and "ari" in spelled[5]
+          and "sari" not in spelled[0] and "onell" not in spelled[1]
+          and "ronotes" not in spelled[2], spelled)
+    to_field = draft("")["items"][0]
+    elsewhere = draft("Pe")
+    elsewhere["items"].append(dict(elsewhere["items"][0], kind="click", role="AXCell",
+                                   name="Help", x=900, y=700, **{"in": "pop-up"}))
+    check("lookup: a list counts under the field, not a pop-up elsewhere",
+          loop.suggested(to_field, draft(""), draft("Pe", popup=True))
+          and not loop.suggested(to_field, draft(""), elsewhere), elsewhere["items"][-1])
+    check("recipients: an address ending in a dot is not one",
+          loop.is_address("sonia.bonell@ac-montpellier.fr") and not loop.is_address("a@b.c.")
+          and not loop.is_address("a@bad..com") and not loop.is_address("Sonia"), "")
+    still_open = draft("Pe")
+    still_open["items"][0]["state"] = ["expanded"]
+    check("recipients: a text field with no name is not a recipient field, and does not fail",
+          not loop.takes_recipients(dict(to_field, name=None)), "")
+    moved_to = draft("Pe", popup=True)
+    for item in moved_to["items"]:
+        item["y"] += 300
+    check("lookup: the list is looked for under the field where it is now",
+          loop.suggested(to_field, draft(""), moved_to), "")
+    check("lookup: a list that was open before the typing still counts",
+          loop.suggested(to_field, still_open, still_open), "")
     chords = {"cmd+home": "cmd+up", "⌘End": "cmd+down", "shift+cmd+home": "shift+cmd+up",
               "Option+Right": "alt+right", "⌥⇧←": "alt+shift+left", "Page Up": "pageup",
               "fn+delete": "forwarddelete", "Home": "home", "end": "end"}
@@ -1081,8 +1111,16 @@ def agent_checks(runner, stderr_path, trace_path):
         "write Bonjour here", [focused],
         [[act({"do": "write", "value": "Bonjour"})], [("done", {"summary": "ok"})]])
     got = results(1)[-1] if len(planner_bodies) > 1 else ""
-    check("at: with no id, the focused field is checked, and refused the same way",
-          '"Message Body" already holds "Nathan Z."' in got and "paste" not in fake.did(),
+    check("at: with no id, the write goes at the caret, with no refusal",
+          "already holds" not in got and [s.get("text") for s in fake.steps
+                                          if s["do"] == "paste"] == ["Bonjour"], (got, fake.did()))
+
+    end, fake, report, asked = run(
+        "write Bonjour here", [focused] * 2,
+        [[act({"do": "write", "id": 3, "value": "Bonjour"})], [("done", {"summary": "ok"})]])
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("at: a write into the field that has the caret goes at the caret, with no click",
+          "already holds" not in got and "paste" in fake.did() and "press" not in fake.did(),
           (got, fake.did()))
 
     unlisted = compose()
@@ -1093,9 +1131,8 @@ def agent_checks(runner, stderr_path, trace_path):
         [[act({"do": "write", "value": "Bonjour"})], [("done", {"summary": "ok"})]],
         {("field_text", 1): {"text": signature, "source": "value"}})
     got = results(1)[-1] if len(planner_bodies) > 1 else ""
-    check("at: a focused text area the walk did not list is read and refused the same way",
-          'the focused field already holds "Nathan Z. +33 6 12 34 78 11"' in got
-          and "paste" not in fake.did(), (got, fake.did()))
+    check("at: a focused text area the walk did not list takes the write at the caret",
+          "already holds" not in got and "paste" in fake.did(), (got, fake.did()))
 
     end, fake, report, asked = run(
         "write to Peter", [draft("Antonio"), draft("Antonio")],
@@ -1209,6 +1246,43 @@ def agent_checks(runner, stderr_path, trace_path):
           "3. write" in got and 'failed: "Message Body" already holds' in got
           and not sent(fake, "paste"), got)
 
+    saved = dict(signed, window="Draft saved")
+    end, fake, report, asked = run(
+        "write Bonjour at the start", [signed] + [saved] * 3,
+        [[act({"do": "caret", "id": body_id, "at": "start"},
+              {"do": "write", "id": body_id, "value": "Bonjour"})], [("done", {"summary": "ok"})]],
+        text_of(1))
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("caret: a new window title keeps the caret, so the write with no at goes there",
+          "Ran 2 of 2" in got and "already holds" not in got
+          and [s.get("text") for s in sent(fake, "paste")] == ["Bonjour"]
+          and len(sent(fake, "press")) == 1, (got, fake.did()))
+
+    coded = compose(subject="Code")
+    moved_up = compose(subject="Code")
+    moved_up["items"][0]["y"] = 68
+    end, fake, report, asked = run(
+        "add Lunch to the subject", [coded] + [moved_up] * 4,
+        [[act({"do": "type", "id": 1, "value": "Lunch", "at": "end"})],
+         [("done", {"summary": "ok"})]],
+        {("field_text", 1): {"text": "Code", "source": "value"},
+         ("field_text", 2): {"text": "Code Lunch", "source": "value", "role": "AXTextField"}})
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    read_back = [fake.by_id.get(s.get("id")) or {} for s in sent(fake, "field_text")]
+    check("at end: the read-back asks for the field as the newest read has it, not its old box",
+          "failed" not in got and [(i.get("name"), i.get("y")) for i in read_back]
+          == [("Subject", 100), ("Subject", 68)], (got, read_back))
+
+    end, fake, report, asked = run(
+        "add Lunch to the subject", [coded] * 4,
+        [[act({"do": "type", "id": 1, "value": "Lunch", "at": "end"})],
+         [("done", {"summary": "ok"})]],
+        {("field_text", 1): {"text": "Code", "source": "value"},
+         ("field_text", 2): {"text": signature, "source": "value", "role": "AXTextArea"}})
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("at end: a read-back that found a field of another role is not trusted",
+          "failed" not in got, got)
+
     timed = compose(subject="")
     end, fake, report, asked = run(
         "set the subject to 4 PM", [timed] * 2,
@@ -1249,6 +1323,66 @@ def agent_checks(runner, stderr_path, trace_path):
           and [s["do"] for s in fake.steps if s["do"] in ("press", "type")] == ["press", "type"],
           (got, fake.did()))
 
+    def seeing(window):
+        return dict(window, seen=[])
+
+    end, fake, report, asked = run(
+        "write to Peter", [seeing(w) for w in (draft(""), draft(""), draft(""), draft("Pe"),
+                                               draft("Pe", popup=True))],
+        [[act({"do": "type", "id": 1, "value": "Peter"})], [("done", {"summary": "ok"})]])
+    got = results(1)[0] if len(planner_bodies) > 1 else ""
+    check("lookup: the wait goes past the field's own value to the list that opened",
+          "a pop-up opened" in got and "no suggestion" not in got, got)
+
+    unmatched = [seeing(draft("")), seeing(draft("Sonia"))]
+    end, fake, report, asked = run(
+        "write to Sonia Bonnell", unmatched,
+        [[act({"do": "type", "id": 1, "value": "Sonia Bonnell"},
+              {"do": "key", "value": "return"})], [("done", {"summary": "ok"})]],
+        lookup_letters=0)
+    got = results(1)[0] if len(planner_bodies) > 1 else ""
+    reads = [s["do"] for s in fake.steps].count("observe")
+    check("lookup: a recipient field gets the first word, and no list after it is said as a "
+          "fact, after waiting for one, and ends the batch",
+          [s["text"] for s in fake.steps if s["do"] == "type"] == ["Sonia"]
+          and '1. type “To” = “Sonia Bonnell” — typed "Sonia" of "Sonia Bonnell" to open the '
+          'list: pick the row; no list showed for "Sonia"; "To" now holds "Sonia"' in got
+          and "Stopped: no list showed after step 1" in got
+          and "key" not in fake.did() and reads >= 8, (got, reads))
+
+    for value, letters, typed in (("Sonia Bonnell", 2, "So"), ("sonia@example.com", 2,
+                                                                "sonia@example.com")):
+        end, fake, report, asked = run(
+            f"write to {value}", [draft(""), draft(typed, popup=True)],
+            [[act({"do": "type", "id": 1, "value": value})], [("done", {"summary": "ok"})],
+             [("done", {"summary": "ok"})]], lookup_letters=letters)
+        check(f"lookup: lookup_letters {letters} types {typed!r} of {value!r}",
+              [s["text"] for s in fake.steps if s["do"] == "type"] == [typed], fake.steps)
+
+    plain_text = ('"To" still holds the text "Sonia Bonnell", which is not a recipient: pick the '
+                  'contact from the list or type an email address')
+    end, fake, report, asked = run(
+        "write to Sonia Bonnell: hello", [draft(""), draft("Sonia Bonnell")],
+        [[act({"do": "type", "id": 1, "value": "Sonia Bonnell"})],
+         [act({"do": "write", "id": 2, "value": "hello"})],
+         [("done", {"summary": "ok"})], [("done", {"summary": "ok"})]])
+    got = [results(n)[-1] for n in (1, 2, 3)] if len(planner_bodies) == 4 else []
+    check("recipients: typed text left in To is said on moving away, and refuses done once",
+          len(got) == 3 and plain_text not in got[0] and f" — {plain_text};"
+          in got[1] and got[2].startswith(plain_text + ".") and end["end"] == "done"
+          and sum(line.startswith("rule unresolved-recipient: ") for line in fake.logs) == 2,
+          (got, report, fake.logs))
+
+    for picked in ("\ufffc", "\xa0 Sonia Bonell \xa0 \xa0", "sonia@example.com"):
+        end, fake, report, asked = run(
+            "write to Sonia: hello", [draft(""), draft(picked)],
+            [[act({"do": "type", "id": 1, "value": "Sonia"})],
+             [act({"do": "write", "id": 2, "value": "hello"})], [("done", {"summary": "ok"})]])
+        got = "".join(results(n)[-1] for n in range(1, len(planner_bodies)))
+        check(f"recipients: {picked!r} in To is a recipient",
+              "not a recipient" not in got and len(planner_bodies) == 3 and end["end"] == "done",
+              (got, report))
+
     end, fake, report, asked = run(
         "leave this channel", [panel("Home", ["General", "Settings", "Leave"], refused="leave")] * 3,
         [[act({"do": "click", "id": 3})], [act({"do": "type", "value": "goodbye from March"})],
@@ -1286,7 +1420,7 @@ def agent_checks(runner, stderr_path, trace_path):
     typed = [draft(""), draft("Peter", popup=True)]
     end, fake, report, asked = run(
         "write to Peter", typed,
-        [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})]],
+        [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})], [("done", {"summary": "ok"})]],
         {("ask", 1): {"answer": "Peter Smith", "via": "option"}})
     sent = next((s for s in fake.steps if s["do"] == "ask"), {})
     near = sent.get("near") or {}
@@ -1297,22 +1431,22 @@ def agent_checks(runner, stderr_path, trace_path):
           and near.get("x") == 400 and near.get("y") - near.get("h") / 2 == 90
           and near.get("y") + near.get("h") / 2 == 160 and near.get("w") == 200
           and sent.get("shown") == report["shown"][:1], sent)
-    got = results(2)[-1] if len(planner_bodies) == 3 else ""
+    got = results(2)[-1] if len(planner_bodies) == 4 else ""
     check("agent: an option answer comes back to the model",
           got == "The user answered: Peter Smith" and end["end"] == "done", (got, report))
 
     end, fake, report, asked = run(
         "write to Peter", typed,
-        [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})]],
+        [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})], [("done", {"summary": "ok"})]],
         {("ask", 1): {"answer": "the one in Paris", "via": "text"}})
-    got = results(2)[-1] if len(planner_bodies) == 3 else ""
+    got = results(2)[-1] if len(planner_bodies) == 4 else ""
     check("agent: a typed answer comes back to the model",
           got == "The user answered: the one in Paris", got)
 
     end, fake, report, asked = run(
         "write to Peter", typed,
-        [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})]])
-    got = results(2)[-1] if len(planner_bodies) == 3 else ""
+        [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})], [("done", {"summary": "ok"})]])
+    got = results(2)[-1] if len(planner_bodies) == 4 else ""
     check("agent: no answer goes back to the model, which must not commit",
           got.startswith("No answer. Do not commit anything") and end["end"] == "done",
           (got, report, len(planner_bodies)))
@@ -1359,6 +1493,12 @@ def agent_checks(runner, stderr_path, trace_path):
           'Not done — the user said: "move on to the next step"' in got
           and "failed:" not in got.split("Change:")[0] and "type" not in fake.did()
           and len(planner_bodies) == 2 and end["end"] == "done", (got, report))
+
+    end, fake, report, asked = run(
+        "code Pronote pour mon fils Harry. Harry s'écrit A R I.", [home] * 3,
+        [[act({"do": "type", "value": "Code Pronote pour Ari"})], [("done", {"summary": "ok"})]])
+    check("guard: a name the user spelled letter by letter was said",
+          "ask" not in fake.did() and "type" in fake.did(), fake.did())
 
     redirect = {("press", 1): {"error": "redirected", "text": "click General instead"}}
     end, fake, report, asked = run(
@@ -1563,7 +1703,7 @@ def agent_checks(runner, stderr_path, trace_path):
     end, fake, report, asked = run(
         "invite Peter", [draft(""), draft("Pe"), draft("Pe")],
         [[act({"do": "type", "id": 1, "value": "Peter"}, {"do": "click", "id": 2})],
-         [("done", {"summary": "ok"})]])
+         [("done", {"summary": "ok"})], [("done", {"summary": "ok"})]])
     got = results(1)[-1] if len(planner_bodies) > 1 else ""
     check("agent: without seen lines in the reply (no permission) the batch runs as before",
           "Ran 2 of 2" in got and "seen" not in got and "look" in fake.did()
@@ -1699,7 +1839,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 202 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 246 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
@@ -2421,7 +2561,8 @@ def surprise_checks(url, user, plans_url):
     def plan(*tasks):
         return ("write_plan", {"items": [{"id": str(n), "content": content, "status": status}
                                          for n, (content, status) in enumerate(tasks)]})
-    finish = [[plan(("Add Alex", "completed"))], [("done", {"summary": "ok"})]]
+    finish = [[plan(("Add Alex", "completed"))], [("done", {"summary": "ok"})],
+              [("done", {"summary": "ok"})]]
     expect = "To holds Alex"
     typed = act({"do": "type", "id": 1, "value": "Alex", "expect": expect})
 
@@ -2460,7 +2601,8 @@ def surprise_checks(url, user, plans_url):
         [[plan(("Add both", "in_progress"))],
          [act({"do": "type", "id": 1, "value": "Antonio"})],
          [act({"do": "type", "id": 1, "value": "Alex", "expect": both})],
-         [plan(("Add both", "completed"))], [("done", {"summary": "ok"})]])
+         [plan(("Add both", "completed"))], [("done", {"summary": "ok"})],
+         [("done", {"summary": "ok"})]])
     check("surprises: two on one task do not make anyone ask the user",
           not [s for s in fake.steps if s["do"] == "ask"] and "Call `ask`" not in result(3)
           and end["end"] == "done", (result(3), fake.did()))

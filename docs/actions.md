@@ -372,9 +372,13 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   Antonio Ruiz". It is recorded with the step and not checked.
   `at` is where `type` or `write` puts the text in a field that already
   holds some: `start` (⌘↑ first), `end` (⌘↓ first) or `replace` (⌘A first,
-  with the ⌘A guard). A field that holds text and a step with no `at` is
-  refused before any keystroke, with the start of what the field holds. A
-  field that looks names up (To, a search box, a combo box) needs no `at`.
+  with the ⌘A guard). A step with no `at` into a field that holds text and
+  does not have the caret is refused before any keystroke, with the start
+  of what the field holds. With the caret in the field (focused, or placed
+  by a `caret` or `select`), the words go at the caret: a paste never
+  replaces. A step with no `id` goes where the caret is and is never
+  refused. A field that looks names up (To, a search box, a combo box) needs
+  no `at`.
   `write` at the start or end of a text area gets a new line between the
   two. After typing at the start or end, or replacing in a text area, code
   reads the field back (`field_text`): the text must be there, at the start
@@ -384,7 +388,11 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   `caret` puts the caret in field `id`: `at` is `start` or `end` (⌘↑, ⌘↓),
   or `before` or `after` the words in `value`. `select` selects the words
   in `value`; a `key` (⌘C, ⌘X, backspace) or a `type` or `write` with no
-  `at` then acts on them, with no second click. The model names words and
+  `at` then acts on them, with no second click. The field is forgotten once
+  a step acts on another item, a click, scroll, Tab, Escape or Return moves
+  the caret, the field leaves the tree, or another item has the focus. A new
+  window title does not count: Gmail renames the window when it saves the
+  draft. The model names words and
   never counts characters or aims at pixels. Code finds the words in the
   field's whole text (`field_text`): exactly, else with case and runs of
   spaces not counting. None, or more than one, fails the step and says what
@@ -434,6 +442,19 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   model gets "Not done: '<step>' is still open. Finish it, or cancel it with
   a reason." and tries again. `stuck` asks the user once first; an answer
   other than Stop goes back to the model.
+  A recipient field (a lookup field named To, Cc, Bcc, recipients,
+  attendees, invitees or participants) must end with real recipients. Code
+  reads the text typed after the last picked contact in its value: a picked
+  contact is U+FFFC or sits between no-break spaces, and Gmail empties the
+  value when one is picked. Text there that is not an email address is not a
+  recipient. The first `done` is refused once with `"To recipients" still
+  holds the text "Sonia Bonnell", which is not a recipient: pick the contact
+  from the list or type an email address.` A second `done` goes through. A
+  step that moves from that field to another text field gets the same line,
+  as a fact. The last value read is kept when the field leaves the tree:
+  Gmail folds To away once the caret leaves it. Both are the rule
+  `unresolved-recipient`: the app log says `rule unresolved-recipient: …`,
+  and the step's recording lists it under `rules`.
 - `write_plan`, `read_plan`, `add_task`, `update_task_status`,
   `update_task_statuses`, `remove_task`: the task list of `Planning`, from
   pydantic-ai-harness. The prompt asks for `write_plan` on the first call;
@@ -491,6 +512,22 @@ first, as above. Still covered, the step fails with `"End time" is covered by
 text seen on screen: "18:30"`, and the run goes on. An empty field's one line
 is taken for its placeholder.
 
+A `type` into a recipient field (a lookup field named To, Cc, Bcc,
+recipients, attendees, invitees or participants) types only the first word
+of `value`, cut to `lookup_letters` letters when that is more than 0 (2 by
+default). An email address goes in whole. Seen 09-25 in Gmail: the list
+showed Sonia while typing, then closed at "Bonnell", as the contact is
+"Bonell-Granda Sonia". The model then picks the row. Other lookup fields,
+such as a search box or a time combo box, get the whole value.
+
+After a `type` into a lookup field, the wait does not end at the field's own
+value. It ends when a list shows: a part of the app opened, the field became
+expanded, or new items or seen lines appeared below it. It lasts 1.5 s at
+most. The result names the rows, and starts with `typed "So" of "Sonia
+Bonnell" to open the list: pick the row` when the value was cut. With
+`seen` and no list, it also says `no list showed for "So"`, and the batch
+stops there. The step is not refused.
+
 Without `seen` (the setting off, or no Screen Recording), a `type` into a
 lookup field (`lookup`, a combo box, a search field, or a name like To or
 attendees) looks below the field before the typing. If the tree then shows
@@ -516,7 +553,9 @@ screenshot, warm: 7 ms for the 201×181 pt list under a Teams time field,
 15 ms for 400×400 pt, 45 ms for the whole screen.
 
 A guard refusal (never_press, words not said, `cmd+a`) comes back as a tool
-result, and so does a covered target. Words the user gave a guard instead of
+result, and so does a covered target. Letters the user spelled count as a
+said word: "Harry s'écrit A R I", "A.R.I" and "a-r-i" say "ari", and "B-O-N-E
+L L" says "bonell". Words the user gave a guard instead of
 yes or no come back as the step's result, `Not done — the user said: "…"`,
 and the run goes on. Escape, the front-app check and the send rule's no end
 the run. Limits: 25 model calls, `max_steps`
@@ -832,7 +871,7 @@ A run's folder, written by `built-in/recipes/runlog.py`:
 | --- | --- |
 | `run.json` | The request, the app, the loop (agent, plan, loop or recipe), the model, the settings, start and end, the outcome and the steps shown. Rewritten as the run goes. |
 | `calls/NN.json` | One model call: the messages exactly as sent (for the agent, the instructions as a system message, then the Responses `input` items), the tool calls with `why`, the results, ms, tokens, and the agent's plan after the call. `steer` is what the user typed or said to the run that this call got. `ids` maps each `[ID]` the model saw to the item's id in `tree`, as the agent numbered them. They are recorded, not recomputed. A line `look` saw is in `seen`, whole. |
-| `steps/NN.json` | One step: what was asked, the target item, the point, an accessibility press or a real click, `under` (what the hit test found at the point before), the trees before and after, the change and its sentence, a guard's question and answer, the verbs sent to the app and their replies, errors and ms. The agent adds `expect` and `lost`, what the step took out of its field. `expect_p` and `expect_ms`, Jev's check of `expect`, are in runs before 09-24 only. |
+| `steps/NN.json` | One step: what was asked, the target item, the point, an accessibility press or a real click, `under` (what the hit test found at the point before), the trees before and after, the change and its sentence, a guard's question and answer, the verbs sent to the app and their replies, errors and ms. The agent adds `expect` and `lost`, what the step took out of its field. `rules` names the rules that fired, such as `unresolved-recipient`. `expect_p` and `expect_ms`, Jev's check of `expect`, are in runs before 09-24 only. |
 | `trees/NN.json` | Every read of the window, raw: all items, not only those shown, with the window frame. `shot` is the screenshot's file, its frame in screen points (top left and size), its scale in pixels per point and its size in pixels. `seen` is every line of text read from it, and `seen_ms` the time; a step's `change.seen` and `change.still` are the lines it reported. |
 | `shots/NN.jpg` | The screenshot of that read, cut to the window, JPEG at 0.7. Taken right after the walk, without ParrotFlow's own panels. Without Screen Recording there is none: `shot` is null and `shot_error` says why. |
 | `looks/NN.json` | A `look`: the region and the lines read. |

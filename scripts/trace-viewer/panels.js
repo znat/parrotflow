@@ -103,6 +103,7 @@ export function StepPanel({ step }) {
         step.expect_p == null ? "not checked" : `${step.expect_p < 0.5 ? "no" : "yes"} ${step.expect_p.toFixed(2)}`}
         · ${step.expect_ms} ms</span></td></tr>`}
       ${step.lost && html`<tr><td>lost</td><td class="error">${step.lost}</td></tr>`}
+      ${step.rules && step.rules.length > 0 && html`<tr><td>rules</td><td>${step.rules.join(", ")}</td></tr>`}
     </table>
     ${step.asked?.length > 0 && html`<h4>Asked</h4>
       <table class="kv">${step.asked.map((a, i) => html`<tr key=${i}><td>${a.question}</td>
