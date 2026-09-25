@@ -575,7 +575,7 @@ def looks_up(item):
     """A field that narrows a list as you type: To, a search box, a combo box."""
     return bool(item) and item["kind"] == "text" and item["role"] != "AXTextArea" and (
         item.get("lookup") or item["role"] in ("AXComboBox", "AXSearchField")
-        or _LOOKS_UP.search(item["name"].lower()) is not None)
+        or _LOOKS_UP.search((item["name"] or "").lower()) is not None)
 
 
 def suggested(field, before, after):
@@ -617,7 +617,7 @@ def typed_text(value):
 
 
 def takes_recipients(item):
-    return looks_up(item) and _RECIPIENT.search(item["name"].lower()) is not None
+    return looks_up(item) and _RECIPIENT.search((item["name"] or "").lower()) is not None
 
 
 def is_address(text):

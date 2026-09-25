@@ -472,6 +472,8 @@ def change_checks():
           and not loop.is_address("a@bad..com") and not loop.is_address("Sonia"), "")
     still_open = draft("Pe")
     still_open["items"][0]["state"] = ["expanded"]
+    check("recipients: a text field with no name is not a recipient field, and does not fail",
+          not loop.takes_recipients(dict(to_field, name=None)), "")
     check("lookup: a list that was open before the typing still counts",
           loop.suggested(to_field, still_open, still_open), "")
     chords = {"cmd+home": "cmd+up", "⌘End": "cmd+down", "shift+cmd+home": "shift+cmd+up",
