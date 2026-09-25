@@ -888,7 +888,10 @@ $PF --tour-film out names,slack,hack:2 15 3  # the tour as numbered PNGs, for a 
 `confidence`, `learn`, `learn-long`, `selector`, `selector-long`,
 `selector-two`, `vocabulary`, `punctuation`, `rule`, `dictation`, `preview`,
 `microphone`, `keyboard`, `update`, `models`, `setup`, `launch`, `sequence`,
-`tutorial`, `names`, `slack`, `hack`, `downloads` or `ready`.
+`tutorial`, `names`, `slack`, `hack`, `downloads`, `ready` or `review`.
+`review` is the panel the action key shows before a run, in light and dark,
+with a French sample. `review-check` checks its Return, Shift+Return, Escape
+and empty-text rules and exits.
 `--panel-sheet` draws all of
 them at once, which is where drift between them shows up.
 

@@ -1810,11 +1810,11 @@ def recorder_checks(url, user, plans_url):
         plans_url, PARROTFLOW_PLANNER_LOOP="agent", PARROTFLOW_PLANNER_TRACE=trace,
         PARROTFLOW_RUNS=root))
 
-    def run(utterance, windows, turns, fake=None):
+    def run(utterance, windows, turns, fake=None, **extra):
         agent_turns[:] = turns
         del planner_bodies[:]
         fake = fake or Screen(windows)
-        end, fake = runner.run(utterance, "Test", fake=fake, loop=LOOP, recipes=False)
+        end, fake = runner.run(utterance, "Test", fake=fake, loop=LOOP, recipes=False, **extra)
         return end, fake, os.path.join(root, recorded(root)[-1])
 
     home = panel("Home", ["General", "Settings", "Leave"])
@@ -1837,6 +1837,8 @@ def recorder_checks(url, user, plans_url):
           and info["outcome"] == "Done" and info["ended"]
           and info["shown"] == ["Clicked Settings", "Clicked General"]
           and (info["calls"], info["steps"], info["trees"]) == (2, 2, 5), info)
+    check("recorder: run.json has no heard text when the request was not edited",
+          info["heard"] is None, info.get("heard"))
     call = read_json(folder, "calls", "01.json")
     tree = read_json(folder, "trees", "01.json")
     settings = next(i for i in tree["snapshot"]["items"] if i["name"] == "Settings")
@@ -1879,6 +1881,13 @@ def recorder_checks(url, user, plans_url):
         [[act({"do": "click", "id": 2})], [("done", {"summary": "ok"})]])
     kept = read_json(folder, "trees", "02.json")
     step = read_json(folder, "steps", "01.json")
+    end, fake, edited = run(
+        "mute this channel", [home, menu, muted],
+        [[act({"do": "click", "id": 2})], [("done", {"summary": "ok"})]],
+        heard="mute this channnel")
+    info = read_json(edited, "run.json")
+    check("recorder: run.json keeps what was heard when the request was edited",
+          info["request"] == "mute this channel" and info["heard"] == "mute this channnel", info)
     check("recorder: a tree stores every seen line and the time to read them, a step its blocks",
           kept["seen"] == lines and kept["seen_ms"] == 40
           and read_json(folder, "trees", "01.json")["seen"] == []

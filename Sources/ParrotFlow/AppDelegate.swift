@@ -111,6 +111,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var labelToken = 0
     private let correctionPanel = CorrectionPanel()
     private let previewPanel = PreviewPanel()
+    /// The action key's words, to edit before the run. See `actions.review_before_run`.
+    private let reviewPanel = ReviewPanel()
+    /// The app a review closed by the action key handed focus back to. That
+    /// press reads ParrotFlow as the app in front, so it takes this one instead.
+    private var reviewHandedBack: NSRunningApplication?
     /// Says once per microphone that this one will cost you words.
     private let micNotice = MicNotice()
     private let keyboardNotice = KeyboardNotice()
@@ -227,6 +232,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// The app in front at the press. An action works in its focused
         /// window, frozen for the reason every other field here is.
         var app: String?
+        /// That app's process, for giving it focus back after the review.
+        var pid: pid_t?
         /// What was selected when this recording began.
         ///
         /// Frozen for the reason every other field here is. `selectionAtPress`
@@ -971,6 +978,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         launch.theme = config.feedback.theme
         correctionPanel.primaryColor = config.feedback.primaryColor
         correctionPanel.theme = config.feedback.theme
+        reviewPanel.primaryColor = config.feedback.primaryColor
+        reviewPanel.theme = config.feedback.theme
         let feedback = config.feedback
         MainActor.assumeIsolated {
             QuestionPanel.shared.primaryColor = feedback.primaryColor
@@ -1375,6 +1384,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // on it — `activeMode` and `hotkeyStillHeld` are asked further
             // down this same function.
             actionAtPress = action
+            reviewHandedBack = nil
+            if action, reviewPanel.isOpen {
+                Log.write("action: the review was open — cancelled by the next press")
+                reviewHandedBack = reviewPanel.cancel()
+            }
             // The selector is the one open panel that does not draw that row
             // — `PillMetrics.showsHold` refuses it — so a panel asking which
             // word you meant promises nothing about holding and must not take
@@ -1430,7 +1444,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let snapshotStart = Date()
         selectionAtPress = SelectionReader.snapshot()
         focusAtPress = selectionAtPress ?? SelectionReader.focusSnapshot()
-        let front = Self.appInFront()
+        var front = Self.appInFront()
+        if let back = reviewHandedBack, front?.pid == ProcessInfo.processInfo.processIdentifier {
+            front = (Pipeline.App(name: back.localizedName ?? "", bundleID: back.bundleIdentifier ?? ""),
+                     back.icon, back.processIdentifier)
+        }
+        reviewHandedBack = nil
         appAtPress = front?.app
         pidAtPress = front?.pid
         // The icon is a promise that the words are going to land in that app,
@@ -2302,6 +2321,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             app: actionAtPress
                 ? appAtPress.flatMap { $0.bundleID == Bundle.main.bundleIdentifier ? nil : $0.name }
                 : nil,
+            pid: actionAtPress && appAtPress?.bundleID != Bundle.main.bundleIdentifier
+                ? pidAtPress : nil,
             // Still this press's: the recording has only just stopped and no
             // newer press can have landed. The gap this closes is the decode
             // that follows, not this moment.
@@ -2829,7 +2850,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the events. The pill carries the wait, and every way this ends says
     /// what happened — an action that quietly did nothing is
     /// indistinguishable from one that did something somewhere else.
-    private func act(on instruction: String, for press: Press) {
+    private func act(on instruction: String, heard: String? = nil, for press: Press) {
         let settings = config.actions
         let app = press.app ?? ""
         let token = beginProgress("Looking…")
@@ -2852,7 +2873,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let run = await Recipes.run(
                 utterance: instruction, app: app, config: settings,
-                readApp: app.isEmpty ? nil : app
+                readApp: app.isEmpty ? nil : app, heard: heard
             )
             let panelShown = await MainActor.run { () -> Bool in
                 QuestionPanel.shared.onRunShown = nil
@@ -2887,6 +2908,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             await give(up: report.said, report.acted ? .plain : .caution)
         }
+    }
+
+    /// Shows the heard words to edit, and runs them as edited on Run.
+    private func review(_ heard: String, for press: Press) {
+        let target = press.pid.flatMap { NSRunningApplication(processIdentifier: $0) }
+        let window = press.app.flatMap { ScreenTargets.windowFrames(ofApp: $0).first }
+        reviewPanel.show(heard, target: target, window: window, run: { [weak self] text in
+            guard let self else { return }
+            let before = ReviewPanel.heard(heard, ran: text)
+            Log.write(before == nil ? "action: run as heard" : "action: run as edited — \"\(text)\"")
+            self.act(on: text, heard: before, for: press)
+        }, cancel: { [weak self] in
+            Log.write("action: cancelled in the review")
+            self?.updateUI()
+        })
     }
 
     /// Runs whatever the router picked.
@@ -5975,7 +6011,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             Log.write("action: \"\(trimmed)\"")
-            act(on: trimmed, for: press)
+            if config.actions.reviewBeforeRun {
+                review(trimmed, for: press)
+            } else {
+                act(on: trimmed, for: press)
+            }
+            updateUI()
+            return
+        }
+        if !trimmed.isEmpty, reviewPanel.dictate(trimmed) {
+            Log.write("dictation: went into the review before a run")
+            dictationEnded(press.run)
             updateUI()
             return
         }

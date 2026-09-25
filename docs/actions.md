@@ -54,6 +54,14 @@ and left there for you to send. On, Return is pressed.
 2. **You speak, you let go, it decodes.** The same recorder, the same model,
    the same vocabulary as a dictation — names matter here more than anywhere.
 
+   **You check the words.** A small panel shows what was heard, beside the
+   window, where the run panel will be. Edit it, then Return runs and Escape
+   cancels. Shift+Return adds a line. Both give focus back to the app from
+   the press, and the run starts once that app is in front. An empty text
+   cannot run. Holding the action key again cancels it and starts a new
+   request. If you edited the words, the recording keeps both: `request` is
+   what ran, `heard` what was heard. `review_before_run: false` skips it.
+
 3. **The runner takes the request.** The app sends what you said to
    `built-in/recipes/runner.py`, one Python process that does all the
    deciding. A recipe runs if one fits. Otherwise the agent runs, in the

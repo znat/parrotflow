@@ -831,6 +831,7 @@ actions:
     reasoning: none
     review_reasoning: high  # the review after an agent run
   send: false
+  review_before_run: true   # edit the words before the run starts
   never_press: [Send, Delete]
   return_sends: [com.tinyspeck.slackmacgap, com.microsoft.teams2]   # and more, see below
   max_steps: 30
@@ -855,6 +856,7 @@ twice before turning on.
 | `planner.*` | A remote chat model that runs the agent: it calls tools to act on the window. Without it, a request no recipe fits fails. `api_key:` takes the same forms as `decider.api_key`. `loop:` is `agent`; `plan` from an older config runs the agent too. See [Planner](actions.md#planner). |
 | `planner.review_reasoning` | The reasoning effort of the review after an agent run: one call that reads the run's recording and proposes memory files, which you keep or drop in the run panel. `high` by default; empty leaves it out. Needs `record: true`. See [The review after a run](actions.md#the-review-after-a-run). |
 | `send` | Whether Return is pressed after a message is typed. Off by default: the words land in the composer and you send them. |
+| `review_before_run` | Show what was heard in a small panel before the run starts. Edit it, then Return runs and Escape cancels. Shift+Return adds a line. On by default. `false` runs the words as heard. |
 | `never_press` | Names this will not click, whatever the model picks. A guarantee, not a request: the model is never asked to avoid them. |
 | `return_sends` | Apps, by bundle ID, where Return in a message box sends. With `send` off, Return there asks first. In every other app Return is an ordinary key. Default: Slack, Teams, WhatsApp, Messages, Discord, Telegram. |
 | `max_steps` | How many steps one request may take before it stops on its own. 30 by default. The backstop, not the guard — a step that changes nothing stops it sooner. |

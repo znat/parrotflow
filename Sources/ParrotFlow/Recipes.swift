@@ -44,7 +44,8 @@ enum Recipes {
     /// focused window first instead of the one of the app in front.
     static func run(
         utterance: String, app: String, config: Config.Actions, execute: Bool = true,
-        recipes: Bool? = nil, readApp: String? = nil, maxSteps: Int? = nil
+        recipes: Bool? = nil, readApp: String? = nil, maxSteps: Int? = nil,
+        heard: String? = nil
     ) async -> Run {
         var run = Run()
         func say(_ line: String) {
@@ -64,6 +65,7 @@ enum Recipes {
             ] as [String: Any],
         ]
         if execute, config.planner != nil { request["review"] = true }
+        if let heard, heard != utterance { request["heard"] = heard }
         request["bundle"] = NSWorkspace.shared.runningApplications
             .first { $0.localizedName == app }?.bundleIdentifier ?? ""
         let ended = await RecipeProcess.shared.run(request, app: app, config: config, say: say)
