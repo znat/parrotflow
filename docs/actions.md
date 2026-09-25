@@ -392,6 +392,18 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   move and reads the selection back; a mismatch fails the step in one line.
   A skill can hold the same gestures: `caret "<field>" at start|end|before
   "<text>"|after "<text>"` and `select "<field>" "<text>"`.
+  A skill can also hold `click picture "<text>" [below|above|right of|left of
+  "<anchor>"]`, for a target the tree may not have, such as Teams' attendee
+  suggestions. Code tries three ways and clicks the first that finds it: an
+  item called `<text>` in the tree, then a seen line that is `<text>` or
+  starts with it as whole words (case and spaces do not count), then `ground`
+  on a crop beside the anchor, 400 pt deep. With an anchor, each way looks
+  only on that side of it, and the nearest match wins; without one there is
+  no `ground`. The step line says which way found it and the point, such as
+  `(seen "mirza baig" at 1323,747)`. Nothing found fails the step in one
+  line: `no 'Mirza Baig' below 'Invite required attendees' in the tree, the
+  text or the picture`. The gesture sets no control, so `act` refuses
+  nothing because of it.
   Each step goes through `Loop._planned_step` and its guards. The
   batch stops at the first surprise: a step failed, a step changed nothing
   (`type`, `write` and `key` do not count: the tree does not show the caret

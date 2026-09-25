@@ -548,6 +548,73 @@ def change_checks():
                                ("caret", "Body", "start", "")]
           and moved == [None, None, None, "no text field 'Nobody' on screen"],
           (player.loop.done, moved))
+
+    class Clicks:
+        def __init__(self):
+            self.at = []
+
+        def _click_at(self, target):
+            self.at.append((target["x"], target["y"], target["name"]))
+
+        def log(self, line):
+            pass
+
+    class Grounds:
+        def __init__(self, point, on=True):
+            self.point_at, self.on, self.asked = point, on, []
+
+        def point(self, shot, box, text, planner, log):
+            self.asked.append((box, text))
+            return {"method": "tinyclick", "point": self.point_at}
+
+    invite = {"name": "Invite required attendees", "role": "AXTextArea", "kind": "text",
+              "value": "", "state": [], "x": 1500, "y": 690, "w": 590, "h": 40, "in": None}
+    shot = {"file": "shot.png", "frame": {"x": 1000, "y": 300, "w": 1200, "h": 900}, "scale": 2}
+
+    def picked(gesture, items=(), seen=(), grounder=None):
+        player = type("Player", (), {
+            "loop": Clicks(), "planner": None, "grounder": grounder or Grounds(None, on=False),
+            "snapshot": {"items": [invite, *items], "seen": list(seen), "shot": shot},
+            "_record_ground": lambda self, *a, **k: None})()
+        return skills._picture(gesture, player), player
+
+    below = 'click picture "Mirza Baig" below "Invite required attendees"'
+    row = {"name": "Mirza Baig", "role": "AXButton", "kind": "click", "value": "", "state": [],
+           "x": 1320, "y": 750, "w": 200, "h": 30, "in": None}
+    chat = dict(row, x=200, y=150)
+    clicked, player = picked(below, items=[chat, row])
+    check("click picture: a row in the tree beside the anchor is clicked, not a twin elsewhere",
+          clicked == (None, "tree at 1320,750") and player.loop.at == [(1320, 750, "Mirza Baig")],
+          (clicked, player.loop.at))
+    lines = [{"text": "Mirza  baig Available", "x": 1323, "y": 747, "w": 120, "h": 16},
+             {"text": "Mirza Baig", "x": 1323, "y": 600, "w": 80, "h": 16}]
+    clicked, player = picked(below, seen=lines)
+    check("click picture: a seen line below the anchor that starts with the text is clicked",
+          clicked == (None, 'seen "mirza baig available" at 1323,747')
+          and player.loop.at == [(1323, 747, "Mirza Baig")], (clicked, player.loop.at))
+    grounder = Grounds([1395.6, 750.8])
+    clicked, player = picked(below, seen=lines[1:], grounder=grounder)
+    check("click picture: a seen line above the anchor is not used; the picture is, below it",
+          clicked == (None, "picture (tinyclick) at 1396,751")
+          and player.loop.at == [(1395.6, 750.8, "Mirza Baig")]
+          and grounder.asked[0][1] == "Mirza Baig" and grounder.asked[0][0][1] == 710,
+          (clicked, player.loop.at, grounder.asked))
+    clicked, player = picked(below, seen=[{"text": "Mirza Baigorri", "x": 1323, "y": 747}],
+                         grounder=Grounds(None))
+    missing = picked(below)[0]
+    check("click picture: nothing found fails in one line that names where it looked",
+          clicked == ("no 'Mirza Baig' below 'Invite required attendees' in the tree, the text or "
+                  "the picture", "")
+          and missing == ("no 'Mirza Baig' below 'Invite required attendees' in the tree or the "
+                          "text", "") and player.loop.at == [], (clicked, missing))
+    check("click picture: the gesture parses, fills its params and sets no control",
+          skills.problems('---\nparams: [first, row]\nsteps:\n  - type {first}\n'
+                          '  - click picture "{row}" below "Invite required attendees"'
+                          ' | appears "{row} *"\n  - click picture "{who}" below "To"\n'
+                          '  - click picture "Mirza" beneath "To"\n---\n')
+          == ["{who} is not in params", "cannot do 'click picture \"Mirza\" beneath \"To\"'"]
+          and skills.parse_text('---\nsteps:\n  - click picture "Mirza Baig"\n---\n', "x").covers
+          == set())
     behind = {"y": 517, "x": 1451, "in": "window", "state": []}
     front = {"y": 546, "x": 1480, "in": None, "state": ["focused"]}
     check("twins: the focused one wins over the one first in reading order",
