@@ -41,9 +41,9 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 
 <br>
 
-<div align="center">
+https://github.com/user-attachments/assets/d00a56ea-3b7f-403b-8021-d858e3be6797
 
-[Watch the demo — 54 seconds](Resources/demo.mp4)
+<div align="center">
 
 <sub>The native app, in motion. Configuration on the left. What it changes on the right.</sub>
 
