@@ -1302,11 +1302,11 @@ async def _check_end(ctx: pai.RunContext[Agent], output):
         raise pai.ModelRetry("Not done: this turn acted. Read its result first.")
     # Once: a second `done` goes through, so the model can say why.
     if isinstance(output, Done) and not deps.told_recipients:
-        lines = deps.loop.unresolved()
+        lines = deps.loop.unresolved_recipient()
         if lines:
             deps.told_recipients = True
             deps._note(lines[0])
-            raise pai.ModelRetry(" ".join(lines))
+            raise pai.ModelRetry(" ".join(line + "." for line in lines))
     if isinstance(output, Done):
         still = [i for i in await deps.plan.get_items() if i.status.value in OPEN]
         if still:

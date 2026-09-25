@@ -1224,7 +1224,9 @@ def agent_checks(runner, stderr_path, trace_path):
     got = [results(n)[-1] for n in (1, 2, 3)] if len(planner_bodies) == 4 else []
     check("recipients: typed text left in To is said on moving away, and refuses done once",
           len(got) == 3 and plain_text not in got[0] and f" — {plain_text};"
-          in got[1] and got[2].startswith(plain_text + ".") and end["end"] == "done", (got, report))
+          in got[1] and got[2].startswith(plain_text + ".") and end["end"] == "done"
+          and sum(line.startswith("rule unresolved-recipient: ") for line in fake.logs) == 2,
+          (got, report, fake.logs))
 
     for picked in ("\ufffc", "\xa0 Sonia Bonell \xa0 \xa0", "sonia@example.com"):
         end, fake, report, asked = run(

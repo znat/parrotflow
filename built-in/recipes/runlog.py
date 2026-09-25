@@ -111,6 +111,7 @@ class Step(BaseModel):
     expect_p: Optional[float] = None    # Jev's yes to it, in runs before 09-24
     expect_ms: int = 0
     lost: str = ""                  # what the step took out of its field
+    rules: List[str] = Field(default_factory=list)  # the named rules that fired
 
 
 class Tree(BaseModel):

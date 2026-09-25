@@ -600,6 +600,7 @@ def no_list(typed):
     return f"no list showed for \"{decider.prefix(typed, 40)}\""
 
 
+UNRESOLVED_RECIPIENT = "unresolved-recipient"
 _RECIPIENT = re.compile(r"\b(to|cc|bcc|recipients?|attendees?|invitees?|participants?)\b")
 _EMAIL = re.compile(r"[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+")
 # A picked contact is drawn in the field's value as U+FFFC (Outlook) or
@@ -729,6 +730,8 @@ class Loop:
         self.recipients = {}
         # The text field the last step acted in, by identity.
         self.last_field = None
+        # Names of the rules that fired in this step.
+        self.fired = []
         self.recorder = getattr(channel, "recorder", recording.OFF)
         self.agent = None
         self.began, self.reads = time.monotonic(), 0
@@ -961,6 +964,8 @@ class Loop:
         if why is None:
             self.recorder.end_step(change=self.change, sentence=sentence(self.change),
                                    outcome=outcome, shown=report.shown)
+            if self.fired:
+                self.recorder.add_to_step(rules=self.fired)
         else:
             self.recorder.end_step(why=why, shown=report.shown)
         return why, now, aim, outcome
@@ -971,6 +976,7 @@ class Loop:
         closed = ""
         self.target_kind = None
         self.unsuggested = False
+        self.fired = []
         # What a type into a recipient field typed, when not the whole value.
         self.cut = ""
         if do == "type":
@@ -1145,9 +1151,8 @@ class Loop:
                        f"list: pick the row; {outcome}")
         acted = field or target
         if acted is not None and acted["kind"] == "text":
-            label, typed = self.recipients.get(self.last_field, ("", ""))
-            if typed and identity(acted) != self.last_field:
-                outcome = f"{unresolved_line(label, typed)}; {outcome}"
+            if self.last_field is not None and identity(acted) != self.last_field:
+                outcome = "; ".join(self.unresolved_recipient(self.last_field) + [outcome])
             self.last_field = identity(acted)
         if closed:
             outcome = f"{closed}; {outcome}"
@@ -1163,9 +1168,19 @@ class Loop:
             aim = decider.point(target)
         return None, now, aim, outcome
 
-    def unresolved(self):
-        """A line per recipient field that holds typed text, not a recipient."""
-        return [unresolved_line(label, typed) + "." for label, typed in self.recipients.values() if typed]
+    def unresolved_recipient(self, left=None):
+        """Rule unresolved-recipient: a recipient field ends with real
+        recipients, picked contacts or email addresses. A line per field that
+        holds other typed text: every field read in this run, or only `left`,
+        the field the caret just left. Said, never refused here: `done` is
+        refused once on it."""
+        fields = [self.recipients.get(left, ("", ""))] if left else self.recipients.values()
+        lines = [unresolved_line(label, typed) for label, typed in fields if typed]
+        for line in lines:
+            self.log(f"rule {UNRESOLVED_RECIPIENT}: {line}")
+        if lines:
+            self.fired.append(UNRESOLVED_RECIPIENT)
+        return lines
 
     def _forget_placed(self, snapshot):
         """Forgets the field a caret or select placed the caret in once it is

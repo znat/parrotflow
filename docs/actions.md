@@ -432,7 +432,9 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   from the list or type an email address.` A second `done` goes through. A
   step that moves from that field to another text field gets the same line,
   as a fact. The last value read is kept when the field leaves the tree:
-  Gmail folds To away once the caret leaves it.
+  Gmail folds To away once the caret leaves it. Both are the rule
+  `unresolved-recipient`: the app log says `rule unresolved-recipient: …`,
+  and the step's recording lists it under `rules`.
 - `write_plan`, `read_plan`, `add_task`, `update_task_status`,
   `update_task_statuses`, `remove_task`: the task list of `Planning`, from
   pydantic-ai-harness. The prompt asks for `write_plan` on the first call;
@@ -848,7 +850,7 @@ A run's folder, written by `built-in/recipes/runlog.py`:
 | --- | --- |
 | `run.json` | The request, the app, the loop (agent, plan, loop or recipe), the model, the settings, start and end, the outcome and the steps shown. Rewritten as the run goes. |
 | `calls/NN.json` | One model call: the messages exactly as sent (for the agent, the instructions as a system message, then the Responses `input` items), the tool calls with `why`, the results, ms, tokens, and the agent's plan after the call. `steer` is what the user typed or said to the run that this call got. `ids` maps each `[ID]` the model saw to the item's id in `tree`, as the agent numbered them. They are recorded, not recomputed. A line `look` saw is in `seen`, whole. |
-| `steps/NN.json` | One step: what was asked, the target item, the point, an accessibility press or a real click, `under` (what the hit test found at the point before), the trees before and after, the change and its sentence, a guard's question and answer, the verbs sent to the app and their replies, errors and ms. The agent adds `expect` and `lost`, what the step took out of its field. `expect_p` and `expect_ms`, Jev's check of `expect`, are in runs before 09-24 only. |
+| `steps/NN.json` | One step: what was asked, the target item, the point, an accessibility press or a real click, `under` (what the hit test found at the point before), the trees before and after, the change and its sentence, a guard's question and answer, the verbs sent to the app and their replies, errors and ms. The agent adds `expect` and `lost`, what the step took out of its field. `rules` names the rules that fired, such as `unresolved-recipient`. `expect_p` and `expect_ms`, Jev's check of `expect`, are in runs before 09-24 only. |
 | `trees/NN.json` | Every read of the window, raw: all items, not only those shown, with the window frame. `shot` is the screenshot's file, its frame in screen points (top left and size), its scale in pixels per point and its size in pixels. `seen` is every line of text read from it, and `seen_ms` the time; a step's `change.seen` and `change.still` are the lines it reported. |
 | `shots/NN.jpg` | The screenshot of that read, cut to the window, JPEG at 0.7. Taken right after the walk, without ParrotFlow's own panels. Without Screen Recording there is none: `shot` is null and `shot_error` says why. |
 | `looks/NN.json` | A `look`: the region and the lines read. |
