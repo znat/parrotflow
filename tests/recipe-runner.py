@@ -977,8 +977,16 @@ def agent_checks(runner, stderr_path, trace_path):
         "write Bonjour here", [focused],
         [[act({"do": "write", "value": "Bonjour"})], [("done", {"summary": "ok"})]])
     got = results(1)[-1] if len(planner_bodies) > 1 else ""
-    check("at: with no id, the focused field is checked, and refused the same way",
-          '"Message Body" already holds "Nathan Z."' in got and "paste" not in fake.did(),
+    check("at: with no id, the write goes at the caret, with no refusal",
+          "already holds" not in got and [s.get("text") for s in fake.steps
+                                          if s["do"] == "paste"] == ["Bonjour"], (got, fake.did()))
+
+    end, fake, report, asked = run(
+        "write Bonjour here", [focused] * 2,
+        [[act({"do": "write", "id": 3, "value": "Bonjour"})], [("done", {"summary": "ok"})]])
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("at: a write into the field that has the caret goes at the caret, with no click",
+          "already holds" not in got and "paste" in fake.did() and "press" not in fake.did(),
           (got, fake.did()))
 
     unlisted = compose()
@@ -989,9 +997,8 @@ def agent_checks(runner, stderr_path, trace_path):
         [[act({"do": "write", "value": "Bonjour"})], [("done", {"summary": "ok"})]],
         {("field_text", 1): {"text": signature, "source": "value"}})
     got = results(1)[-1] if len(planner_bodies) > 1 else ""
-    check("at: a focused text area the walk did not list is read and refused the same way",
-          'the focused field already holds "Nathan Z. +33 6 12 34 78 11"' in got
-          and "paste" not in fake.did(), (got, fake.did()))
+    check("at: a focused text area the walk did not list takes the write at the caret",
+          "already holds" not in got and "paste" in fake.did(), (got, fake.did()))
 
     end, fake, report, asked = run(
         "write to Peter", [draft("Antonio"), draft("Antonio")],
@@ -1671,7 +1678,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 237 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 239 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",

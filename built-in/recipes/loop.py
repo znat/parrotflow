@@ -1250,24 +1250,17 @@ class Loop:
 
     def _where(self, field, snapshot, at):
         """(what `field` holds, why a type or write may not run). Refused
-        without a keystroke when the field holds text and `at` does not say
-        where the words go. Seen 09-25 in Gmail: the body held the signature
-        and the message landed after it. What it holds is the app's whole
-        text, or else the walk's, cut, with `partial` set."""
-        if field is None:
-            # A focused text area the walk did not list: the app still reads it.
-            if self._focus(snapshot).get("role") != "AXTextArea":
-                return None, None
-            text = self._field_text(None)
-            if at or text is None or not text.strip():
-                return None, None
-            shown = decider.prefix(" ".join(text.split()), 60)
-            return None, (f"the focused field already holds \"{shown}\". Say where the "
-                          "text goes: at start, end or replace.")
+        without a keystroke when the field holds text, the caret is not in
+        it, and `at` does not say where the words go. Seen 09-25 in Gmail:
+        the body held the signature and the message landed after it. With
+        the caret in the field, the words go at the caret. What it holds is
+        the app's whole text, or else the walk's, cut, with `partial` set."""
         # A date or time field takes typing over one part: Outlook's hour.
-        if field["kind"] != "text" or looks_up(field) or field["role"] == "AXDateTimeArea":
+        if field is None or field["kind"] != "text" or looks_up(field) \
+                or field["role"] == "AXDateTimeArea":
             return None, None
-        self.typed_placed = not at and self.placed == identity(field)
+        self.typed_placed = not at and (self.placed == identity(field)
+                                        or self._caret_in(field, snapshot))
         text = self._field_text(field)
         held = {"text": text, "partial": False} if text is not None \
             else {"text": holds(field, snapshot), "partial": True}

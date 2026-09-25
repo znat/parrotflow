@@ -364,9 +364,13 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   Antonio Ruiz". It is recorded with the step and not checked.
   `at` is where `type` or `write` puts the text in a field that already
   holds some: `start` (⌘↑ first), `end` (⌘↓ first) or `replace` (⌘A first,
-  with the ⌘A guard). A field that holds text and a step with no `at` is
-  refused before any keystroke, with the start of what the field holds. A
-  field that looks names up (To, a search box, a combo box) needs no `at`.
+  with the ⌘A guard). A step with no `at` into a field that holds text and
+  does not have the caret is refused before any keystroke, with the start
+  of what the field holds. With the caret in the field (focused, or placed
+  by a `caret` or `select`), the words go at the caret: a paste never
+  replaces. A step with no `id` goes where the caret is and is never
+  refused. A field that looks names up (To, a search box, a combo box) needs
+  no `at`.
   `write` at the start or end of a text area gets a new line between the
   two. After typing at the start or end, or replacing in a text area, code
   reads the field back (`field_text`): the text must be there, at the start
