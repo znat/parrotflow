@@ -32,7 +32,7 @@ that were not there before the typing.
 most 600×400 points, and gives it a point ID that `act` clicks at
 (`ground.py`). `actions.ground` picks TinyClick or the planner's model; off,
 there is no `ground` tool. A read over FRESH seconds old is read again
-first: when items came or went, the new screen comes back instead.
+first: when items came, went or moved, the new screen comes back instead.
 
 The same `ground` or `look` twice in a row, by point, ID or description,
 is not run the second time: the result names the window and the focused
@@ -1026,21 +1026,23 @@ class Agent:
     def _fresh(self):
         """Reads the screen again when the last read is over FRESH seconds
         old: it may have finished loading. The new screen, as a result,
-        when items came or went; else None, and the IDs stay."""
+        when items came, went or moved; else None, and the IDs stay."""
         lp = self.loop
         if time.monotonic() - getattr(lp, "read_at", 0.0) <= FRESH:
             return None
         before = self.snapshot
         self.snapshot = lp._read(self.aim, before["app"])
-        if looping._item_set(before) == looping._item_set(self.snapshot):
+        change = looping.changes(before, self.snapshot)
+        # Moved items make a point read off the old picture wrong.
+        if looping._item_set(before) == looping._item_set(self.snapshot) \
+                and not change.get("moved") and "window" not in change:
             self.ids = {n: item if item["kind"] == "seen"
                         else looping.refind(item, self.snapshot) or item
                         for n, item in self.ids.items()}
             return None
         self.last_call, self.again = None, 0
-        change = looping.sentence(looping.changes(before, self.snapshot))
-        return (f"Not run: the screen changed since the last read: {change}. If the target "
-                f"still has no ID, ground it on this screen.\n{self._screen()}")
+        return (f"Not run: the screen changed since the last read: {looping.sentence(change)}. "
+                f"If the target still has no ID, ground it on this screen.\n{self._screen()}")
 
     def _wait(self):
         """`read` right after a read or a ground: reads until items come or
@@ -1070,14 +1072,13 @@ class Agent:
 
     @staticmethod
     def _same(facets, others):
-        for a in facets:
-            for b in others:
-                if a[0] == b[0] == "point":
-                    if abs(a[1] - b[1]) <= SAME_POINT and abs(a[2] - b[2]) <= SAME_POINT:
-                        return True
-                elif a == b:
-                    return True
-        return False
+        """The same place, or the same words at no other place."""
+        pairs = [(a, b) for a in facets for b in others if a[0] == b[0]]
+        places = [abs(a[1] - b[1]) <= SAME_POINT and abs(a[2] - b[2]) <= SAME_POINT
+                  if a[0] == "point" else a == b for a, b in pairs if a[0] != "description"]
+        if places:
+            return any(places)
+        return any(a == b for a, b in pairs)
 
     def _again(self, tool, facets):
         """Whether this call is the last `ground` or `look` again, with

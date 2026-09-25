@@ -2174,6 +2174,14 @@ def grounding_checks(url, user, plans_url):
                  'window "Untitled". Either `act` on [101], or `read` to wait for the screen.'
           and len(open(asked).read().splitlines()) == 2, got)
 
+    end, fake, report = run(tiny, [draft("")] * 3, [
+        [("ground", {"description": "Peter Holm", "id": 1, "side": "below"})],
+        [("ground", {"description": "Peter Holm", "id": 1, "side": "above"})],
+        [("done", {"summary": "ok"})]])
+    got = results(2)[-1] if len(results(2)) else ""
+    check("ground: the same words at another place are not a repeat",
+          not got.startswith("Not run") and len(open(asked).read().splitlines()) == 4, got)
+
     focused = draft("")
     focused["items"][0]["state"] = ["focused"]
     end, fake, report = run(tiny, [focused] * 2, [
@@ -2194,7 +2202,16 @@ def grounding_checks(url, user, plans_url):
     check("ground: a read over 1 s old is read again, and a screen that changed comes back",
           got.startswith("Not run: the screen changed since the last read: ")
           and '"Peter Holm"' in got and "earlier ones no longer work" in got
-          and len(open(asked).read().splitlines()) == 2, got)
+          and len(open(asked).read().splitlines()) == 4, got)
+    moved = draft("")
+    moved["items"][0]["y"] = 200
+    end, fake, report = run(tiny, [draft(""), moved], [
+        [("_sleep", 1.1), ("ground", {"description": "Peter Holm", "id": 1, "side": "below"})],
+        [("done", {"summary": "ok"})]], per_read=True)
+    got = results(1)[-1] if results(1) else ""
+    check("ground: items that moved since the last read bring the new screen back",
+          got.startswith("Not run: the screen changed since the last read: 1 moved"),
+          got)
     end, fake, report = run(tiny, [draft("")] * 3, [
         [("_sleep", 1.1), ("ground", {"description": "Peter Holm", "id": 1, "side": "below"})],
         [("done", {"summary": "ok"})]], per_read=True)
