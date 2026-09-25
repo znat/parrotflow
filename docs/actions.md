@@ -376,7 +376,11 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   `caret` puts the caret in field `id`: `at` is `start` or `end` (⌘↑, ⌘↓),
   or `before` or `after` the words in `value`. `select` selects the words
   in `value`; a `key` (⌘C, ⌘X, backspace) or a `type` or `write` with no
-  `at` then acts on them, with no second click. The model names words and
+  `at` then acts on them, with no second click. The field is forgotten once
+  a step acts on another item, a click, scroll, Tab, Escape or Return moves
+  the caret, the field leaves the tree, or another item has the focus. A new
+  window title does not count: Gmail renames the window when it saves the
+  draft. The model names words and
   never counts characters or aims at pixels. Code finds the words in the
   field's whole text (`field_text`): exactly, else with case and runs of
   spaces not counting. None, or more than one, fails the step and says what

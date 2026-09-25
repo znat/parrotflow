@@ -1086,6 +1086,18 @@ def agent_checks(runner, stderr_path, trace_path):
           "3. write" in got and 'failed: "Message Body" already holds' in got
           and not sent(fake, "paste"), got)
 
+    saved = dict(signed, window="Draft saved")
+    end, fake, report, asked = run(
+        "write Bonjour at the start", [signed] + [saved] * 3,
+        [[act({"do": "caret", "id": body_id, "at": "start"},
+              {"do": "write", "id": body_id, "value": "Bonjour"})], [("done", {"summary": "ok"})]],
+        text_of(1))
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("caret: a new window title keeps the caret, so the write with no at goes there",
+          "Ran 2 of 2" in got and "already holds" not in got
+          and [s.get("text") for s in sent(fake, "paste")] == ["Bonjour"]
+          and len(sent(fake, "press")) == 1, (got, fake.did()))
+
     timed = compose(subject="")
     end, fake, report, asked = run(
         "set the subject to 4 PM", [timed] * 2,
@@ -1572,7 +1584,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 200 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 202 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",

@@ -1034,8 +1034,7 @@ class Loop:
             change = changes(snapshot, now)
             changed = sentence(change)
         self.change = change
-        if change.get("window"):
-            self.placed = None
+        self._forget_placed(now)
         if do in ("type", "write") and field is not None:
             why = self._typed(field, at, value, held)
             if why:
@@ -1056,6 +1055,17 @@ class Loop:
         elif target is not None:
             aim = decider.point(target)
         return None, now, aim, outcome
+
+    def _forget_placed(self, snapshot):
+        """Forgets the field a caret or select placed the caret in once it is
+        gone, or another item has the focus. Not on a new window title: Gmail
+        renames the window when it saves the draft, 09-25."""
+        if self.placed is None:
+            return
+        focused = next((i for i in snapshot["items"] if "focused" in (i.get("state") or ())), None)
+        if not any(identity(i) == self.placed for i in snapshot["items"]) \
+                or focused is not None and identity(focused) != self.placed:
+            self.placed = None
 
     def _close_open_list(self, target, snapshot, aim):
         """(the window now, what was done, why it failed): Return in an open
