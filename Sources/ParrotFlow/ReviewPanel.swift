@@ -56,6 +56,11 @@ final class ReviewPanel {
     ) {
         if panel == nil { build() }
         guard let panel else { return }
+        // The one it replaces is cancelled; focus stays here for the new one.
+        if isOpen, let replaced = onCancel {
+            onCancel = nil
+            replaced()
+        }
         self.target = target
         onRun = run
         onCancel = cancel
