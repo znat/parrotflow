@@ -27,6 +27,7 @@ import decider
 import runlog as recording
 
 Do = Literal["click", "pick", "type", "write", "key", "scroll"]
+At = Literal["start", "end", "replace"]
 
 
 class Strict(BaseModel):
@@ -46,6 +47,8 @@ def describe_step(step):
         said += f" “{step['target']}”"
     if step["value"]:
         said += f" = “{decider.prefix(step['value'], 60)}”"
+    if step.get("at"):
+        said += f" at {step['at']}"
     if step["expect"]:
         said += f" → {step['expect']}"
     return said

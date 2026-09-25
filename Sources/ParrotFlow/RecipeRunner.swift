@@ -816,6 +816,15 @@ private final class RecipeSession {
                     "described": ScreenTargets.focusDescription(ofApp: named),
                     "role": ScreenTargets.focusRole(ofApp: named) as Any? ?? NSNull()]
 
+        case "field_text":
+            let box = (r["id"] as? Int).flatMap { items[$0] }.map(Self.box)
+            guard let field = TextCaret.field(ofApp: app, box: box) else {
+                return ["error": "no text field there"]
+            }
+            let (text, source) = TextCaret.text(of: field)
+            return ["text": text, "source": source, "role": TextCaret.role(field),
+                    "focused": TextCaret.isFocused(field, ofApp: app)]
+
         case "ready_for_words":
             let box = ScreenTargets.readyForWords(ofApp: r["app"] as? String ?? app)
             return ["box": box as Any? ?? NSNull()]

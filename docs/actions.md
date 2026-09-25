@@ -250,6 +250,7 @@ recipe steps.
 | `show_menu {id}` or `{x, y}` | the item's own menu, else a right-click |
 | `front` | brings the app forward, for a chord |
 | `focus`, `ready_for_words` | where the caret is, its `role`, and whether it waits in an empty box |
+| `field_text {id}` | the whole text of field `id`, or of the focused one: AXValue, else AXStringForRange, else its children joined. `source` says which. The walk never reads a text area's value |
 | `observe {at, app, see}` | `snapshot`, plus `focus` (`point`, `role`, `id`, `described`) and `ready_box` from the same read. The loop's step reads use it |
 | `spotlight {snapshot, offers, aim, chosen, seconds}`, `spotlight_dismiss` | the outlines |
 | `watch` | starts watching for Escape |
@@ -372,6 +373,15 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   log line and the trace. A call without it still runs. `expect`, optional,
   is what should be true after the step, such as "To holds Alex Moreau and
   Antonio Ruiz". It is recorded with the step and not checked.
+  `at` is where `type` or `write` puts the text in a field that already
+  holds some: `start` (⌘↑ first), `end` (⌘↓ first) or `replace` (⌘A first,
+  with the ⌘A guard). A field that holds text and a step with no `at` is
+  refused before any keystroke, with the start of what the field holds. A
+  field that looks names up (To, a search box, a combo box) needs no `at`.
+  `write` at the start or end of a text area gets a new line between the
+  two. After typing, code reads the field back (`field_text`): the text must
+  be there, at the start or end when asked, and what the field held must
+  still be there, except with `replace`.
   Each step goes through `Loop._planned_step` and its guards. The
   batch stops at the first surprise: a step failed, a step changed nothing
   (`type`, `write` and `key` do not count: the tree does not show the caret

@@ -565,6 +565,30 @@ def _inside(item, field):
         and abs(item["y"] - field["y"]) <= field["h"] / 2
 
 
+_LOOKS_UP = re.compile(r"\b(attendees?|to|cc|bcc|search|invite|recipients?|participants?|people)\b")
+
+
+def looks_up(item):
+    """A field that narrows a list as you type: To, a search box, a combo box."""
+    return bool(item) and item["kind"] == "text" and item["role"] != "AXTextArea" and (
+        item.get("lookup") or item["role"] in ("AXComboBox", "AXSearchField")
+        or _LOOKS_UP.search(item["name"].lower()) is not None)
+
+
+def _texts_in(field, snapshot):
+    return [field["value"]] + [i["name"] or i["value"] for i in snapshot["items"]
+                               if i is not field and i["kind"] != "text" and _inside(i, field)]
+
+
+def holds(field, snapshot):
+    """What a text field holds as the walk read it: its value, then the
+    items drawn inside it. The walk reads no text area's value; a Chrome
+    body shows its paragraphs as items inside it. Its own name, a
+    placeholder, is not held."""
+    return "\n".join(t for t in _texts_in(field, snapshot)
+                     if t and t.strip() and _plain(t) != _plain(field["name"]))
+
+
 def lost(field, before, after):
     """The names and words a step took out of `field`, a text field of the
     read before it: from its value, or from the items drawn inside it.
@@ -576,13 +600,9 @@ def lost(field, before, after):
     if field["kind"] != "text" or not same:
         return []
     now = min(same, key=lambda i: (i["x"] - field["x"]) ** 2 + (i["y"] - field["y"]) ** 2)
-
-    def texts(snapshot, box):
-        return [box["value"]] + [i["name"] or i["value"] for i in snapshot["items"]
-                                 if i is not box and i["kind"] != "text" and _inside(i, box)]
-    kept = " ".join(_plain(t) for t in texts(after, now))
+    kept = " ".join(_plain(t) for t in _texts_in(now, after))
     out = []
-    for text in texts(before, field):
+    for text in _texts_in(field, before):
         for part in _PARTS.split(text or ""):
             part = " ".join(part.split())
             plain = _plain(part)
@@ -854,14 +874,11 @@ class Loop:
                 return (self._refused(answer, "would type words that were not said: "
                                       + ", ".join(unsaid[:4])), snapshot, aim, "")
         if do == "key" and value == "cmd+a":
-            role = self._focus(snapshot).get("role")
-            if role in ONE_LINE:
-                self.log(f"planner: ⌘A in a one-line field ({role}), not asked")
-            else:
-                answer = self._allowed("Select all?")
-                if answer != YES:
-                    return (self._refused(answer, "select all would put existing text at risk"),
-                            snapshot, aim, "")
+            why = self._select_all(self._focus(snapshot).get("role"))
+            if why:
+                return why, snapshot, aim, ""
+        at = step.get("at")
+        field = held = None
         if do == "key":
             self.front()
             reply = self.call("key", keys=value, wait=400)
@@ -882,13 +899,26 @@ class Loop:
                 and step["target"].lower() in ("", "no name"):
             if not value:
                 return "nothing to type", snapshot, aim, ""
+            field = self._focused_item(snapshot)
+            held, why = self._where(field, snapshot, at)
+            if why:
+                return why, snapshot, aim, ""
             self.front()
-            self.act("paste" if do == "write" else "type", text=value)
+            why = self._place(field, at, snapshot)
+            if why:
+                return why, snapshot, aim, ""
+            self.act("paste" if do == "write" else "type",
+                     text=self._paragraph(do, field, at, held, value))
         else:
             target, why = (item, None) if item is not None else self._find(step, snapshot)
             if target is None:
                 return why, snapshot, aim, ""
             self.target_kind = target["kind"]
+            if do in ("type", "write") and target["kind"] == "text":
+                field = target
+                held, why = self._where(field, snapshot, at)
+                if why:
+                    return why, snapshot, aim, ""
             snapshot, closed, why = self._close_open_list(target, snapshot, aim)
             if why:
                 return why, snapshot, aim, ""
@@ -923,9 +953,13 @@ class Loop:
                 if pressed:
                     typed_on = self.settle(snapshot, aim, "before_type")
                 self.front()
+                why = self._place(field, at, typed_on or snapshot)
+                if why:
+                    return why, typed_on or snapshot, aim, ""
                 # Key presses for `type`, the paste for `write`. Seen 09-23 in
                 # Outlook: the time field's hour ignored a pasted "11" three times.
-                self.act("type" if do == "type" else "paste", text=value)
+                self.act("type" if do == "type" else "paste",
+                         text=self._paragraph(do, field, at, held, value))
         report.acted = True
         # Teams' attendee list came late after typing. Settled against the
         # read after the press, so the press's focus change does not end it.
@@ -946,6 +980,10 @@ class Loop:
             change = changes(snapshot, now)
             changed = sentence(change)
         self.change = change
+        if do in ("type", "write") and field is not None:
+            why = self._typed(field, at, value, held)
+            if why:
+                return why, now, aim, ""
         outcome = changed or UNCHANGED
         if closed:
             outcome = f"{closed}; {outcome}"
@@ -1015,6 +1053,95 @@ class Loop:
                + ", ".join(f"\"{decider.prefix(line['text'], 30)}\"" for line in over[:4]))
         self.log(f"planner: not clicked — {why}")
         return why
+
+    def _select_all(self, role):
+        """Why ⌘A may not run, or None. Asked, except in a one-line field."""
+        if role in ONE_LINE:
+            self.log(f"planner: ⌘A in a one-line field ({role}), not asked")
+            return None
+        answer = self._allowed("Select all?")
+        if answer != YES:
+            return self._refused(answer, "select all would put existing text at risk")
+        return None
+
+    def _focused_item(self, snapshot):
+        """The item the caret is in, or None."""
+        wanted = self._focus(snapshot).get("id")
+        return next((i for i in snapshot["items"] if wanted is not None and i.get("id") == wanted
+                     or "focused" in (i.get("state") or ())), None)
+
+    def _field_text(self, field):
+        """The field's whole text as the app reads it, or None when it cannot."""
+        args = {"id": field["id"]} if field and field.get("id") is not None else {}
+        text = self.call("field_text", **args).get("text")
+        return text if isinstance(text, str) else None
+
+    def _where(self, field, snapshot, at):
+        """(what `field` holds, why a type or write may not run). Refused
+        without a keystroke when the field holds text and `at` does not say
+        where the words go. Seen 09-25 in Gmail: the body held the signature
+        and the message landed after it. What it holds is the app's whole
+        text, or else the walk's, cut, with `partial` set."""
+        if field is None or field["kind"] != "text" or looks_up(field):
+            return None, None
+        text = self._field_text(field)
+        held = {"text": text, "partial": False} if text is not None \
+            else {"text": holds(field, snapshot), "partial": True}
+        if at or not held["text"].strip():
+            return held, None
+        shown = decider.prefix(" ".join(held["text"].split()), 60)
+        return held, (f"\"{decider.label(field)}\" already holds \"{shown}\". Say where the "
+                      "text goes: at start, end or replace.")
+
+    def _place(self, field, at, snapshot):
+        """Puts the caret where `at` says, in the focused field. Why not, or None."""
+        if at in ("start", "end"):
+            keys = "cmd+up" if at == "start" else "cmd+down"
+            reply = self.call("key", keys=keys, wait=100)
+            return f"could not press {keys}: {reply['error']}" if reply.get("error") else None
+        if at == "replace":
+            role = field["role"] if field else self._focus(snapshot).get("role")
+            why = self._select_all(role)
+            if why:
+                return why
+            reply = self.call("key", keys="cmd+a", wait=100)
+            return f"could not press cmd+a: {reply['error']}" if reply.get("error") else None
+        return None
+
+    @staticmethod
+    def _paragraph(do, field, at, held, value):
+        """A body written at the start or end of what a text area holds is
+        its own paragraph. Seen 09-25: "…78 11Bonjour Madame"."""
+        text = (held or {}).get("text") or ""
+        if do != "write" or not field or field["role"] != "AXTextArea" or not text.strip():
+            return value
+        if at == "start" and not value.endswith("\n"):
+            return value + "\n"
+        if at == "end" and not text.endswith("\n") and not value.startswith("\n"):
+            return "\n" + value
+        return value
+
+    def _typed(self, field, at, value, held):
+        """Why the text is not where `at` put it, read back from the field.
+        None when it is, or when the app cannot read the field."""
+        if looks_up(field):
+            return None
+        now = self._field_text(field)
+        if now is None:
+            return None
+        norm = lambda text: " ".join((text or "").split())
+        typed, after = norm(value), norm(now)
+        before = norm(held["text"]) if held and not held["partial"] else ""
+        shown = decider.prefix(after, 80)
+        if typed not in after:
+            return f"the text is not in \"{decider.label(field)}\" after typing: it holds \"{shown}\""
+        if at == "start" and not after.startswith(typed) \
+                or at == "end" and not after.endswith(typed):
+            return f"the text is not at the {at} of \"{decider.label(field)}\": it holds \"{shown}\""
+        if at != "replace" and before and before not in after.replace(typed, "", 1):
+            return (f"\"{decider.label(field)}\" lost some of what it held: it held "
+                    f"\"{decider.prefix(before, 60)}\" and now holds \"{shown}\"")
+        return None
 
     @staticmethod
     def _shown(step):
