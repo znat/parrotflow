@@ -24,6 +24,7 @@ import os
 import re
 
 import decider
+import planner as planning
 
 _STEP = re.compile(r'^\s*-\s*(.+?)\s*(?:\|\s*(.+?))?\s*$')
 _CLICK = re.compile(r'^click\s+(\w+)\s+"([^"]+)"(?:\s+at\s+(left|right))?$')
@@ -217,6 +218,6 @@ def _gesture(gesture, agent):
         return reply.get("error")
     if gesture.startswith("key "):
         lp.front()
-        reply = lp.call("key", keys=gesture[4:].strip())
+        reply = lp.call("key", keys=planning.chord(gesture[4:]))
         return reply.get("text") or reply.get("error")
     return f"cannot read {gesture!r}"

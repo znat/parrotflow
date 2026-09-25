@@ -430,6 +430,12 @@ def change_checks():
 
     def said(before, after):
         return loop.sentence(loop.changes(before, after))
+    chords = {"cmd+home": "cmd+up", "⌘End": "cmd+down", "shift+cmd+home": "shift+cmd+up",
+              "Option+Right": "alt+right", "⌥⇧←": "alt+shift+left", "Page Up": "pageup",
+              "fn+delete": "forwarddelete", "Home": "home", "end": "end"}
+    got = {k: planner.chord(k) for k in chords}
+    check("chord: ⌘Home and ⌘End become ⌘↑ and ⌘↓, and key names are normalised",
+          got == chords, got)
     check("line: an unnamed field shows its state, as a named one does",
           planner._line({"role": "AXTextArea", "name": "", "kind": "text", "value": "",
                          "state": ["focused"]}) == "TextArea (no name) (focused)")
@@ -809,6 +815,16 @@ def agent_checks(runner, stderr_path, trace_path):
     check("agent: ⌘A in a text area still asks, and no is said to the model",
           "ask" in fake.did() and "key" not in fake.did() and "select all would put" in got,
           (got, fake.did()))
+    unknown = "unknown key cmd+f13. Known: cmd, shift, alt, ctrl + down, end, home, left"
+    end, fake, report, asked = run(
+        "go to the top", [home],
+        [[act({"do": "key", "value": "⌘Home"}, {"do": "key", "value": "cmd+f13"})],
+         [("done", {"summary": "ok"})]], {("key", 2): {"error": unknown}}, per_read=False)
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("agent: ⌘Home is sent as cmd+up, and an unknown key's list of keys reaches the model",
+          [s.get("keys") for s in fake.steps if s["do"] == "key"] == ["cmd+up", "cmd+f13"]
+          and "failed: could not press cmd+f13: unknown key cmd+f13. Known:" in got, got)
+
     end, fake, report, asked = run(
         "mute this channel", [home],
         [[act({"do": "click", "id": 1}, {"do": "click", "id": 2})], [("done", {"summary": "ok"})]])
@@ -1277,7 +1293,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 157 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 159 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
