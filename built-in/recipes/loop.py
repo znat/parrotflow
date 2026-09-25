@@ -903,8 +903,10 @@ class Loop:
         field = held = None
         moved = ""
         self.typed_placed = False
+        # The caret leaves the field a caret or select put it in.
         if do in ("click", "pick", "scroll") \
-                or do == "key" and value.split("+")[-1] in ("tab", "escape", "return"):
+                or do == "key" and value.split("+")[-1] in ("tab", "escape", "return") \
+                or item is not None and identity(item) != self.placed:
             self.placed = None
         why = self._edit_problem(do, at, value)
         if why:
@@ -1030,6 +1032,8 @@ class Loop:
             change = changes(snapshot, now)
             changed = sentence(change)
         self.change = change
+        if change.get("window"):
+            self.placed = None
         if do in ("type", "write") and field is not None:
             why = self._typed(field, at, value, held)
             if why:
@@ -1134,7 +1138,9 @@ class Loop:
         where the words go. Seen 09-25 in Gmail: the body held the signature
         and the message landed after it. What it holds is the app's whole
         text, or else the walk's, cut, with `partial` set."""
-        if field is None or field["kind"] != "text" or looks_up(field):
+        # A date or time field takes typing over one part: Outlook's hour.
+        if field is None or field["kind"] != "text" or looks_up(field) \
+                or field["role"] == "AXDateTimeArea":
             return None, None
         self.typed_placed = not at and self.placed == identity(field)
         text = self._field_text(field)
@@ -1229,8 +1235,11 @@ class Loop:
 
     def _typed(self, field, at, value, held):
         """Why the text is not where `at` put it, read back from the field.
-        None when it is, or when the app cannot read the field."""
-        if looks_up(field):
+        None when it is, or when the app cannot read the field. Only where
+        the place matters: a one-line field may show the text in its own
+        format, 16:00 for "4 PM"."""
+        if looks_up(field) or at not in ("start", "end") \
+                and not (at == "replace" and field["role"] == "AXTextArea"):
             return None
         now = self._field_text(field)
         if now is None:
@@ -1241,8 +1250,6 @@ class Loop:
         shown = decider.prefix(after, 80)
         if typed not in after:
             return f"the text is not in \"{decider.label(field)}\" after typing: it holds \"{shown}\""
-        if self.typed_placed:
-            return None
         if at == "start" and not after.startswith(typed) \
                 or at == "end" and not after.endswith(typed):
             return f"the text is not at the {at} of \"{decider.label(field)}\": it holds \"{shown}\""

@@ -1045,6 +1045,26 @@ def agent_checks(runner, stderr_path, trace_path):
           "failed: write takes at start, end or replace: put the caret before the words first"
           in got and not sent(fake, "press"), got)
 
+    end, fake, report, asked = run(
+        "select 78 11, set the subject to Lunch, then write", [signed] * 4,
+        [[act({"do": "select", "id": 2, "value": "78 11"},
+              {"do": "type", "id": 1, "value": "Lunch"},
+              {"do": "write", "id": 2, "value": "78 12"})], [("done", {"summary": "ok"})]],
+        {**text_of(3), ("field_text", 2): {"text": "", "source": "none"}})
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("select: typing in another field ends it, so a write back in the body needs at again",
+          "3. write" in got and 'failed: "Message Body" already holds' in got
+          and not sent(fake, "paste"), got)
+
+    timed = compose(subject="")
+    end, fake, report, asked = run(
+        "set the subject to 4 PM", [timed] * 2,
+        [[act({"do": "type", "id": 1, "value": "4 PM"})], [("done", {"summary": "ok"})]],
+        {("field_text", 2): {"text": "16:00", "source": "value"}})
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("at: a one-line field that shows the text in its own format is not read back",
+          "failed" not in got and len(sent(fake, "field_text")) == 1, (got, fake.did()))
+
     focused = compose(["Nathan Z.", "+33 6 12 34 78 11"], focused="AXTextArea")
     end, fake, report, asked = run(
         "select 78 11", [focused] * 2,
@@ -1522,7 +1542,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 191 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 195 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",

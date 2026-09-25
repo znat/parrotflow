@@ -381,9 +381,11 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   refused before any keystroke, with the start of what the field holds. A
   field that looks names up (To, a search box, a combo box) needs no `at`.
   `write` at the start or end of a text area gets a new line between the
-  two. After typing, code reads the field back (`field_text`): the text must
-  be there, at the start or end when asked, and what the field held must
-  still be there, except with `replace`.
+  two. After typing at the start or end, or replacing in a text area, code
+  reads the field back (`field_text`): the text must be there, at the start
+  or end when asked, and what the field held must still be there, except
+  with `replace`. A one-line field is not read back after `replace`: it may
+  show the text in its own format, 16:00 for "4 PM".
   `caret` puts the caret in field `id`: `at` is `start` or `end` (⌘↑, ⌘↓),
   or `before` or `after` the words in `value`. `select` selects the words
   in `value`; a `key` (⌘C, ⌘X, backspace) or a `type` or `write` with no
