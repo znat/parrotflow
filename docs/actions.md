@@ -418,6 +418,17 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   model gets "Not done: '<step>' is still open. Finish it, or cancel it with
   a reason." and tries again. `stuck` asks the user once first; an answer
   other than Stop goes back to the model.
+  A recipient field (a lookup field named To, Cc, Bcc, recipients,
+  attendees, invitees or participants) must end with real recipients. Code
+  reads the text typed after the last picked contact in its value: a picked
+  contact is U+FFFC or sits between no-break spaces, and Gmail empties the
+  value when one is picked. Text there that is not an email address is not a
+  recipient. The first `done` is refused once with `"To recipients" still
+  holds the text "Sonia Bonnell", which is not a recipient: pick the contact
+  from the list or type an email address.` A second `done` goes through. A
+  step that moves from that field to another text field gets the same line,
+  as a fact. The last value read is kept when the field leaves the tree:
+  Gmail folds To away once the caret leaves it.
 - `write_plan`, `read_plan`, `add_task`, `update_task_status`,
   `update_task_statuses`, `remove_task`: the task list of `Planning`, from
   pydantic-ai-harness. The prompt asks for `write_plan` on the first call;

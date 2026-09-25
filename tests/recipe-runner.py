@@ -1172,6 +1172,28 @@ def agent_checks(runner, stderr_path, trace_path):
           and "Stopped: no suggestion is showing after step 1" in got
           and "key" not in fake.did() and reads >= 8, (got, reads))
 
+    plain_text = ('"To" still holds the text "Sonia Bonnell", which is not a recipient: pick the '
+                  'contact from the list or type an email address')
+    end, fake, report, asked = run(
+        "write to Sonia Bonnell: hello", [draft(""), draft("Sonia Bonnell")],
+        [[act({"do": "type", "id": 1, "value": "Sonia Bonnell"})],
+         [act({"do": "write", "id": 2, "value": "hello"})],
+         [("done", {"summary": "ok"})], [("done", {"summary": "ok"})]])
+    got = [results(n)[-1] for n in (1, 2, 3)] if len(planner_bodies) == 4 else []
+    check("recipients: typed text left in To is said on moving away, and refuses done once",
+          len(got) == 3 and plain_text not in got[0] and f" — {plain_text};"
+          in got[1] and got[2].startswith(plain_text + ".") and end["end"] == "done", (got, report))
+
+    for picked in ("\ufffc", "\xa0 Sonia Bonell \xa0 \xa0", "sonia@example.com"):
+        end, fake, report, asked = run(
+            "write to Sonia: hello", [draft(""), draft(picked)],
+            [[act({"do": "type", "id": 1, "value": "Sonia"})],
+             [act({"do": "write", "id": 2, "value": "hello"})], [("done", {"summary": "ok"})]])
+        got = "".join(results(n)[-1] for n in range(1, len(planner_bodies)))
+        check(f"recipients: {picked!r} in To is a recipient",
+              "not a recipient" not in got and len(planner_bodies) == 3 and end["end"] == "done",
+              (got, report))
+
     end, fake, report, asked = run(
         "leave this channel", [panel("Home", ["General", "Settings", "Leave"], refused="leave")] * 3,
         [[act({"do": "click", "id": 3})], [act({"do": "type", "value": "goodbye from March"})],
@@ -1209,7 +1231,7 @@ def agent_checks(runner, stderr_path, trace_path):
     typed = [draft(""), draft("Peter", popup=True)]
     end, fake, report, asked = run(
         "write to Peter", typed,
-        [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})]],
+        [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})], [("done", {"summary": "ok"})]],
         {("ask", 1): {"answer": "Peter Smith", "via": "option"}})
     sent = next((s for s in fake.steps if s["do"] == "ask"), {})
     near = sent.get("near") or {}
@@ -1220,22 +1242,22 @@ def agent_checks(runner, stderr_path, trace_path):
           and near.get("x") == 400 and near.get("y") - near.get("h") / 2 == 90
           and near.get("y") + near.get("h") / 2 == 160 and near.get("w") == 200
           and sent.get("shown") == report["shown"][:1], sent)
-    got = results(2)[-1] if len(planner_bodies) == 3 else ""
+    got = results(2)[-1] if len(planner_bodies) == 4 else ""
     check("agent: an option answer comes back to the model",
           got == "The user answered: Peter Smith" and end["end"] == "done", (got, report))
 
     end, fake, report, asked = run(
         "write to Peter", typed,
-        [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})]],
+        [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})], [("done", {"summary": "ok"})]],
         {("ask", 1): {"answer": "the one in Paris", "via": "text"}})
-    got = results(2)[-1] if len(planner_bodies) == 3 else ""
+    got = results(2)[-1] if len(planner_bodies) == 4 else ""
     check("agent: a typed answer comes back to the model",
           got == "The user answered: the one in Paris", got)
 
     end, fake, report, asked = run(
         "write to Peter", typed,
-        [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})]])
-    got = results(2)[-1] if len(planner_bodies) == 3 else ""
+        [[act({"do": "type", "id": 1, "value": "Peter"})], [which], [("done", {"summary": "ok"})], [("done", {"summary": "ok"})]])
+    got = results(2)[-1] if len(planner_bodies) == 4 else ""
     check("agent: no answer goes back to the model, which must not commit",
           got.startswith("No answer. Do not commit anything") and end["end"] == "done",
           (got, report, len(planner_bodies)))
@@ -1488,7 +1510,7 @@ def agent_checks(runner, stderr_path, trace_path):
     end, fake, report, asked = run(
         "invite Peter", [draft(""), draft("Pe"), draft("Pe")],
         [[act({"do": "type", "id": 1, "value": "Peter"}, {"do": "click", "id": 2})],
-         [("done", {"summary": "ok"})]])
+         [("done", {"summary": "ok"})], [("done", {"summary": "ok"})]])
     got = results(1)[-1] if len(planner_bodies) > 1 else ""
     check("agent: without seen lines in the reply (no permission) the batch runs as before",
           "Ran 2 of 2" in got and "seen" not in got and "look" in fake.did()
@@ -1624,7 +1646,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 208 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 233 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
@@ -2266,7 +2288,8 @@ def surprise_checks(url, user, plans_url):
     def plan(*tasks):
         return ("write_plan", {"items": [{"id": str(n), "content": content, "status": status}
                                          for n, (content, status) in enumerate(tasks)]})
-    finish = [[plan(("Add Alex", "completed"))], [("done", {"summary": "ok"})]]
+    finish = [[plan(("Add Alex", "completed"))], [("done", {"summary": "ok"})],
+              [("done", {"summary": "ok"})]]
     expect = "To holds Alex"
     typed = act({"do": "type", "id": 1, "value": "Alex", "expect": expect})
 
@@ -2305,7 +2328,8 @@ def surprise_checks(url, user, plans_url):
         [[plan(("Add both", "in_progress"))],
          [act({"do": "type", "id": 1, "value": "Antonio"})],
          [act({"do": "type", "id": 1, "value": "Alex", "expect": both})],
-         [plan(("Add both", "completed"))], [("done", {"summary": "ok"})]])
+         [plan(("Add both", "completed"))], [("done", {"summary": "ok"})],
+         [("done", {"summary": "ok"})]])
     check("surprises: two on one task do not make anyone ask the user",
           not [s for s in fake.steps if s["do"] == "ask"] and "Call `ask`" not in result(3)
           and end["end"] == "done", (result(3), fake.did()))

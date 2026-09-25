@@ -607,6 +607,39 @@ def no_suggestion(value):
     return said + (f"; clear the field and type only \"{shorter}\"" if shorter else "")
 
 
+_RECIPIENT = re.compile(r"\b(to|cc|bcc|recipients?|attendees?|invitees?|participants?)\b")
+_EMAIL = re.compile(r"[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+")
+# A picked contact is drawn in the field's value as U+FFFC (Outlook) or
+# between no-break spaces (Slack); typed text comes after the last one.
+_CHIP = re.compile("[\ufffc\xa0]")
+
+
+def typed_text(value):
+    """The text typed after the last picked contact in a field's value."""
+    parts = _CHIP.split(value or "")
+    if len(parts) > 1 and not parts[-1].strip():
+        parts.pop()
+    return " ".join(parts[-1].split())
+
+
+def takes_recipients(item):
+    return looks_up(item) and _RECIPIENT.search(item["name"].lower()) is not None
+
+
+def not_a_recipient(item):
+    """The typed text a recipient field holds that is not an email address,
+    or "". Seen 09-25 in Gmail: a picked contact left To's value empty; the
+    unmatched "Sonia Bonnell" stayed in it as text, and the run ended done."""
+    typed = typed_text(item["value"])
+    words = [w for w in re.split(r"[,;\s]+", typed) if w]
+    return "" if all(_EMAIL.fullmatch(w) for w in words) else typed
+
+
+def unresolved_line(label, typed):
+    return (f"\"{decider.prefix(label, 40)}\" still holds the text \"{decider.prefix(typed, 40)}\", "
+            "which is not a recipient: pick the contact from the list or type an email address")
+
+
 def _texts_in(field, snapshot):
     return [field["value"]] + [i["name"] or i["value"] for i in snapshot["items"]
                                if i is not field and i["kind"] != "text" and _inside(i, field)]
@@ -681,6 +714,12 @@ class Loop:
         self.typed_placed = False
         # The last type into a lookup field ended with no list showing.
         self.unsuggested = False
+        # Recipient fields read in this run, by identity: (label, typed text
+        # that is not a recipient). Kept when the field leaves the tree:
+        # Gmail folds To away once the caret leaves it.
+        self.recipients = {}
+        # The text field the last step acted in, by identity.
+        self.last_field = None
         self.recorder = getattr(channel, "recorder", recording.OFF)
         self.agent = None
         self.began, self.reads = time.monotonic(), 0
@@ -757,6 +796,9 @@ class Loop:
         if reply.get("error"):
             raise Stop(reply["error"], broke=True)
         snapshot = reply["snapshot"]
+        for item in snapshot["items"]:
+            if takes_recipients(item):
+                self.recipients[identity(item)] = (decider.label(item), not_a_recipient(item))
         if isinstance(reply.get("seen"), list):
             snapshot["seen"] = reply["seen"]
         if isinstance(reply.get("focus"), dict):
@@ -1086,6 +1128,12 @@ class Loop:
             outcome = f"{moved}; {changed}" if changed else moved
         if self.unsuggested:
             outcome = f"{no_suggestion(value)}; {outcome}"
+        acted = field or target
+        if acted is not None and acted["kind"] == "text":
+            label, typed = self.recipients.get(self.last_field, ("", ""))
+            if typed and identity(acted) != self.last_field:
+                outcome = f"{unresolved_line(label, typed)}; {outcome}"
+            self.last_field = identity(acted)
         if closed:
             outcome = f"{closed}; {outcome}"
         ms = int((time.monotonic() - self.began) * 1000)
@@ -1099,6 +1147,10 @@ class Loop:
         elif target is not None:
             aim = decider.point(target)
         return None, now, aim, outcome
+
+    def unresolved(self):
+        """A line per recipient field that holds typed text, not a recipient."""
+        return [unresolved_line(label, typed) + "." for label, typed in self.recipients.values() if typed]
 
     def _forget_placed(self, snapshot):
         """Forgets the field a caret or select placed the caret in once it is

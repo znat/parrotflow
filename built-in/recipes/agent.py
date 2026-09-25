@@ -345,6 +345,7 @@ class Agent:
         self.acted_on = None
         self.opened = []
         self.asked_when_stuck = False
+        self.told_recipients = False
         self.tried = {}
         self.skills = {}
         # Skills that failed this run: their controls are the model's again.
@@ -1299,6 +1300,13 @@ async def _check_end(ctx: pai.RunContext[Agent], output):
             raise pai.ModelRetry(said)
     if isinstance(output, Done) and deps.ran:
         raise pai.ModelRetry("Not done: this turn acted. Read its result first.")
+    # Once: a second `done` goes through, so the model can say why.
+    if isinstance(output, Done) and not deps.told_recipients:
+        lines = deps.loop.unresolved()
+        if lines:
+            deps.told_recipients = True
+            deps._note(lines[0])
+            raise pai.ModelRetry(" ".join(lines))
     if isinstance(output, Done):
         still = [i for i in await deps.plan.get_items() if i.status.value in OPEN]
         if still:
