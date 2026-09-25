@@ -127,12 +127,14 @@ _SPELLED = re.compile(r"(?<![^\W\d_'’])[^\W\d_](?:[ .\-]+[^\W\d_](?![^\W\d_'�
 
 def said_words(text):
     """The words of `text`, and the words its spelled letters make: "A R I"
-    is "ari", "B-O-N-E L L" is "bonell". The first letter may be a word of
-    its own: "à A R I" also gives "ari"."""
+    and "a-r-i" are "ari", "B-O-N-E L L" is "bonell". A lower-case letter
+    before capitals is a word of its own: "à A R I" also gives "ari"."""
     words = set(_words(text))
     for run in _SPELLED.findall(text):
-        letters = "".join(re.findall(r"[^\W\d_]", run)).lower()
-        words.update((letters, letters[1:]))
+        letters = "".join(re.findall(r"[^\W\d_]", run))
+        words.add(letters.lower())
+        if len(letters) > 2 and letters[0].islower() and letters[1:].isupper():
+            words.add(letters[1:].lower())
     return words
 
 

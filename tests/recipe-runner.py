@@ -454,11 +454,12 @@ def change_checks():
 
     spelled = [decider.said_words(t) for t in (
         "pour mon fils Harry. Harry s'écrit A R I.", "Sonia B-O-N-E L L", "P-R-O-N-O-T-E-S",
-        "c'est A.R.I")]
+        "c'est A.R.I", "son nom: a-r-i", "c'est à A R I")]
     check("said words: spelled letters join into a word, across spaces, hyphens and dots",
           "ari" in spelled[0] and "bonell" in spelled[1] and "pronotes" in spelled[2]
-          and "ari" in spelled[3] and "sari" not in spelled[0]
-          and "notes" not in spelled[2], spelled)
+          and "ari" in spelled[3] and "ari" in spelled[4] and "ari" in spelled[5]
+          and "sari" not in spelled[0] and "onell" not in spelled[1]
+          and "ronotes" not in spelled[2], spelled)
     chords = {"cmd+home": "cmd+up", "⌘End": "cmd+down", "shift+cmd+home": "shift+cmd+up",
               "Option+Right": "alt+right", "⌥⇧←": "alt+shift+left", "Page Up": "pageup",
               "fn+delete": "forwarddelete", "Home": "home", "end": "end"}
