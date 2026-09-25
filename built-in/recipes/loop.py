@@ -596,15 +596,8 @@ def suggested(field, before, after):
         or any(below(line) for block in change.get("seen", ()) for line in block["lines"])
 
 
-def no_suggestion(value):
-    """The fact said when no list is showing after a type into a lookup field.
-    Seen 09-25 in Gmail: the list showed Sonia while typing, then closed at
-    "Bonnell", as the contact is "Bonell-Granda Sonia"."""
-    words = value.split()
-    shorter = words[0] if len(words) > 1 else value[:3] if len(value) > 3 else ""
-    said = (f"no suggestion is showing for \"{decider.prefix(value, 40)}\": the list can close "
-            "when a later letter does not match")
-    return said + (f"; clear the field and type only \"{shorter}\"" if shorter else "")
+def no_list(typed):
+    return f"no list showed for \"{decider.prefix(typed, 40)}\""
 
 
 _RECIPIENT = re.compile(r"\b(to|cc|bcc|recipients?|attendees?|invitees?|participants?)\b")
@@ -626,13 +619,28 @@ def takes_recipients(item):
     return looks_up(item) and _RECIPIENT.search(item["name"].lower()) is not None
 
 
+def is_address(text):
+    words = [w for w in re.split(r"[,;\s]+", text or "") if w]
+    return bool(words) and all(_EMAIL.fullmatch(w) for w in words)
+
+
+def lookup_text(value, letters):
+    """What to type into a recipient field to open its list: the first word,
+    cut to `letters` when more than 0. An email address goes in whole.
+    Seen 09-25 in Gmail: "Sonia" listed "Bonell-Granda Sonia"; "Sonia
+    Bonnell" closed the list at the second n."""
+    if is_address(value):
+        return value
+    first = re.split(r"[\s,;]+", value.strip())[0]
+    return first[:letters] if letters > 0 else first
+
+
 def not_a_recipient(item):
     """The typed text a recipient field holds that is not an email address,
     or "". Seen 09-25 in Gmail: a picked contact left To's value empty; the
     unmatched "Sonia Bonnell" stayed in it as text, and the run ended done."""
     typed = typed_text(item["value"])
-    words = [w for w in re.split(r"[,;\s]+", typed) if w]
-    return "" if all(_EMAIL.fullmatch(w) for w in words) else typed
+    return "" if not typed or is_address(typed) else typed
 
 
 def unresolved_line(label, typed):
@@ -704,6 +712,7 @@ class Loop:
         self.utterance = request.get("run", "")
         settings = request.get("loop") or {}
         self.max_steps = int(settings.get("max_steps", 30))
+        self.lookup_letters = int(settings.get("lookup_letters", 0))
         self.spotlight = float(settings.get("spotlight", 0))
         self.execute = request.get("execute", True)
         self.app = request.get("read_app")
@@ -962,6 +971,8 @@ class Loop:
         closed = ""
         self.target_kind = None
         self.unsuggested = False
+        # What a type into a recipient field typed, when not the whole value.
+        self.cut = ""
         if do == "type":
             said = decider.said_words(self.utterance)
             unsaid = [w for w in decider._words(value)
@@ -1029,7 +1040,7 @@ class Loop:
             if why:
                 return why, snapshot, aim, ""
             self.act("paste" if do == "write" else "type",
-                     text=self._paragraph(do, field, at, held, value))
+                     text=self._typing(do, field, at, held, value))
         else:
             target, why = (item, None) if item is not None else self._find(step, snapshot)
             if target is None:
@@ -1083,7 +1094,7 @@ class Loop:
                 # Key presses for `type`, the paste for `write`. Seen 09-23 in
                 # Outlook: the time field's hour ignored a pasted "11" three times.
                 self.act("type" if do == "type" else "paste",
-                         text=self._paragraph(do, field, at, held, value))
+                         text=self._typing(do, field, at, held, value))
             elif do in ("caret", "select"):
                 if pressed:
                     typed_on = self.settle(snapshot, aim, "before_type")
@@ -1128,7 +1139,10 @@ class Loop:
         if moved:
             outcome = f"{moved}; {changed}" if changed else moved
         if self.unsuggested:
-            outcome = f"{no_suggestion(value)}; {outcome}"
+            outcome = f"{no_list(self.cut or value)}; {outcome}"
+        if self.cut:
+            outcome = (f"typed \"{self.cut}\" of \"{decider.prefix(value, 40)}\" to open the "
+                       f"list: pick the row; {outcome}")
         acted = field or target
         if acted is not None and acted["kind"] == "text":
             label, typed = self.recipients.get(self.last_field, ("", ""))
@@ -1337,6 +1351,14 @@ class Loop:
         if do == "caret":
             return None, f"the caret is {at} \"{decider.prefix(found, 40)}\"{by}"
         return None, f"\"{decider.prefix(found, 40)}\" is selected{by}"
+
+    def _typing(self, do, field, at, held, value):
+        """The text a type or write sends."""
+        if do == "type" and field is not None and takes_recipients(field):
+            typed = lookup_text(value, self.lookup_letters)
+            self.cut = typed if typed != value else ""
+            return typed
+        return self._paragraph(do, field, at, held, value)
 
     @staticmethod
     def _paragraph(do, field, at, held, value):

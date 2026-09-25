@@ -490,14 +490,21 @@ first, as above. Still covered, the step fails with `"End time" is covered by
 text seen on screen: "18:30"`, and the run goes on. An empty field's one line
 is taken for its placeholder.
 
+A `type` into a recipient field (a lookup field named To, Cc, Bcc,
+recipients, attendees, invitees or participants) types only the first word
+of `value`, cut to `lookup_letters` letters when that is more than 0 (2 by
+default). An email address goes in whole. Seen 09-25 in Gmail: the list
+showed Sonia while typing, then closed at "Bonnell", as the contact is
+"Bonell-Granda Sonia". The model then picks the row. Other lookup fields,
+such as a search box or a time combo box, get the whole value.
+
 After a `type` into a lookup field, the wait does not end at the field's own
 value. It ends when a list shows: a part of the app opened, the field became
 expanded, or new items or seen lines appeared below it. It lasts 1.5 s at
-most. With `seen` and no list, the step's result starts with `no suggestion
-is showing for "Sonia Bonnell": the list can close when a later letter does
-not match; clear the field and type only "Sonia"`, and the batch stops there.
-Seen 09-25 in Gmail: the list showed Sonia while typing, then closed at
-"Bonnell", as the contact is "Bonell-Granda Sonia". The step is not refused.
+most. The result names the rows, and starts with `typed "So" of "Sonia
+Bonnell" to open the list: pick the row` when the value was cut. With
+`seen` and no list, it also says `no list showed for "So"`, and the batch
+stops there. The step is not refused.
 
 Without `seen` (the setting off, or no Screen Recording), a `type` into a
 lookup field (`lookup`, a combo box, a search field, or a name like To or

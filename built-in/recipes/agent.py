@@ -752,7 +752,7 @@ class Agent:
                 self._note(surprise)
                 break
             if lp.unsuggested and n < len(steps):
-                stop = f"no suggestion is showing after step {n}"
+                stop = f"no list showed after step {n}"
                 break
             if was is not None and outcome.endswith(looping.UNCHANGED):
                 seen = {self._norm(line["text"]) for line in was}
