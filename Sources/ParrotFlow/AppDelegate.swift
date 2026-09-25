@@ -224,10 +224,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// The action key started this one: the words are an instruction about
         /// what is on screen, not text and not an edit. See `Config.Actions`.
         var action = false
-        /// Where the speaker was looking when they pressed, frozen with the
-        /// rest of the press for the reason every other field here is frozen —
-        /// a second press must not be able to move this one's target.
-        var gaze: Gaze.Point?
+        /// The app in front at the press. An action works in its focused
+        /// window, frozen for the reason every other field here is.
+        var app: String?
         /// What was selected when this recording began.
         ///
         /// Frozen for the reason every other field here is. `selectionAtPress`
@@ -271,13 +270,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// dictation key. A recording started by the action key was then judged
     /// against a key nobody was holding.
     private var actionAtPress = false
-
-    /// Where the speaker was looking when the action key went down.
-    ///
-    /// Read at the press, not when the words arrive. The transcript is about a
-    /// second behind the release, and by then they are looking at something
-    /// else — usually at whatever they expect to happen.
-    private var gazeAtPress: Gaze.Point?
 
     /// Watches for the last dictation being selected again — see
     /// `SelectionWatch`. Running from the moment there is something to select
@@ -1058,15 +1050,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             RecipeProcess.shared.stop()
         }
-        let scrollLines = config.actions.enabled ? config.actions.gazeScroll : 0
-        let scrollFile = config.actions.gazeFile
-        MainActor.assumeIsolated {
-            if scrollLines > 0 {
-                GazeScroll.shared.start(file: scrollFile, lines: scrollLines)
-            } else {
-                GazeScroll.shared.stop()
-            }
-        }
 
         // Before the setup window is built, because that is where the tour
         // measures the boxes it reserves for a surface and a different key is a
@@ -1392,15 +1375,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // on it — `activeMode` and `hotkeyStillHeld` are asked further
             // down this same function.
             actionAtPress = action
-            // Where they are looking, now, while they are still looking at it.
-            gazeAtPress = action ? Gaze.now(file: config.actions.gazeFile) : nil
-            if let gaze = gazeAtPress {
-                Log.write(
-                    "action key: gaze \(Int(gaze.location.x)),\(Int(gaze.location.y))"
-                    + " from the \(gaze.source.rawValue)"
-                    + (gaze.age.map { String(format: " (%.1fs old)", $0) } ?? "")
-                )
-            }
             // The selector is the one open panel that does not draw that row
             // — `PillMetrics.showsHold` refuses it — so a panel asking which
             // word you meant promises nothing about holding and must not take
@@ -2324,7 +2298,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             paste: appAtPress.map { AppProfile.of($0).paste } ?? .plain,
             keyed: keyedAtPress,
             action: actionAtPress,
-            gaze: gazeAtPress,
+            // Never ParrotFlow itself: its run panel can be key.
+            app: actionAtPress
+                ? appAtPress.flatMap { $0.bundleID == Bundle.main.bundleIdentifier ? nil : $0.name }
+                : nil,
             // Still this press's: the recording has only just stopped and no
             // newer press can have landed. The gap this closes is the decode
             // that follows, not this moment.
@@ -2845,20 +2822,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Does what was said, to whatever is on screen where they were looking.
+    /// Does what was said, in the focused window of the app that was in front
+    /// at the press.
     ///
-    /// Three steps, none of them on the main thread: read the window under the
-    /// gaze (~0.4 s on Slack), ask the decider which action and which target
-    /// (~0.65 s), post the events. The pill carries the wait, and every way
-    /// this ends says what happened — an action that quietly did nothing is
+    /// The runner reads the window, the agent picks the steps, the app posts
+    /// the events. The pill carries the wait, and every way this ends says
+    /// what happened — an action that quietly did nothing is
     /// indistinguishable from one that did something somewhere else.
-    ///
-    /// The gaze was read at the press and travels on `press`. Reading it here
-    /// would read where they are looking now, which is about a second and a
-    /// half later and usually at the pill.
     private func act(on instruction: String, for press: Press) {
         let settings = config.actions
-        let point = press.gaze?.location ?? Gaze.mouse()
+        let app = press.app ?? ""
         let token = beginProgress("Looking…")
 
         Task { [weak self] in
@@ -2872,18 +2845,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             // The runner decides: a recipe when one fits, the loop otherwise.
-            // The app name is only needed to find the recipes, and reading it
-            // costs a walk of the window (~0.4 s on Slack).
-            let app = settings.recipes
-                ? (try? ScreenTargets.snapshot(at: point, ignoring: Set(settings.ignoreApps)))?.app ?? ""
-                : ""
             // The run panel carries the progress and the outcome once it is up.
             let shownBefore = await MainActor.run { () -> Int in
                 QuestionPanel.shared.onRunShown = { self?.endProgress(token: token) }
                 return QuestionPanel.shared.runsShown
             }
             let run = await Recipes.run(
-                utterance: instruction, app: app, config: settings, at: point
+                utterance: instruction, app: app, config: settings,
+                readApp: app.isEmpty ? nil : app
             )
             let panelShown = await MainActor.run { () -> Bool in
                 QuestionPanel.shared.onRunShown = nil

@@ -134,10 +134,8 @@ final class RecipeProcess: @unchecked Sendable {
         }
         let (lines, complaints) = lock.withLock { (self.lines, self.complaints) }
 
-        let gaze = request["gaze"] as? [Int]
         let session = RecipeSession(
-            app: app, config: config, title: QuestionPanel.title(request["run"] as? String ?? ""),
-            aim: gaze.flatMap { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil }
+            app: app, config: config, title: QuestionPanel.title(request["run"] as? String ?? "")
         )
         let sent = Date()
         send(request)
@@ -501,8 +499,6 @@ private final class RecipeSession {
     private let title: String
     /// The steps done so far, as the runner last sent them.
     private var shown: [String] = []
-    /// Where the user looked at the request, in screen points.
-    private let aim: CGPoint?
     /// The run panel is up for this run.
     private(set) var showsPanel = false
 
@@ -511,18 +507,17 @@ private final class RecipeSession {
     /// Outlook fills that list twice, local then server, so a row is found
     /// again by name before it is clicked.
     private var outsideRows: [Int: CGRect] = [:]
-    private var marks: [Int: (snapshot: ScreenTargets.Snapshot, windows: [CGRect], at: CGPoint)] = [:]
+    private var marks: [Int: (snapshot: ScreenTargets.Snapshot, windows: [CGRect])] = [:]
     private var snapshots: [Int: ScreenTargets.Snapshot] = [:]
     /// The app's windows and pop-ups at the run's first read. What opens
     /// after is read with the front window; what was there is not.
     private var parts: ScreenTargets.Parts?
     private var nextID = 1
 
-    init(app: String, config: Config.Actions, title: String, aim: CGPoint?) {
+    init(app: String, config: Config.Actions, title: String) {
         self.app = app
         self.config = config
         self.title = title
-        self.aim = aim
         never = config.neverPress
     }
 
@@ -578,7 +573,7 @@ private final class RecipeSession {
             await MainActor.run {
                 let panel = QuestionPanel.shared
                 if first {
-                    panel.begin(title: r["title"] as? String ?? title, window: window, aim: aim)
+                    panel.begin(title: r["title"] as? String ?? title, window: window)
                 }
                 panel.runApp = owner
                 panel.update(r)
@@ -647,7 +642,7 @@ private final class RecipeSession {
                 return ["item": NSNull()]
             }
             let caret = ScreenTargets.focus(ofApp: app)
-            let fields = ((try? ScreenTargets.snapshot(ofApp: app, at: .zero))?.items ?? [])
+            let fields = ((try? ScreenTargets.snapshot(ofApp: app))?.items ?? [])
                 .filter { $0.looksThingsUp }
             // Outlook's Search box is a lookup field too; the caret says which.
             if let caret, let nearest = fields.min(by: {
@@ -658,7 +653,7 @@ private final class RecipeSession {
             }
             guard let caret else { return ["item": NSNull()] }
             return ["item": register(ScreenTargets.Item(
-                kind: ScreenTargets.Kind.text, role: "AXTextField", name: "", value: "", cm: 0,
+                kind: ScreenTargets.Kind.text, role: "AXTextField", name: "", value: "",
                 x: Int(caret.x), y: Int(caret.y), w: 0, h: 0, actions: []
             ))]
 
@@ -666,7 +661,7 @@ private final class RecipeSession {
             let role = r["role"] as? String
             let name = (r["name"] as? String)?.lowercased()
             let kind = r["kind"] as? String
-            let found = ((try? ScreenTargets.snapshot(ofApp: app, at: .zero))?.items ?? []).filter {
+            let found = ((try? ScreenTargets.snapshot(ofApp: app))?.items ?? []).filter {
                 (role == nil || $0.role == role)
                     && (kind == nil || $0.kind == kind)
                     && (name == nil || $0.name.lowercased().contains(name!))
@@ -684,13 +679,12 @@ private final class RecipeSession {
             return ["item": register(Self.item(role: "AXButton", box: box))]
 
         case "mark":
-            let at = (r["at"] as? [Double]).map { CGPoint(x: $0[0], y: $0[1]) } ?? .zero
-            guard let snapshot = try? ScreenTargets.snapshot(ofApp: app, at: at) else {
+            guard let snapshot = try? ScreenTargets.snapshot(ofApp: app) else {
                 return ["error": "could not read \(app)"]
             }
             let id = nextID
             nextID += 1
-            marks[id] = (snapshot, ScreenTargets.windowFrames(ofApp: app), at)
+            marks[id] = (snapshot, ScreenTargets.windowFrames(ofApp: app))
             return ["mark": id]
 
         case "rows":
@@ -826,7 +820,7 @@ private final class RecipeSession {
             let chosen = (r["chosen"] as? Int).flatMap { items[$0] }
             let aim = (r["aim"] as? [NSNumber]).map {
                 CGPoint(x: $0[0].doubleValue, y: $0[1].doubleValue)
-            } ?? .zero
+            }
             let seconds = (r["seconds"] as? NSNumber)?.doubleValue ?? 2.5
             await MainActor.run {
                 _ = ActionSpotlight.flash(offers: offers, aim: aim, in: snapshot, chosen: chosen, seconds: seconds)
@@ -928,7 +922,7 @@ private final class RecipeSession {
     /// What can be clicked now that was not there at the mark. With `settle`,
     /// waits until the count stops growing: search results arrive in batches.
     private func appeared(
-        since mark: (snapshot: ScreenTargets.Snapshot, windows: [CGRect], at: CGPoint),
+        since mark: (snapshot: ScreenTargets.Snapshot, windows: [CGRect]),
         ms: Int, settle: Bool, windows: Bool
     ) async -> ([ScreenTargets.Item], Int) {
         let start = Date()
@@ -940,7 +934,7 @@ private final class RecipeSession {
             if windows {
                 found = ScreenTargets.newWindows(ofApp: app, besides: mark.windows).filter { !$0.name.isEmpty }
             }
-            if found.isEmpty, let now = try? ScreenTargets.snapshot(ofApp: app, at: mark.at) {
+            if found.isEmpty, let now = try? ScreenTargets.snapshot(ofApp: app) {
                 found = Recipes.appeared(from: mark.snapshot, to: now).filter {
                     $0.kind == ScreenTargets.Kind.click && !$0.name.isEmpty
                 }
@@ -961,21 +955,16 @@ private final class RecipeSession {
         if ms > 0 { try? await Task.sleep(nanoseconds: UInt64(ms) * 1_000_000) }
     }
 
-    /// `snapshot`: the window, its items registered, and its text and
-    /// picture when asked.
+    /// `snapshot`: the focused window of the named app, else of the app in
+    /// front, its items registered, and its text and picture when asked.
     private func read(_ r: [String: Any]) async -> [String: Any] {
-        let at = (r["at"] as? [NSNumber]).map {
-            CGPoint(x: $0[0].doubleValue, y: $0[1].doubleValue)
-        } ?? .zero
         let snapshot: ScreenTargets.Snapshot
         do {
-            if let named = r["app"] as? String, !named.isEmpty {
-                snapshot = try ScreenTargets.snapshot(ofApp: named, at: at, since: &parts)
-            } else {
-                snapshot = try ScreenTargets.snapshot(
-                    at: at, ignoring: Set(config.ignoreApps), since: &parts
-                )
+            let named = (r["app"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            guard let target = named ?? ScreenTargets.frontmostApp() else {
+                return ["error": "No app is in front."]
             }
+            snapshot = try ScreenTargets.snapshot(ofApp: target, since: &parts)
         } catch {
             return ["error": error.localizedDescription]
         }
@@ -1054,7 +1043,7 @@ private final class RecipeSession {
 
     private static func item(role: String, box: CGRect) -> ScreenTargets.Item {
         ScreenTargets.Item(
-            kind: ScreenTargets.Kind.other, role: role, name: "", value: "", cm: 0,
+            kind: ScreenTargets.Kind.other, role: role, name: "", value: "",
             x: Int(box.midX), y: Int(box.midY), w: Int(box.width), h: Int(box.height), actions: []
         )
     }

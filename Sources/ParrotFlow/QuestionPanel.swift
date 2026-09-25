@@ -48,11 +48,11 @@ enum QuestionPlacement {
     }
 
     /// Where a run's panel waits: beside the app's window when there is room,
-    /// else in the screen's corner farthest from where the user looks. The
+    /// else in the screen's corner farthest from the window's centre. The
     /// flag says which edge stays put as the panel grows: the top, or the
     /// bottom in a bottom corner. AppKit coordinates.
     static func aside(
-        _ size: CGSize, window: CGRect?, aim: CGPoint?, on screen: CGRect, gap: CGFloat = gap
+        _ size: CGSize, window: CGRect?, on screen: CGRect, gap: CGFloat = gap
     ) -> (frame: CGRect, side: String, pinTop: Bool) {
         if let window {
             let y = max(screen.minY, min(window.maxY, screen.maxY) - size.height)
@@ -63,7 +63,7 @@ enum QuestionPlacement {
             if screen.contains(left) { return (left, "left of the window", true) }
         }
         let margin: CGFloat = 16
-        let look = aim ?? window.map { CGPoint(x: $0.midX, y: $0.midY) }
+        let look = window.map { CGPoint(x: $0.midX, y: $0.midY) }
             ?? CGPoint(x: screen.midX, y: screen.midY)
         let left = look.x > screen.midX
         let top = look.y < screen.midY
@@ -140,7 +140,6 @@ enum QuestionPlacement {
     private var dismissed = false
     private var spot: (frame: CGRect, side: String, pinTop: Bool)?
     private var runWindow: CGRect?
-    private var runAim: CGPoint?
     private var runScreen: CGRect = .zero
     private var idleEscape: Any?
     /// The side and anchor last reported to `onPlaced`: a new height is not a move.
@@ -243,9 +242,9 @@ enum QuestionPlacement {
 
     // MARK: - A run's progress
 
-    /// A new run: its title, and nothing done yet. `window` and `aim` are in
-    /// accessibility coordinates: the app's window and where the user looks.
-    func begin(title: String, window: CGRect?, aim: CGPoint?) {
+    /// A new run: its title, and nothing done yet. `window` is the app's
+    /// window, in accessibility coordinates.
+    func begin(title: String, window: CGRect?) {
         if isAsking { answer(QuestionAnswer(text: nil, via: "timeout")) }
         endReview("superseded")
         model.review = nil
@@ -269,10 +268,8 @@ enum QuestionPlacement {
         model.closable = true
         model.onClose = { [weak self] in self?.closeButton() }
         runWindow = window.map(QuestionPlacement.flipped)
-        runAim = aim.map { QuestionPlacement.flipped(CGRect(origin: $0, size: .zero)).origin }
         near = nil
-        screen = QuestionPlacement.screen(for: runWindow
-            ?? runAim.map { CGRect(origin: $0, size: CGSize(width: 1, height: 1)) })
+        screen = QuestionPlacement.screen(for: runWindow)
         runScreen = screen
         spot = nil
         placedAs = nil
@@ -687,7 +684,7 @@ enum QuestionPlacement {
         if showsRun, near == nil {
             // Placed once per run; after that only the height changes.
             let spot = self.spot ?? QuestionPlacement.aside(
-                size, window: runWindow, aim: runAim, on: screen, gap: gap)
+                size, window: runWindow, on: screen, gap: gap)
             self.spot = spot
             let y = spot.pinTop ? spot.frame.maxY - size.height : spot.frame.minY
             frame = CGRect(x: spot.frame.minX,

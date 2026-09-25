@@ -677,7 +677,7 @@ class Loop:
     def _read(self, aim, app):
         """The window, with `seen`, its text read from the pixels, when the
         app read it, and `focus` and `ready_box` from the same read."""
-        reply = self.call("observe", at=aim, app=app, see=True)
+        reply = self.call("observe", app=app, see=True)
         if reply.get("error"):
             raise Stop(reply["error"], broke=True)
         snapshot = reply["snapshot"]
@@ -876,7 +876,9 @@ class Loop:
                     target, why = self._find(step, snapshot)
                 except Stop:
                     target = None
-            spot = decider.point(target) if target else aim
+            window = snapshot["frame"]
+            spot = (decider.point(target) if target else aim
+                    or [window["x"] + window["w"] // 2, window["y"] + window["h"] // 2])
             self.act("scroll", x=spot[0], y=spot[1], down=value.lower() != "up", turns=6)
         elif do in ("type", "write") and item is None \
                 and step["target"].lower() in ("", "no name"):

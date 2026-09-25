@@ -258,8 +258,8 @@ enum CheckConfigCommand {
         // Acting on the screen. Off by default and printed only when it is
         // not, because a block nobody wrote is not news — but when it is on,
         // every line below is something somebody should know without asking:
-        // a second key that records, a file another app writes, and a request
-        // that carries the contents of the window off this Mac.
+        // a second key that records, and a request that carries the contents
+        // of the window off this Mac.
         let actions = config.actions
         if actions.enabled {
             if actions.hotkey.isSet {
@@ -269,35 +269,15 @@ enum CheckConfigCommand {
                     ?? KeyCodes.displayString(
                         key: actions.hotkey.key, modifiers: actions.hotkey.modifiers
                     )
-                emit("  ✓ actions           \(key) acts on what is on screen where you look")
+                emit("  ✓ actions           \(key) acts in the focused window of the app in front")
             } else {
                 emit("  ✗ actions           on, but actions.hotkey.key names no key")
                 ok = false
             }
-            let gaze = actions.gazeFile.isEmpty
-                ? "the mouse pointer — no actions.gaze file named"
-                : actions.gazeFile + " (the mouse when it is stale)"
-            emit("      gaze from       \(gaze)")
-            // Whether it is tracking *now*. The only other way to find out is
-            // to act on something and read the log afterwards, by which time
-            // the answer no longer matters.
-            if !actions.gazeFile.isEmpty {
-                let point = Gaze.now(file: actions.gazeFile)
-                switch point.source {
-                case .tracker:
-                    emit(String(
-                        format: "      tracking now    yes — %d,%d, %.1f s old",
-                        Int(point.location.x), Int(point.location.y), point.age ?? 0
-                    ))
-                case .mouse:
-                    emit("      tracking now    no — the file is missing or stale,"
-                         + " so the mouse pointer is the aim")
-                }
-            }
             // The disclosure. `models:` says a cloud model sends your text;
             // this sends more than your text, and the difference is the whole
             // reason it gets a line of its own rather than joining that list.
-            emit("      ⚠︎ sends the window you are looking at to \(actions.decider.host)")
+            emit("      ⚠︎ sends the window you are working in to \(actions.decider.host)")
             emit("         its buttons, labels and visible text — not only what you said.")
             emit("         model \(actions.decider.model), key from \(actions.decider.apiKey.described)")
             if actions.decider.apiKey.resolve() == nil {

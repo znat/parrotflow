@@ -811,8 +811,8 @@ less.
 ## `actions`
 
 Saying what to do instead of what to write. Off by default, and off
-completely: with `enabled: false` no key is registered, no gaze file is read
-and nothing is sent anywhere.
+completely: with `enabled: false` no key is registered and nothing is sent
+anywhere. An action works in the focused window of the app in front.
 
 ```yaml
 actions:
@@ -820,8 +820,6 @@ actions:
   hotkey:
     key: right_control      # a second key, separate from `hotkey:`
     modifiers: []           # push-to-talk only; no `mode:`
-  gaze: ~/Documents/gaze-overlay/gaze.pos
-  ignore_apps: [GazeOverlay]
   decider:
     model: jev-latest
     endpoint: https://api.typesafe.ai/v1/systemone
@@ -843,7 +841,7 @@ actions:
   ground: tinyclick         # tinyclick | luna | off; off in release
 ```
 
-**This sends the window you are looking at off this Mac** — its buttons, its
+**This sends the window you are working in off this Mac** — its buttons, its
 labels, the text visible in it, not only what you said. `--check-config` says
 so, with the host, every time. It is the one thing in this file worth reading
 twice before turning on.
@@ -853,8 +851,6 @@ twice before turning on.
 | `enabled` | The whole feature. `false`, or absent, and none of the rest exists. |
 | `hotkey.key`, `hotkey.modifiers` | The action key, written like `hotkey:` — a bare modifier, or a character key with modifiers. No `mode:`: push-to-talk only. |
 | `hotkey.press_delay_seconds`, `hotkey.release_tail_seconds` | As in `hotkey:`, for this key. |
-| `gaze` | A file another app writes: one line, `x y ms`, in screen coordinates. Older than 1.5 s, unreadable or absent, and the mouse pointer is used instead. |
-| `ignore_apps` | Apps whose windows are never the target. A tracker draws its dot at the point being asked about, so a hit test there finds the tracker. ParrotFlow always ignores itself. |
 | `decider.*` | What picks the action and the target. Not a `models:` entry — it answers questions with probabilities rather than writing text — but `api_key:` takes the same `file:`, `env:` and literal forms. The Keychain is per model name, so it does not apply here. |
 | `planner.*` | A remote chat model that runs the agent: it calls tools to act on the window. Without it, a request no recipe fits fails. `api_key:` takes the same forms as `decider.api_key`. `loop:` is `agent`; `plan` from an older config runs the agent too. See [Planner](actions.md#planner). |
 | `planner.review_reasoning` | The reasoning effort of the review after an agent run: one call that reads the run's recording and proposes memory files, which you keep or drop in the run panel. `high` by default; empty leaves it out. Needs `record: true`. See [The review after a run](actions.md#the-review-after-a-run). |

@@ -91,13 +91,12 @@ def _one(reply, key="item"):
 
 
 class Ask:
-    """What was asked: the sentence, what Jev read out of it, the gaze."""
+    """What was asked: the sentence and what Jev read out of it."""
 
     def __init__(self, request, who=(), what=""):
         self.text = request.get("run", "")
         self.who = list(who)
         self.what = what
-        self.gaze = tuple(request["gaze"]) if request.get("gaze") else None
         self.app = request.get("app", "")
         self.letters = request.get("letters", 2)
         self.screen = request.get("screen") or {"w": 0, "h": 0}
@@ -152,9 +151,9 @@ class App:
         """The thing that can be pressed at a point, if any."""
         return _one(self._call("pressable_at", x=x, y=y))
 
-    def mark(self, at=None):
+    def mark(self):
         """Remember what is on screen now, to compare against later."""
-        return self._call("mark", at=list(at) if at else None)["mark"]
+        return self._call("mark")["mark"]
 
     def rows(self, since, under, outside_window=False, ms=3000):
         """The list that typing into `under` opened. `outside_window` for an

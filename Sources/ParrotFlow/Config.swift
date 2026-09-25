@@ -2934,28 +2934,20 @@ struct Config: Decodable, Equatable {
 
     /// Saying what to do instead of what to write.
     ///
-    /// Hold the action key, look at something, say "click on Antonio". What is
-    /// around the gaze is read out of the accessibility API, a model picks the
+    /// Hold the action key, say "click on Antonio". The focused window of the
+    /// app in front is read out of the accessibility API, a model picks the
     /// action and the target, and the click is posted. Off unless this block
     /// turns it on, and it registers nothing at all while it is off.
     ///
     /// It is the one feature here that sends what is *on your screen* rather
     /// than what you said: the names and visible text of the window you are
-    /// looking at go to the decider. `--check-config` says so in those words.
+    /// working in go to the decider. `--check-config` says so in those words.
     struct Actions: Codable, Equatable {
         var enabled: Bool = false
         /// A second hotkey, separate from the dictation one. Push-to-talk
         /// only, which is why this is not a `Hotkey`: toggle would need every
         /// release backstop in `AppDelegate` to know which key it is judging.
         var hotkey: Key = Key()
-        /// Where the gaze tracker writes its position — one line, `x y ms`,
-        /// in screen coordinates. Older than `Gaze.maxAge`, unreadable, or
-        /// empty, and the mouse is used instead. Empty means never look.
-        var gazeFile: String = ""
-        /// Apps whose windows are never what you meant. The tracker draws its
-        /// dot at exactly the point being asked about, so a hit test there
-        /// finds the overlay rather than the window under it.
-        var ignoreApps: [String] = ["GazeOverlay"]
         /// Seconds to outline the offered targets on screen before each step
         /// is taken. 0 is off, and off is the default: it is a way of seeing
         /// what the model was asked, not part of the answer.
@@ -2964,9 +2956,6 @@ struct Config: Decodable, Equatable {
         /// the loop. An experiment, off by default: it exists to find out
         /// whether recipes beat the loop on the one case the loop fails.
         var recipes = false
-        /// Lines to scroll when the gaze crosses the top or bottom of a list.
-        /// 0 is off, and off is the default.
-        var gazeScroll = 0
         var decider: Decider = Decider()
         /// A chat model that writes the steps when no recipe fits. Absent is
         /// off, and the loop asks Jev for one step at a time as before.
@@ -2994,6 +2983,9 @@ struct Config: Decodable, Equatable {
         /// that typing the whole thing finds nothing. The list does the rest.
         /// 0 types the name in full.
         var lookupLetters: Int = 2
+        /// Keys an older config still carries and nothing reads: `gaze`,
+        /// `gaze_scroll`, `ignore_apps`. Logged once per load.
+        var retired: [String] = []
         /// How many steps one request may take before it gives up.
         ///
         /// The backstop, not the guard: a loop is stopped by the request
@@ -3198,13 +3190,14 @@ struct Config: Decodable, Equatable {
 
         enum CodingKeys: String, CodingKey {
             case enabled, hotkey, decider, planner, send, spotlight, recipes, record, see, ground
-            case gazeScroll = "gaze_scroll"
-            case gazeFile = "gaze"
-            case ignoreApps = "ignore_apps"
             case neverPress = "never_press"
             case returnSends = "return_sends"
             case maxSteps = "max_steps"
             case lookupLetters = "lookup_letters"
+        }
+
+        private enum Retired: String, CodingKey, CaseIterable {
+            case gaze, gazeScroll = "gaze_scroll", ignoreApps = "ignore_apps"
         }
 
         init() {}
@@ -3214,12 +3207,9 @@ struct Config: Decodable, Equatable {
             self.init()
             if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
             if let v = try c.decodeIfPresent(Key.self, forKey: .hotkey) { hotkey = v }
-            if let v = try c.decodeIfPresent(String.self, forKey: .gazeFile) { gazeFile = v }
-            if let v = try c.decodeIfPresent([String].self, forKey: .ignoreApps) { ignoreApps = v }
+            let old = try decoder.container(keyedBy: Retired.self)
+            retired = Retired.allCases.filter { old.contains($0) }.map(\.stringValue)
             if let v = try c.decodeIfPresent(Bool.self, forKey: .recipes) { recipes = v }
-            if let v = try c.decodeIfPresent(Int.self, forKey: .gazeScroll) {
-                gazeScroll = max(0, min(v, 20))
-            }
             if let v = try c.decodeIfPresent(Double.self, forKey: .spotlight) {
                 spotlight = max(0, min(v, 10))
             }
@@ -3572,6 +3562,10 @@ struct Config: Decodable, Equatable {
         if legacyJudge {
             said.append("pipeline: `- transform: verify_names` is the old name judge."
                 + " The app does this itself now — delete the line")
+        }
+        if !actions.retired.isEmpty {
+            said.append("actions: " + actions.retired.joined(separator: ", ")
+                + " no longer read — an action works in the focused window of the app in front")
         }
 
         // Both passes left the list. A config that still names one is read as

@@ -35,7 +35,7 @@ there is no `ground` tool.
 
 Every request carries a picture of the area being worked in: a 512 px JPEG,
 `detail: low`, of the list that opened, else around the last target, else,
-on the first call, around the focused item or the gaze point. `_prepare`
+on the first call, around the focused item. `_prepare`
 drops the one before. No screenshot, no picture.
 
 What went wrong (a step failed, the same batch ran twice, a step took a name
@@ -99,7 +99,7 @@ SYSTEM = """You do a task in a macOS app for the user. You see the app's control
 - type: put a name, a search query, a subject or another short value into field `id`. `value` is the text. With `id` null it goes where the caret is.
 - write: put the body of a message or comment into box `id`. `value` is the text. With `id` null it goes where the caret is.
 - key: press a key or a shortcut. `value` in plus form: "cmd+shift+n", "return", "escape", "tab", "down". `id` is null.
-- scroll: `id` is the list or pane, or null for where the user looks. `value` is "up" or "down".
+- scroll: `id` is the list or pane, or null for the last place worked in. `value` is "up" or "down".
 `expect`: on a step whose outcome matters, a value or text that should be on screen after it, such as "To holds Alex Moreau and Antonio Ruiz" or "Start date = 25/09/2026". Not a look, such as "the day is highlighted". Otherwise null.
 
 Rules:
@@ -109,7 +109,7 @@ Rules:
 - Text marked "seen, not in the tree" is on screen but was read from pixels. Pick from it when it is a list that opened, such as people after you type a name.
 - Controls "still on screen, no longer in the tree" mean a panel is open. Finish or close the panel (return or escape), or click the control to leave it.
 - Put several steps in one `act` when you know what each one does. A step that opens a menu, a list or a dialog ends the batch: its rows get IDs in the next screen.
-- "this", "here", "that one" mean the item the user is looking at. It is already chosen. Start from it.
+- "this", "here", "that one" mean the focused or selected item. Start from it.
 - Type only words the user said. `write` only what the user asked to say. If they did not say it, click in the box and call `done`: the user will dictate it.
 - Never select all in a message, a comment or a document, and never replace or delete text there.
 - Never archive, leave or pay. Stop just before it and call `done`.
@@ -366,8 +366,7 @@ class Agent:
         if lp.execute:
             lp.call("watch")
             lp.show(steers=True)
-        gaze = lp.request.get("gaze")
-        self.aim = list(gaze) if gaze else [0, 0]
+        self.aim = None
         self.snapshot = lp._read(self.aim, lp.app)
         lp.change, lp.fresh, lp.renamed = {}, set(), {}
         app, bundle = self.snapshot["app"], lp.request.get("bundle", "")
@@ -1042,9 +1041,9 @@ class Agent:
                                  if "focused" in (i.get("state") or ())), None)
             if item is not None:
                 what = f"\"{decider.label(item)}\""
-            elif any(self.aim):
+            elif self.aim:
                 item = {"x": self.aim[0], "y": self.aim[1], "w": 0, "h": 0}
-                what = "where the user looks"
+                what = "where the last step left off"
             else:
                 return None
             region = self._region(item, "around")
@@ -1163,16 +1162,15 @@ class Agent:
         return looping.refind(item, self.snapshot)
 
     def _screen(self, first=False):
-        """The newest read as numbered lines: every item, up to SHOWN. The
-        gaze orders the first screen only; after a step it says nothing."""
+        """The newest read as numbered lines, top to bottom: every item, up
+        to SHOWN, and past it the focused one."""
         snapshot = self.snapshot
         # The filter Jev needs cut Teams' "Create a new event." (52 of 111
         # shown), and the model clicked "Start an instant Teams meeting".
         offers = [i for i in snapshot["items"] if i["kind"] != "more"
                   and (i["name"] or i["kind"] == "text")]
-        if not first:
-            offers.sort(key=lambda i: (i["y"] // 20, i["x"]))
-        offers = offers[:SHOWN]
+        offers.sort(key=lambda i: (i["y"] // 20, i["x"]))
+        offers = offers[:SHOWN] + [i for i in offers[SHOWN:] if "focused" in (i.get("state") or ())]
         # Same name, same kind: one line, the first by `twin_rank`. Teams
         # draws "Create a new event." twice.
         rank = twin_rank
@@ -1190,11 +1188,7 @@ class Agent:
         self.ids = {n: item for n, item in enumerate(offers, 1)}
         lines = [f"Window: \"{snapshot['window']}\""]
         if first:
-            looking = planning.gaze_item(snapshot, offers)
-            at = next((n for n, i in self.ids.items() if i is looking), None)
-            lines += [f"Looking at: [{at}] {planning._line(looking)}" if at else
-                      "Looking at: nothing in particular",
-                      "On screen, nearest the user's gaze first:"]
+            lines.append("On screen, top to bottom:")
         else:
             lines.append("On screen, top to bottom. New IDs; earlier ones no longer work:")
         lines += [f"[{n}] {planning._line(item)}"

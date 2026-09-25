@@ -5,7 +5,7 @@ import AppKit
 /// for each screen step and `RecipeProcess` does it.
 ///
 /// A recipe replaces the loop's one wide question — "what now?" over every
-/// target near the aim — with steps that ask only narrow ones. On a message
+/// target in the window — with steps that ask only narrow ones. On a message
 /// to two people in Slack the loop failed 6 of 6 at that question
 /// (0.32–0.52, reaching for the sidebar); the recipe passed it.
 enum Recipes {
@@ -41,11 +41,10 @@ enum Recipes {
     }
 
     /// `recipes: false` goes straight to the loop. `readApp` reads that app's
-    /// front window first instead of the window under the aim.
+    /// focused window first instead of the one of the app in front.
     static func run(
         utterance: String, app: String, config: Config.Actions, execute: Bool = true,
-        at aim: CGPoint? = nil, recipes: Bool? = nil, readApp: String? = nil,
-        maxSteps: Int? = nil
+        recipes: Bool? = nil, readApp: String? = nil, maxSteps: Int? = nil
     ) async -> Run {
         var run = Run()
         func say(_ line: String) {
@@ -57,7 +56,6 @@ enum Recipes {
             "run": utterance, "app": app, "execute": execute,
             "letters": max(1, config.lookupLetters),
             "screen": ["w": Int(screen.width), "h": Int(screen.height)],
-            "gaze": NSNull(),
             "recipes": recipes ?? config.recipes,
             "read_app": readApp as Any? ?? NSNull(),
             "loop": [
@@ -65,7 +63,6 @@ enum Recipes {
                 "spotlight": config.spotlight, "lookup_letters": config.lookupLetters,
             ] as [String: Any],
         ]
-        if let aim { request["gaze"] = [Int(aim.x), Int(aim.y)] }
         if execute, config.planner != nil { request["review"] = true }
         request["bundle"] = NSWorkspace.shared.runningApplications
             .first { $0.localizedName == app }?.bundleIdentifier ?? ""
@@ -103,7 +100,7 @@ enum Recipes {
     /// the `never_press` word its name matches.
     static func encode(_ item: ScreenTargets.Item, id: Int, never: [String]) -> [String: Any] {
         ["id": id, "role": item.role, "name": item.name, "value": item.value, "kind": item.kind,
-         "x": item.x, "y": item.y, "w": item.w, "h": item.h, "cm": item.cm,
+         "x": item.x, "y": item.y, "w": item.w, "h": item.h,
          "actions": item.actions, "lookup": item.looksThingsUp, "in_list": item.isChoiceInAList,
          "clickable": item.isClickable, "in": item.origin as Any? ?? NSNull(),
          "state": item.states ?? [], "key": item.key as Any? ?? NSNull(),
@@ -115,8 +112,6 @@ enum Recipes {
     ) -> [String: Any] {
         ["id": id, "app": snapshot.app, "bundle": ScreenTargets.bundle(ofApp: snapshot.app) ?? "",
          "window": snapshot.window,
-         "pointer": ["x": snapshot.pointer.x, "y": snapshot.pointer.y],
-         "pxPerCm": snapshot.pxPerCm,
          "frame": ["x": snapshot.frame.x, "y": snapshot.frame.y,
                    "w": snapshot.frame.w, "h": snapshot.frame.h],
          "items": items]
@@ -160,7 +155,7 @@ enum Recipes {
                     && !($0.name.isEmpty && $0.value.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             if !popup.isEmpty { return (popup, waited) }
-            guard let now = try? ScreenTargets.snapshot(ofApp: app, at: .zero) else { continue }
+            guard let now = try? ScreenTargets.snapshot(ofApp: app) else { continue }
             let menu = now.items.filter { $0.isChoiceInAList }
             if !menu.isEmpty { return (menu, waited) }
             let below = appeared(from: before, to: now).filter { item in

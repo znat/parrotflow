@@ -172,8 +172,8 @@ let appArgument: String? = arguments.firstIndex(of: "--app").flatMap { index in
 }
 
 /// `--act "<what you'd say>"` — the on-screen action path, without a mic.
-/// `--at x y` a point, `--gaze` the tracker's, `--snapshot` a saved window,
-/// `--save` writes the window it read, `--look` stops before the decision,
+/// `--app` the app to read (the one in front otherwise), `--snapshot` a saved
+/// window, `--save` writes the window it read, `--look` stops before the decision,
 /// `--show [s]` outlines what the model would be offered, `--execute` does it.
 /// `--parts` with `--app` also reads the app's other windows and pop-ups.
 if let index = arguments.firstIndex(of: "--act") {
@@ -188,19 +188,14 @@ if let index = arguments.firstIndex(of: "--act") {
     guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--"),
           doneAt.allSatisfy({ arguments.indices.contains($0 + 1) && !arguments[$0 + 1].hasPrefix("--") })
     else {
-        print("usage: --act \"click on Antonio\" [--at x y | --gaze | --snapshot f.json]"
-              + " [--app Name] [--save f.json] [--show 3] [--done \"step\"] [--execute]")
+        print("usage: --act \"click on Antonio\" [--app Name | --snapshot f.json]"
+              + " [--save f.json] [--show 3] [--done \"step\"] [--execute]")
         exit(2)
     }
-    var point: CGPoint?
-    if let at = arguments.firstIndex(of: "--at"), arguments.indices.contains(at + 2),
-       let x = Double(arguments[at + 1]), let y = Double(arguments[at + 2]) {
-        point = CGPoint(x: x, y: y)
-    }
     exit(ActCommand.run(
-        utterance: arguments[index + 1], at: point, app: appArgument,
+        utterance: arguments[index + 1], app: appArgument,
         snapshotPath: value("--snapshot"), save: value("--save"),
-        useGaze: arguments.contains("--gaze"), execute: arguments.contains("--execute"),
+        execute: arguments.contains("--execute"),
         decide: !arguments.contains("--look"),
         done: doneAt.map { arguments[$0 + 1] },
         loop: arguments.contains("--loop"),
@@ -209,22 +204,6 @@ if let index = arguments.firstIndex(of: "--act") {
         show: arguments.contains("--show") ? (value("--show").flatMap(Double.init) ?? 3) : nil,
         parts: arguments.contains("--parts")
     ))
-}
-
-/// `--gaze-dot` — draw a dot where ParrotFlow reads the gaze, until ⌃C.
-/// Pink while the tracker answers, grey when it has gone stale and the mouse
-/// is standing in.
-if arguments.contains("--gaze-dot") {
-    let app = NSApplication.shared
-    app.setActivationPolicy(.accessory)
-    app.finishLaunching()
-    let config = (try? ConfigStore.load())?.actions ?? Config.Actions()
-    let file = config.gazeFile
-    print("watching    \(file.isEmpty ? "(no gaze file — the mouse)" : file)")
-    print("pink = the tracker · grey = stale, using the mouse · ⌃C to stop")
-    GazeDot.show(file: file)
-    app.run()
-    exit(0)
 }
 
 /// `--recipe-probe "<utterance>" --app Slack [--execute]` — which recipe, and

@@ -1,5 +1,5 @@
 {
- "run": ["request", "app", "bundle", "started", "kind", "recipe", "model", "settings", "gaze", "screen", "ended", "end", "outcome", "said", "shown", "calls", "steps", "trees", "looks", "grounds"],
+ "run": ["request", "app", "bundle", "started", "kind", "recipe", "model", "settings", "screen", "ended", "end", "outcome", "said", "shown", "calls", "steps", "trees", "looks", "grounds"],
  "calls": ["n", "seq", "at", "kind", "messages", "tool_calls", "tools", "results", "reply", "ms", "tokens", "tree", "ids", "seen", "steps", "error", "plan", "steer"],
  "steps": ["n", "seq", "at", "call", "do", "value", "planned", "target", "point", "pressed", "under", "actions", "asked", "tree_before", "tree_after", "change", "sentence", "outcome", "error", "ms", "expect", "expect_p", "expect_ms", "lost"],
  "trees": ["n", "seq", "at", "snapshot", "shot", "shot_error", "scale", "seen", "seen_ms", "call", "step"],
