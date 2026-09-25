@@ -3022,6 +3022,8 @@ struct Config: Decodable, Equatable {
         /// planner a small picture of the area. Without TinyClick set up,
         /// "tinyclick" works as "luna".
         var ground: String = AppVariant.isDev ? "tinyclick" : "off"
+        /// Show the heard words in a panel to edit before the run starts.
+        var reviewBeforeRun = true
         static let groundMethods = ["tinyclick", "luna", "off"]
 
         struct Key: Codable, Equatable {
@@ -3194,6 +3196,7 @@ struct Config: Decodable, Equatable {
             case returnSends = "return_sends"
             case maxSteps = "max_steps"
             case lookupLetters = "lookup_letters"
+            case reviewBeforeRun = "review_before_run"
         }
 
         private enum Retired: String, CodingKey, CaseIterable {
@@ -3216,6 +3219,7 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(Decider.self, forKey: .decider) { decider = v }
             planner = try c.decodeIfPresent(Planner.self, forKey: .planner)
             if let v = try c.decodeIfPresent(Bool.self, forKey: .send) { send = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .reviewBeforeRun) { reviewBeforeRun = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .record) { record = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .see) { see = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .ground) {

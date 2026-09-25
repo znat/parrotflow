@@ -196,6 +196,10 @@ models:
 #   # in the composer and you send them yourself.
 #   send: false
 #
+#   # Show what was heard in a small panel before the run starts. Edit it,
+#   # then Return runs and Escape cancels. false runs the words as heard.
+#   review_before_run: true
+#
 #   # Record each run for `make trace-viewer`: the model calls, the steps,
 #   # every read of the window and a screenshot of it, in
 #   # ~/Library/Logs/ParrotFlow-Dev-runs. The last 50 runs are kept. On by

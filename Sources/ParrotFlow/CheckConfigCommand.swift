@@ -307,6 +307,9 @@ enum CheckConfigCommand {
                 }
             }
             emit("      sends messages  \(actions.send ? "yes — Return is pressed" : "no — typed, not sent")")
+            emit("      before a run    " + (actions.reviewBeforeRun
+                ? "the words are shown to edit; Return runs, Escape cancels"
+                : "runs as heard, no panel"))
             if actions.spotlight > 0 {
                 emit("      spotlight       outlines what it was offered for"
                      + " \(actions.spotlight) s before each step")

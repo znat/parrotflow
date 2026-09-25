@@ -1514,6 +1514,28 @@ enum PanelsCommand {
         return failed == 0 ? 0 : 1
     }
 
+    /// The review panel's key and empty-text rules.
+    static func reviewCheck() -> Int32 {
+        var failed = 0
+        func expect(_ name: String, _ ok: Bool) {
+            if !ok { failed += 1 }
+            print("\(ok ? "ok  " : "FAIL") \(name)")
+        }
+        let newline = #selector(NSResponder.insertNewline(_:))
+        expect("Return runs", ReviewPanel.key(newline, shift: false) == .run)
+        expect("Shift+Return adds a line", ReviewPanel.key(newline, shift: true) == .newline)
+        expect("Escape cancels",
+               ReviewPanel.key(#selector(NSResponder.cancelOperation(_:)), shift: false) == .cancel)
+        expect("Tab is left to the field",
+               ReviewPanel.key(#selector(NSResponder.insertTab(_:)), shift: false) == .other)
+        expect("empty text does not run", ReviewPanel.runnable("") == nil)
+        expect("spaces and newlines do not run", ReviewPanel.runnable("  \n \n") == nil)
+        expect("text runs trimmed", ReviewPanel.runnable("  envoie-lui\n") == "envoie-lui")
+        expect("unedited text keeps no heard", ReviewPanel.heard("a", ran: "a") == nil)
+        expect("edited text keeps the heard", ReviewPanel.heard("a", ran: "b") == "a")
+        return failed == 0 ? 0 : 1
+    }
+
     static func run(surface: String, seconds: Double, at: CGRect? = nil) -> Int32 {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -1535,12 +1557,38 @@ enum PanelsCommand {
         var calloutPanel: MenuBarCallout?
         var calloutItem: NSStatusItem?
         var anchor: NSPanel?
+        var reviews: [ReviewPanel] = []
 
         switch surface {
         case "question", "question-confirm":
             anchor = MainActor.assumeIsolated { question(confirm: surface == "question-confirm", at: at) }
         case "question-place":
             return questionPlacementCheck()
+        case "review-check":
+            return reviewCheck()
+        // Light beside a made-up window at the top, dark beside one below it.
+        case "review":
+            let sample = "Envoie un message à Matthieu pour lui dire que la réunion"
+                + " de jeudi est déplacée à 15 h."
+            let windows = [CGRect(x: 40, y: 60, width: 700, height: 260),
+                           CGRect(x: 40, y: 360, width: 700, height: 260)]
+            for (theme, window) in zip([ContextAppearance.light, .dark], windows) {
+                let panel = ReviewPanel()
+                panel.theme = theme
+                reviews.append(panel)
+                func show() {
+                    panel.show(sample, target: nil, window: window, run: { text in
+                        print("\(theme.rawValue): run — \(text)")
+                        fflush(stdout)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: show)
+                    }, cancel: {
+                        print("\(theme.rawValue): cancelled")
+                        fflush(stdout)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: show)
+                    })
+                }
+                show()
+            }
         case "run", "run-ask":
             MainActor.assumeIsolated { runDemo(onlyAsk: surface == "run-ask", at: at) }
             anchor = at.map { rect in MainActor.assumeIsolated { anchorOutline(rect) } }
@@ -1901,7 +1949,8 @@ enum PanelsCommand {
                 + "|proposal-dark|dictation|preview|microphone"
                 + "|keyboard|pill|learn|learn-long|selector|selector-long|selector-two"
                 + "|update|models|setup|launch|sequence|tutorial|names|slack|hack"
-                + "|downloads|ready|callout|question|question-confirm|question-place|run|run-ask> [seconds]"
+                + "|downloads|ready|callout|question|question-confirm|question-place|run|run-ask"
+                + "|review|review-check> [seconds]"
             + " [--at x y w h]")
             return 2
         }
@@ -1911,6 +1960,7 @@ enum PanelsCommand {
             setupWindow?.close()
             launchPanel?.dismiss()
             anchor?.orderOut(nil)
+            reviews.forEach { $0.cancel() }
             exit(0)
         }
         app.run()

@@ -43,6 +43,7 @@ ACTIONS = {"press", "click", "click_at", "right_click", "hover", "drag", "key", 
 
 class Run(BaseModel):
     request: str
+    heard: Optional[str] = None     # what was heard, when the user edited it before the run
     app: str
     bundle: str
     started: str
@@ -223,7 +224,8 @@ class Recorder:
             for part in ("calls", "steps", "trees", "shots", "looks", "grounds"):
                 os.makedirs(os.path.join(folder, part))
             run = Run(
-                request=request.get("run", ""), app=request.get("app", ""),
+                request=request.get("run", ""), heard=request.get("heard") or None,
+                app=request.get("app", ""),
                 bundle=request.get("bundle", ""), started=_now(), model=model,
                 settings=dict(request.get("loop") or {}, execute=request.get("execute", True),
                               recipes=request.get("recipes", True),
