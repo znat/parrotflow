@@ -469,7 +469,11 @@ def change_checks():
           and not loop.suggested(to_field, draft(""), elsewhere), elsewhere["items"][-1])
     check("recipients: an address ending in a dot is not one",
           loop.is_address("sonia.bonell@ac-montpellier.fr") and not loop.is_address("a@b.c.")
-          and not loop.is_address("Sonia"), "")
+          and not loop.is_address("a@bad..com") and not loop.is_address("Sonia"), "")
+    still_open = draft("Pe")
+    still_open["items"][0]["state"] = ["expanded"]
+    check("lookup: a list that was open before the typing still counts",
+          loop.suggested(to_field, still_open, still_open), "")
     chords = {"cmd+home": "cmd+up", "⌘End": "cmd+down", "shift+cmd+home": "shift+cmd+up",
               "Option+Right": "alt+right", "⌥⇧←": "alt+shift+left", "Page Up": "pageup",
               "fn+delete": "forwarddelete", "Home": "home", "end": "end"}

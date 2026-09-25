@@ -579,13 +579,14 @@ def looks_up(item):
 
 
 def suggested(field, before, after):
-    """Whether a list opened under a lookup field between two reads: the
-    field now expanded, or new named items or seen lines below it, in a
-    part of the app that opened or not. Seen 09-25 in Gmail: the contact
+    """Whether a list shows under a lookup field after typing: the field is
+    expanded, or new named items or seen lines are below it, in a part of
+    the app that opened or not. Seen 09-25 in Gmail: the contact
     row came as a new item, and To became expanded."""
-    change = changes(before, after)
-    if "expanded" in change.get("states", {}).get(field["name"], ()):
+    now = refind(field, after)
+    if now is not None and "expanded" in (now.get("state") or ()):
         return True
+    change = changes(before, after)
     bottom = field["y"] + field["h"] / 2
 
     def below(p):
@@ -601,7 +602,7 @@ def no_list(typed):
 
 UNRESOLVED_RECIPIENT = "unresolved-recipient"
 _RECIPIENT = re.compile(r"\b(to|cc|bcc|recipients?|attendees?|invitees?|participants?)\b")
-_EMAIL = re.compile(r"[^@\s,;]+@[^@\s,;]+\.[^\W\d_]{2,}")
+_EMAIL = re.compile(r"[^@\s,;]+@(?:[^\W_](?:[\w-]*[^\W_])?\.)+[^\W\d_]{2,}")
 # A picked contact is drawn in the field's value as U+FFFC (Outlook) or
 # between no-break spaces (Slack); typed text comes after the last one.
 _CHIP = re.compile("[\ufffc\xa0]")
@@ -712,7 +713,7 @@ class Loop:
         self.utterance = request.get("run", "")
         settings = request.get("loop") or {}
         self.max_steps = int(settings.get("max_steps", 30))
-        self.lookup_letters = int(settings.get("lookup_letters", 0))
+        self.lookup_letters = int(settings.get("lookup_letters", 2))
         self.spotlight = float(settings.get("spotlight", 0))
         self.execute = request.get("execute", True)
         self.app = request.get("read_app")
