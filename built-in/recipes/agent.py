@@ -97,8 +97,10 @@ SYSTEM = """You do a task in a macOS app for the user. You see the app's control
 - type: put a name, a search query, a subject or another short value into field `id`. `value` is the text. With `id` null it goes where the caret is.
 - write: put the body of a message or comment into box `id`. `value` is the text. With `id` null it goes where the caret is.
 - key: press a key or a shortcut. `value` in plus form: "cmd+shift+n", "return", "escape", "tab", "down". `id` is null.
+- caret: put the caret in field `id`. `at` is "start", "end", "before" or "after"; with before or after, `value` is words the field holds, and the caret goes next to them.
+- select: select `value`, words field `id` holds. Then `key` (cmd+c, cmd+x, backspace) or `type`/`write` over them.
 - scroll: `id` is the list or pane, or null for where the user looks. `value` is "up" or "down".
-`at`: where `type` or `write` puts the text in a field that already holds some: "start", "end" or "replace". Otherwise null.
+`at`: where `type` or `write` puts the text in a field that already holds some: "start", "end" or "replace", or null right after a `caret` or `select` in that field. For `caret`, see above. Otherwise null.
 `expect`: on a step whose outcome matters, a value or text that should be on screen after it, such as "To holds Alex Moreau and Antonio Ruiz" or "Start date = 25/09/2026". Not a look, such as "the day is highlighted". Otherwise null.
 
 Rules:
@@ -110,7 +112,8 @@ Rules:
 - Put several steps in one `act` when you know what each one does. A step that opens a menu, a list or a dialog ends the batch: its rows get IDs in the next screen.
 - "this", "here", "that one" mean the item the user is looking at. It is already chosen. Start from it.
 - Type only words the user said. `write` only what the user asked to say. If they did not say it, click in the box and call `done`: the user will dictate it.
-- Never select all in a message, a comment or a document, and never replace or delete text there.
+- Never select all in a message, a comment or a document. Change or delete words there only when the user asked.
+- To place the caret or select text, use caret/select with words from the field.
 - Never archive, leave or pay. Stop just before it and call `done`.
 - `ask` the user a short question, with up to 4 short options, only:
   - right before a step that commits: send, post, invite, share, delete, pay, publish, start a call;
@@ -127,7 +130,7 @@ Rules:
 - The picture shows the area you are working in: check it for what the screen lines cannot say (which part of a field is selected, highlighted rows, chips, what covers what)."""
 GROUNDING = ("When a target you need has no ID in the screen lines, such as a row in a list "
              "that opened, call `ground` with what it looks like before trying another way. It "
-             "returns a point ID that `act` can click.")
+             "returns a point ID that `act` can click. Never ground a caret: use caret/select.")
 NOTES = 2
 SAME_POINT = 20
 PLAN_TOOLS = {"write_plan", "read_plan", "add_task", "update_task_status", "update_task_statuses",
@@ -810,7 +813,8 @@ class Agent:
         a step, and on 09-24 it said no to three steps that had worked."""
         said, record = [], {}
         gone = looping.lost(item, before, self.snapshot) \
-            if item and step.do != "key" and step.at != "replace" else []
+            if item and step.do != "key" and step.at != "replace" \
+            and not self.loop.typed_placed else []
         if gone:
             record["lost"] = ", ".join(f"\"{g}\"" for g in gone)
             said.append(f"this step removed {record['lost']} from \"{decider.label(item)}\"")

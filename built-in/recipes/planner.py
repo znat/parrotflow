@@ -26,8 +26,8 @@ from pydantic import BaseModel, ConfigDict
 import decider
 import runlog as recording
 
-Do = Literal["click", "pick", "type", "write", "key", "scroll"]
-At = Literal["start", "end", "replace"]
+Do = Literal["click", "pick", "type", "write", "key", "scroll", "caret", "select"]
+At = Literal["start", "end", "replace", "before", "after"]
 
 
 class Strict(BaseModel):
@@ -62,6 +62,11 @@ def doing(step):
         return said + (f" in {decider.prefix(target, 40)}…" if target else "…")
     if do == "key":
         return f"pressing {value}…"
+    if do == "caret":
+        where = f"{step.get('at')} “{value}”" if value else f"at the {step.get('at')}"
+        return f"putting the caret {where}…"
+    if do == "select":
+        return f"selecting “{value}”…"
     if do == "scroll":
         return f"scrolling {value or 'down'}…"
     return f"{'picking' if do == 'pick' else 'clicking'} “{decider.prefix(target, 40)}”…"

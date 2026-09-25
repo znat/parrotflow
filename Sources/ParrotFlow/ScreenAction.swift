@@ -320,13 +320,30 @@ enum ScreenAction {
         post(up)
     }
 
+    /// One key, `times` times, 2 ms between events. Measured 09-25: 73 right
+    /// arrows at that pace landed on the right character in TextEdit and in
+    /// Chrome.
+    static func repeatKey(_ key: CGKeyCode, flags: CGEventFlags = [], times: Int) {
+        guard times > 0 else { return }
+        let source = CGEventSource(stateID: .combinedSessionState)
+        for _ in 0..<times {
+            let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true)
+            let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
+            down?.flags = flags
+            up?.flags = flags
+            post(down, wait: 2_000)
+            post(up, wait: 2_000)
+        }
+        usleep(100_000)
+    }
+
     /// On every key this app presses, so Escape's watch can tell a planned
     /// Escape from yours: a planned one stopped the run it was part of.
     static let mark: Int64 = 0x5046_4b59
 
-    private static func post(_ event: CGEvent?) {
+    private static func post(_ event: CGEvent?, wait: useconds_t = 30_000) {
         event?.setIntegerValueField(.eventSourceUserData, value: mark)
         event?.post(tap: .cghidEventTap)
-        usleep(30_000)
+        usleep(wait)
     }
 }

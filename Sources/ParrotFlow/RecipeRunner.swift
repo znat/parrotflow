@@ -530,7 +530,7 @@ private final class RecipeSession {
     // focus, and a wheel event goes to the pane under the point.
     static let touchesScreen: Set<String> = [
         "key", "type", "paste", "click", "click_at", "right_click", "hover", "drag", "ready",
-        "select", "show_menu",
+        "select", "show_menu", "select_text",
     ]
 
     /// While the user types to the run, a step that touches the screen waits.
@@ -824,6 +824,20 @@ private final class RecipeSession {
             let (text, source) = TextCaret.text(of: field)
             return ["text": text, "source": source, "role": TextCaret.role(field),
                     "focused": TextCaret.isFocused(field, ofApp: app)]
+
+        case "select_text":
+            let box = (r["id"] as? Int).flatMap { items[$0] }.map(Self.box)
+            guard let field = TextCaret.field(ofApp: app, box: box) else {
+                return ["error": "no text field there"]
+            }
+            guard TextCaret.isFocused(field, ofApp: app) else {
+                return ["error": "the caret is not in that field: \(ScreenTargets.focusDescription(ofApp: app))"]
+            }
+            let result = TextCaret.select(
+                field, location: r["location"] as? Int ?? -1, length: r["length"] as? Int ?? 0,
+                expect: r["text"] as? String ?? "", caret: r["caret"] as? String)
+            Log.write("action: select_text — \(result["method"] ?? result["error"] ?? "")")
+            return result
 
         case "ready_for_words":
             let box = ScreenTargets.readyForWords(ofApp: r["app"] as? String ?? app)

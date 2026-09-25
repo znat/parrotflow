@@ -589,6 +589,24 @@ def holds(field, snapshot):
                      if t and t.strip() and _plain(t) != _plain(field["name"]))
 
 
+def find_words(text, words):
+    """Where `words` are in `text`, as (start, end) pairs: exactly, else with
+    case and runs of spaces not counting."""
+    words = (words or "").strip()
+    if not words:
+        return []
+    found = [(m.start(), m.end()) for m in re.finditer(re.escape(words), text)]
+    if found:
+        return found
+    pattern = r"\s+".join(re.escape(w) for w in words.split())
+    return [(m.start(), m.end()) for m in re.finditer(pattern, text, re.IGNORECASE)]
+
+
+def _utf16(text):
+    """The length the app counts in: UTF-16 units."""
+    return len(text.encode("utf-16-le")) // 2
+
+
 def lost(field, before, after):
     """The names and words a step took out of `field`, a text field of the
     read before it: from its value, or from the items drawn inside it.
@@ -625,6 +643,10 @@ class Loop:
         self.execute = request.get("execute", True)
         self.app = request.get("read_app")
         self.change = {}
+        # The field the last `caret` or `select` put the caret in, by identity.
+        self.placed = None
+        # The last type or write went where `caret` or `select` put the caret.
+        self.typed_placed = False
         self.recorder = getattr(channel, "recorder", recording.OFF)
         self.agent = None
         self.began, self.reads = time.monotonic(), 0
@@ -879,6 +901,14 @@ class Loop:
                 return why, snapshot, aim, ""
         at = step.get("at")
         field = held = None
+        moved = ""
+        self.typed_placed = False
+        if do in ("click", "pick", "scroll") \
+                or do == "key" and value.split("+")[-1] in ("tab", "escape", "return"):
+            self.placed = None
+        why = self._edit_problem(do, at, value)
+        if why:
+            return why, snapshot, aim, ""
         if do == "key":
             self.front()
             reply = self.call("key", keys=value, wait=400)
@@ -895,6 +925,15 @@ class Loop:
                     target = None
             spot = decider.point(target) if target else aim
             self.act("scroll", x=spot[0], y=spot[1], down=value.lower() != "up", turns=6)
+        elif do in ("caret", "select") and item is None \
+                and step["target"].lower() in ("", "no name"):
+            field = self._focused_item(snapshot)
+            if field is None or field["kind"] != "text":
+                return "no text field has the caret: give the field's ID", snapshot, aim, ""
+            self.front()
+            why, moved = self._edit(do, field, at, value)
+            if why:
+                return why, snapshot, aim, ""
         elif do in ("type", "write") and item is None \
                 and step["target"].lower() in ("", "no name"):
             if not value:
@@ -919,6 +958,8 @@ class Loop:
                 held, why = self._where(field, snapshot, at)
                 if why:
                     return why, snapshot, aim, ""
+            if do in ("caret", "select") and target["kind"] != "text":
+                return f"\"{decider.label(target)}\" is not a text field", snapshot, aim, ""
             snapshot, closed, why = self._close_open_list(target, snapshot, aim)
             if why:
                 return why, snapshot, aim, ""
@@ -938,7 +979,8 @@ class Loop:
             if target["kind"] == "seen":
                 self.front()
                 why = self._click_at(target)
-            elif do in ("type", "write") and self._caret_in(target, snapshot):
+            elif do in ("type", "write", "caret", "select") and (
+                    self._caret_in(target, snapshot) or self.placed == identity(target)):
                 # Seen 09-23 in Slack: clicking To's centre selected the first
                 # recipient's chip, and typing the second name replaced it.
                 why, pressed = None, False
@@ -960,11 +1002,19 @@ class Loop:
                 # Outlook: the time field's hour ignored a pasted "11" three times.
                 self.act("type" if do == "type" else "paste",
                          text=self._paragraph(do, field, at, held, value))
+            elif do in ("caret", "select"):
+                if pressed:
+                    typed_on = self.settle(snapshot, aim, "before_type")
+                self.front()
+                why, moved = self._edit(do, target, at, value)
+                if why:
+                    return why, typed_on or snapshot, aim, ""
         report.acted = True
         # Teams' attendee list came late after typing. Settled against the
         # read after the press, so the press's focus change does not end it.
-        now = self.settle(typed_on or snapshot, aim, "after_key" if do == "key" else
-                          "after_type" if do in ("type", "write") else "after_press")
+        policy = "after_key" if do in ("key", "caret", "select") else \
+            "after_type" if do in ("type", "write") else "after_press"
+        now = self.settle(typed_on or snapshot, aim, policy)
         change = changes(snapshot, now)
         changed = sentence(change)
         self.fresh = {(i["kind"], i["name"]) for i in appeared(snapshot, now)}
@@ -985,6 +1035,8 @@ class Loop:
             if why:
                 return why, now, aim, ""
         outcome = changed or UNCHANGED
+        if moved:
+            outcome = f"{moved}; {changed}" if changed else moved
         if closed:
             outcome = f"{closed}; {outcome}"
         ms = int((time.monotonic() - self.began) * 1000)
@@ -1084,10 +1136,11 @@ class Loop:
         text, or else the walk's, cut, with `partial` set."""
         if field is None or field["kind"] != "text" or looks_up(field):
             return None, None
+        self.typed_placed = not at and self.placed == identity(field)
         text = self._field_text(field)
         held = {"text": text, "partial": False} if text is not None \
             else {"text": holds(field, snapshot), "partial": True}
-        if at or not held["text"].strip():
+        if at or self.typed_placed or not held["text"].strip():
             return held, None
         shown = decider.prefix(" ".join(held["text"].split()), 60)
         return held, (f"\"{decider.label(field)}\" already holds \"{shown}\". Say where the "
@@ -1107,6 +1160,59 @@ class Loop:
             reply = self.call("key", keys="cmd+a", wait=100)
             return f"could not press cmd+a: {reply['error']}" if reply.get("error") else None
         return None
+
+    @staticmethod
+    def _edit_problem(do, at, value):
+        """Why a step's `at` and `value` do not go together, or None."""
+        if do in ("type", "write") and at in ("before", "after"):
+            return f"{do} takes at start, end or replace: put the caret {at} the words first"
+        if do == "caret" and at not in ("start", "end", "before", "after"):
+            return "caret needs at: start, end, before or after"
+        if do == "caret" and at in ("before", "after") and not (value or "").strip():
+            return f"caret {at} needs `value`, the words the field holds"
+        if do == "select" and not (value or "").strip():
+            return "select needs `value`, the words to select"
+        return None
+
+    def _edit(self, do, field, at, value):
+        """`caret` or `select` in `field`, which has the caret. The model
+        names words; code finds them in the field's whole text and the app
+        moves the caret, then reads the selection back. Seen 09-25 in Gmail:
+        nine `ground` calls to aim a caret between two digits.
+        (why not, what was done)."""
+        label = decider.label(field)
+        if do == "caret" and at in ("start", "end"):
+            keys = "cmd+up" if at == "start" else "cmd+down"
+            reply = self.call("key", keys=keys, wait=100)
+            if reply.get("error"):
+                return f"could not press {keys}: {reply['error']}", ""
+            self.placed = identity(field)
+            return None, f"the caret is at the {at} of \"{label}\""
+        text = self._field_text(field)
+        if text is None:
+            return f"could not read what \"{label}\" holds", ""
+        words = value.strip()
+        spans = find_words(text, words)
+        if not spans:
+            return (f"no \"{decider.prefix(words, 40)}\" in \"{label}\": it holds "
+                    f"\"{decider.prefix(' '.join(text.split()), 80)}\""), ""
+        if len(spans) > 1:
+            around = ", ".join("\"…" + " ".join(text[max(0, s - 20):e + 20].split()) + "…\""
+                               for s, e in spans[:4])
+            return (f"\"{decider.prefix(words, 40)}\" is in \"{label}\" {len(spans)} times: "
+                    f"{around}. Give more of the words around it."), ""
+        start, end = spans[0]
+        found = text[start:end]
+        reply = self.call("select_text", id=field.get("id"), location=_utf16(text[:start]),
+                          length=_utf16(found), text=found, caret=at if do == "caret" else None)
+        if reply.get("error"):
+            doing = "place the caret" if do == "caret" else "select"
+            return f"could not {doing} in \"{label}\": {reply['error']}", ""
+        self.placed = identity(field)
+        by = " (by keys)" if reply.get("method") == "keys" else ""
+        if do == "caret":
+            return None, f"the caret is {at} \"{decider.prefix(found, 40)}\"{by}"
+        return None, f"\"{decider.prefix(found, 40)}\" is selected{by}"
 
     @staticmethod
     def _paragraph(do, field, at, held, value):
@@ -1135,6 +1241,8 @@ class Loop:
         shown = decider.prefix(after, 80)
         if typed not in after:
             return f"the text is not in \"{decider.label(field)}\" after typing: it holds \"{shown}\""
+        if self.typed_placed:
+            return None
         if at == "start" and not after.startswith(typed) \
                 or at == "end" and not after.endswith(typed):
             return f"the text is not at the {at} of \"{decider.label(field)}\": it holds \"{shown}\""
@@ -1150,6 +1258,12 @@ class Loop:
             return f"Pressed {value}"
         if do == "scroll":
             return f"Scrolled {value or 'down'}"
+        if do == "caret":
+            at = step.get("at")
+            return f"Put the caret {at} “{decider.prefix(value, 40)}”" if value \
+                else f"Put the caret at the {at}"
+        if do == "select":
+            return f"Selected “{decider.prefix(value, 40)}”"
         if do in ("type", "write"):
             return f"Typed “{decider.prefix(value, 40)}”" + (f" into {target}" if target else "")
         return f"Clicked {target}"

@@ -266,7 +266,7 @@ flowchart TD
   K4 --> CK
   CK -->|no| X1
   P1["Only words the user said<br/>(prompt) <i>p-said</i>"]:::prompt
-  P2["Never select, replace, delete<br/>(prompt) <i>p-noselect</i>"]:::prompt
+  P2["Never select all; change words only when asked<br/>(prompt) <i>p-noselect</i>"]:::prompt
   T0 -.- P1
   T0 -.- P2
 ```
@@ -298,6 +298,33 @@ flowchart TD
   P2["Never archive, leave, pay<br/>(prompt) <i>p-never</i>"]:::prompt
   Q4 -.- P1
   K0 -.- P2
+```
+
+### 3d. caret and select
+
+The model names words the field holds. Code finds them and the app moves the caret.
+
+```mermaid
+flowchart TD
+  classDef prompt stroke-dasharray: 5 5
+  E0([caret or select]) --> Q0{"at and value fit?<br/><i>edit-args</i>"}
+  Q0 -->|no| X1["Step fails"]
+  Q0 -->|yes| Q1{"Caret in the field, or placed there?<br/><i>caret-in</i>"}
+  Q1 -->|no| C1["Press the field"]
+  Q1 -->|yes| Q2
+  C1 --> Q2{"caret at start or end?"}
+  Q2 -->|yes| K1["⌘↑ or ⌘↓"]
+  Q2 -->|no| R1["Read the whole text<br/><i>field_text</i>"]
+  R1 --> Q3{"Words found once?<br/><i>find-words</i>"}
+  Q3 -->|none or several| X1
+  Q3 -->|once| Q4{"AXSelectedTextRange takes it,<br/>selection reads back?<br/><i>ax-select</i>"}
+  Q4 -->|yes| OK["Selected, or caret before/after"]
+  Q4 -->|no| K2["Keys: ⌘↑ →×n or ⌘↓ ←×n, then ⇧→<br/><i>key-select</i>"]
+  K2 --> Q5{"Selection reads back?"}
+  Q5 -->|no| X1
+  Q5 -->|yes| OK
+  P1["Use caret/select, never ground a caret<br/>(prompt) <i>p-caret</i>"]:::prompt
+  E0 -.- P1
 ```
 
 ## 4. After a step
@@ -522,6 +549,11 @@ Python files are in `built-in/recipes/`. Swift files are in `Sources/ParrotFlow/
 | needs-at | loop.py `_where` |
 | place-at | loop.py `_place` |
 | typed-check | loop.py `_typed` |
+| edit-args | loop.py `_edit_problem` |
+| find-words | loop.py `find_words`, `_edit` |
+| ax-select | TextCaret.swift `select` |
+| key-select | TextCaret.swift `byKeys` |
+| p-caret | agent.py `SYSTEM`, `GROUNDING` |
 | p-said | agent.py:108 |
 | p-noselect | agent.py:109 |
 | sel-all | loop.py:1115 |

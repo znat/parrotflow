@@ -288,7 +288,7 @@ def window(n, refused=None):
 
 READS = {"snapshot", "observe"}
 GESTURES = {"press", "click", "click_at", "right_click", "hover", "drag", "ready", "key", "type",
-            "paste", "scroll", "select", "show_menu"}
+            "paste", "scroll", "select", "show_menu", "select_text"}
 
 
 class Screen:
@@ -512,6 +512,38 @@ def change_checks():
           and skills.check('window ~ "New*"', shown)[0]
           and skills.check('value "Start time" ~ "*, 16:*"', shown)[1]
           == "'Start time' = '25/09/2026, 11:30'")
+    check("skills: caret and select are gestures a skill can hold",
+          skills.problems('---\nparams: [x]\nsteps:\n  - caret "Body" at before "{x}"\n'
+                          '  - caret "Body" at end\n  - select "Body" "78 11"\n'
+                          '  - caret "Body" at middle\n---\n')
+          == ["cannot do 'caret \"Body\" at middle'"])
+
+    class Edits:
+        placed = None
+
+        def __init__(self):
+            self.done = []
+
+        def _caret_in(self, field, snapshot):
+            return True
+
+        def front(self):
+            pass
+
+        def _edit(self, do, field, at, value):
+            self.done.append((do, field["name"], at, value))
+            return None, "ok"
+    body = {"name": "Body", "role": "AXTextArea", "kind": "text", "value": "", "state": [],
+            "x": 1, "y": 1, "in": None}
+    player = type("Player", (), {"loop": Edits(), "snapshot": {"items": [body]}})()
+    moved = [skills._gesture(g, player) for g in ('caret "Body" at after "78 11"',
+                                                 'select "Body" "Nathan"', 'caret "Body" at start',
+                                                 'select "Nobody" "x"')]
+    check("skills: caret and select go through the loop's own move, by the field's name",
+          player.loop.done == [("caret", "Body", "after", "78 11"), ("select", "Body", None, "Nathan"),
+                               ("caret", "Body", "start", "")]
+          and moved == [None, None, None, "no text field 'Nobody' on screen"],
+          (player.loop.done, moved))
     behind = {"y": 517, "x": 1451, "in": "window", "state": []}
     front = {"y": 546, "x": 1480, "in": None, "state": ["focused"]}
     check("twins: the focused one wins over the one first in reading order",
@@ -928,6 +960,99 @@ def agent_checks(runner, stderr_path, trace_path):
         [[act({"do": "type", "id": 1, "value": "Peter"})], [("done", {"summary": "ok"})]])
     check("at: a field that looks names up takes a second name with no at",
           "type" in fake.did() and "key" not in fake.did(), fake.did())
+
+    def text_of(n):
+        return {("field_text", k): {"text": signature, "source": "value"} for k in range(1, n + 1)}
+
+    def sent(fake, do):
+        return [s for s in fake.steps if s["do"] == do]
+
+    end, fake, report, asked = run(
+        "change the phone number to 78 12", [signed] * 3,
+        [[act({"do": "select", "id": 2, "value": "78 11"},
+              {"do": "write", "id": 2, "value": "78 12"})], [("done", {"summary": "ok"})]],
+        text_of(3))
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    chosen = sent(fake, "select_text")
+    check("select: code finds the words, the app selects them at their UTF-16 place",
+          [(s["location"], s["length"], s["text"], s["caret"]) for s in chosen]
+          == [(22, 5, "78 11", None)] and '1. select “Message Body” = “78 11” — "78 11" is '
+          'selected' in got, (chosen, got))
+    check("select: the write after it types over the selection, with no second click, "
+          "no at and no surprise",
+          [s["do"] for s in fake.steps if s["do"] in ("press", "select_text", "paste")]
+          == ["press", "select_text", "paste"] and "Ran 2 of 2" in got and "removed" not in got,
+          (fake.did(), got))
+
+    twice = "Nathan Z.\nNathan Z. again\n+33"
+    end, fake, report, asked = run(
+        "put the caret before Nathan", [signed] * 2,
+        [[act({"do": "caret", "id": 2, "value": "Nathan", "at": "before"})],
+         [("done", {"summary": "ok"})]],
+        {("field_text", 1): {"text": twice, "source": "value"}})
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("caret: words the field holds twice are refused, with the words around each",
+          'failed: "Nathan" is in "Message Body" 2 times: "…Nathan Z. Nathan Z. again…", '
+          '"…Nathan Z. Nathan Z. again +33…". Give more of the words around it.' in got
+          and not sent(fake, "select_text"), got)
+
+    end, fake, report, asked = run(
+        "select the fax number", [signed] * 2,
+        [[act({"do": "select", "id": 2, "value": "Fax 01"})], [("done", {"summary": "ok"})]],
+        text_of(1))
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("select: words the field does not hold fail, quoting what it holds",
+          'failed: no "Fax 01" in "Message Body": it holds "Nathan Z. +33 6 12 34 78 11"' in got,
+          got)
+
+    smiled = "🙂 Hi\nnathan  Z."
+    end, fake, report, asked = run(
+        "put the caret after Nathan Z", [signed] * 2,
+        [[act({"do": "caret", "id": 2, "value": "Nathan Z.", "at": "after"})],
+         [("done", {"summary": "ok"})]],
+        {("field_text", 1): {"text": smiled, "source": "value"}})
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    chosen = sent(fake, "select_text")
+    check("caret: case and spaces do not count, and an emoji counts two UTF-16 units",
+          [(s["location"], s["length"], s["text"], s["caret"]) for s in chosen]
+          == [(6, 10, "nathan  Z.", "after")] and 'the caret is after "nathan  Z."' in got,
+          (chosen, got))
+
+    end, fake, report, asked = run(
+        "select 78 11", [signed] * 2,
+        [[act({"do": "select", "id": 2, "value": "78 11"})], [("done", {"summary": "ok"})]],
+        {**text_of(1), ("select_text", 1): {"error": "the keys selected “8 11 ”, not “78 11”"}})
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("select: the app's failed check comes back as one line",
+          'failed: could not select in "Message Body": the keys selected “8 11 ”, not “78 11”'
+          in got, got)
+
+    end, fake, report, asked = run(
+        "go to the start of the body", [signed] * 2,
+        [[act({"do": "caret", "id": 2, "at": "start"})], [("done", {"summary": "ok"})]])
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("caret at start: cmd+up, nothing to find",
+          [s.get("keys") for s in sent(fake, "key")] == ["cmd+up"]
+          and not sent(fake, "select_text") and 'the caret is at the start of "Message Body"' in got,
+          (fake.did(), got))
+
+    end, fake, report, asked = run(
+        "write hello before 78", [signed] * 2,
+        [[act({"do": "write", "id": 2, "value": "hello", "at": "before"})],
+         [("done", {"summary": "ok"})]])
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("write at before is refused: caret first",
+          "failed: write takes at start, end or replace: put the caret before the words first"
+          in got and not sent(fake, "press"), got)
+
+    focused = compose(["Nathan Z.", "+33 6 12 34 78 11"], focused="AXTextArea")
+    end, fake, report, asked = run(
+        "select 78 11", [focused] * 2,
+        [[act({"do": "select", "value": "78 11"})], [("done", {"summary": "ok"})]], text_of(1))
+    chosen = sent(fake, "select_text")
+    check("select with no id works in the field that has the caret, with no click",
+          len(chosen) == 1 and chosen[0]["id"] is not None and not sent(fake, "press"),
+          (chosen, fake.did()))
 
     end, fake, report, asked = run(
         "mute this channel", [home],
@@ -1397,7 +1522,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 175 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 191 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
@@ -1519,10 +1644,12 @@ def schema_checks(tools):
           and all(f.get("strict") for f in ours.values()), errors)
     step = inline(ours["act"]["parameters"])["properties"]["steps"]["items"]
     check("schema: act's steps take do from the list, a nullable id, value and expect, and at",
-          step["properties"]["do"]["enum"] == ["click", "pick", "type", "write", "key", "scroll"]
+          step["properties"]["do"]["enum"] == ["click", "pick", "type", "write", "key", "scroll",
+                                               "caret", "select"]
           and step["properties"]["id"] == {"anyOf": [{"type": "integer"}, {"type": "null"}]}
           and step["properties"]["expect"] == {"anyOf": [{"type": "string"}, {"type": "null"}]}
-          and step["properties"]["at"]["anyOf"][0]["enum"] == ["start", "end", "replace"]
+          and step["properties"]["at"]["anyOf"][0]["enum"] == ["start", "end", "replace", "before",
+                                                               "after"]
           and step["required"] == ["do", "id", "value", "expect", "at"], step)
     check("schema: a tool's description is its docstring on one line",
           ours["read"]["description"] == "Read the screen again without acting. Returns it with new IDs."

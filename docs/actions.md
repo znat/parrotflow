@@ -250,6 +250,7 @@ recipe steps.
 | `show_menu {id}` or `{x, y}` | the item's own menu, else a right-click |
 | `front` | brings the app forward, for a chord |
 | `focus`, `ready_for_words` | where the caret is, its `role`, and whether it waits in an empty box |
+| `select_text {id, location, length, text, caret}` | selects `text`, which the focused field holds at `location` (UTF-16, as `field_text` read it), then leaves the caret `before` or `after` it when `caret` says so. AXSelectedTextRange first, read back through AXSelectedText; else keys: ⌘↑ and → from the start, or ⌘↓ and ← from the end, one press per character, then ⇧→ over the text. `method` says which. Refused when the caret is not in that field |
 | `field_text {id}` | the whole text of field `id`, or of the focused one: AXValue, else AXStringForRange, else its children joined. `source` says which. The walk never reads a text area's value |
 | `observe {at, app, see}` | `snapshot`, plus `focus` (`point`, `role`, `id`, `described`) and `ready_box` from the same read. The loop's step reads use it |
 | `spotlight {snapshot, offers, aim, chosen, seconds}`, `spotlight_dismiss` | the outlines |
@@ -367,8 +368,9 @@ pop-up, and the focused one. A text field, combo box or search field that
 holds something shows it: `[20] ComboBox "Start time" = "16:00"`, cut to 60
 characters. IDs belong to one read. It has seven tools, and the plan tools:
 
-- `act(why, steps)`: steps `{do, id, value, expect}` run in order, `do` one
-  of `click`, `pick`, `type`, `write`, `key` or `scroll`. `why` is what the
+- `act(why, steps)`: steps `{do, id, value, expect, at}` run in order, `do`
+  one of `click`, `pick`, `type`, `write`, `key`, `scroll`, `caret` or
+  `select`. `why` is what the
   batch is for, in a few words. It goes in the app
   log line and the trace. A call without it still runs. `expect`, optional,
   is what should be true after the step, such as "To holds Alex Moreau and
@@ -382,6 +384,17 @@ characters. IDs belong to one read. It has seven tools, and the plan tools:
   two. After typing, code reads the field back (`field_text`): the text must
   be there, at the start or end when asked, and what the field held must
   still be there, except with `replace`.
+  `caret` puts the caret in field `id`: `at` is `start` or `end` (⌘↑, ⌘↓),
+  or `before` or `after` the words in `value`. `select` selects the words
+  in `value`; a `key` (⌘C, ⌘X, backspace) or a `type` or `write` with no
+  `at` then acts on them, with no second click. The model names words and
+  never counts characters or aims at pixels. Code finds the words in the
+  field's whole text (`field_text`): exactly, else with case and runs of
+  spaces not counting. None, or more than one, fails the step and says what
+  the field holds, or the words around each match. `select_text` does the
+  move and reads the selection back; a mismatch fails the step in one line.
+  A skill can hold the same gestures: `caret "<field>" at start|end|before
+  "<text>"|after "<text>"` and `select "<field>" "<text>"`.
   Each step goes through `Loop._planned_step` and its guards. The
   batch stops at the first surprise: a step failed, a step changed nothing
   (`type`, `write` and `key` do not count: the tree does not show the caret
