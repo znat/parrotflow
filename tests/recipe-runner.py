@@ -735,6 +735,46 @@ def settle_checks():
     check("settle: `until` decides when it is done, not the change",
           reads == 6 and took >= 0.89, (value, reads, took))
 
+    class Timeline:
+        """Windows by time: (seconds, window) pairs, the last one reached shown."""
+        def __init__(self, timeline):
+            self.began, self.timeline, self.reads = time.monotonic(), timeline, 0
+
+        def ask(self, do, **args):
+            self.reads += 1
+            at = time.monotonic() - self.began
+            return {"snapshot": [w for s, w in self.timeline if at >= s][-1]}
+
+    def timed(timeline, policy):
+        channel = Timeline(timeline)
+        now = loop.Loop({"run": ""}, channel, None).settle(timeline[0][1], [0, 0], policy)
+        return len(now["items"]), now["items"][0]["value"], channel.reads, \
+            time.monotonic() - channel.began
+
+    one, two = draft("Pe", popup=True), dict(draft("Pe", popup=True))
+    two["items"] = two["items"] + [dict(two["items"][2], name="Peter Parker", y=170)]
+    got = timed([(0, draft("")), (0.1, one)], "after_press")
+    check("settle, click: items that appeared are read once more, and kept when they stay",
+          got[0] == 5 and got[2] == 2 and got[3] < 0.45, got)
+    got = timed([(0, draft("")), (0.1, one), (0.2, two)], "after_press")
+    check("settle, click: a list still filling at the second read is read until it stops",
+          got[0] == 6 and got[2] == 3, got)
+    got = timed([(0, draft("")), (0.1, draft("Pe"))], "after_press")
+    check("settle, click: a change of values only ends at the first change",
+          got[1] == "Pe" and got[2] == 1, got)
+    got = timed([(0, draft(""))], "after_key")
+    check("settle, key: a key that changes nothing ends after two reads alike, not at the cap",
+          got[2] == 2 and got[3] < 0.45, got)
+    got = timed([(0, draft("")), (0.1, draft("Pe"))], "after_key")
+    check("settle, key: a value change still takes a second read",
+          got[1] == "Pe" and got[2] == 2, got)
+    got = timed([(0, draft("Pe", popup=True)), (0.2, draft("Pe"))], "after_key")
+    check("settle, key: a list that closes after the first read is read until it is gone",
+          got[0] == 2 and got[2] == 3, got)
+    got = timed([(0, draft("")), (0.1, one), (0.2, two)], "after_type")
+    check("settle, type: ends at the first change, as before",
+          got[0] == 5 and got[2] == 1, got)
+
 
 def observe_checks():
     """A step's reads, in process: one `observe` carries the focus."""
@@ -820,14 +860,14 @@ def agent_checks(runner, stderr_path, trace_path):
     muted = panel("Home — muted", ["General", "Settings", "Leave", "Unmute channel"])
 
     end, fake, report, asked = run(
-        "mute this channel", [home, menu, muted],
+        "mute this channel", [home, menu, menu, muted],
         [[act({"do": "click", "id": 2}, {"do": "click", "id": 1})], [("done", {"summary": "ok"})]])
     check("agent: one act batch runs and done ends the run",
           end["end"] == "done" and report["stopped"] == "Done" and len(planner_bodies) == 2
           and report["shown"] == ["Clicked Settings", "Clicked General"] and report["acted"],
           (report, fake.did()))
     check("agent: a model ID maps to the runner's item, found again in the next read",
-          [s["id"] for s in fake.steps if s["do"] == "press"] == [102, 105], fake.steps)
+          [s["id"] for s in fake.steps if s["do"] == "press"] == [102, 110], fake.steps)
     body = planner_bodies[0]
     names = [t["name"] for t in body["tools"]]
     check("agent: tools, strict, required, parallel calls, reasoning none, on /v1/responses",
@@ -1776,7 +1816,7 @@ def recorder_checks(url, user, plans_url):
           and info["settings"]["max_steps"] == 15 and info["end"] == "done"
           and info["outcome"] == "Done" and info["ended"]
           and info["shown"] == ["Clicked Settings", "Clicked General"]
-          and (info["calls"], info["steps"], info["trees"]) == (2, 2, 3), info)
+          and (info["calls"], info["steps"], info["trees"]) == (2, 2, 5), info)
     call = read_json(folder, "calls", "01.json")
     tree = read_json(folder, "trees", "01.json")
     settings = next(i for i in tree["snapshot"]["items"] if i["name"] == "Settings")
@@ -1793,7 +1833,7 @@ def recorder_checks(url, user, plans_url):
     check("recorder: a step holds the target, the point, press or click, and the change",
           step["do"] == "click" and step["target"]["name"] == "Settings"
           and step["point"] == [500, 130] and step["pressed"] is True and step["call"] == 1
-          and step["tree_before"] == 1 and step["tree_after"] == 2
+          and step["tree_before"] == 1 and step["tree_after"] == 3
           and step["change"].get("new") == ["Mute channel"] and "Mute channel" in step["sentence"]
           and [a["do"] for a in step["actions"]] == ["press"] and not step["error"], step)
     keys = read_json(ROOT, "tests", "fixtures", "run-keys.json")
