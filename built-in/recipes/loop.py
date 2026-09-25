@@ -1088,7 +1088,8 @@ class Loop:
                 if pressed:
                     typed_on = self.settle(snapshot, aim, "before_type")
                 self.front()
-                why, moved = self._edit(do, target, at, value)
+                why, moved = self._edit(do, refind(target, typed_on) or target if typed_on
+                                        else target, at, value)
                 if why:
                     return why, typed_on or snapshot, aim, ""
         report.acted = True
@@ -1120,7 +1121,7 @@ class Loop:
         self.change = change
         self._forget_placed(now)
         if do in ("type", "write") and field is not None:
-            why = self._typed(field, at, value, held)
+            why = self._typed(refind(field, now) or field, at, value, held)
             if why:
                 return why, now, aim, ""
         outcome = changed or UNCHANGED
@@ -1235,9 +1236,16 @@ class Loop:
                      or "focused" in (i.get("state") or ())), None)
 
     def _field_text(self, field):
-        """The field's whole text as the app reads it, or None when it cannot."""
+        """The field's whole text as the app reads it, or None when it cannot.
+        The app finds the field at its box. Seen 09-25 in Gmail: a press on
+        Subject folded To away, Subject moved up 32 points, and its old box
+        hit the body: "Subject" read back the signature. So `field` must come
+        from the newest read, and a field of another role is not read."""
         args = {"id": field["id"]} if field and field.get("id") is not None else {}
-        text = self.call("field_text", **args).get("text")
+        reply = self.call("field_text", **args)
+        text = reply.get("text")
+        if field and reply.get("role") and reply["role"] != field["role"]:
+            return None
         return text if isinstance(text, str) else None
 
     def _where(self, field, snapshot, at):

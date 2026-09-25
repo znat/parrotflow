@@ -1106,6 +1106,31 @@ def agent_checks(runner, stderr_path, trace_path):
           and [s.get("text") for s in sent(fake, "paste")] == ["Bonjour"]
           and len(sent(fake, "press")) == 1, (got, fake.did()))
 
+    coded = compose(subject="Code")
+    moved_up = compose(subject="Code")
+    moved_up["items"][0]["y"] = 68
+    end, fake, report, asked = run(
+        "add Lunch to the subject", [coded] + [moved_up] * 4,
+        [[act({"do": "type", "id": 1, "value": "Lunch", "at": "end"})],
+         [("done", {"summary": "ok"})]],
+        {("field_text", 1): {"text": "Code", "source": "value"},
+         ("field_text", 2): {"text": "Code Lunch", "source": "value", "role": "AXTextField"}})
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    read_back = [fake.by_id.get(s.get("id")) or {} for s in sent(fake, "field_text")]
+    check("at end: the read-back asks for the field as the newest read has it, not its old box",
+          "failed" not in got and [(i.get("name"), i.get("y")) for i in read_back]
+          == [("Subject", 100), ("Subject", 68)], (got, read_back))
+
+    end, fake, report, asked = run(
+        "add Lunch to the subject", [coded] * 4,
+        [[act({"do": "type", "id": 1, "value": "Lunch", "at": "end"})],
+         [("done", {"summary": "ok"})]],
+        {("field_text", 1): {"text": "Code", "source": "value"},
+         ("field_text", 2): {"text": signature, "source": "value", "role": "AXTextArea"}})
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("at end: a read-back that found a field of another role is not trusted",
+          "failed" not in got, got)
+
     timed = compose(subject="")
     end, fake, report, asked = run(
         "set the subject to 4 PM", [timed] * 2,
@@ -1646,7 +1671,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 233 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 237 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
