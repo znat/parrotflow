@@ -1154,10 +1154,13 @@ class Loop:
                      or "focused" in (i.get("state") or ())), None)
 
     def _field_text(self, field):
-        """The field's whole text as the app reads it, or None when it cannot."""
+        """The field's whole text as the app reads it, or None when it cannot.
+        A field that holds only its own name holds its placeholder: empty."""
         args = {"id": field["id"]} if field and field.get("id") is not None else {}
         text = self.call("field_text", **args).get("text")
-        return text if isinstance(text, str) else None
+        if not isinstance(text, str):
+            return None
+        return "" if field and field["name"] and _plain(text) == _plain(field["name"]) else text
 
     def _where(self, field, snapshot, at):
         """(what `field` holds, why a type or write may not run). Refused

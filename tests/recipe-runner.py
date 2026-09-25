@@ -1031,6 +1031,17 @@ def agent_checks(runner, stderr_path, trace_path):
     check("at: a field that looks names up takes a second name with no at",
           "type" in fake.did() and "key" not in fake.did(), fake.did())
 
+    invite = panel("Calendar", ["Add title", "Invite required attendees"])
+    invite["items"][1].update(kind="text", role="AXTextArea")
+    end, fake, report, asked = run(
+        "invite Mathieu", [invite, invite],
+        [[act({"do": "type", "id": 2, "value": "Mathieu"})], [("done", {"summary": "ok"})]],
+        {("field_text", 1): {"text": "Invite required attendees", "source": "children"}})
+    got = results(1)[-1] if len(planner_bodies) > 1 else ""
+    check("at: a field that holds only its own name, Teams' placeholder, is empty",
+          [s.get("text") for s in fake.steps if s["do"] == "type"] == ["Mathieu"]
+          and "already holds" not in got and "failed" not in got, (got, fake.did()))
+
     def text_of(n):
         return {("field_text", k): {"text": signature, "source": "value"} for k in range(1, n + 1)}
 
@@ -1612,7 +1623,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 200 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 202 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",
