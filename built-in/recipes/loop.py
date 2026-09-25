@@ -579,20 +579,19 @@ def looks_up(item):
 
 
 def suggested(field, before, after):
-    """Whether a list opened under a lookup field between two reads: a
-    part of the app, the field now expanded, or new items or seen lines
-    below it. Seen 09-25 in Gmail: the contact row came as a new item, and
-    To became expanded."""
+    """Whether a list opened under a lookup field between two reads: the
+    field now expanded, or new named items or seen lines below it, in a
+    part of the app that opened or not. Seen 09-25 in Gmail: the contact
+    row came as a new item, and To became expanded."""
     change = changes(before, after)
-    if change.get("appeared") or "expanded" in change.get("states", {}).get(field["name"], ()):
+    if "expanded" in change.get("states", {}).get(field["name"], ()):
         return True
     bottom = field["y"] + field["h"] / 2
 
     def below(p):
         return abs(p["x"] - field["x"]) <= field["w"] / 2 + LIST_SIDE \
             and bottom - 4 < p["y"] <= bottom + LIST_BELOW
-    return any(i.get("in") or i.get("in_list") or i["kind"] != "text" and i["name"] and below(i)
-               for i in appeared(before, after)) \
+    return any(i["kind"] != "text" and i["name"] and below(i) for i in appeared(before, after)) \
         or any(below(line) for block in change.get("seen", ()) for line in block["lines"])
 
 
@@ -602,7 +601,7 @@ def no_list(typed):
 
 UNRESOLVED_RECIPIENT = "unresolved-recipient"
 _RECIPIENT = re.compile(r"\b(to|cc|bcc|recipients?|attendees?|invitees?|participants?)\b")
-_EMAIL = re.compile(r"[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+")
+_EMAIL = re.compile(r"[^@\s,;]+@[^@\s,;]+\.[^\W\d_]{2,}")
 # A picked contact is drawn in the field's value as U+FFFC (Outlook) or
 # between no-break spaces (Slack); typed text comes after the last one.
 _CHIP = re.compile("[\ufffc\xa0]")

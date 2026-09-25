@@ -460,6 +460,16 @@ def change_checks():
           and "ari" in spelled[3] and "ari" in spelled[4] and "ari" in spelled[5]
           and "sari" not in spelled[0] and "onell" not in spelled[1]
           and "ronotes" not in spelled[2], spelled)
+    to_field = draft("")["items"][0]
+    elsewhere = draft("Pe")
+    elsewhere["items"].append(dict(elsewhere["items"][0], kind="click", role="AXCell",
+                                   name="Help", x=900, y=700, **{"in": "pop-up"}))
+    check("lookup: a list counts under the field, not a pop-up elsewhere",
+          loop.suggested(to_field, draft(""), draft("Pe", popup=True))
+          and not loop.suggested(to_field, draft(""), elsewhere), elsewhere["items"][-1])
+    check("recipients: an address ending in a dot is not one",
+          loop.is_address("sonia.bonell@ac-montpellier.fr") and not loop.is_address("a@b.c.")
+          and not loop.is_address("Sonia"), "")
     chords = {"cmd+home": "cmd+up", "⌘End": "cmd+down", "shift+cmd+home": "shift+cmd+up",
               "Option+Right": "alt+right", "⌥⇧←": "alt+shift+left", "Page Up": "pageup",
               "fn+delete": "forwarddelete", "Home": "home", "end": "end"}
