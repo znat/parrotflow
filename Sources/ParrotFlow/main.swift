@@ -183,9 +183,13 @@ if let index = arguments.firstIndex(of: "--act") {
                 ? arguments[$0 + 1] : nil
         }
     }
-    guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
+    // Repeatable: --done "opened a new message" --done "added Antonio".
+    let doneAt = arguments.indices.filter { arguments[$0] == "--done" }
+    guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--"),
+          doneAt.allSatisfy({ arguments.indices.contains($0 + 1) && !arguments[$0 + 1].hasPrefix("--") })
+    else {
         print("usage: --act \"click on Antonio\" [--at x y | --gaze | --snapshot f.json]"
-              + " [--app Name] [--save f.json] [--show 3] [--execute]")
+              + " [--app Name] [--save f.json] [--show 3] [--done \"step\"] [--execute]")
         exit(2)
     }
     var point: CGPoint?
@@ -198,10 +202,7 @@ if let index = arguments.firstIndex(of: "--act") {
         snapshotPath: value("--snapshot"), save: value("--save"),
         useGaze: arguments.contains("--gaze"), execute: arguments.contains("--execute"),
         decide: !arguments.contains("--look"),
-        // Repeatable: --done "opened a new message" --done "added Antonio".
-        done: arguments.indices.filter { arguments[$0] == "--done" }.compactMap {
-            arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
-        },
+        done: doneAt.map { arguments[$0 + 1] },
         loop: arguments.contains("--loop"),
         request: value("--request"),
         // `--show [seconds]`: outline the offered targets on screen.
