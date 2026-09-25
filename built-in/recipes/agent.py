@@ -53,7 +53,6 @@ import datetime
 import glob
 import json
 import os
-import re
 import time
 from typing import List, Literal, Optional
 
@@ -89,17 +88,19 @@ KEY_UNCHANGED = ("no change in the accessibility tree, which does not show the c
                  "selection; check the picture")
 ANCHOR = {"below": "top", "above": "bottom", "right": "left", "left": "right"}
 GROUNDER = grounding.Grounder.from_env()
-_LOOKS_UP = re.compile(r"\b(attendees?|to|cc|bcc|search|invite|recipients?|participants?|people)\b")
 
 SYSTEM = """You do a task in a macOS app for the user. You see the app's controls as `[ID] Role "name"` lines, and you act with tools. A program carries out each step on the user's real screen.
 
-`act` takes `why`, what the steps are for in a few words, and steps, each {do, id, value, expect}:
+`act` takes `why`, what the steps are for in a few words, and steps, each {do, id, value, expect, at}:
 - click: press the button, link, row, tab or checkbox `id`.
 - pick: choose row `id` in a menu or list that is open.
 - type: put a name, a search query, a subject or another short value into field `id`. `value` is the text. With `id` null it goes where the caret is.
 - write: put the body of a message or comment into box `id`. `value` is the text. With `id` null it goes where the caret is.
 - key: press a key or a shortcut. `value` in plus form: "cmd+shift+n", "return", "escape", "tab", "down". `id` is null.
+- caret: put the caret in field `id`. `at` is "start", "end", "before" or "after"; with before or after, `value` is words the field holds, and the caret goes next to them.
+- select: select `value`, words field `id` holds. Then `key` (cmd+c, cmd+x, backspace) or `type`/`write` over them.
 - scroll: `id` is the list or pane, or null for the last place worked in. `value` is "up" or "down".
+`at`: where `type` or `write` puts the text in a field that already holds some: "start", "end" or "replace", or null right after a `caret` or `select` in that field. For `caret`, see above. Otherwise null.
 `expect`: on a step whose outcome matters, a value or text that should be on screen after it, such as "To holds Alex Moreau and Antonio Ruiz" or "Start date = 25/09/2026". Not a look, such as "the day is highlighted". Otherwise null.
 
 Rules:
@@ -111,7 +112,8 @@ Rules:
 - Put several steps in one `act` when you know what each one does. A step that opens a menu, a list or a dialog ends the batch: its rows get IDs in the next screen.
 - "this", "here", "that one" mean the focused or selected item. Start from it.
 - Type only words the user said. `write` only what the user asked to say. If they did not say it, click in the box and call `done`: the user will dictate it.
-- Never select all in a message, a comment or a document, and never replace or delete text there.
+- Never select all in a message, a comment or a document. Change or delete words there only when the user asked.
+- To place the caret or select text, use caret/select with words from the field.
 - Never archive, leave or pay. Stop just before it and call `done`.
 - `ask` the user a short question, with up to 4 short options, only:
   - right before a step that commits: send, post, invite, share, delete, pay, publish, start a call;
@@ -128,7 +130,7 @@ Rules:
 - The picture shows the area you are working in: check it for what the screen lines cannot say (which part of a field is selected, highlighted rows, chips, what covers what)."""
 GROUNDING = ("When a target you need has no ID in the screen lines, such as a row in a list "
              "that opened, call `ground` with what it looks like before trying another way. It "
-             "returns a point ID that `act` can click.")
+             "returns a point ID that `act` can click. Never ground a caret: use caret/select.")
 NOTES = 2
 SAME_POINT = 20
 PLAN_TOOLS = {"write_plan", "read_plan", "add_task", "update_task_status", "update_task_statuses",
@@ -141,6 +143,7 @@ class Step(Strict):
     id: Optional[int] = None
     value: Optional[str] = None
     expect: Optional[str] = None
+    at: Optional[planning.At] = None
 
 
 # A missing `why`, `summary` or option list is taken as empty: strict mode
@@ -659,7 +662,7 @@ class Agent:
         """Seen 09-23 in Slack: the same two batches ran three times each,
         with the same result, until the calls ran out."""
         said = tuple((step.do, decider.label(self.ids[step.id]) if step.id in self.ids else None,
-                      step.value) for step in steps)
+                      step.value, step.at) for step in steps)
         outcome = text.split("\nWindow:")[0]
         seen = self.tried.get(said)
         self.tried[said] = outcome
@@ -715,10 +718,10 @@ class Agent:
                 value = planning.chord(value)
             expect = " ".join((step.expect or "").split())
             planned = {"do": step.do, "target": decider.label(item) if item else "",
-                       "value": value, "expect": expect}
+                       "value": value, "expect": expect, "at": step.at}
             self.steps += 1
             before = self.snapshot
-            region = self._region(item, "below") if step.do == "type" and self._looks_up(item) \
+            region = self._region(item, "below") if step.do == "type" and looping.looks_up(item) \
                 and self.snapshot.get("seen") is None else None
             was, error = self._seen(region) if region else (None, None)
             if error:
@@ -741,7 +744,7 @@ class Agent:
             self.opened = [i for i in looping.appeared(before, self.snapshot) if i.get("in")]
             if lp.change.get("seen") or lp.change.get("still"):
                 saw = (len(ran) - 1, lp.change, self.snapshot)
-            surprise = self._check(step.do, expect, item, before)
+            surprise = self._check(step, expect, item, before)
             if surprise:
                 ran[-1] += f" — {surprise}"
                 stop = f"step {n} did not go as expected"
@@ -803,12 +806,14 @@ class Agent:
         change = json.dumps(change, ensure_ascii=False)
         return f"{short}\nChange: {change}\n{screen}", short
 
-    def _check(self, do, expect, item, before):
+    def _check(self, step, expect, item, before):
         """What went wrong in a step that ran, or "": a name or words gone
         from the field it acted in. Asking Jev about `expect` cost 0.6-1.0 s
         a step, and on 09-24 it said no to three steps that had worked."""
         said, record = [], {}
-        gone = looping.lost(item, before, self.snapshot) if item and do != "key" else []
+        gone = looping.lost(item, before, self.snapshot) \
+            if item and step.do != "key" and step.at != "replace" \
+            and not self.loop.typed_placed else []
         if gone:
             record["lost"] = ", ".join(f"\"{g}\"" for g in gone)
             said.append(f"this step removed {record['lost']} from \"{decider.label(item)}\"")
@@ -907,12 +912,6 @@ class Agent:
             item["name"] == line["text"] and abs(item["x"] - line["x"]) <= looping.SAME_PLACE
             and abs(item["y"] - line["y"]) <= looping.SAME_PLACE
             for block in blocks for line in block["lines"])
-
-    @staticmethod
-    def _looks_up(item):
-        return bool(item) and item["kind"] == "text" and item["role"] != "AXTextArea" and (
-            item.get("lookup") or item["role"] in ("AXComboBox", "AXSearchField")
-            or _LOOKS_UP.search(item["name"].lower()) is not None)
 
     @staticmethod
     def _norm(text):

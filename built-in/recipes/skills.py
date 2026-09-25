@@ -9,7 +9,8 @@ one gesture and, after `|`, what must be true after it:
       - key right
       - type {minute} | value "Start time" ~ "*, {hour}:{minute}"
 
-Gestures: `click <Role> "<name>" [at left|right]`, `type <text>`, `key <keys>`.
+Gestures: `click <Role> "<name>" [at left|right]`, `type <text>`, `key <keys>`,
+`caret "<field>" at start|end|before "<text>"|after "<text>"`, `select "<field>" "<text>"`.
 Checks, read from the tree by code: `focus "<name>"`, `value "<name>" ~ "<glob>"`,
 `window ~ "<glob>"`, `appears "<glob>"`. `{param}` is filled from the call.
 
@@ -24,9 +25,13 @@ import os
 import re
 
 import decider
+import loop as looping
+import planner as planning
 
 _STEP = re.compile(r'^\s*-\s*(.+?)\s*(?:\|\s*(.+?))?\s*$')
 _CLICK = re.compile(r'^click\s+(\w+)\s+"([^"]+)"(?:\s+at\s+(left|right))?$')
+_CARET = re.compile(r'^caret\s+"([^"]+)"\s+at\s+(?:(start|end)|(before|after)\s+"([^"]+)")$')
+_SELECT = re.compile(r'^select\s+"([^"]+)"\s+"([^"]+)"$')
 _FOCUS = re.compile(r'^focus\s+"([^"]+)"$')
 _VALUE = re.compile(r'^value\s+"([^"]+)"\s*~\s*"([^"]*)"$')
 _WINDOW = re.compile(r'^window\s*~\s*"([^"]*)"$')
@@ -99,7 +104,8 @@ def problems(text):
                 out.append(f"cannot read the step {line.strip()!r}")
                 continue
             gesture, expect = step.group(1), step.group(2) or ""
-            if not (_CLICK.match(gesture) or re.match(r"^(type|key)\s+\S", gesture)):
+            if not (_CLICK.match(gesture) or _CARET.match(gesture) or _SELECT.match(gesture)
+                    or re.match(r"^(type|key)\s+\S", gesture)):
                 out.append(f"cannot do {gesture!r}")
             if expect and not any(p.match(expect) for p in (_FOCUS, _VALUE, _WINDOW, _APPEARS)):
                 out.append(f"cannot check {expect!r}")
@@ -215,8 +221,36 @@ def _gesture(gesture, agent):
         lp.front()
         reply = lp.call("type", text=gesture[5:])
         return reply.get("error")
+    if gesture.startswith(("caret ", "select ")):
+        return _edit(gesture, agent)
     if gesture.startswith("key "):
         lp.front()
-        reply = lp.call("key", keys=gesture[4:].strip())
+        reply = lp.call("key", keys=planning.chord(gesture[4:]))
         return reply.get("text") or reply.get("error")
     return f"cannot read {gesture!r}"
+
+
+def _edit(gesture, agent):
+    """`caret` or `select`: the field clicked unless the caret is in it,
+    then the loop's own move, which reads the selection back."""
+    lp = agent.loop
+    caret = _CARET.match(gesture)
+    select = _SELECT.match(gesture)
+    if not caret and not select:
+        return f"cannot read {gesture!r}"
+    name = (caret or select).group(1)
+    fields = [i for i in _named(agent.snapshot, name) if i["kind"] == "text"]
+    if not fields:
+        return f"no text field {name!r} on screen"
+    field = fields[0]
+    if not lp._caret_in(field, agent.snapshot) and lp.placed != looping.identity(field):
+        why = lp._press(field, click=False)
+        if why:
+            return why
+        agent.snapshot = lp.settle(agent.snapshot, agent.aim, "before_type")
+    lp.front()
+    if caret:
+        why, _ = lp._edit("caret", field, caret.group(2) or caret.group(3), caret.group(4) or "")
+    else:
+        why, _ = lp._edit("select", field, None, select.group(2))
+    return why

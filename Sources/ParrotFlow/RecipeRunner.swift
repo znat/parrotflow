@@ -525,7 +525,7 @@ private final class RecipeSession {
     // focus, and a wheel event goes to the pane under the point.
     static let touchesScreen: Set<String> = [
         "key", "type", "paste", "click", "click_at", "right_click", "hover", "drag", "ready",
-        "select", "show_menu",
+        "select", "show_menu", "select_text",
     ]
 
     /// While the user types to the run, a step that touches the screen waits.
@@ -601,7 +601,7 @@ private final class RecipeSession {
 
         case "key":
             guard let keys = r["keys"] as? String, let (code, flags) = Self.key(keys) else {
-                return ["error": "unknown key \(r["keys"] ?? "")"]
+                return ["error": "unknown key \(r["keys"] ?? ""). Known: \(Self.knownKeys)"]
             }
             // `send: false` held because the loop knew when it was sending.
             // A step only says "Return", so the caret decides. A lookup field
@@ -809,6 +809,29 @@ private final class RecipeSession {
             return ["point": point.map { [$0.x, $0.y] } as Any? ?? NSNull(),
                     "described": ScreenTargets.focusDescription(ofApp: named),
                     "role": ScreenTargets.focusRole(ofApp: named) as Any? ?? NSNull()]
+
+        case "field_text":
+            let box = (r["id"] as? Int).flatMap { items[$0] }.map(Self.box)
+            guard let field = TextCaret.field(ofApp: app, box: box) else {
+                return ["error": "no text field there"]
+            }
+            let (text, source) = TextCaret.text(of: field)
+            return ["text": text, "source": source, "role": TextCaret.role(field),
+                    "focused": TextCaret.isFocused(field, ofApp: app)]
+
+        case "select_text":
+            let box = (r["id"] as? Int).flatMap { items[$0] }.map(Self.box)
+            guard let field = TextCaret.field(ofApp: app, box: box) else {
+                return ["error": "no text field there"]
+            }
+            guard TextCaret.isFocused(field, ofApp: app) else {
+                return ["error": "the caret is not in that field: \(ScreenTargets.focusDescription(ofApp: app))"]
+            }
+            let result = TextCaret.select(
+                field, location: r["location"] as? Int ?? -1, length: r["length"] as? Int ?? 0,
+                expect: r["text"] as? String ?? "", caret: r["caret"] as? String)
+            Log.write("action: select_text — \(result["method"] ?? result["error"] ?? "")")
+            return result
 
         case "ready_for_words":
             let box = ScreenTargets.readyForWords(ofApp: r["app"] as? String ?? app)
@@ -1056,8 +1079,8 @@ private final class RecipeSession {
         CGPoint(x: (x as? NSNumber)?.doubleValue ?? 0, y: (y as? NSNumber)?.doubleValue ?? 0)
     }
 
-    /// "cmd+n", "return", "shift+tab".
-    private static func key(_ spec: String) -> (CGKeyCode, CGEventFlags)? {
+    /// "cmd+n", "return", "shift+tab", "alt+shift+right".
+    static func key(_ spec: String) -> (CGKeyCode, CGEventFlags)? {
         var flags: CGEventFlags = []
         var code: CGKeyCode?
         for part in spec.lowercased().split(separator: "+").map(String.init) {
@@ -1069,17 +1092,31 @@ private final class RecipeSession {
             default: code = keyCodes[part]
             }
         }
-        return code.map { ($0, flags) }
+        guard var code else { return nil }
+        // macOS has no ⌘Home: ⌘↑ and ⌘↓ go to the start and end of the text.
+        if flags.contains(.maskCommand), code == CGKeyCode(kVK_Home) || code == CGKeyCode(kVK_End) {
+            code = CGKeyCode(code == CGKeyCode(kVK_Home) ? kVK_UpArrow : kVK_DownArrow)
+        }
+        return (code, flags)
+    }
+
+    static var knownKeys: String {
+        "cmd, shift, alt, ctrl + "
+            + keyCodes.keys.filter { $0.count > 1 }.sorted().joined(separator: ", ")
+            + ", a-z, 0-9, [ ] , . / ; - = ' `"
     }
 
     private static let keyCodes: [String: CGKeyCode] = {
         var codes: [String: CGKeyCode] = [
             "return": CGKeyCode(kVK_Return), "enter": CGKeyCode(kVK_Return),
             "delete": CGKeyCode(kVK_Delete), "backspace": CGKeyCode(kVK_Delete),
+            "forwarddelete": CGKeyCode(kVK_ForwardDelete),
             "escape": CGKeyCode(kVK_Escape), "esc": CGKeyCode(kVK_Escape),
             "tab": CGKeyCode(kVK_Tab), "space": CGKeyCode(kVK_Space),
             "up": CGKeyCode(kVK_UpArrow), "down": CGKeyCode(kVK_DownArrow),
             "left": CGKeyCode(kVK_LeftArrow), "right": CGKeyCode(kVK_RightArrow),
+            "home": CGKeyCode(kVK_Home), "end": CGKeyCode(kVK_End),
+            "pageup": CGKeyCode(kVK_PageUp), "pagedown": CGKeyCode(kVK_PageDown),
         ]
         let letters: [(String, Int)] = [
             ("a", kVK_ANSI_A), ("b", kVK_ANSI_B), ("c", kVK_ANSI_C), ("d", kVK_ANSI_D),

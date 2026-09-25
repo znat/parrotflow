@@ -26,7 +26,8 @@ from pydantic import BaseModel, ConfigDict
 import decider
 import runlog as recording
 
-Do = Literal["click", "pick", "type", "write", "key", "scroll"]
+Do = Literal["click", "pick", "type", "write", "key", "scroll", "caret", "select"]
+At = Literal["start", "end", "replace", "before", "after"]
 
 
 class Strict(BaseModel):
@@ -46,6 +47,8 @@ def describe_step(step):
         said += f" “{step['target']}”"
     if step["value"]:
         said += f" = “{decider.prefix(step['value'], 60)}”"
+    if step.get("at"):
+        said += f" at {step['at']}"
     if step["expect"]:
         said += f" → {step['expect']}"
     return said
@@ -59,12 +62,18 @@ def doing(step):
         return said + (f" in {decider.prefix(target, 40)}…" if target else "…")
     if do == "key":
         return f"pressing {value}…"
+    if do == "caret":
+        where = f"{step.get('at')} “{value}”" if value else f"at the {step.get('at')}"
+        return f"putting the caret {where}…"
+    if do == "select":
+        return f"selecting “{value}”…"
     if do == "scroll":
         return f"scrolling {value or 'down'}…"
     return f"{'picking' if do == 'pick' else 'clicking'} “{decider.prefix(target, 40)}”…"
 
 
-_SYMBOLS = {"⌘": "cmd+", "⌥": "alt+", "⇧": "shift+", "⌃": "ctrl+", "↩": "return", "⎋": "escape"}
+_SYMBOLS = {"⌘": "cmd+", "⌥": "alt+", "⇧": "shift+", "⌃": "ctrl+", "↩": "return", "⎋": "escape",
+            "←": "left", "→": "right", "↑": "up", "↓": "down"}
 
 
 def chord(value):
@@ -77,9 +86,20 @@ def chord(value):
         parts = [p for p in parts if p] + ["+"]
     else:
         parts = [p for p in parts if p]
-    names = {"command": "cmd", "option": "alt", "opt": "alt", "control": "ctrl",
-             "enter": "return", "esc": "escape"}
-    return "+".join(names.get(p, p) for p in parts)
+    parts = [p.replace(" ", "").replace("_", "") if len(p) > 1 else p for p in parts]
+    parts = [_NAMES.get(p, p) for p in parts]
+    if "fn" in parts[:-1] and parts[-1] in ("delete", "backspace"):
+        parts = [p for p in parts[:-1] if p != "fn"] + ["forwarddelete"]
+    # macOS has no ⌘Home: ⌘↑ and ⌘↓ go to the start and end of the text.
+    if "cmd" in parts[:-1] and parts[-1] in ("home", "end"):
+        parts[-1] = "up" if parts[-1] == "home" else "down"
+    return "+".join(parts)
+
+
+_NAMES = {"command": "cmd", "option": "alt", "opt": "alt", "control": "ctrl",
+          "enter": "return", "esc": "escape", "pgup": "pageup", "pgdn": "pagedown",
+          "pgdown": "pagedown", "fndelete": "forwarddelete", "del": "forwarddelete",
+          "arrowleft": "left", "arrowright": "right", "arrowup": "up", "arrowdown": "down"}
 
 
 # Context
