@@ -31,14 +31,21 @@ that were not there before the typing.
 `ground` finds a target in the pixels of the newest read, in a crop of at
 most 600×400 points, and gives it a point ID that `act` clicks at
 (`ground.py`). `actions.ground` picks TinyClick or the planner's model; off,
-there is no `ground` tool.
+there is no `ground` tool. A read over FRESH seconds old is read again
+first: when items came or went, the new screen comes back instead.
+
+The same `ground` or `look` twice in a row, by point, ID or description,
+is not run the second time: the result names the window and the focused
+item, and says to `act` or `read`. `read` right after a read or a ground
+waits, up to 3 s, for items to come or go: a loading screen.
 
 Every request carries a picture of the area being worked in: a 512 px JPEG,
 `detail: low`, of the list that opened, else around the last target, else,
 on the first call, around the focused item. `_prepare`
 drops the one before. No screenshot, no picture.
 
-What went wrong (a step failed, the same batch ran twice, a step took a name
+What went wrong (a step failed, the same batch ran twice, the same ground or
+look three times in a row, a step took a name
 or words out of its field) is a note under the task in the run panel. The
 model decides what to do; the user is asked only before a step that commits.
 A step's `expect` is recorded with the step, and never checked.
@@ -124,7 +131,7 @@ Rules:
 - Never invent a menu item or a label. Work out dates and times like "tomorrow at 10" from the date and time you are given, then find them on screen. When unsure, act one step at a time.
 - A step after which nothing in the tree changed is not verified. Check the picture: it may have worked. If it did not, do not repeat it: try another way.
 - A request with several parts starts with `write_plan`: the parts as a few short steps. A request with one part needs no plan. With a plan, every call that has a `plan` field fills it: the tasks the screen now shows done, the tasks dropped and why, and the task this call is for. Without a plan, `plan` is null. Call `write_plan` again only to change the plan itself.
-- When the last result shows the task done, call `done`. Do not read again to check.
+- When the screen is loading, call `read`: it waits for the screen to settle.
 - Call `done` when the task is done, `stuck` when it cannot be done here and no question would help. `done` is refused while a plan step is open.
 - The user may write or speak to you while you work: "The user says, while you work: …". Their words come first, and may change the plan.
 - The picture shows the area you are working in: check it for what the screen lines cannot say (which part of a field is selected, highlighted rows, chips, what covers what)."""
@@ -133,6 +140,7 @@ GROUNDING = ("When a target you need has no ID in the screen lines, such as a ro
              "returns a point ID that `act` can click. Never ground a caret: use caret/select.")
 NOTES = 2
 SAME_POINT = 20
+FRESH = 1.0
 PLAN_TOOLS = {"write_plan", "read_plan", "add_task", "update_task_status", "update_task_statuses",
               "remove_task"}
 OPEN = {"pending", "in_progress"}
@@ -362,6 +370,11 @@ class Agent:
         self.shown = None
         # Where the picture in the request being sent was recorded.
         self.sent_image = None
+        # The last screen tool, and the last ground or look: {tool, facets,
+        # point}, with how many times in a row it came again.
+        self.last_tool = None
+        self.last_call = None
+        self.again = 0
 
     def run(self, report):
         lp = self.loop
@@ -588,7 +601,10 @@ class Agent:
         else:
             self.ran += 1
             said = self._progress(getattr(args, "plan", None))
+            if name not in ("ground", "look"):
+                self.last_call, self.again = None, 0
             full, short, ended = self._run_tool(name, args)
+            self.last_tool = name
             if said:
                 full, short = f"{said}\n{full}", f"{said}\n{short}"
             self.over = self.over or ended
@@ -600,6 +616,8 @@ class Agent:
     def _run_tool(self, name, args):
         """(result, the result cut for history, whether the run is over)."""
         lp = self.loop
+        if name == "read" and self.last_tool in ("read", "ground"):
+            return self._wait() + (False,)
         if name == "read":
             self.snapshot = lp._read(self.aim, self.snapshot["app"])
             return self._screen(), "Read the screen.", False
@@ -842,6 +860,8 @@ class Agent:
                 text = "Not run: look needs an `id`, or x, y, w and h."
                 return text, text
             where = "at {x:.0f},{y:.0f}, {w:.0f}×{h:.0f}".format(**region)
+        if self._again("look", self._facets(args, "below")):
+            return self._repeat("look")
         lines, error = self._seen(region)
         if error:
             text = f"Could not look: {error}"
@@ -923,6 +943,14 @@ class Agent:
         if not text:
             said = "Not run: ground needs a description."
             return said, said
+        changed = self._fresh()
+        if changed:
+            return changed, "Not run: the screen changed since the last read."
+        facets = self._facets(args, "around", text)
+        if args.image_x is not None and args.image_y is not None and self.shown is not None:
+            facets.append(("point", *self._picture_point(args.image_x, args.image_y)))
+        if self._again("ground", facets):
+            return self._repeat("ground")
         if args.image_x is not None and args.image_y is not None:
             return self._from_picture(text, args.image_x, args.image_y)
         area = self._ground_area(args)
@@ -980,19 +1008,110 @@ class Agent:
         if self.shown is None:
             said = "Not run: no picture was shown; give an `id` or a region instead."
             return said, said
-        box, (w, h) = self.shown["box"], self.shown["size"]
+        w, h = self.shown["size"]
         if not (0 <= x <= w and 0 <= y <= h):
             said = f"Not run: {x},{y} is outside the picture, which is {w}×{h} pixels."
             return said, said
-        point = [round(box[0] + x / w * (box[2] - box[0]), 1),
-                 round(box[1] + y / h * (box[3] - box[1]), 1)]
+        point = self._picture_point(x, y)
         self.loop.recorder.ground({"method": "image", "description": text, "point": point,
-                                   "region": self._centred(box)})
+                                   "region": self._centred(self.shown["box"])})
         return self._pointed(text, point, "image", "from the picture")
+
+    def _picture_point(self, x, y):
+        """A point in the picture last shown, in screen points."""
+        box, (w, h) = self.shown["box"], self.shown["size"]
+        return [round(box[0] + x / w * (box[2] - box[0]), 1),
+                round(box[1] + y / h * (box[3] - box[1]), 1)]
+
+    def _fresh(self):
+        """Reads the screen again when the last read is over FRESH seconds
+        old: it may have finished loading. The new screen, as a result,
+        when items came or went; else None, and the IDs stay."""
+        lp = self.loop
+        if time.monotonic() - getattr(lp, "read_at", 0.0) <= FRESH:
+            return None
+        before = self.snapshot
+        self.snapshot = lp._read(self.aim, before["app"])
+        if looping._item_set(before) == looping._item_set(self.snapshot):
+            self.ids = {n: item if item["kind"] == "seen"
+                        else looping.refind(item, self.snapshot) or item
+                        for n, item in self.ids.items()}
+            return None
+        self.last_call, self.again = None, 0
+        change = looping.sentence(looping.changes(before, self.snapshot))
+        return (f"Not run: the screen changed since the last read: {change}. If the target "
+                f"still has no ID, ground it on this screen.\n{self._screen()}")
+
+    def _wait(self):
+        """`read` right after a read or a ground: reads until items come or
+        go, 3 s at most. (result, the result cut for history)."""
+        before, began = self.snapshot, time.monotonic()
+        self.snapshot = self.loop.settle(
+            before, self.aim, "wait",
+            until=lambda now: looping._item_set(now) != looping._item_set(before))
+        waited = time.monotonic() - began
+        if looping._item_set(before) == looping._item_set(self.snapshot):
+            said = f"Waited {waited:.1f} s: no item came or went."
+        else:
+            said = f"Waited {waited:.1f} s: {looping.sentence(looping.changes(before, self.snapshot))}"
+        return f"{said}\n{self._screen()}", decider.prefix(said, 200)
+
+    def _facets(self, args, side, text=None):
+        """What makes two `ground` or `look` calls the same: the item and
+        side, the region, the description."""
+        facets = [("description", self._norm(text))] if text else []
+        item = self.ids.get(args.id) if args.id is not None else None
+        if item is not None:
+            facets.append(("id", decider.label(item), args.side or side))
+        region = (args.x, args.y, args.w, args.h)
+        if None not in region:
+            facets.append(("region", *(round(v) for v in region)))
+        return facets
+
+    @staticmethod
+    def _same(facets, others):
+        for a in facets:
+            for b in others:
+                if a[0] == b[0] == "point":
+                    if abs(a[1] - b[1]) <= SAME_POINT and abs(a[2] - b[2]) <= SAME_POINT:
+                        return True
+                elif a == b:
+                    return True
+        return False
+
+    def _again(self, tool, facets):
+        """Whether this call is the last `ground` or `look` again, with
+        nothing run in between. It becomes the last call either way."""
+        last = self.last_call if self.last_call and self.last_call["tool"] == tool else None
+        same = bool(last) and self._same(last["facets"], facets)
+        self.again = self.again + 1 if same else 0
+        was = last["point"] if last else None
+        self.last_call = {"tool": tool, "facets": facets, "point": was if same else None,
+                          "was": was}
+        return same
+
+    def _repeat(self, tool):
+        """The one line a repeated call gets. The third in a row is a note."""
+        window = decider.prefix(self.snapshot.get("window") or "", 60)
+        focus = looping._focused(self.snapshot)
+        where = f"window \"{window}\"" + (f", the caret in \"{decider.prefix(focus, 40)}\""
+                                           if focus else "")
+        point = self.last_call.get("point")
+        target = f"`act` on [{point}]" if point is not None else "`act` on what it found"
+        said = (f"Not run: the same {tool} as the last call, and nothing changed on screen: "
+                f"{where}. Either {target}, or `read` to wait for the screen.")
+        if self.again >= 2:
+            self._note(f"the same {tool} {self.again + 1} times in a row")
+        return said, said
 
     def _pointed(self, text, point, method, source):
         had = set(self.ids)
         n = self._point(text, point, method)
+        if self.last_call:
+            self.last_call["point"] = n
+            if n == self.last_call["was"]:
+                self.again += 1
+                return self._repeat("ground")
         if n in had:
             said = (f"[{n}] already points there. Click it with `act`, or try another way: "
                     "asking again gives the same point.")

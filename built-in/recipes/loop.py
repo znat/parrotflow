@@ -37,7 +37,7 @@ MOVED = 20  # points an item may shift and still be where it was
 #   "first": ends at the first change (type, write, caret, select).
 #   "items": ends at the first change when it is only values, focus or
 #     states; when items came or went, at two reads in a row with the same
-#     items (click, pick).
+#     items (click, pick; "wait", a `read` right after a read or a ground).
 #   "stable": ends at two reads in a row with the same items, changed or not
 #     (key: in the recorded runs, 3 of 8 key steps filled or closed a list
 #     after the first change).
@@ -48,7 +48,7 @@ SETTLE_EVERY = 0.15
 SETTLE = {"before_type": (0.3, "first"), "after_press": (0.5, "items"),
           "after_key": (0.5, "stable"), "after_edit": (0.5, "first"),
           "after_type": (1.7, "first"), "skill_step": (0.3, "first"),
-          "skill_check": (0.9, "first")}
+          "skill_check": (0.9, "first"), "wait": (3.0, "items")}
 
 
 def verdict(answer):
@@ -738,6 +738,7 @@ class Loop:
         reply = self.call("observe", app=app, see=True)
         if reply.get("error"):
             raise Stop(reply["error"], broke=True)
+        self.read_at = time.monotonic()
         snapshot = reply["snapshot"]
         if isinstance(reply.get("seen"), list):
             snapshot["seen"] = reply["seen"]
