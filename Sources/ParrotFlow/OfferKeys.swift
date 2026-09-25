@@ -202,6 +202,19 @@ final class OfferKeys {
         .maskCommand, .maskAlternate, .maskControl, .maskShift,
     ]
 
+    /// The selector's digits, by key and not by character. On AZERTY the top
+    /// row types `&é"'(` and a digit needs Shift, so the character never
+    /// matched and the digit went to the field.
+    private static let digits: [Int: String] = [
+        kVK_ANSI_1: "1", kVK_ANSI_2: "2", kVK_ANSI_3: "3",
+        kVK_ANSI_4: "4", kVK_ANSI_5: "5", kVK_ANSI_6: "6",
+        kVK_ANSI_7: "7", kVK_ANSI_8: "8", kVK_ANSI_9: "9",
+        kVK_ANSI_Keypad1: "1", kVK_ANSI_Keypad2: "2", kVK_ANSI_Keypad3: "3",
+        kVK_ANSI_Keypad4: "4", kVK_ANSI_Keypad5: "5", kVK_ANSI_Keypad6: "6",
+        kVK_ANSI_Keypad7: "7", kVK_ANSI_Keypad8: "8", kVK_ANSI_Keypad9: "9",
+    ]
+    private static let anyShortcut: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
+
     private func handle(
         _ type: CGEventType, _ event: CGEvent
     ) -> Unmanaged<CGEvent>? {
@@ -243,6 +256,9 @@ final class OfferKeys {
             key = .firstReturn
         } else if keycode == kVK_Escape, event.flags.isDisjoint(with: Self.anyModifier) {
             key = .dismiss
+        } else if let digit = Self.digits[keycode], letters.contains(digit),
+                  event.flags.isDisjoint(with: Self.anyShortcut) {
+            key = .letter(digit)
         } else if event.flags.isDisjoint(with: Self.anyModifier),
                   !letters.isEmpty,
                   let typed = NSEvent(cgEvent: event)?.charactersIgnoringModifiers?.uppercased(),

@@ -3668,6 +3668,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.offerHeld = false
             self.watchTheOfferKeys()
         }
+        // A click on the tab opens it inside the pill, without passing through
+        // `openTheOffer`. The letters stayed unclaimed and were typed.
+        pill.model.onOpen = { [weak self] in
+            guard let self, self.offerIsUp else { return }
+            self.offerHeld = self.pill.pointerIsOver
+            self.offerUntil = self.offerHeld
+                ? .distantFuture : Date().addingTimeInterval(Self.offerSeconds)
+            self.watchTheOfferKeys()
+        }
 
         pill.model.onHover = { [weak self] inside in
             guard let self else { return }
@@ -3680,17 +3689,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watchForOfferOutsideClick()
     }
 
-    /// Unfold the tab, and give it everything an open panel has.
-    ///
-    /// Three things move together here for the reason `holdTheOffer` gives:
-    /// the panel, the deadline it did not have while it was a tab, and the
-    /// letters, which are only claimed while they are on screen to be pressed.
+    /// Unfold the tab. The deadline and the letters follow through
+    /// `pill.model.onOpen`, the same way a click on the tab gets them.
     private func openTheOffer() {
         Log.write("summon: opened the tab")
         pill.open(true)
-        offerUntil = Date().addingTimeInterval(Self.offerSeconds)
-        offerHeld = pill.pointerIsOver
-        watchTheOfferKeys()
     }
 
     /// Put the tab up once the warning has been read.
@@ -4058,6 +4061,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, commands.indices.contains(index) else { return }
             self.runOfferedCommand(commands[index].title)
         }
+        // No deadline to restore, only the letters. The closure left by the
+        // last dictation's offer would give it one.
+        pill.model.onOpen = { [weak self] in self?.watchTheOfferKeys() }
         pill.offer(commands, headline: headline, open: true, for: Self.learnSeconds)
         watchTheOfferKeys()
     }

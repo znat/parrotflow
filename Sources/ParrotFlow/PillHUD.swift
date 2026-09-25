@@ -411,6 +411,9 @@ final class PillModel: ObservableObject {
     /// The offer is still on screen and still live afterwards, so whoever armed
     /// it has to put the clock and the letters back the way they are for a tab.
     var onFold: (() -> Void)?
+    /// The tab unfolded, by a click or by the key. Whoever armed the offer
+    /// gives it the deadline and the letters an open panel has.
+    var onOpen: (() -> Void)?
 
     /// A click on the collapsed tab.
     ///
@@ -636,6 +639,7 @@ final class PillHUD {
         if wanted { openedByPointer = byPointer } else { openedByPointer = false }
         Log.write("pill: the offer \(wanted ? "opened" : "folded")\(byPointer ? ", by the pointer" : "")")
         set(.offer(commands, headline, reading, open: wanted))
+        if wanted { model.onOpen?() }
         if !wanted {
             // The pointer's mark belonged to a chip that is no longer drawn.
             model.selected = nil
