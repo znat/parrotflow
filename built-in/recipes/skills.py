@@ -10,9 +10,17 @@ one gesture and, after `|`, what must be true after it:
       - type {minute} | value "Start time" ~ "*, {hour}:{minute}"
 
 Gestures: `click <Role> "<name>" [at left|right]`, `type <text>`, `key <keys>`,
-`caret "<field>" at start|end|before "<text>"|after "<text>"`, `select "<field>" "<text>"`.
+`caret "<field>" at start|end|before "<text>"|after "<text>"`, `select "<field>" "<text>"`,
+`click picture "<text>" [below|above|right of|left of "<anchor>"]`.
 Checks, read from the tree by code: `focus "<name>"`, `value "<name>" ~ "<glob>"`,
 `window ~ "<glob>"`, `appears "<glob>"`. `{param}` is filled from the call.
+
+`click picture` is for a target the tree may not have, such as Teams'
+attendee suggestions. The first that finds `<text>` is clicked: an item of
+the tree called `<text>`, then a line of the read's text seen in the pixels
+that is or starts with `<text>`, then `ground` on the picture. With an
+anchor, each looks only on that side of it, and the nearest one wins. The
+step says which found it and where.
 
 The model calls a skill with `use`. No model runs while it plays. The first
 check that fails stops it, and the model gets what was expected and what the
@@ -25,12 +33,15 @@ import os
 import re
 
 import decider
+import ground as grounding
 import loop as looping
 import planner as planning
 
 _STEP = re.compile(r'^\s*-\s*(.+?)\s*(?:\|\s*(.+?))?\s*$')
 _CLICK = re.compile(r'^click\s+(\w+)\s+"([^"]+)"(?:\s+at\s+(left|right))?$')
 _CARET = re.compile(r'^caret\s+"([^"]+)"\s+at\s+(?:(start|end)|(before|after)\s+"([^"]+)")$')
+_PICTURE = re.compile(r'^click\s+picture\s+"([^"]+)"'
+                      r'(?:\s+(below|above|right of|left of)\s+"([^"]+)")?$')
 _SELECT = re.compile(r'^select\s+"([^"]+)"\s+"([^"]+)"$')
 _FOCUS = re.compile(r'^focus\s+"([^"]+)"$')
 _VALUE = re.compile(r'^value\s+"([^"]+)"\s*~\s*"([^"]*)"$')
@@ -39,13 +50,19 @@ _APPEARS = re.compile(r'^appears\s+"([^"]*)"$')
 # Points in from the edge for `at left`. Measured 09-24 on Outlook's date and
 # time fields: 10 lands before the hour's first digit, 18 on both parts.
 EDGE = 16
+# Points: the part of the screen `click picture` looks at, beside its anchor.
+REACH = grounding.CROP_H
+ACROSS = 400
+MARGIN = 40
+KEEP = {"below": "top", "above": "bottom", "right of": "left", "left of": "right"}
 
 
 class Skill:
     def __init__(self, name, goal, params, steps):
         self.name, self.goal, self.params, self.steps = name, goal, params, steps
         # The controls its clicks name, as (role, name): the skill sets them.
-        self.covers = {m.groups()[:2] for m in (_CLICK.match(g) for g, _ in steps) if m}
+        self.covers = {m.groups()[:2] for m in (_CLICK.match(g) for g, _ in steps
+                                                  if not _PICTURE.match(g)) if m}
 
     def line(self):
         covers = ", ".join(f'"{name}"' for _, name in sorted(self.covers))
@@ -104,7 +121,8 @@ def problems(text):
                 out.append(f"cannot read the step {line.strip()!r}")
                 continue
             gesture, expect = step.group(1), step.group(2) or ""
-            if not (_CLICK.match(gesture) or _CARET.match(gesture) or _SELECT.match(gesture)
+            if not (_CLICK.match(gesture) or _PICTURE.match(gesture) or _CARET.match(gesture)
+                    or _SELECT.match(gesture)
                     or re.match(r"^(type|key)\s+\S", gesture)):
                 out.append(f"cannot do {gesture!r}")
             if expect and not any(p.match(expect) for p in (_FOCUS, _VALUE, _WINDOW, _APPEARS)):
@@ -178,7 +196,11 @@ def play(skill, values, agent):
     said = []
     for n, (gesture, expect) in enumerate(skill.steps, 1):
         gesture, expect = _fill(gesture, filled), _fill(expect, filled)
-        why = _gesture(gesture, agent)
+        how = ""
+        if _PICTURE.match(gesture):
+            why, how = _picture(gesture, agent)
+        else:
+            why = _gesture(gesture, agent)
         if why:
             said.append(f"{n}. {gesture} — failed: {why}")
             return False, said
@@ -190,6 +212,7 @@ def play(skill, values, agent):
         else:
             agent.snapshot = lp.settle(agent.snapshot, agent.aim, "skill_step")
         ok, found = check(expect, agent.snapshot)
+        gesture += f" ({how})" if how else ""
         lp.log(f"skill: {skill.name} {n}. {gesture}" + (f" | {expect} — "
                + ("ok" if ok else f"no: {found}") if expect else ""))
         if not ok:
@@ -254,3 +277,74 @@ def _edit(gesture, agent):
     else:
         why, _ = lp._edit("select", field, None, select.group(2))
     return why
+
+
+def _picture(gesture, agent):
+    """`click picture`: (why it could not, or None; which way found the
+    target and where)."""
+    lp, snapshot = agent.loop, agent.snapshot
+    text, side, name = _PICTURE.match(gesture).groups()
+    anchor, box, where = None, None, ""
+    if name:
+        anchors = _named(snapshot, name)
+        if not anchors:
+            return f"no {name!r} on screen, the anchor for {text!r}", ""
+        anchor, where = anchors[0], f" {side} {name!r}"
+        box = _beside(anchor, side)
+
+    def best(found):
+        inside = [f for f in found if box is None or _within(f, box)]
+        if not inside or anchor is None:
+            return inside[0] if inside else None
+        return min(inside, key=lambda f: (f["x"] - anchor["x"]) ** 2 + (f["y"] - anchor["y"]) ** 2)
+
+    item = best(_named(snapshot, text))
+    if item is not None:
+        return lp._click_at({"x": item["x"], "y": item["y"], "name": text}), \
+            f"tree at {item['x']:.0f},{item['y']:.0f}"
+    want = _plain(text)
+    line = best([line for line in snapshot.get("seen") or () if isinstance(line, dict)
+                 and _starts(_plain(line.get("text", "")), want)])
+    if line is not None:
+        return lp._click_at({"x": line["x"], "y": line["y"], "name": text}), \
+            f"seen \"{_plain(line['text'])}\" at {line['x']:.0f},{line['y']:.0f}"
+    shot = snapshot.get("shot") or {}
+    tried, error = "the tree or the text", ""
+    if box is not None and agent.grounder.on and shot.get("file"):
+        region = {"x": (box[0] + box[2]) / 2, "y": (box[1] + box[3]) / 2,
+                  "w": box[2] - box[0], "h": box[3] - box[1]}
+        crop = grounding.crop_box(region, shot["frame"], KEEP[side])
+        if crop is not None:
+            tried = "the tree, the text or the picture"
+            found = agent.grounder.point(shot, crop, text, agent.planner, lp.log)
+            agent._record_ground(found, text, crop, shot, why="skill")
+            error = found.get("error") or ""
+            if found.get("point") is not None:
+                x, y = found["point"]
+                return lp._click_at({"x": x, "y": y, "name": text}), \
+                    f"picture ({found['method']}) at {x:.0f},{y:.0f}"
+    return f"no {text!r}{where} in {tried}" + (f"; the picture: {error}" if error else ""), ""
+
+
+def _beside(item, side):
+    """(left, top, right, bottom) of the part of the screen on `side` of `item`."""
+    left, top = item["x"] - item.get("w", 0) / 2, item["y"] - item.get("h", 0) / 2
+    right, bottom = left + item.get("w", 0), top + item.get("h", 0)
+    wide = max(right + MARGIN, left - MARGIN + ACROSS)
+    return {"below": (left - MARGIN, bottom, wide, bottom + REACH),
+            "above": (left - MARGIN, top - REACH, wide, top),
+            "right of": (right, item["y"] - ACROSS / 2, right + REACH, item["y"] + ACROSS / 2),
+            "left of": (left - REACH, item["y"] - ACROSS / 2, left, item["y"] + ACROSS / 2)}[side]
+
+
+def _within(thing, box):
+    return box[0] <= thing["x"] <= box[2] and box[1] <= thing["y"] <= box[3]
+
+
+def _plain(text):
+    return " ".join(str(text).lower().split())
+
+
+def _starts(line, want):
+    """Whether `line` is `want`, or starts with it as whole words."""
+    return line == want or line.startswith(want) and not line[len(want)].isalnum()
