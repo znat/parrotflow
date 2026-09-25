@@ -41,11 +41,9 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 
 <br>
 
-<div align="center">
+https://github.com/user-attachments/assets/58bc31ad-96a4-4ca6-a211-75edfe3a6aed
 
-<img src="Resources/hero.webp" width="940" alt="Highlights from ParrotFlow's native onboarding tour:
-contextual vocabulary distinguishes Mik and Mick. Side-by-side YAML examples
-turn dictation into PR links, Slack mentions, and corrected grammar.">
+<div align="center">
 
 <sub>The native app, in motion. Configuration on the left. What it changes on the right.</sub>
 
@@ -101,8 +99,7 @@ pipeline. The existing number-normalization stage can run before it.
 That same approach can link your issue tracker, normalize project terminology,
 or format the identifiers you say every day.
 
-<details>
-<summary><strong>Give a script a keyboard shortcut</strong></summary>
+### Give a script a keyboard shortcut
 
 The shipped Slack transform offers an **S** action after dictation:
 
@@ -125,10 +122,7 @@ A `command:` transform runs a program on your Mac. Use scripts you trust.
 
 [Write your own script transform](docs/guides/transforms.md#scripts)
 
-</details>
-
-<details>
-<summary><strong>Compose transforms into a pipeline</strong></summary>
+### Compose transforms into a pipeline
 
 Order matters: normalize spoken numbers before turning them into PR links.
 
@@ -147,10 +141,7 @@ prompt in chat and mail, but not in your coding agent.
 
 [Explore pipelines and conditions](docs/guides/pipelines.md)
 
-</details>
-
-<details>
-<summary><strong>Add a prompt when the job needs a language model</strong></summary>
+### Add a prompt when the job needs a language model
 
 Grammar, an email draft, a shorter message, or a list: prompt transforms handle
 changes that need more than a replacement or a script.
@@ -163,8 +154,6 @@ The shipped [grammar transform](docs/guides/extensions.md#grammar) is a starting
 with its own test cases.
 
 [Configure models](docs/guides/configuration.md#models-and-privacy) · [Write a prompt transform](docs/guides/transforms.md#prompts)
-
-</details>
 
 <br>
 
