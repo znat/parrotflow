@@ -793,6 +793,18 @@ def agent_checks(runner, stderr_path, trace_path):
           and "1. key = “tab” — no change in the accessibility tree, which does not show the caret"
           in got and [s["do"] for s in fake.steps if s["do"] in ("key", "press")] == ["key", "press"],
           (got, fake.did()))
+    end, fake, report, asked = run(
+        "scroll down", [home, home],
+        [[act({"do": "scroll", "value": "down"})], [("done", {"summary": "ok"})]], per_read=False)
+    check("agent: a scroll with no ID before any step turns the wheel at the window's centre",
+          [(s["x"], s["y"]) for s in fake.steps if s["do"] == "scroll"] == [(500, 400)],
+          (report, fake.steps))
+    tall = panel("Tall", [f"Row {n}" for n in range(260)])
+    tall["items"][-1]["state"] = ["focused"]
+    end, fake, report, asked = run("open row 259", [tall], [[("done", {"summary": "ok"})]])
+    check("agent: the focused item is listed past the cap",
+          '"Row 259"' in messages(planner_bodies[0])[1]["content"]
+          and '"Row 255"' not in messages(planner_bodies[0])[1]["content"])
     focused = dict(home, focus={"point": None, "described": "", "role": "AXComboBox", "id": None})
     end, fake, report, asked = run(
         "set the end time to five", [focused, menu],
@@ -1276,7 +1288,7 @@ def agent_checks(runner, stderr_path, trace_path):
         printed = handle.read()
     lines = [json.loads(line) for line in traced.splitlines()]
     check("agent: one trace line per call, and the key is not in it",
-          len(lines) == 157 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
+          len(lines) == 160 and PLANNER_KEY not in traced and PLANNER_KEY not in printed
           and lines[0]["tokens"] == {"in": 100, "out": 20} and lines[0]["messages"]
           and lines[0]["tool_calls"] and lines[0]["results"], (len(lines), lines[:1]))
     check("agent: the why is in the trace",

@@ -215,7 +215,7 @@ def entities(utterance, jev):
             f"What is the word “{word}” (w{index}) in this utterance?", _ENTITY_KEYS)
     state = {
         "utterance": utterance,
-        "note": "The user looks at the screen and says this. Some words are things to be used "
+        "note": "The user says this about the screen. Some words are things to be used "
                 "literally -- a name to find, words to type. The rest is the request.",
         "words": {f"w{index}": word for index, word in enumerate(words)},
     }

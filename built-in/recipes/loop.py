@@ -876,7 +876,9 @@ class Loop:
                     target, why = self._find(step, snapshot)
                 except Stop:
                     target = None
-            spot = decider.point(target) if target else aim
+            window = snapshot["frame"]
+            spot = (decider.point(target) if target else aim
+                    or [window["x"] + window["w"] // 2, window["y"] + window["h"] // 2])
             self.act("scroll", x=spot[0], y=spot[1], down=value.lower() != "up", turns=6)
         elif do in ("type", "write") and item is None \
                 and step["target"].lower() in ("", "no name"):

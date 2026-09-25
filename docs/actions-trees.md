@@ -67,7 +67,7 @@ flowchart TD
   R0["Read with pixels<br/><i>read-see</i>"] --> Q1{"More, or nameless?<br/><i>line-drop</i>"}
   Q1 -->|yes| X1["Not shown"]
   Q1 -->|no| L3["Top to bottom<br/><i>line-order</i>"]
-  L3 --> L4["Keep first 250<br/><i>line-cap</i>"]
+  L3 --> L4["Keep first 250, and the focused one<br/><i>line-cap</i>"]
   L4 --> Q3{"Same kind and words?<br/><i>twin-line</i>"}
   Q3 -->|yes| L5["One line, ×N, topmost"]
   Q3 -->|no| L6
@@ -138,7 +138,7 @@ flowchart TD
   classDef user stroke-width:3px
   A0([act step]) --> Q1{"ID given?"}
   Q1 -->|no, type/write| N1["Where the caret is<br/><i>null-caret</i>"]
-  Q1 -->|no, scroll| N2["At the last aim<br/><i>null-scroll</i>"]
+  Q1 -->|no, scroll| N2["At the last aim, else the window's centre<br/><i>null-scroll</i>"]
   Q1 -->|no, click/pick| N3["Jev picks, empty words<br/><i>null-click</i>"]
   Q1 -->|yes| Q2{"On newest read?<br/><i>act-id-known</i>"}
   Q2 -->|no| X1["Nothing runs, hint ground"]

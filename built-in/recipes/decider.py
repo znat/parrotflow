@@ -4,9 +4,10 @@ The model selects, code executes. The model picks one
 of the actions and one of the targets it was offered. It never writes text:
 the words to type are cut out of the utterance by `message_text`.
 
-Measured on 2026-09-20 with this wording and this key order: named targets
-8/8 in English and French, 620-750 ms per call, ~3.3k input tokens. Key order
-is part of what was measured, so the request is built in a fixed order.
+Measured on 2026-09-20 with this key order: named targets 8/8 in English and
+French, 620-750 ms per call, ~3.3k input tokens. Key order is part of what was
+measured, so the request is built in a fixed order. The note and the questions
+lost the gaze on 2026-09-25 and have not been measured since.
 
 A snapshot is what the app's `snapshot` step returns. Each item carries the
 app's own verdicts: `lookup` (a field that narrows a list), `in_list` (a row
@@ -320,8 +321,7 @@ def request(utterance, snapshot, offers, done=(), changed=None, can_scroll=False
     """(state, questions) for the one wide question."""
     note = ("The user speaks about the window they are working in. Targets are listed top "
             "to bottom; a name in the utterance says which one is meant.")
-    # Only when another step can follow: the single-step request stays word
-    # for word the one the twelve cases were measured against.
+    # Only when another step can follow.
     if can_scroll:
         note += (" Only what is drawn on screen is listed. Something the user named may exist "
                  "further down the list and not be here at all — scrolling brings more into view, "

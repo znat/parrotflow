@@ -99,7 +99,7 @@ SYSTEM = """You do a task in a macOS app for the user. You see the app's control
 - type: put a name, a search query, a subject or another short value into field `id`. `value` is the text. With `id` null it goes where the caret is.
 - write: put the body of a message or comment into box `id`. `value` is the text. With `id` null it goes where the caret is.
 - key: press a key or a shortcut. `value` in plus form: "cmd+shift+n", "return", "escape", "tab", "down". `id` is null.
-- scroll: `id` is the list or pane, or null for where the user looks. `value` is "up" or "down".
+- scroll: `id` is the list or pane, or null for the last place worked in. `value` is "up" or "down".
 `expect`: on a step whose outcome matters, a value or text that should be on screen after it, such as "To holds Alex Moreau and Antonio Ruiz" or "Start date = 25/09/2026". Not a look, such as "the day is highlighted". Otherwise null.
 
 Rules:
@@ -109,7 +109,7 @@ Rules:
 - Text marked "seen, not in the tree" is on screen but was read from pixels. Pick from it when it is a list that opened, such as people after you type a name.
 - Controls "still on screen, no longer in the tree" mean a panel is open. Finish or close the panel (return or escape), or click the control to leave it.
 - Put several steps in one `act` when you know what each one does. A step that opens a menu, a list or a dialog ends the batch: its rows get IDs in the next screen.
-- "this", "here", "that one" mean the item the user is looking at. It is already chosen. Start from it.
+- "this", "here", "that one" mean the focused or selected item. Start from it.
 - Type only words the user said. `write` only what the user asked to say. If they did not say it, click in the box and call `done`: the user will dictate it.
 - Never select all in a message, a comment or a document, and never replace or delete text there.
 - Never archive, leave or pay. Stop just before it and call `done`.
@@ -1163,14 +1163,14 @@ class Agent:
 
     def _screen(self, first=False):
         """The newest read as numbered lines, top to bottom: every item, up
-        to SHOWN."""
+        to SHOWN, and past it the focused one."""
         snapshot = self.snapshot
         # The filter Jev needs cut Teams' "Create a new event." (52 of 111
         # shown), and the model clicked "Start an instant Teams meeting".
         offers = [i for i in snapshot["items"] if i["kind"] != "more"
                   and (i["name"] or i["kind"] == "text")]
         offers.sort(key=lambda i: (i["y"] // 20, i["x"]))
-        offers = offers[:SHOWN]
+        offers = offers[:SHOWN] + [i for i in offers[SHOWN:] if "focused" in (i.get("state") or ())]
         # Same name, same kind: one line, the first by `twin_rank`. Teams
         # draws "Create a new event." twice.
         rank = twin_rank
