@@ -184,7 +184,7 @@ enum TreeContext {
 
     private static func walk(
         _ element: AXUIElement, depth: Int, inList: Bool, code: Bool = false,
-        into found: inout [Node]
+        inComposer: Bool = false, into found: inout [Node]
     ) {
         guard found.count < nodeLimit, depth < depthLimit else { return }
         let role = attribute(element, kAXRoleAttribute) as? String ?? ""
@@ -192,15 +192,18 @@ enum TreeContext {
         let inCode = code
             || (attribute(element, kAXSubroleAttribute) as? String) == "AXCodeStyleGroup"
         // A composer carries the sentence being dictated, not the conversation,
-        // and `input` publishes it already.
-        let messages = (inList || text.flatMap(speaker(in:)) != nil) && role != "AXTextArea"
+        // and `input` publishes it already. Its children are the draft too.
+        let composer = inComposer || role == "AXTextArea"
+        let messages = !composer && (inList || text.flatMap(speaker(in:)) != nil)
         if let text, !text.isEmpty, role != "AXButton" || text.hasPrefix(memberPrefix) {
             found.append(Node(
                 role: role, label: text, frame: frame(of: element),
                 inMessage: messages, code: inCode))
         }
         for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
-            walk(child, depth: depth + 1, inList: messages, code: inCode, into: &found)
+            walk(
+                child, depth: depth + 1, inList: messages, code: inCode,
+                inComposer: composer, into: &found)
         }
     }
 
