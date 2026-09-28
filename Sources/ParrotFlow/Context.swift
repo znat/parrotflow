@@ -204,6 +204,12 @@ enum Context {
 
         guard let element = SelectionReader.focusedElement(),
               !SelectionReader.isOurs(element) else { return .failure(.nothingFocused) }
+        // The focus is looked up system-wide, after the check above, so another
+        // app can have come forward in between.
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success,
+              NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == app.bundleID
+        else { return .failure(.appChanged) }
         return read(app: app, from: element)
     }
 
