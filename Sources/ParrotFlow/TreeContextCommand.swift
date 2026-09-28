@@ -127,6 +127,13 @@ enum TreeContextCommand {
         ("announcement", TreeContext.trimAnnouncement("it shipped. 4:38 PM. 10 reactions, 9 replies."),
          "it shipped."),
         ("announcement, nothing to cut", TreeContext.trimAnnouncement("it shipped"), "it shipped"),
+        // Only what follows Slack's clock is Slack's. A count or a time in front
+        // of it was written by the author.
+        ("announcement, a count somebody wrote",
+         TreeContext.trimAnnouncement("Mik Okun: I uploaded 3 files. 12:09 PM."),
+         "Mik Okun: I uploaded 3 files."),
+        ("announcement, a time somebody wrote",
+         TreeContext.trimAnnouncement("see you at 9:03 PM. 9:05 PM."), "see you at 9:03 PM."),
         ("roster, person",
          TreeContext.rosterNames(in: "Mik Okun (notifications snoozed), status: PTO").first,
          "Mik Okun"),

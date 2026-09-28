@@ -387,23 +387,16 @@ enum TreeContext {
     /// counts. `… reinventing the wheel ? 12:09 AM. 3 replies, 1 link.` is one
     /// sentence somebody wrote and three facts the app added, and the facts are
     /// numbers a speller would try to match against words on screen.
+    ///
+    /// Cut in one piece from the clock on, so "I uploaded 3 files." in front of
+    /// it stays. On a real window, 2026-09-28, 21 of 21 announcements ended
+    /// with a clock, and none had counts without one.
     static func trimAnnouncement(_ label: String) -> String {
+        let suffix = "\\s*\\d{1,2}:\\d{2}(:\\d{2})? ?[AP]M\\.?"
+            + "(,?\\s*\\d+ (reaction|repl(y|ies)|attachment|link|file|edit)s?)*\\.?,?\\s*$"
         var text = label
-        let tails = [
-            "\\s*\\d+ (reaction|reply|repl(y|ies)|attachment|link|file|edit)s?\\.?$",
-            "\\s*\\d+ replies\\.?$",
-            "\\s*,$",
-            "\\s*\\d{1,2}:\\d{2}(:\\d{2})? ?[AP]M\\.?$",
-        ]
-        var cut = true
-        while cut {
-            cut = false
-            for pattern in tails {
-                if let found = text.range(of: pattern, options: .regularExpression) {
-                    text.removeSubrange(found)
-                    cut = true
-                }
-            }
+        if let found = text.range(of: suffix, options: .regularExpression) {
+            text.removeSubrange(found)
         }
         return text.trimmingCharacters(in: .whitespaces)
     }
