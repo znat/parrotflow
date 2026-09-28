@@ -11,6 +11,7 @@ usage: axkit trusted
                    [--wake] [--json]
        axkit hit   <x> <y> [--app … | --pid …] [--json]
        axkit check [--json] [--popups] [--keyboard]    plays the control matrix on the fixture window, in the background
+       axkit check --web [--page <index.html>] [--json]    the same on the web page, in a throwaway Chrome
 """
 
 func fail(_ message: String, _ code: Int32 = 1) -> Never {
@@ -108,6 +109,10 @@ case "hit":
     guard let element = app?.element(at: point) ?? App.element(at: point) else { fail("nothing at \(x),\(y)") }
     let node = Walk.run(from: element, options: WalkOptions(depth: 1)).nodes.first
     if has("--json") { printJSON(node) } else { node.map { print(line($0)) } }
+
+case "check" where has("--web"):
+    let page = value("--page") ?? FileManager.default.currentDirectoryPath + "/Fixtures/web-controls/index.html"
+    exit(WebCheck.run(page: page, json: has("--json"), only: value("--only"), keys: !has("--no-keys")))
 
 case "check":
     exit(Check.run(json: has("--json"), popups: has("--popups"), keyboard: has("--keyboard")))

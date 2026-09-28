@@ -94,6 +94,18 @@ public struct Element: Hashable, @unchecked Sendable {
     public var parent: Element? { element(kAXParentAttribute) }
     public var window: Element? { element(kAXWindowAttribute) }
 
+    /// Inside a Chromium or WebKit page. Pages need other ways than native
+    /// controls: see `Controls`.
+    public var isInWebArea: Bool {
+        var current = parent
+        for _ in 0..<80 {
+            guard let element = current else { return false }
+            if element.role == "AXWebArea" { return true }
+            current = element.parent
+        }
+        return false
+    }
+
     public var pid: pid_t? {
         var pid: pid_t = 0
         return AXUIElementGetPid(ref, &pid) == .success ? pid : nil

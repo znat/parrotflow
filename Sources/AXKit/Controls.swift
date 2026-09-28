@@ -22,7 +22,12 @@ public enum Controls {
     /// numbers are refused (-25201). One call writes date and time; a
     /// date-only picker writes the hidden time too.
     @discardableResult
-    public static func setDate(_ date: Date, on element: Element) throws -> Outcome {
+    /// A page's date input is set part by part; `keys: false` keeps it to
+    /// accessibility calls.
+    public static func setDate(_ date: Date, on element: Element, keys: Bool = true) throws -> Outcome {
+        if element.role == "AXDateField" || element.role == "AXTimeField" {
+            return try setPageDate(date, on: element, keys: keys)
+        }
         let area = element.role == "AXDateTimeArea" ? element
             : element.first(budget: 50) { $0.role == "AXDateTimeArea" } ?? element
         let before = area.value as? Date
@@ -34,10 +39,14 @@ public enum Controls {
         return outcome
     }
 
-    /// A text field or combo box. In Chromium the page hears it for inputs,
-    /// React included, but never for contenteditable: type there instead.
+    /// A text field or combo box. In a page, a value set reaches the page for
+    /// inputs, React included, but never for contenteditable: the text shows
+    /// and the page is not told. So a page's text area is typed into.
     @discardableResult
     public static func setText(_ text: String, on element: Element) throws -> Outcome {
+        if element.role == kAXTextAreaRole, element.isInWebArea, let pid = element.pid {
+            return try typeText(text, into: element, route: .process(pid))
+        }
         let before = element.valueText
         try element.set(kAXValueAttribute, to: text as NSString)
         let ok = wait { element.valueText == text }
@@ -47,10 +56,12 @@ public enum Controls {
         return outcome
     }
 
-    /// A slider. Chromium refuses a value set on a slider: use `step`.
+    /// A slider. Chromium refuses a value set on one, so in a page it is
+    /// stepped to the number instead.
     @discardableResult
     public static func setNumber(_ number: Double, on element: Element) throws -> Outcome {
         let before = element.valueText
+        if element.isInWebArea { return try stepTo(number, element) }
         try element.set(kAXValueAttribute, to: number as NSNumber)
         let ok = wait { (element.value as? NSNumber)?.doubleValue == number }
         let outcome = Outcome(before: before, after: element.valueText, method: "set AXValue (number)",
@@ -80,6 +91,7 @@ public enum Controls {
     public static func ensure(_ on: Bool, _ element: Element) throws -> Outcome {
         let state = { (element.value as? NSNumber).map { $0.intValue == 1 } }
         let before = state()
+        if before == nil { throw AXKitError.unreadable("turn \(on ? "on" : "off") \(describe(element))") }
         guard before != on else {
             return Outcome(before: before.map(String.init), after: before.map(String.init),
                            method: "none, already \(on ? "on" : "off")", verified: true)
@@ -107,6 +119,17 @@ public enum Controls {
         let before = popup.valueText
         guard before != item else {
             return Outcome(before: before, after: before, method: "none, already chosen", verified: true)
+        }
+        if popup.isInWebArea, let pid = popup.pid {
+            // A page's <select> opens a native menu whose items are not
+            // reachable. Typed while it is closed and focused, the name picks it.
+            guard Input.prepare(popup) else { throw AXKitError.ax(.cannotComplete, "focus \(describe(popup))") }
+            try Input.type(item, to: .process(pid))
+            let ok = wait { popup.valueText == item }
+            let outcome = Outcome(before: before, after: popup.valueText, method: "keys (typed the item)",
+                                  verified: ok)
+            if !ok { throw AXKitError.notApplied("choose \"\(item)\" in \(describe(popup))") }
+            return outcome
         }
         try popup.perform(kAXPressAction)
         var found: Element?
@@ -176,6 +199,91 @@ public enum Controls {
         let outcome = Outcome(before: "\(before.count) rows", after: "\(current().count) rows",
                               method: "set AXSelectedRows", verified: ok)
         if !ok { throw AXKitError.notApplied("select rows \(indexes) of \(describe(table))") }
+        return outcome
+    }
+
+    /// Everything the field holds replaced by typing: select-all through
+    /// accessibility, then the text as keys to the field's process.
+    @discardableResult
+    public static func typeText(_ text: String, into element: Element, route: Input.Route) throws -> Outcome {
+        let before = element.valueText
+        guard Input.prepare(element) else { throw AXKitError.ax(.cannotComplete, "focus \(describe(element))") }
+        try Input.selectAll(element)
+        try Input.type(text, to: route)
+        let ok = wait { element.valueText == text }
+        let outcome = Outcome(before: before, after: element.valueText, method: "select all, keys", verified: ok)
+        if !ok { throw AXKitError.notApplied("type into \(describe(element))") }
+        return outcome
+    }
+
+    static func stepTo(_ number: Double, _ element: Element) throws -> Outcome {
+        let before = element.valueText
+        let read = { (element.value as? NSNumber)?.doubleValue ?? Double(element.valueText ?? "") }
+        var steps = 0
+        while let now = read(), now != number, steps < 200 {
+            try element.perform(now < number ? kAXIncrementAction : kAXDecrementAction)
+            steps += 1
+            guard wait({ read() != now }) else { break }
+            if let after = read(), (now < number) != (after < number), after != number { break }
+        }
+        let ok = read() == number
+        let outcome = Outcome(before: before, after: element.valueText, method: "steps ×\(steps)", verified: ok)
+        if !ok { throw AXKitError.notApplied("step \(describe(element)) to \(number)") }
+        return outcome
+    }
+
+    /// A page's date or time input takes only keys. Measured 09-28 in
+    /// Chrome: the field and its parts (Day, Month, Year, Hours, Minutes)
+    /// ignore AXValue, as a number or as text, and AXIncrement, focused or
+    /// not, while every call returns success. So the first part is focused
+    /// and the parts are typed in the order the field shows them.
+    static func setPageDate(_ date: Date, on field: Element, keys: Bool) throws -> Outcome {
+        let before = field.valueText
+        let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        let numbers: [String: Int] = ["Day": parts.day ?? 0, "Month": parts.month ?? 0, "Year": parts.year ?? 0,
+                                      "Hours": parts.hour ?? 0, "Minutes": parts.minute ?? 0]
+        var shown: [(Element, Int)] = []
+        var queue = field.children
+        while !queue.isEmpty {
+            let element = queue.removeFirst()
+            if element.role == kAXIncrementorRole,
+               let label = numbers.keys.first(where: { (element.title ?? "").hasPrefix($0) }) {
+                shown.append((element, numbers[label]!))
+            } else {
+                queue.insert(contentsOf: element.children, at: 0)
+            }
+        }
+        guard let first = shown.first?.0, let pid = field.pid else {
+            throw AXKitError.ax(.failure, "no parts in \(describe(field))")
+        }
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.dateFormat = field.role == "AXTimeField" ? "HH:mm"
+            : shown.count > 3 ? "yyyy-MM-dd'T'HH:mm" : "yyyy-MM-dd"
+        let expected = format.string(from: date)
+
+        guard keys else {
+            throw AXKitError.notApplied("\(describe(field)) takes only keys: a page's date parts ignore "
+                                        + "AXValue and AXIncrement, focused or not")
+        }
+        guard Input.prepare(first) else { throw AXKitError.ax(.cannotComplete, "focus \(describe(first))") }
+        let route = Input.Route.process(pid)
+        // A full day, month, hour or minute moves to the next part by itself;
+        // a year does not, as it takes up to 6 digits.
+        for (index, part) in shown.enumerated() {
+            let isYear = (part.0.title ?? "").hasPrefix("Year")
+            try Input.type(isYear ? String(part.1) : String(format: "%02d", part.1), to: route)
+            if isYear && index < shown.count - 1 { try Input.press(.right, to: route) }
+        }
+        // The field's own value can lag behind; its parts are read instead.
+        let partsHold = { shown.allSatisfy { Int($0.0.valueText ?? "") == $0.1 } }
+        let ok = wait { field.valueText == expected || partsHold() }
+        let partsNow = shown.map { "\($0.0.title?.split(separator: " ").first ?? "?")=\($0.0.valueText ?? "?")" }
+        let outcome = Outcome(before: before, after: field.valueText, method: "keys, part by part", verified: ok)
+        if !ok {
+            throw AXKitError.notApplied("type the date of \(describe(field)): it shows \(field.valueText ?? "nothing"), "
+                                        + "parts \(partsNow.joined(separator: " "))")
+        }
         return outcome
     }
 

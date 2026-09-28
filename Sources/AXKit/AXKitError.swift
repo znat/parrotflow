@@ -8,6 +8,9 @@ public enum AXKitError: Error, CustomStringConvertible, Equatable {
     case appNotFound(String)
     /// A write returned success but reading back shows another value.
     case notApplied(String)
+    /// The state cannot be read, so the operation would be blind: a second
+    /// press would undo the first. Material's checkbox and switch.
+    case unreadable(String)
 
     public var description: String {
         switch self {
@@ -15,6 +18,7 @@ public enum AXKitError: Error, CustomStringConvertible, Equatable {
         case .notTrusted: return "this process has no Accessibility permission"
         case .appNotFound(let name): return "no running app \"\(name)\""
         case .notApplied(let what): return "\(what): the call succeeded but the value did not change"
+        case .unreadable(let what): return "\(what): its state cannot be read, so it was left alone"
         }
     }
 
