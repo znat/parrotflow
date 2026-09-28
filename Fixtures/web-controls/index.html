@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Web controls 0</title>
+<style>
+  body { font: 14px/1.4 -apple-system, sans-serif; margin: 0; padding: 16px 24px; background: #fafafa; color: #222; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  h2 { font-size: 15px; margin: 18px 0 6px; border-bottom: 1px solid #ccc; }
+  .row { display: flex; align-items: center; gap: 10px; margin: 6px 0; min-height: 32px; }
+  .row > .tag { width: 150px; color: #666; font-size: 12px; flex: none; }
+  #truth { position: fixed; top: 8px; right: 8px; width: 330px; max-height: 95vh; overflow: auto; margin: 0;
+           font-size: 11px; background: #fff; border: 1px solid #ccc; padding: 6px; }
+  main { margin-right: 360px; }
+  [role=listbox], [role=menu] { list-style: none; margin: 0; padding: 2px; border: 1px solid #888; background: #fff;
+                                position: absolute; z-index: 5; min-width: 220px; }
+  [role=option][aria-selected=true], [role=menuitem]:focus, [role=treeitem][aria-selected=true] > span { background: #cde; }
+  .anchor { position: relative; }
+  [role=tab][aria-selected=true] { font-weight: bold; }
+  [role=switch][aria-checked=true] { background: #7c7; }
+  [role=tree] ul { padding-left: 18px; }
+  [role=treeitem][aria-expanded=false] > ul { display: none; }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 10; }
+  .modal { position: fixed; top: 20%; left: 20%; background: #fff; padding: 16px; z-index: 11; border: 1px solid #444; }
+  [role=grid] td[aria-selected=true] { outline: 2px solid #36c; }
+  [role=grid] td:focus { background: #cde; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<pre id="truth" aria-label="truth">{}</pre>
+<main>
+<h1>Web controls</h1>
+
+<h2>Native HTML</h2>
+<div class="row"><label class="tag" for="n_text">n_text</label><input id="n_text" type="text" value="Draft agenda"></div>
+<div class="row"><label class="tag" for="n_textarea">n_textarea</label><textarea id="n_textarea" rows="2">First line</textarea></div>
+<div class="row"><span class="tag" id="n_editable_label">n_editable</span><div id="n_editable" contenteditable="true" aria-labelledby="n_editable_label" style="border:1px solid #888;min-width:220px;padding:4px">Composer text</div></div>
+<div class="row"><label class="tag" for="n_date">n_date</label><input id="n_date" type="date" value="2026-10-15"></div>
+<div class="row"><label class="tag" for="n_time">n_time</label><input id="n_time" type="time" value="14:30"></div>
+<div class="row"><label class="tag" for="n_datetime">n_datetime</label><input id="n_datetime" type="datetime-local" value="2026-10-15T14:30"></div>
+<div class="row"><label class="tag" for="n_select">n_select</label>
+  <select id="n_select"><option>None</option><option selected>5 minutes</option><option>15 minutes</option><option>1 hour</option></select></div>
+<div class="row"><label class="tag" for="n_range">n_range</label><input id="n_range" type="range" min="0" max="100" step="5" value="50"></div>
+<div class="row"><label class="tag" for="n_checkbox">n_checkbox</label><input id="n_checkbox" type="checkbox"> Private</div>
+<div class="row"><span class="tag">n_radio</span>
+  <div role="radiogroup" aria-label="n_radio">
+    <label><input type="radio" name="n_radio" value="Free"> Free</label>
+    <label><input type="radio" name="n_radio" value="Busy" checked> Busy</label>
+    <label><input type="radio" name="n_radio" value="Tentative"> Tentative</label>
+  </div></div>
+<div class="row"><label class="tag" for="n_number">n_number</label><input id="n_number" type="number" min="0" max="20" value="2"></div>
+<div class="row"><span class="tag">n_details</span><details id="n_details"><summary>More options</summary><p>Hidden options text.</p></details></div>
+<div class="row"><span class="tag">n_dialog</span><button id="n_dialog_open">Open native dialog</button>
+  <dialog id="n_dialog"><form method="dialog"><p>Native dialog body.</p>
+    <button value="cancel">Cancel</button> <button value="ok" id="n_dialog_ok">OK</button></form></dialog></div>
+
+<h2>ARIA patterns (hand-written, APG)</h2>
+<div class="row"><label class="tag" for="a_combobox" id="a_combobox_label">a_combobox</label>
+  <div class="anchor">
+    <input id="a_combobox" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false"
+           aria-controls="a_combobox_list" autocomplete="off" placeholder="To">
+    <ul id="a_combobox_list" role="listbox" aria-labelledby="a_combobox_label" hidden></ul>
+  </div></div>
+<div class="row"><span class="tag">a_menu</span>
+  <div class="anchor">
+    <button id="a_menu_button" aria-haspopup="menu" aria-expanded="false" aria-controls="a_menu">Actions</button>
+    <ul id="a_menu" role="menu" aria-labelledby="a_menu_button" hidden>
+      <li role="menuitem" tabindex="-1">Reply</li>
+      <li role="menuitem" tabindex="-1">Forward</li>
+      <li role="menuitem" tabindex="-1">Archive</li>
+    </ul>
+  </div></div>
+<div class="row"><span class="tag">a_tabs</span>
+  <div>
+    <div role="tablist" aria-label="a_tabs" id="a_tabs">
+      <button role="tab" id="a_tab_day" aria-selected="true" aria-controls="a_panel" tabindex="0">Day</button>
+      <button role="tab" id="a_tab_week" aria-selected="false" aria-controls="a_panel" tabindex="-1">Week</button>
+      <button role="tab" id="a_tab_month" aria-selected="false" aria-controls="a_panel" tabindex="-1">Month</button>
+    </div>
+    <div role="tabpanel" id="a_panel" aria-labelledby="a_tab_day">Day view</div>
+  </div></div>
+<div class="row"><label class="tag" for="a_date">a_date</label>
+  <div class="anchor">
+    <input id="a_date" type="text" placeholder="YYYY-MM-DD" value="2026-10-15">
+    <button id="a_date_button" aria-haspopup="dialog" aria-label="Choose date">📅</button>
+    <div id="a_date_dialog" role="dialog" aria-modal="true" aria-label="Choose date" hidden
+         style="position:absolute;z-index:6;background:#fff;border:1px solid #444;padding:6px">
+      <div><button id="a_date_prev" aria-label="Previous month">‹</button>
+        <span id="a_date_month" aria-live="polite"></span>
+        <button id="a_date_next" aria-label="Next month">›</button></div>
+      <table role="grid" id="a_date_grid"><thead><tr>
+        <th scope="col" abbr="Monday">Mo</th><th scope="col" abbr="Tuesday">Tu</th><th scope="col" abbr="Wednesday">We</th>
+        <th scope="col" abbr="Thursday">Th</th><th scope="col" abbr="Friday">Fr</th><th scope="col" abbr="Saturday">Sa</th>
+        <th scope="col" abbr="Sunday">Su</th></tr></thead><tbody></tbody></table>
+      <button id="a_date_cancel">Cancel</button> <button id="a_date_ok">OK</button>
+    </div>
+  </div></div>
+<div class="row"><span class="tag" id="a_spin_label">a_spin</span>
+  <div id="a_spin" role="spinbutton" tabindex="0" aria-labelledby="a_spin_label"
+       aria-valuemin="0" aria-valuemax="20" aria-valuenow="2" style="border:1px solid #888;padding:2px 8px">2</div></div>
+<div class="row"><span class="tag" id="a_switch_label">a_switch</span>
+  <button id="a_switch" role="switch" aria-checked="false" aria-labelledby="a_switch_label">Online</button></div>
+<div class="row"><span class="tag">a_tree</span>
+  <ul role="tree" id="a_tree" aria-label="a_tree">
+    <li role="treeitem" aria-expanded="false" tabindex="0" data-name="Fruits"><span>Fruits</span>
+      <ul role="group"><li role="treeitem" tabindex="-1" data-name="Apple"><span>Apple</span></li>
+        <li role="treeitem" tabindex="-1" data-name="Pear"><span>Pear</span></li></ul></li>
+    <li role="treeitem" aria-expanded="false" tabindex="-1" data-name="Tools"><span>Tools</span>
+      <ul role="group"><li role="treeitem" tabindex="-1" data-name="Hammer"><span>Hammer</span></li>
+        <li role="treeitem" tabindex="-1" data-name="Saw"><span>Saw</span></li></ul></li>
+  </ul></div>
+<div class="row"><span class="tag">a_disclosure</span>
+  <button id="a_disclosure" aria-expanded="false" aria-controls="a_disclosure_panel">Show details</button>
+  <div id="a_disclosure_panel" hidden>Disclosure panel text.</div></div>
+<div class="row"><span class="tag">a_dialog</span><button id="a_dialog_open">Open ARIA dialog</button></div>
+<div id="a_dialog_backdrop" class="modal-backdrop" hidden></div>
+<div id="a_dialog" class="modal" role="dialog" aria-modal="true" aria-labelledby="a_dialog_title" hidden>
+  <h3 id="a_dialog_title">Rename item</h3>
+  <label>Name <input id="a_dialog_input" value="Untitled"></label>
+  <button id="a_dialog_cancel">Cancel</button> <button id="a_dialog_ok">OK</button>
+</div>
+
+<h2>Fluent UI web components</h2>
+<div class="row"><span class="tag">f_text</span><fluent-text-input id="f_text" value="Draft agenda">Subject</fluent-text-input></div>
+<div class="row"><span class="tag">f_dropdown</span>
+  <fluent-dropdown id="f_dropdown" placeholder="Reminder" aria-label="f_dropdown"><fluent-listbox>
+    <fluent-option value="None">None</fluent-option><fluent-option value="5 minutes">5 minutes</fluent-option>
+    <fluent-option value="15 minutes">15 minutes</fluent-option><fluent-option value="1 hour">1 hour</fluent-option>
+  </fluent-listbox></fluent-dropdown></div>
+<div class="row"><span class="tag">f_combobox</span>
+  <fluent-dropdown id="f_combobox" type="combobox" placeholder="To" aria-label="f_combobox"><fluent-listbox>
+    <fluent-option value="alice.martin@example.com">Alice Martin</fluent-option>
+    <fluent-option value="alan.dubois@example.com">Alan Dubois</fluent-option>
+    <fluent-option value="bruno.keller@example.com">Bruno Keller</fluent-option>
+  </fluent-listbox></fluent-dropdown></div>
+<div class="row"><span class="tag">f_checkbox</span><fluent-checkbox id="f_checkbox">Private</fluent-checkbox></div>
+<div class="row"><span class="tag">f_switch</span><fluent-switch id="f_switch">Online</fluent-switch></div>
+<div class="row"><span class="tag">f_radio</span>
+  <fluent-radio-group id="f_radio" aria-label="f_radio">
+    <fluent-radio value="Free">Free</fluent-radio><fluent-radio value="Busy">Busy</fluent-radio>
+    <fluent-radio value="Tentative">Tentative</fluent-radio></fluent-radio-group></div>
+<div class="row"><span class="tag">f_slider</span><fluent-slider id="f_slider" min="0" max="100" step="5" value="50" aria-label="f_slider"></fluent-slider></div>
+<div class="row"><span class="tag">f_menu</span>
+  <fluent-menu id="f_menu">
+    <fluent-menu-button slot="trigger" id="f_menu_button">Actions</fluent-menu-button>
+    <fluent-menu-list>
+      <fluent-menu-item>Reply</fluent-menu-item><fluent-menu-item>Forward</fluent-menu-item>
+      <fluent-menu-item>Archive</fluent-menu-item>
+    </fluent-menu-list>
+  </fluent-menu></div>
+<div class="row"><span class="tag">f_tabs</span>
+  <fluent-tablist id="f_tabs" aria-label="f_tabs">
+    <fluent-tab id="f_tab_day">Day</fluent-tab><fluent-tab id="f_tab_week">Week</fluent-tab>
+    <fluent-tab id="f_tab_month">Month</fluent-tab></fluent-tablist></div>
+<div class="row"><span class="tag">f_dialog</span><fluent-button id="f_dialog_open">Open Fluent dialog</fluent-button>
+  <fluent-dialog id="f_dialog" type="modal" aria-label="Fluent dialog">
+    <fluent-dialog-body><span slot="title">Fluent dialog</span><p>Fluent dialog body.</p>
+      <fluent-button slot="action" id="f_dialog_ok" appearance="primary">OK</fluent-button></fluent-dialog-body>
+  </fluent-dialog></div>
+
+<h2>Material Web</h2>
+<div class="row"><span class="tag">m_text</span><md-outlined-text-field id="m_text" label="Subject" value="Draft agenda"></md-outlined-text-field></div>
+<div class="row"><span class="tag">m_select</span>
+  <md-outlined-select id="m_select" label="Reminder">
+    <md-select-option value="None"><div slot="headline">None</div></md-select-option>
+    <md-select-option value="5 minutes" selected><div slot="headline">5 minutes</div></md-select-option>
+    <md-select-option value="15 minutes"><div slot="headline">15 minutes</div></md-select-option>
+    <md-select-option value="1 hour"><div slot="headline">1 hour</div></md-select-option>
+  </md-outlined-select></div>
+<div class="row"><span class="tag">m_checkbox</span><label><md-checkbox id="m_checkbox"></md-checkbox> Private</label></div>
+<div class="row"><span class="tag">m_switch</span><label><md-switch id="m_switch"></md-switch> Online</label></div>
+<div class="row"><span class="tag">m_radio</span>
+  <div role="radiogroup" aria-label="m_radio">
+    <label><md-radio name="m_radio" value="Free"></md-radio> Free</label>
+    <label><md-radio name="m_radio" value="Busy" checked></md-radio> Busy</label>
+    <label><md-radio name="m_radio" value="Tentative"></md-radio> Tentative</label></div></div>
+<div class="row"><span class="tag">m_slider</span><md-slider id="m_slider" min="0" max="100" step="5" value="50" aria-label="m_slider"></md-slider></div>
+<div class="row"><span class="tag">m_menu</span>
+  <span class="anchor"><md-filled-button id="m_menu_button">Actions</md-filled-button>
+  <md-menu id="m_menu" anchor="m_menu_button">
+    <md-menu-item><div slot="headline">Reply</div></md-menu-item>
+    <md-menu-item><div slot="headline">Forward</div></md-menu-item>
+    <md-menu-item><div slot="headline">Archive</div></md-menu-item>
+  </md-menu></span></div>
+<div class="row"><span class="tag">m_tabs</span>
+  <md-tabs id="m_tabs" aria-label="m_tabs"><md-primary-tab>Day</md-primary-tab><md-primary-tab>Week</md-primary-tab>
+    <md-primary-tab>Month</md-primary-tab></md-tabs></div>
+<div class="row"><span class="tag">m_dialog</span><md-filled-button id="m_dialog_open">Open Material dialog</md-filled-button>
+  <md-dialog id="m_dialog">
+    <div slot="headline">Material dialog</div>
+    <form slot="content" id="m_dialog_form" method="dialog">Material dialog body.</form>
+    <div slot="actions"><md-text-button form="m_dialog_form" value="cancel">Cancel</md-text-button>
+      <md-text-button form="m_dialog_form" value="ok" id="m_dialog_ok">OK</md-text-button></div>
+  </md-dialog></div>
+
+<h2>React</h2>
+<div id="react-root"></div>
+</main>
+
+<script src="truth.js"></script>
+<script src="native.js"></script>
+<script src="aria.js"></script>
+<script src="libraries.js"></script>
+</body>
+</html>

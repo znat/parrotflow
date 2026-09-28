@@ -6,6 +6,13 @@ let package = Package(
     // The slot gate reads fp16 logits, and Float16 conforms to
     // MLShapedArrayScalar only from macOS 15. See SlotProbe.swift.
     platforms: [.macOS("15.0")],
+    products: [
+        .executable(name: "ParrotFlow", targets: ["ParrotFlow"]),
+        // The accessibility kit. It imports only AppKit and ApplicationServices,
+        // so its folders can move to their own repository.
+        .library(name: "AXKit", targets: ["AXKit"]),
+        .executable(name: "axkit", targets: ["AXKitCLI"]),
+    ],
     dependencies: [
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.1.0"),
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.7"),
@@ -20,6 +27,10 @@ let package = Package(
         .package(url: "https://github.com/huggingface/swift-transformers", from: "0.1.24"),
     ],
     targets: [
+        .target(name: "AXKit", path: "Sources/AXKit"),
+        .executableTarget(name: "AXKitCLI", dependencies: ["AXKit"], path: "Sources/AXKitCLI"),
+        .executableTarget(name: "AXKitFixtures", path: "Sources/AXKitFixtures"),
+        .testTarget(name: "AXKitTests", dependencies: ["AXKit"], path: "tests/AXKitTests"),
         .executableTarget(
             name: "ParrotFlow",
             dependencies: [
