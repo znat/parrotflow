@@ -45,6 +45,7 @@ enum TreeReadCommand {
             return 1
         }
 
+        var read = false
         for start in starts {
             let started = Date()
             let outcome = Context.readTree(from: start)
@@ -56,6 +57,7 @@ enum TreeReadCommand {
             case .failure(let why):
                 print("✗ \(why.rawValue)")
             case .success(let got):
+                read = true
                 print("place   \(got.place)")
                 print("people  \(got.people.joined(separator: "; "))")
                 print("code    \(got.code.joined(separator: "; "))")
@@ -67,7 +69,7 @@ enum TreeReadCommand {
                 }
             }
         }
-        return 0
+        return read ? 0 : 1
     }
 
     private static func description(of element: AXUIElement) -> String {
