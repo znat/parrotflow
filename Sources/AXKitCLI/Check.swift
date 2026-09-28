@@ -31,7 +31,7 @@ enum Check {
         let tookFocus: Bool
     }
 
-    static func run(json: Bool) -> Int32 {
+    static func run(json: Bool, popups: Bool) -> Int32 {
         let binary = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
             .appendingPathComponent("AXKitFixtures").path
         guard FileManager.default.isExecutableFile(atPath: binary) else {
@@ -52,7 +52,7 @@ enum Check {
         }
         let front = App.frontmost?.pid
         var rows: [Row] = []
-        for item in cases(app: app, window: window) {
+        for item in cases(app: app, window: window, popups: popups) {
             let before = truth(state) ?? [:]
             var refusal: AXError?
             do { try item.run() } catch AXKitError.ax(let code, _) { refusal = code } catch { refusal = .failure }
@@ -86,7 +86,7 @@ enum Check {
 
     // MARK: - The cases
 
-    static func cases(app: App, window: Element) -> [Case] {
+    static func cases(app: App, window: Element, popups: Bool) -> [Case] {
         func control(_ id: String) throws -> Element {
             guard let hit = window.first(where: { $0.identifier == id }) else {
                 throw AXKitError.ax(.failure, "find \(id)")
@@ -99,8 +99,11 @@ enum Check {
             if found.role == "AXDateTimeArea" { return found }
             return found.first { $0.role == "AXDateTimeArea" } ?? found
         }
-        func child(_ parent: Element, _ text: String) throws -> Element {
-            guard let hit = parent.first(where: { ($0.name == text || $0.shownText == text) && $0.role != kAXStaticTextRole })
+        func child(_ parent: Element, _ text: String, role: String? = nil) throws -> Element {
+            guard let hit = parent.first(where: {
+                ($0.name == text || $0.shownText == text) && $0.role != kAXStaticTextRole
+                    && (role == nil || $0.role == role)
+            })
             else { throw AXKitError.ax(.failure, "find \"\(text)\"") }
             return hit
         }
@@ -112,76 +115,75 @@ enum Check {
         var all: [Case] = []
         for id in ["fr_date", "fr_time", "fr_datetime", "fr_date_field", "fr_time_field",
                    "en_date", "en_time", "en_datetime_field"] {
-            all.append(Case(control: id, operation: "set AXValue to a Date", expect: .becomes(id, date)) {
-                try dateArea(id).set(kAXValueAttribute, to: date as NSDate)
+            all.append(Case(control: id, operation: "Controls.setDate", expect: .becomes(id, date)) {
+                try Controls.setDate(date, on: try control(id))
             })
         }
-        all.append(Case(control: "fr_date", operation: "set AXValue to a string",
-                        expect: .refused("fr_date", .illegalArgument)) {
-            try dateArea("fr_date").set(kAXValueAttribute, to: "22/11/2026" as NSString)
-        })
         all += [
-            Case(control: "volume", operation: "set AXValue to 75", expect: .becomes("volume", 75)) {
-                try control("volume").set(kAXValueAttribute, to: 75 as NSNumber)
-            },
-            Case(control: "volume", operation: "AXIncrement", expect: .becomes("volume", 80)) {
-                try control("volume").perform(kAXIncrementAction)
-            },
-            Case(control: "guests", operation: "AXIncrement", expect: .becomes("guests", 4)) {
-                try control("guests").perform(kAXIncrementAction)
+            // What the API does when misused: the reason the Controls exist.
+            Case(control: "fr_date", operation: "set AXValue to a string",
+                 expect: .refused("fr_date", .illegalArgument)) {
+                try dateArea("fr_date").set(kAXValueAttribute, to: "22/11/2026" as NSString)
             },
             Case(control: "guests", operation: "set AXValue to 7", expect: .ignored("guests")) {
                 try control("guests").set(kAXValueAttribute, to: 7 as NSNumber)
             },
-            Case(control: "private", operation: "AXPress", expect: .becomes("private", true)) {
-                try control("private").perform(kAXPressAction)
+            Case(control: "private", operation: "set AXValue to 1", expect: .ignored("private")) {
+                try control("private").set(kAXValueAttribute, to: 1 as NSNumber)
             },
-            Case(control: "private", operation: "set AXValue to 0", expect: .ignored("private")) {
-                try control("private").set(kAXValueAttribute, to: 0 as NSNumber)
+            Case(control: "volume", operation: "Controls.setNumber 75", expect: .becomes("volume", 75)) {
+                try Controls.setNumber(75, on: try control("volume"))
             },
-            Case(control: "online", operation: "AXPress", expect: .becomes("online", true)) {
-                try control("online").perform(kAXPressAction)
+            Case(control: "volume", operation: "Controls.step +1", expect: .becomes("volume", 80)) {
+                try Controls.step(try control("volume"), by: 1)
             },
-            Case(control: "show_as", operation: "AXPress on Free", expect: .becomes("show_as", "Free")) {
-                try control("show_as_free").perform(kAXPressAction)
+            Case(control: "guests", operation: "Controls.step +2", expect: .becomes("guests", 5)) {
+                try Controls.step(try control("guests"), by: 2)
             },
-            Case(control: "view", operation: "AXPress on segment Month", expect: .becomes("view", "Month")) {
-                try child(try control("view"), "Month").perform(kAXPressAction)
+            Case(control: "private", operation: "Controls.ensure on", expect: .becomes("private", true)) {
+                try Controls.ensure(true, try control("private"))
             },
-            Case(control: "room", operation: "set AXValue to \"Room C\"", expect: .becomes("room", "Room C")) {
-                try control("room").set(kAXValueAttribute, to: "Room C" as NSString)
+            Case(control: "private", operation: "Controls.ensure on, again", expect: .ignored("private")) {
+                try Controls.ensure(true, try control("private"))
             },
-            Case(control: "tree", operation: "set AXDisclosing on Fruits",
+            Case(control: "online", operation: "Controls.ensure on", expect: .becomes("online", true)) {
+                try Controls.ensure(true, try control("online"))
+            },
+            Case(control: "show_as", operation: "Controls.ensure on Free", expect: .becomes("show_as", "Free")) {
+                try Controls.ensure(true, try control("show_as_free"))
+            },
+            Case(control: "view", operation: "Controls.press segment Month", expect: .becomes("view", "Month")) {
+                try Controls.press(try child(try control("view"), "Month"))
+            },
+            Case(control: "room", operation: "Controls.setText \"Room C\"", expect: .becomes("room", "Room C")) {
+                try Controls.setText("Room C", on: try control("room"))
+            },
+            Case(control: "tree", operation: "Controls.disclose Fruits",
                  expect: .becomes("tree_expanded", ["Fruits"])) {
-                let row = try control("tree").first { $0.role == kAXRowRole && $0.shownText == "Fruits" }
-                try (row ?? window).set(kAXDisclosingAttribute, to: kCFBooleanTrue)
+                try Controls.disclose(true, try child(try control("tree"), "Fruits", role: kAXRowRole))
             },
-            Case(control: "tree", operation: "set AXSelected on Pear", expect: .becomes("tree_selected", "Pear")) {
-                let row = try control("tree").first { $0.role == kAXRowRole && $0.shownText == "Pear" }
-                try (row ?? window).set(kAXSelectedAttribute, to: kCFBooleanTrue)
-            },
-            Case(control: "files", operation: "set AXSelectedRows to rows 1 and 4",
+            Case(control: "files", operation: "Controls.select rows 0 and 3",
                  expect: .becomes("files_selected", ["alpha.txt", "delta.csv"])) {
-                let table = try control("files")
-                let rows = table.elements(kAXRowsAttribute)
-                guard rows.count >= 4 else { throw AXKitError.ax(.failure, "rows") }
-                try table.set(kAXSelectedRowsAttribute, to: [rows[0].ref, rows[3].ref] as CFArray)
+                try Controls.select(rows: [0, 3], in: try control("files"))
             },
-            Case(control: "sheet", operation: "AXPress Open sheet", expect: .becomes("sheet", "open")) {
-                try control("open_sheet").perform(kAXPressAction)
+            Case(control: "sheet", operation: "Controls.press Open sheet", expect: .becomes("sheet", "open")) {
+                try Controls.press(try control("open_sheet"))
             },
-            Case(control: "sheet", operation: "AXPress its Cancel", expect: .becomes("sheet", "cancel")) {
+            Case(control: "sheet", operation: "Controls.press its Cancel", expect: .becomes("sheet", "cancel")) {
                 guard let cancel = app.windows.lazy.compactMap({ $0.first { $0.identifier == "sheet_cancel" } }).first
                 else { throw AXKitError.ax(.failure, "find sheet_cancel") }
-                try cancel.perform(kAXPressAction)
+                try Controls.press(cancel)
             },
-            Case(control: "menu", operation: "AXPress File > Export > PDF…", expect: .becomes("export_pdf", 1)) {
-                guard let bar = app.element.element(kAXMenuBarAttribute),
-                      let pdf = bar.first(where: { $0.role == kAXMenuItemRole && $0.title == "PDF…" })
-                else { throw AXKitError.ax(.failure, "find PDF…") }
-                try pdf.perform(kAXPressAction)
+            Case(control: "menu", operation: "Controls.menu File > Export > PDF…", expect: .becomes("export_pdf", 1)) {
+                try Controls.menu(["File", "Export", "PDF…"], in: app)
             },
         ]
+        if popups {
+            all.append(Case(control: "reminder", operation: "Controls.choose 5 minutes",
+                            expect: .becomes("reminder", "5 minutes")) {
+                try Controls.choose("5 minutes", in: try control("reminder"))
+            })
+        }
         return all
     }
 

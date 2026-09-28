@@ -10,7 +10,7 @@ usage: axkit trusted
        axkit find  (--app … | --pid … | --front) [--role AXButton] [--name <glob>] [--dom <id>]
                    [--wake] [--json]
        axkit hit   <x> <y> [--app … | --pid …] [--json]
-       axkit check [--json]    plays the control matrix on the fixture window, in the background
+       axkit check [--json] [--popups]    plays the control matrix on the fixture window, in the background
 """
 
 func fail(_ message: String, _ code: Int32 = 1) -> Never {
@@ -110,7 +110,7 @@ case "hit":
     if has("--json") { printJSON(node) } else { node.map { print(line($0)) } }
 
 case "check":
-    exit(Check.run(json: has("--json")))
+    exit(Check.run(json: has("--json"), popups: has("--popups")))
 
 default:
     fail(usage, 2)
