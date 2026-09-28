@@ -579,7 +579,7 @@ if let index = arguments.firstIndex(of: "--peek") {
 }
 
 if let index = arguments.firstIndex(of: "--tree-read") {
-    guard arguments.indices.contains(index + 1) else {
+    guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
         print("usage: ParrotFlow --tree-read <bundle-id>")
         exit(2)
     }
