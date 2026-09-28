@@ -146,7 +146,7 @@ enum TreeContext {
         guard depth < 8, names.count < maxRoster else { return }
         if (attribute(element, kAXRoleAttribute) as? String) == "AXRow",
            let label = label(of: element) {
-            for name in rosterNames(in: label) where !names.contains(name) {
+            for name in rosterNames(in: label) where names.count < maxRoster && !names.contains(name) {
                 names.append(name)
             }
         }
