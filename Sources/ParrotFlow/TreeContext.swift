@@ -217,8 +217,7 @@ enum TreeContext {
     static func conversation(around focused: AXUIElement) -> AXUIElement? {
         var element = focused
         for _ in 0..<depthLimit {
-            guard let parent = attribute(element, kAXParentAttribute) else { return nil }
-            let up = parent as! AXUIElement
+            guard let up = elementValue(element, kAXParentAttribute) else { return nil }
             if (attribute(up, kAXRoleAttribute) as? String) == "AXWindow" { return nil }
             if holdsMessageList(up) { return up }
             element = up
@@ -482,12 +481,20 @@ enum TreeContext {
 
     // MARK: - Accessibility plumbing
 
-    private static func attribute(_ element: AXUIElement, _ name: String) -> Any? {
+    private static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else {
             return nil
         }
         return value
+    }
+
+    /// An attribute that should hold an element. The app decides what it
+    /// returns, so the type is checked before the cast.
+    private static func elementValue(_ element: AXUIElement, _ name: String) -> AXUIElement? {
+        guard let value = attribute(element, name),
+              CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
     }
 
     /// Value first, then title, then description: the value is what a message
@@ -505,7 +512,9 @@ enum TreeContext {
 
     private static func frame(of element: AXUIElement) -> CGRect? {
         guard let position = attribute(element, kAXPositionAttribute),
-              let size = attribute(element, kAXSizeAttribute) else { return nil }
+              let size = attribute(element, kAXSizeAttribute),
+              CFGetTypeID(position) == AXValueGetTypeID(),
+              CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
         var origin = CGPoint.zero, extent = CGSize.zero
         guard AXValueGetValue(position as! AXValue, .cgPoint, &origin),
               AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
@@ -514,11 +523,10 @@ enum TreeContext {
 
     /// The window holding an element, for the title and the sidebar.
     static func window(of element: AXUIElement) -> AXUIElement? {
-        if let window = attribute(element, kAXWindowAttribute) { return (window as! AXUIElement) }
+        if let window = elementValue(element, kAXWindowAttribute) { return window }
         var current = element
         for _ in 0..<depthLimit {
-            guard let parent = attribute(current, kAXParentAttribute) else { return nil }
-            let up = parent as! AXUIElement
+            guard let up = elementValue(current, kAXParentAttribute) else { return nil }
             if (attribute(up, kAXRoleAttribute) as? String) == "AXWindow" { return up }
             current = up
         }
