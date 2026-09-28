@@ -282,7 +282,9 @@ enum Context {
     ) -> Result<Capture, Declined> {
         let found = conversation
             ?? TreeContext.Assembled(place: "", people: [], text: "", code: [])
-        guard !found.text.isEmpty || !roster.isEmpty else { return .failure(.empty) }
+        let nothing = found.text.isEmpty && found.place.isEmpty && found.people.isEmpty
+            && found.code.isEmpty && roster.isEmpty
+        guard !nothing else { return .failure(.empty) }
         let (text, truncated) = tail(of: found.text, limit: maxChars)
         return .success(Capture(
             text: text, truncated: truncated,

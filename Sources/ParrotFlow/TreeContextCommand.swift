@@ -195,6 +195,11 @@ enum TreeContextCommand {
         ("published, no conversation",
          published(Context.treeCapture(nil, roster: ["#sws-engineering", "Mik Okun"])),
          "text=; place=; people=; code=; roster=#sws-engineering,Mik Okun"),
+        ("published, a place and nothing else",
+         published(Context.treeCapture(
+            TreeContext.Assembled(place: "#sws-engineering", people: [], text: "", code: []),
+            roster: [])),
+         "text=; place=#sws-engineering; people=; code=; roster="),
         ("published, nothing at all", published(Context.treeCapture(nil, roster: [])),
          "declined: \(Context.Declined.empty.rawValue)"),
     ]
