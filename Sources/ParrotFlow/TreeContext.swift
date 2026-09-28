@@ -446,7 +446,7 @@ enum TreeContext {
         // reads: the announcement's box contains the message's own. Two people
         // can both write "ok", and a rule about wording alone would delete the
         // second one.
-        var kept: [String] = []
+        var kept: [Line] = []
         for (i, line) in lines.enumerated() {
             let neighbours = lines[max(0, i - 2)..<min(lines.count, i + 3)]
             let copied = neighbours.contains { other in
@@ -454,12 +454,16 @@ enum TreeContext {
                     && other.text.contains(line.text) && other.holds(line)
             }
             if copied { continue }
-            if kept.last == line.text { continue }
-            kept.append(line.text)
+            // A paragraph is drawn as a group and again as the text inside it.
+            // One person saying "ok" twice is two boxes, one under the other.
+            if let last = kept.last, last.text == line.text,
+               last.holds(line) || line.holds(last) { continue }
+            kept.append(line)
         }
         if named.isEmpty, let title { named = cleanTitle(title) }
         return Assembled(
-            place: named, people: people, text: kept.joined(separator: "\n"), code: code)
+            place: named, people: people,
+            text: kept.map(\.text).joined(separator: "\n"), code: code)
     }
 
     /// `! Tasmeen Kathuria (DM) - Swoop Enterprise - 21 new items - Slack` is a

@@ -62,6 +62,27 @@ enum TreeContextCommand {
              frame: CGRect(x: 10, y: 110, width: 200, height: 16), inMessage: true),
     ]
 
+    /// One person writing the same word twice: both messages stay. A long
+    /// message's announcement is cut with an ellipsis, and its paragraph is
+    /// drawn twice, a group and the text inside it: that copy goes.
+    private static let sameAuthor: [Node] = [
+        Node(role: "AXList", label: "Mik Okun (direct message)", frame: nil),
+        Node(role: "AXGroup", label: "Mik Okun: ok. 9:03 PM.",
+             frame: CGRect(x: 0, y: 0, width: 400, height: 40), inMessage: true),
+        Node(role: "AXStaticText", label: "ok",
+             frame: CGRect(x: 10, y: 10, width: 40, height: 16), inMessage: true),
+        Node(role: "AXGroup", label: "Mik Okun: ok. 9:04 PM.",
+             frame: CGRect(x: 0, y: 50, width: 400, height: 40), inMessage: true),
+        Node(role: "AXStaticText", label: "ok",
+             frame: CGRect(x: 10, y: 60, width: 40, height: 16), inMessage: true),
+        Node(role: "AXGroup", label: "Mik Okun: the hook fires on every…",
+             frame: CGRect(x: 0, y: 100, width: 400, height: 40), inMessage: true),
+        Node(role: "AXGroup", label: "the hook fires on every push to main",
+             frame: CGRect(x: 10, y: 110, width: 380, height: 16), inMessage: true),
+        Node(role: "AXStaticText", label: "the hook fires on every push to main",
+             frame: CGRect(x: 10, y: 110, width: 380, height: 16), inMessage: true),
+    ]
+
     /// No list label at all: the title is the only thing naming the place, and
     /// it arrives with an unread count and a notification mark on it.
     private static let titleOnly: [Node] = [
@@ -98,6 +119,10 @@ enum TreeContextCommand {
              place: "Mik Okun, Martin Alix",
              people: ["Mik Okun", "Martin Alix"],
              text: "Mik Okun: ok.\nMartin Alix: ok.\nsee you at 9:03 PM."),
+        Case(name: "same author", nodes: sameAuthor, title: nil,
+             place: "Mik Okun",
+             people: ["Mik Okun"],
+             text: "Mik Okun: ok.\nMik Okun: ok.\nthe hook fires on every push to main"),
         Case(name: "title only", nodes: titleOnly, title: "! Tasmeen Kathuria (DM) - Swoop - 21 new items - Slack",
              place: "Tasmeen Kathuria (DM) - Swoop",
              people: ["Tasmeen Kathuria"],
