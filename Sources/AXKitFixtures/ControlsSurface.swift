@@ -144,6 +144,25 @@ final class ControlsSurface: NSObject {
         notes.delegate = self
         right.addArrangedSubview(row("notes", notes) { [unowned notes] in notes.stringValue })
 
+        let zone = FileZone()
+        zone.identifier = NSUserInterfaceItemIdentifier("file_zone")
+        zone.setAccessibilityLabel("Attach files")
+        zone.received = { [unowned self] how, names in self.set(how, names, via: "action") }
+        var dragSeen: [String] = []
+        zone.seen = { [unowned self] call in
+            if dragSeen.last != call { dragSeen.append(call) }
+            self.set("drag_seen", dragSeen, via: "action")
+        }
+        let zoneScroll = NSScrollView()
+        zoneScroll.documentView = zone
+        zoneScroll.hasVerticalScroller = true
+        zoneScroll.borderType = .bezelBorder
+        zoneScroll.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        zoneScroll.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        zone.autoresizingMask = [.width]
+        zone.frame = NSRect(x: 0, y: 0, width: 220, height: 44)
+        right.addArrangedSubview(labelled("file_zone", zoneScroll))
+
         outline = NSOutlineView()
         let outlineColumn = NSTableColumn(identifier: .init("name"))
         outlineColumn.title = "Name"
@@ -209,6 +228,8 @@ final class ControlsSurface: NSObject {
         values["export_pdf"] = 0
         values["export_csv"] = 0
         values["show_grid"] = false
+        values["pasted_files"] = [String]()
+        values["dropped_files"] = [String]()
         refresh(source: "start")
         poll = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh(source: "poll") }
@@ -275,6 +296,16 @@ final class ControlsSurface: NSObject {
         file.addItem(grid)
         fileItem.submenu = file
         main.addItem(fileItem)
+
+        // What every real app has: ⌘C and ⌘V are these items, not keys.
+        let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+        main.addItem(editItem)
         return main
     }
 
@@ -454,4 +485,57 @@ extension ControlsSurface: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) { refresh(source: "action") }
+}
+
+
+/// Takes files pasted into it or dropped on it, like a composer that turns
+/// them into attachments, and says which.
+final class FileZone: NSTextView {
+    var received: ((String, [String]) -> Void)?
+    /// Which drag calls reached the view, for a check to read.
+    var seen: ((String) -> Void)?
+
+    convenience init() {
+        self.init(frame: .zero)
+        updateDragTypeRegistration()
+    }
+
+    private func files(_ board: NSPasteboard) -> [String] {
+        let urls = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+        return (urls ?? []).map(\.lastPathComponent)
+    }
+
+    override func paste(_ sender: Any?) {
+        let names = files(.general)
+        if names.isEmpty { super.paste(sender) } else { received?("pasted_files", names) }
+    }
+
+    // A plain-text view does not take file URLs, and answers each move
+    // over it itself: all three must say yes to a file.
+    override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
+        super.acceptableDragTypes + [.fileURL]
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        seen?("entered")
+        return files(sender.draggingPasteboard).isEmpty ? super.draggingEntered(sender) : .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        seen?("updated")
+        return files(sender.draggingPasteboard).isEmpty ? super.draggingUpdated(sender) : .copy
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        seen?("prepare")
+        return files(sender.draggingPasteboard).isEmpty ? super.prepareForDragOperation(sender) : true
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        seen?("perform")
+        let names = files(sender.draggingPasteboard)
+        guard !names.isEmpty else { return super.performDragOperation(sender) }
+        received?("dropped_files", names)
+        return true
+    }
 }

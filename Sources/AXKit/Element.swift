@@ -90,6 +90,24 @@ public struct Element: Hashable, @unchecked Sendable {
         return CGRect(origin: point, size: extent)
     }
 
+    /// The part of the frame that shows: cut by each scroll area and the
+    /// window above it. A text view in a scroll view can be taller or offset
+    /// from what shows, so its middle can fall outside it (09-28).
+    public var visibleFrame: CGRect? {
+        guard var shown = frame else { return nil }
+        var current = parent
+        for _ in 0..<40 {
+            guard let element = current else { break }
+            if [kAXScrollAreaRole, kAXWindowRole].contains(element.role ?? ""), let box = element.frame {
+                shown = shown.intersection(box)
+                if shown.isNull { return nil }
+            }
+            if element.role == kAXWindowRole { break }
+            current = element.parent
+        }
+        return shown
+    }
+
     public var children: [Element] { elements(kAXChildrenAttribute) }
     public var parent: Element? { element(kAXParentAttribute) }
     public var window: Element? { element(kAXWindowAttribute) }

@@ -78,6 +78,12 @@ enum Check {
             let changed = !same(now[key], before[key] as Any)
             let got = refusal.map { "error \($0.rawValue)" + (changed ? ", changed" : "") }
                 ?? (changed ? "→ \(show(now[key]))" : "no change")
+            if refusal == .apiDisabled {
+                rows.append(Row(control: item.control, operation: item.operation, expected: wanted,
+                                got: "skipped: this process lacks a permission", pass: true,
+                                tookFocus: App.frontmost?.pid != front))
+                continue
+            }
             let pass: Bool
             switch item.expect {
             case .becomes, .becomesDay, .becomesTime: pass = refusal == nil && goal(item.expect)!(now[key])
@@ -185,6 +191,46 @@ enum Check {
                 try Controls.menu(["File", "Export", "PDF…"], in: app)
             },
         ]
+        // Windows and apps, read back through accessibility: no keys.
+        all += [
+            Case(control: "window", operation: "move by 20 points, and back", expect: .ignored("volume")) {
+                guard let start = window.frame else { throw AXKitError.ax(.failure, "no frame") }
+                try window.move(to: CGPoint(x: start.minX + 20, y: start.minY))
+                guard Check.wait(1, { window.frame?.minX == start.minX + 20 }) else {
+                    throw AXKitError.ax(.failure, "the window is at \(window.frame.map { "\($0.minX)" } ?? "?")")
+                }
+                try window.move(to: start.origin)
+            },
+            Case(control: "window", operation: "resize by 40 points, and back", expect: .ignored("volume")) {
+                guard let start = window.frame else { throw AXKitError.ax(.failure, "no frame") }
+                try window.resize(to: CGSize(width: start.width + 40, height: start.height))
+                guard Check.wait(1, { window.frame?.width == start.width + 40 }) else {
+                    throw AXKitError.ax(.failure, "the window is \(window.frame.map { "\($0.width)" } ?? "?") wide")
+                }
+                try window.resize(to: start.size)
+            },
+            Case(control: "window", operation: "App.raise, in the background", expect: .ignored("volume")) {
+                try app.raise(window)
+            },
+            Case(control: "window", operation: "Capture.image while it is behind", expect: .ignored("volume")) {
+                guard Capture.isAllowed else { throw AXKitError.ax(.apiDisabled, "no Screen Recording permission here") }
+                let image = try Capture.image(of: window, in: app)
+                guard let frame = window.frame, image.width >= Int(frame.width) else {
+                    throw AXKitError.ax(.failure, "the image is \(image.width)×\(image.height)")
+                }
+            },
+            Case(control: "keyboard", operation: "the layout has a key for v", expect: .ignored("volume")) {
+                guard Input.keyCode(for: "v") != nil else { throw AXKitError.ax(.failure, "no key for v") }
+            },
+            Case(control: "notes", operation: "Controls.insert text, no pasteboard",
+                 expect: .becomes("notes", "Inserted by axkit")) {
+                let before = NSPasteboard.general.changeCount
+                try Controls.insert("Inserted by axkit", into: try control("notes"))
+                guard NSPasteboard.general.changeCount == before else {
+                    throw AXKitError.ax(.failure, "the pasteboard was touched")
+                }
+            },
+        ]
         if keyboard {
             let route = Input.Route.process(app.pid)
             let later = DateComponents(calendar: Calendar(identifier: .gregorian), timeZone: paris,
@@ -205,6 +251,14 @@ enum Check {
                      expect: .becomesTime("en_time", typed)) {
                     try Controls.typeDate(typed, on: try control("en_time"), time: true, clock24: false,
                                           route: route)
+                },
+                Case(control: "file_zone", operation: "Controls.paste a file (in front)",
+                     expect: .becomes("pasted_files", ["axkit-attach.txt"])) {
+                    let file = URL(fileURLWithPath: NSTemporaryDirectory() + "axkit-attach.txt")
+                    try "attached by axkit\n".write(to: file, atomically: true, encoding: .utf8)
+                    let zone = try window.first(where: { $0.identifier == "file_zone" })
+                        ?? { throw AXKitError.ax(.failure, "find file_zone") }()
+                    try Controls.paste(files: [file], into: zone)
                 },
                 Case(control: "room", operation: "select all, type, Return", expect: .becomes("room", "Room D")) {
                     let room = try control("room")
@@ -295,13 +349,15 @@ enum Check {
             return
         }
         for row in rows {
-            let mark = row.pass ? "ok  " : "FAIL"
+            let mark = row.got.hasPrefix("skipped") ? "skip" : row.pass ? "ok  " : "FAIL"
             let focus = row.tookFocus ? "  (took the focus)" : ""
             print("\(mark) \(row.control.padding(toLength: 18, withPad: " ", startingAt: 0)) "
                   + "\(row.operation.padding(toLength: 36, withPad: " ", startingAt: 0)) "
                   + "expected \(row.expected), got \(row.got)\(focus)")
         }
-        print("-- \(rows.filter(\.pass).count)/\(rows.count) as measured"
+        let skipped = rows.filter { $0.got.hasPrefix("skipped") }.count
+        print("-- \(rows.filter(\.pass).count - skipped)/\(rows.count - skipped) as measured"
+              + (skipped > 0 ? ", \(skipped) skipped" : "")
               + (rows.contains(where: \.tookFocus) ? ", the focus moved" : ", the focus never moved"))
     }
 }

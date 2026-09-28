@@ -287,6 +287,62 @@ public enum Controls {
         return outcome
     }
 
+    /// The menu bar item whose shortcut is ⌘ plus `letter`, whatever the
+    /// app's language: "Paste" and "Coller" are both ⌘V. Pressing it through
+    /// accessibility needs no key and works with the app in the background.
+    public static func menuItem(shortcut letter: Character, in app: App) -> Element? {
+        guard let bar = app.element.element(kAXMenuBarAttribute) else { return nil }
+        let wanted = String(letter).uppercased()
+        return bar.first(budget: 3000) {
+            $0.role == kAXMenuItemRole && $0.string(kAXMenuItemCmdCharAttribute)?.uppercased() == wanted
+                // 0: ⌘ alone, with no Shift, Option or Control.
+                && ($0.attribute(kAXMenuItemCmdModifiersAttribute) as? NSNumber)?.intValue == 0
+        }
+    }
+
+    /// Inserts text at the caret, replacing the selection, as a paste would,
+    /// through accessibility: no pasteboard and no key, so it works with the
+    /// app in the background.
+    @discardableResult
+    public static func insert(_ text: String, into element: Element) throws -> Outcome {
+        let before = element.valueText
+        guard Input.prepare(element) else { throw AXKitError.ax(.cannotComplete, "focus \(describe(element))") }
+        try element.set(kAXSelectedTextAttribute, to: text as NSString)
+        let ok = wait { (element.valueText ?? "").contains(text) }
+        let outcome = Outcome(before: before, after: element.valueText, method: "set AXSelectedText", verified: ok)
+        if !ok { throw AXKitError.notApplied("insert into \(describe(element))") }
+        return outcome
+    }
+
+    /// Pastes files into a field, as attachments in Slack, Teams and Gmail
+    /// composers. No accessibility call inserts a file, and an app in the
+    /// background does not enable its Paste item (measured 09-28), so this
+    /// is a foreground step: the app comes in front for the ⌘V, then the
+    /// app that was in front comes back. What the pasteboard held is put
+    /// back. What the paste produces depends on the app: the caller checks.
+    @discardableResult
+    public static func paste(files: [URL], into element: Element) throws -> Outcome {
+        guard let pid = element.pid else { throw AXKitError.ax(.invalidUIElement, "no process") }
+        let app = App(pid: pid)
+        let saved = Clipboard.save()
+        let front = App.frontmost
+        defer {
+            // The app reads the pasteboard while it handles the paste.
+            Thread.sleep(forTimeInterval: 0.3)
+            Clipboard.restore(saved)
+            if let front, front.pid != pid { front.activate() }
+        }
+        Clipboard.put(files: files)
+        guard Input.prepare(element) else { throw AXKitError.ax(.cannotComplete, "focus \(describe(element))") }
+        if let item = menuItem(shortcut: "v", in: app), item.isEnabled == true {
+            try item.perform(kAXPressAction)
+            return Outcome(before: nil, after: nil, method: "the ⌘V menu item", verified: nil)
+        }
+        guard app.activate() else { throw Input.Refusal.notFrontmost(expected: pid, actual: App.frontmost?.pid) }
+        try Input.shortcut("v", .command, to: .frontmost(pid))
+        return Outcome(before: nil, after: nil, method: "in front, ⌘V", verified: nil)
+    }
+
     public enum DateOrder: String, Sendable {
         case dmy, mdy, ymd
 
