@@ -260,31 +260,33 @@ enum Context {
     /// two conversations at once, and a rule about which side of the window the
     /// sidebar ends on would have had to guess between them.
     ///
-    /// Falling back to the whole window is deliberate. A window that does not
-    /// look the way `TreeContext` expects still holds the conversation
-    /// somewhere, and the furniture it also holds is filtered by label. What
-    /// this must not do is return the sidebar's channel list as if it were the
-    /// conversation, which is why the fallback keeps the same assembly.
-    private static func readTree(from element: AXUIElement) -> Result<Capture, Declined> {
+    /// Only that pane is read. A short conversation is a short pane, not a wrong
+    /// one. On 2026-09-28, with one DM open, a whole-window read took its place
+    /// from a sidebar row, added a line from outside the pane, and lost 7 of the
+    /// pane's 36 lines.
+    static func readTree(from element: AXUIElement) -> Result<Capture, Declined> {
         let window = TreeContext.window(of: element)
         let title = window.flatMap(TreeContext.title(of:))
-        var assembled = TreeContext.conversation(around: element).map {
+        let conversation = TreeContext.conversation(around: element).map {
             TreeContext.assemble(TreeContext.nodes(under: $0), title: title)
         }
-        // A pane that yields almost nothing was the wrong pane. Slack's own
-        // layout moves between a channel, a thread and a search result, and the
-        // window always holds the conversation somewhere.
-        if assembled == nil || assembled!.text.count < 200, let window {
-            let whole = TreeContext.assemble(TreeContext.nodes(under: window), title: title)
-            if whole.text.count > (assembled?.text.count ?? 0) { assembled = whole }
-        }
-        guard let assembled, !assembled.text.isEmpty else { return .failure(.empty) }
+        return treeCapture(conversation, roster: window.map(TreeContext.roster(in:)) ?? [])
+    }
 
-        let (text, truncated) = tail(of: assembled.text, limit: maxChars)
+    /// What a tree app publishes: the conversation when the climb found one,
+    /// and the sidebar either way.
+    ///
+    /// Pure, so `--tree-test` scores it.
+    static func treeCapture(
+        _ conversation: TreeContext.Assembled?, roster: [String]
+    ) -> Result<Capture, Declined> {
+        let found = conversation
+            ?? TreeContext.Assembled(place: "", people: [], text: "", code: [])
+        guard !found.text.isEmpty || !roster.isEmpty else { return .failure(.empty) }
+        let (text, truncated) = tail(of: found.text, limit: maxChars)
         return .success(Capture(
             text: text, truncated: truncated,
-            place: assembled.place, people: assembled.people, code: assembled.code,
-            roster: window.map(TreeContext.roster(in:)) ?? []
+            place: found.place, people: found.people, code: found.code, roster: roster
         ))
     }
 

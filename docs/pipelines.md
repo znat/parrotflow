@@ -1292,6 +1292,13 @@ alone does not give — a name at the start of a line before a colon is exactly
 what a tagger reads as a heading. And the list naming the conversation gives
 `context.place`, so "the eng platform channel" has a spelling on screen.
 
+Only the conversation you are typing in is read. The walk climbs from the
+focused box to the nearest pane that names a conversation and holds a message.
+A short conversation is published as it is. The rest of the window is never
+read for `text`, `place`, `people` or `code`, because it holds other
+conversations. When the climb finds no pane, those four are empty and
+`context.roster` is still published.
+
 Only the messages are published. The composer's formatting bar, the channel
 header and the sidebar are in the same window and are dropped: the author label
 is the boundary, and everything under it is language rather than the app talking

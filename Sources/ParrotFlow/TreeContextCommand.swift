@@ -129,6 +129,16 @@ enum TreeContextCommand {
              text: "Tasmeen Kathuria: can we talk Monday?"),
     ]
 
+    /// A capture as one line, so a reading can pin it.
+    private static func published(_ outcome: Result<Context.Capture, Context.Declined>) -> String {
+        switch outcome {
+        case .failure(let why): return "declined: \(why.rawValue)"
+        case .success(let got):
+            return "text=\(got.text); place=\(got.place); people=\(got.people.joined(separator: ","));"
+                + " code=\(got.code.joined(separator: ",")); roster=\(got.roster.joined(separator: ","))"
+        }
+    }
+
     /// The readings the cases above depend on, pinned one at a time so a
     /// failure says which one moved rather than "the text differs".
     private static let readings: [(what: String, got: String?, want: String?)] = [
@@ -175,6 +185,18 @@ enum TreeContextCommand {
          "Greg Lu|Mark Bell"),
         ("title", TreeContext.cleanTitle("! Tasmeen Kathuria (DM) - Swoop - 21 new items - Slack"),
          "Tasmeen Kathuria (DM) - Swoop"),
+        // Only the pane is read. A short conversation is published as it is,
+        // and no conversation still publishes the sidebar.
+        ("published, a short conversation",
+         published(Context.treeCapture(
+            TreeContext.Assembled(place: "Mik Okun", people: ["Mik Okun"], text: "Mik Okun: ok.", code: []),
+            roster: ["#sws-engineering"])),
+         "text=Mik Okun: ok.; place=Mik Okun; people=Mik Okun; code=; roster=#sws-engineering"),
+        ("published, no conversation",
+         published(Context.treeCapture(nil, roster: ["#sws-engineering", "Mik Okun"])),
+         "text=; place=; people=; code=; roster=#sws-engineering,Mik Okun"),
+        ("published, nothing at all", published(Context.treeCapture(nil, roster: [])),
+         "declined: \(Context.Declined.empty.rawValue)"),
     ]
 
     static func run() -> Int32 {

@@ -213,7 +213,7 @@ enum TreeContext {
     /// guessed again every time the sidebar was resized.
     ///
     /// The ancestor that also contains the message list is the pane. Nil means
-    /// no such ancestor was found, and the caller falls back to the window.
+    /// no ancestor below the window holds one, and nothing is read.
     static func conversation(around focused: AXUIElement) -> AXUIElement? {
         var element = focused
         for _ in 0..<depthLimit {
@@ -512,8 +512,7 @@ enum TreeContext {
         return CGRect(origin: origin, size: extent)
     }
 
-    /// The window holding an element, for the title and as the fallback when no
-    /// conversation subtree is found.
+    /// The window holding an element, for the title and the sidebar.
     static func window(of element: AXUIElement) -> AXUIElement? {
         if let window = attribute(element, kAXWindowAttribute) { return (window as! AXUIElement) }
         var current = element
@@ -528,5 +527,14 @@ enum TreeContext {
 
     static func title(of window: AXUIElement) -> String? {
         attribute(window, kAXTitleAttribute) as? String
+    }
+
+    /// The boxes a message is typed into, for `--tree-read` when nothing in the
+    /// app is focused.
+    static func composers(in element: AXUIElement, depth: Int = 0) -> [AXUIElement] {
+        guard depth < depthLimit else { return [] }
+        if (attribute(element, kAXRoleAttribute) as? String) == "AXTextArea" { return [element] }
+        return ((attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [])
+            .flatMap { composers(in: $0, depth: depth + 1) }
     }
 }
