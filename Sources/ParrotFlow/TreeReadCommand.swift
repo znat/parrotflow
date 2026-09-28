@@ -9,8 +9,8 @@ import ApplicationServices
 /// app's tree: bringing the app forward to look at it is a race against
 /// anything else that wants focus, and an overlay window wins it.
 ///
-/// This reads by process id instead. It takes the first window and the focused
-/// element inside it, so it answers for the conversation that app is showing
+/// This reads by process id instead. It takes the app's focused element and the
+/// window holding it, so it answers for the conversation that app is showing
 /// rather than for the one you are dictating into.
 enum TreeReadCommand {
 
@@ -27,19 +27,17 @@ enum TreeReadCommand {
         ChromiumAccessibility.askIfNeeded(app)
 
         let root = AXUIElementCreateApplication(app.processIdentifier)
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(root, kAXWindowsAttribute as CFString, &value)
-                == .success,
-              let window = (value as? [AXUIElement])?.first else {
+        let started = Date()
+        let focused = element(root, kAXFocusedUIElementAttribute)
+        // `kAXWindowsAttribute` has no guaranteed order, so its first entry can
+        // be a different window from the one holding the pane.
+        guard let window = focused.flatMap(TreeContext.window(of:))
+                ?? element(root, kAXFocusedWindowAttribute)
+                ?? element(root, kAXWindowsAttribute) else {
             print("✗ no window")
             return 1
         }
-
-        let started = Date()
-        var focused: CFTypeRef?
-        AXUIElementCopyAttributeValue(root, kAXFocusedUIElementAttribute as CFString, &focused)
-        let pane = (focused as! AXUIElement?)
-            .flatMap(TreeContext.conversation(around:)) ?? window
+        let pane = focused.flatMap(TreeContext.conversation(around:)) ?? window
         let assembled = TreeContext.assemble(
             TreeContext.nodes(under: pane), title: TreeContext.title(of: window))
         let roster = TreeContext.roster(in: window)
@@ -55,5 +53,14 @@ enum TreeReadCommand {
             print("  | \(row)")
         }
         return 0
+    }
+
+    /// One element, or the first of a list of them.
+    private static func element(_ root: AXUIElement, _ name: String) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(root, name as CFString, &value) == .success,
+              let value else { return nil }
+        if CFGetTypeID(value) == AXUIElementGetTypeID() { return (value as! AXUIElement) }
+        return (value as? [AXUIElement])?.first
     }
 }
