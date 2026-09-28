@@ -179,6 +179,67 @@ public enum Controls {
         return outcome
     }
 
+    public enum DateOrder: String, Sendable {
+        case dmy, mdy, ymd
+
+        /// The order of this Mac's region, which is what a native picker
+        /// without its own locale shows.
+        public static var region: DateOrder {
+            let format = DateFormatter.dateFormat(fromTemplate: "ddMMyyyy", options: 0, locale: .current) ?? ""
+            let day = format.firstIndex(of: "d"), month = format.firstIndex(of: "M"),
+                year = format.firstIndex(of: "y")
+            guard let day, let month, let year else { return .dmy }
+            if year < month { return .ymd }
+            return day < month ? .dmy : .mdy
+        }
+    }
+
+    /// The keyboard way into a native date or time picker, for when a value
+    /// set is refused. Focus by accessibility lands on an arbitrary part (the
+    /// year became 0012), so Left is pressed until the first part, then each
+    /// part is typed with Right between. `clock24: false` types the hour on
+    /// 12 hours and then A or P.
+    @discardableResult
+    public static func typeDate(_ date: Date, on element: Element, order: DateOrder = .region,
+                                time: Bool = false, clock24: Bool = true,
+                                route: Input.Route) throws -> Outcome {
+        let area = element.role == "AXDateTimeArea" ? element
+            : element.first(budget: 50) { $0.role == "AXDateTimeArea" } ?? element
+        let before = area.value as? Date
+        guard Input.prepare(area) else { throw AXKitError.ax(.cannotComplete, "focus \(describe(area))") }
+        let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        func two(_ n: Int?) -> String { String(format: "%02d", n ?? 0) }
+        var fields: [String]
+        if time {
+            let hour = parts.hour ?? 0
+            fields = [two(clock24 ? hour : (hour % 12 == 0 ? 12 : hour % 12)), two(parts.minute)]
+            if !clock24 { fields.append(hour < 12 ? "A" : "P") }
+        } else {
+            let (d, m, y) = (two(parts.day), two(parts.month), String(parts.year ?? 0))
+            switch order {
+            case .dmy: fields = [d, m, y]
+            case .mdy: fields = [m, d, y]
+            case .ymd: fields = [y, m, d]
+            }
+        }
+        try Input.press(Array(repeating: .left, count: 6), to: route)
+        for (index, field) in fields.enumerated() {
+            if index > 0 { try Input.press(.right, to: route) }
+            try Input.type(field, to: route)
+        }
+        try Input.press(.tab, to: route)
+        let wanted: Set<Calendar.Component> = time ? [.hour, .minute] : [.year, .month, .day]
+        let ok = wait {
+            guard let now = area.value as? Date else { return false }
+            return Calendar.current.dateComponents(wanted, from: now)
+                == Calendar.current.dateComponents(wanted, from: date)
+        }
+        let outcome = Outcome(before: before.map(iso), after: (area.value as? Date).map(iso),
+                              method: "keys \(fields.joined(separator: " → "))", verified: ok)
+        if !ok { throw AXKitError.notApplied("type the \(time ? "time" : "date") of \(describe(area))") }
+        return outcome
+    }
+
     // MARK: -
 
     static func wait(_ done: () -> Bool) -> Bool {

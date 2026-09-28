@@ -13,6 +13,9 @@ enum Check {
         case ignored(String)
         /// The call itself is refused with this error, and nothing changes.
         case refused(String, AXError)
+        /// The truth key holds a date with this day, or this hour and minute.
+        case becomesDay(String, Date)
+        case becomesTime(String, Date)
     }
 
     struct Case {
@@ -31,7 +34,7 @@ enum Check {
         let tookFocus: Bool
     }
 
-    static func run(json: Bool, popups: Bool) -> Int32 {
+    static func run(json: Bool, popups: Bool, keyboard: Bool) -> Int32 {
         let binary = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
             .appendingPathComponent("AXKitFixtures").path
         guard FileManager.default.isExecutableFile(atPath: binary) else {
@@ -52,18 +55,22 @@ enum Check {
         }
         let front = App.frontmost?.pid
         var rows: [Row] = []
-        for item in cases(app: app, window: window, popups: popups) {
+        for item in cases(app: app, window: window, popups: popups, keyboard: keyboard) {
             let before = truth(state) ?? [:]
             var refusal: AXError?
-            do { try item.run() } catch AXKitError.ax(let code, _) { refusal = code } catch { refusal = .failure }
+            do { try item.run() } catch AXKitError.ax(let code, _) { refusal = code } catch {
+                refusal = .failure
+                FileHandle.standardError.write("\(item.control): \(error)\n".data(using: .utf8)!)
+            }
             let key: String
             switch item.expect {
-            case .becomes(let k, _), .ignored(let k), .refused(let k, _): key = k
+            case .becomes(let k, _), .ignored(let k), .refused(let k, _), .becomesDay(let k, _),
+                 .becomesTime(let k, _): key = k
             }
             let wanted = expected(item.expect)
             var now = truth(state) ?? [:]
-            if case .becomes(_, let target) = item.expect {
-                _ = wait(1.5) { now = truth(state) ?? [:]; return same(now[key], target) }
+            if let target = goal(item.expect) {
+                _ = wait(1.5) { now = truth(state) ?? [:]; return target(now[key]) }
             } else {
                 Thread.sleep(forTimeInterval: 0.5)
                 now = truth(state) ?? [:]
@@ -73,7 +80,7 @@ enum Check {
                 ?? (changed ? "→ \(show(now[key]))" : "no change")
             let pass: Bool
             switch item.expect {
-            case .becomes(_, let target): pass = refusal == nil && same(now[key], target)
+            case .becomes, .becomesDay, .becomesTime: pass = refusal == nil && goal(item.expect)!(now[key])
             case .ignored: pass = !changed
             case .refused(_, let code): pass = refusal == code && !changed
             }
@@ -86,7 +93,7 @@ enum Check {
 
     // MARK: - The cases
 
-    static func cases(app: App, window: Element, popups: Bool) -> [Case] {
+    static func cases(app: App, window: Element, popups: Bool, keyboard: Bool) -> [Case] {
         func control(_ id: String) throws -> Element {
             guard let hit = window.first(where: { $0.identifier == id }) else {
                 throw AXKitError.ax(.failure, "find \(id)")
@@ -178,6 +185,36 @@ enum Check {
                 try Controls.menu(["File", "Export", "PDF…"], in: app)
             },
         ]
+        if keyboard {
+            let route = Input.Route.process(app.pid)
+            let later = DateComponents(calendar: Calendar(identifier: .gregorian), timeZone: paris,
+                                       year: 2026, month: 12, day: 3, hour: 16, minute: 41)
+            let typed = later.date!
+            all += [
+                Case(control: "fr_date", operation: "Controls.typeDate dmy", expect: .becomesDay("fr_date", typed)) {
+                    try Controls.typeDate(typed, on: try control("fr_date"), order: .dmy, route: route)
+                },
+                Case(control: "en_date", operation: "Controls.typeDate mdy", expect: .becomesDay("en_date", typed)) {
+                    try Controls.typeDate(typed, on: try control("en_date"), order: .mdy, route: route)
+                },
+                Case(control: "fr_time", operation: "Controls.typeDate time 24 h",
+                     expect: .becomesTime("fr_time", typed)) {
+                    try Controls.typeDate(typed, on: try control("fr_time"), time: true, route: route)
+                },
+                Case(control: "en_time", operation: "Controls.typeDate time 12 h",
+                     expect: .becomesTime("en_time", typed)) {
+                    try Controls.typeDate(typed, on: try control("en_time"), time: true, clock24: false,
+                                          route: route)
+                },
+                Case(control: "room", operation: "select all, type, Return", expect: .becomes("room", "Room D")) {
+                    let room = try control("room")
+                    guard Input.prepare(room) else { throw AXKitError.ax(.cannotComplete, "focus room") }
+                    try Input.selectAll(room)
+                    try Input.type("Room D", to: route)
+                    try Input.press(.return, to: route)
+                },
+            ]
+        }
         if popups {
             all.append(Case(control: "reminder", operation: "Controls.choose 5 minutes",
                             expect: .becomes("reminder", "5 minutes")) {
@@ -219,6 +256,21 @@ enum Check {
         return false
     }
 
+    static func goal(_ expect: Expect) -> ((Any?) -> Bool)? {
+        func parts(_ value: Any?, _ wanted: Set<Calendar.Component>) -> DateComponents? {
+            guard let text = value as? String, let date = ISO8601DateFormatter().date(from: text) else { return nil }
+            return Calendar.current.dateComponents(wanted, from: date)
+        }
+        switch expect {
+        case .becomes(_, let target): return { same($0, target) }
+        case .becomesDay(_, let date):
+            return { parts($0, [.year, .month, .day]) == Calendar.current.dateComponents([.year, .month, .day], from: date) }
+        case .becomesTime(_, let date):
+            return { parts($0, [.hour, .minute]) == Calendar.current.dateComponents([.hour, .minute], from: date) }
+        case .ignored, .refused: return nil
+        }
+    }
+
     static func show(_ value: Any?) -> String {
         guard let value else { return "nil" }
         if let list = value as? [Any] { return "[" + list.map { "\($0)" }.joined(separator: ", ") + "]" }
@@ -228,6 +280,8 @@ enum Check {
     static func expected(_ expect: Expect) -> String {
         switch expect {
         case .becomes(_, let value): return "→ \(value is Date ? "the date" : show(value))"
+        case .becomesDay: return "→ the day"
+        case .becomesTime: return "→ the time"
         case .ignored: return "no change"
         case .refused(_, let code): return "error \(code.rawValue)"
         }
