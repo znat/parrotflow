@@ -1299,10 +1299,11 @@ read for `text`, `place`, `people` or `code`, because it holds other
 conversations. When the climb finds no pane, those four are empty and
 `context.roster` is still published.
 
-Only the messages are published. The composer's formatting bar, the channel
-header and the sidebar are in the same window and are dropped: the author label
-is the boundary, and everything under it is language rather than the app talking
-about itself.
+Only the messages are published as `context.text`. The composer's formatting
+bar and the channel header are in the same pane and are dropped: the author
+label is the boundary, and everything under it is language rather than the app
+talking about itself. The sidebar is kept out of `context.text` too, and is
+published on its own as `context.roster`: every channel and person it lists.
 
 An app that is neither is declined out loud. Adding one means measuring it and
 naming it in `AppProfile.treeBundleIDs`, because the walk picks its subtree by
@@ -1319,9 +1320,10 @@ reading and a stage reading agreed 15 times, and both differences were under 35
 characters of spinner and token counter. The reason to take the earlier one is
 not that it is fresher. It is that the pane is certain.
 
-The read costs about 1ms on a small pane and 36–39ms on a long scrollback, so it
-runs on a background queue after the recorder has started. It is skipped
-entirely unless some pipeline names the stage.
+A terminal read costs about 1ms on a small pane and 36–39ms on a long
+scrollback. A Slack walk costs 130–150ms. Both run on a background queue after
+the recorder has started. The read is skipped entirely unless some pipeline
+names the stage.
 
 **This does not fix where the text lands.** If you dictate into one pane and
 switch to another before the transcript is ready, the ⌘V still goes to the pane
