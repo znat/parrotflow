@@ -12,6 +12,7 @@ usage: axkit trusted
        axkit hit   <x> <y> [--app … | --pid …] [--json]
        axkit check [--json] [--popups] [--keyboard]    plays the control matrix on the fixture window, in the background
        axkit check --web [--page <index.html>] [--json]    the same on the web page, in a throwaway Chrome
+       axkit check --electron [--folder <app>] [--json]    Teams and Slack patterns, in an Electron window
 """
 
 func fail(_ message: String, _ code: Int32 = 1) -> Never {
@@ -109,6 +110,10 @@ case "hit":
     guard let element = app?.element(at: point) ?? App.element(at: point) else { fail("nothing at \(x),\(y)") }
     let node = Walk.run(from: element, options: WalkOptions(depth: 1)).nodes.first
     if has("--json") { printJSON(node) } else { node.map { print(line($0)) } }
+
+case "check" where has("--electron"):
+    let folder = value("--folder") ?? FileManager.default.currentDirectoryPath + "/Fixtures/electron-app"
+    exit(ElectronCheck.run(folder: folder, json: has("--json"), only: value("--only")))
 
 case "check" where has("--web"):
     let page = value("--page") ?? FileManager.default.currentDirectoryPath + "/Fixtures/web-controls/index.html"

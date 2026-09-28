@@ -26,3 +26,7 @@ voice/
 
 # Session working files. Large and disposable.
 scratchpad/
+
+# The Electron fixture installs its own copy of Electron.
+Fixtures/electron-app/node_modules/
+Fixtures/electron-app/package-lock.json

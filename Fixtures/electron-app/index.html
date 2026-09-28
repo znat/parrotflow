@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Web controls 0</title>
+<style>
+  body { font: 14px -apple-system, sans-serif; margin: 16px; }
+  .row { margin: 8px 0; display: flex; gap: 8px; align-items: center; }
+  [hidden] { display: none !important; }
+  .suggestions { border: 1px solid #aaa; padding: 4px; max-width: 360px; }
+  .suggestions .on { background: #dde; }
+  .chip { border: 1px solid #888; border-radius: 10px; padding: 0 6px; }
+  pre { font-size: 10px; color: #555; }
+</style>
+</head>
+<body>
+<!-- Invented people. Two share a name: the colleague and an "External" one. -->
+<div role="tablist" aria-label="App bar">
+  <button role="tab" id="tab_calendar" aria-selected="true">Calendar</button>
+  <button role="tab" id="tab_chat" aria-selected="false">Chat</button>
+</div>
+
+<!-- Teams: the calendar and its new-event form. -->
+<section id="calendar">
+  <div class="row">
+    <div role="group" id="create_main" aria-label="Create a new event.">New</div>
+    <button id="create_menu" aria-haspopup="menu" aria-expanded="false" aria-label="Create a new event.">▾</button>
+    <div role="menu" id="create_items" hidden>
+      <div role="menuitem" tabindex="-1">Event</div>
+      <div role="menuitem" tabindex="-1">Channel meeting</div>
+      <div role="menuitem" tabindex="-1">Webinar</div>
+    </div>
+  </div>
+  <form id="event" hidden onsubmit="return false">
+    <div class="row"><input id="title" aria-label="Add title" placeholder="Add title"></div>
+    <div class="row">
+      <div id="attendees" role="textbox" contenteditable="true" aria-multiline="true"
+           aria-label="Invite required attendees" style="border:1px solid #888;min-width:300px"></div>
+      <span id="chips"></span>
+    </div>
+    <!-- Teams draws its suggestions outside the accessibility tree and only
+         announces the highlighted one. -->
+    <div id="suggestions" class="suggestions" aria-hidden="true" hidden></div>
+    <div id="announce" role="status" aria-live="polite"></div>
+    <div class="row">
+      <button id="summary" aria-expanded="false"></button>
+    </div>
+    <div id="times" class="row" hidden>
+      <input id="start_date" role="combobox" aria-label="Start date" aria-expanded="false">
+      <input id="start_time" role="combobox" aria-label="Start time" aria-expanded="false">
+      <span>to</span><span id="end_time"></span>
+    </div>
+    <div id="discard" role="dialog" aria-label="Discard changes?" hidden>
+      <span>Discard changes?</span>
+      <button id="discard_yes">Discard</button><button id="discard_no">Continue editing</button>
+    </div>
+  </form>
+</section>
+
+<!-- Slack: a new message to people, and its composer. -->
+<section id="chat" hidden>
+  <div class="row"><button id="new_message">New message</button></div>
+  <div id="compose" hidden>
+    <div class="row">
+      <input id="to" role="combobox" aria-label="To:" aria-expanded="false" aria-controls="to_items">
+      <div role="menu" id="to_items" hidden></div>
+    </div>
+    <div class="row">
+      <div id="message" role="textbox" contenteditable="true" aria-multiline="true"
+           aria-label="Message" style="border:1px solid #888;min-width:400px;min-height:40px"></div>
+    </div>
+  </div>
+</section>
+
+<pre id="truth"></pre>
+<script src="../web-controls/truth.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

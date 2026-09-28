@@ -1,0 +1,9 @@
+{
+  "name": "axkit-electron-fixture",
+  "private": true,
+  "description": "An Electron window that copies the patterns of Teams and Slack, for axkit check --electron.",
+  "main": "main.js",
+  "devDependencies": {
+    "electron": "44.4.5"
+  }
+}

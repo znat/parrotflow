@@ -40,9 +40,16 @@ enum WebCheck {
         guard Check.wait(30, { (truth(app)?["libs"] as? [String: Any])?.count ?? 0 >= 3 }) else {
             fail("the page did not finish loading in 30 s: \(truth(app).map { "\($0["libs"] ?? "")" } ?? "no truth")")
         }
+        let rows = play(app, cases(app, keys: keys).filter { only == nil || $0.key == only })
+        Check.report(rows, json: json)
+        return rows.allSatisfy { $0.pass && !$0.tookFocus } ? 0 : 1
+    }
+
+    /// Plays each case and reads the page's truth before and after it.
+    static func play(_ app: App, _ cases: [Case]) -> [Check.Row] {
         let front = App.frontmost?.pid
         var rows: [Check.Row] = []
-        for item in cases(app, keys: keys) where only == nil || item.key == only {
+        for item in cases {
             let before = truth(app) ?? [:]
             var declined: String?
             do { try item.run() } catch { declined = "\(error)" }
@@ -61,8 +68,7 @@ enum WebCheck {
                                   expected: item.becomes.map { "→ \(Check.show($0))" } ?? "declined, no change",
                                   got: got, pass: pass, tookFocus: App.frontmost?.pid != front))
         }
-        Check.report(rows, json: json)
-        return rows.allSatisfy { $0.pass && !$0.tookFocus } ? 0 : 1
+        return rows
     }
 
     struct Case {
@@ -74,12 +80,7 @@ enum WebCheck {
     }
 
     static func cases(_ app: App, keys: Bool) -> [Case] {
-        func byDom(_ id: String) throws -> Element {
-            guard let window = app.windows.first(where: { Glob.matches("Web controls*", $0.title ?? "") }),
-                  let hit = Walk.find(in: window, dom: id, options: WalkOptions(budget: 20000)).first?.0
-            else { throw AXKitError.ax(.failure, "find #\(id)") }
-            return hit
-        }
+        let byDom = { (id: String) in try WebCheck.byDom(app, id) }
         let parts = DateComponents(calendar: Calendar(identifier: .gregorian), year: 2026, month: 12, day: 3)
         return [
             Case(key: "n_text", operation: "Controls.setText (input)", becomes: "Weekly sync") {
@@ -122,6 +123,13 @@ enum WebCheck {
                 try Controls.press(try byDom("a_disclosure"))
             },
         ]
+    }
+
+    static func byDom(_ app: App, _ id: String) throws -> Element {
+        guard let window = app.windows.first(where: { Glob.matches("Web controls*", $0.title ?? "") }),
+              let hit = Walk.find(in: window, dom: id, options: WalkOptions(budget: 20000)).first?.0
+        else { throw AXKitError.ax(.failure, "find #\(id)") }
+        return hit
     }
 
     /// The page's `<pre id="truth">`, parsed.
