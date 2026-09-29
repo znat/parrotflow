@@ -29,11 +29,12 @@ enum WebCheck {
             return instance != nil
         }
         guard let instance else { fail("the throwaway Chrome did not start") }
-        defer {
+        cleanups.append {
             instance.terminate()
             _ = Check.wait(5) { instance.isTerminated }
             try? FileManager.default.removeItem(atPath: profile)
         }
+        defer { cleanups.removeLast()() }
         let app = App(pid: instance.processIdentifier)
         app.wake()
         // The libraries load from a CDN: wait for all three to report.
@@ -50,9 +51,14 @@ enum WebCheck {
         let front = App.frontmost?.pid
         var rows: [Check.Row] = []
         for item in cases {
+            stopIfLocked()
             let before = truth(app) ?? [:]
             var declined: String?
-            do { try item.run() } catch { declined = "\(error)" }
+            var measured = false
+            do { try item.run() } catch AXKitError.ax(.success, let what) {
+                measured = true
+                declined = what
+            } catch { declined = "\(error)" }
             var now = truth(app) ?? [:]
             if let target = item.becomes {
                 _ = Check.wait(2) { now = truth(app) ?? [:]; return Check.same(now[item.key], target) }
@@ -61,7 +67,8 @@ enum WebCheck {
                 now = truth(app) ?? [:]
             }
             let changed = !Check.same(now[item.key], before[item.key] as Any)
-            let pass = item.becomes.map { declined == nil && Check.same(now[item.key], $0) } ?? (declined != nil && !changed)
+            let pass = item.measure ? measured
+                : item.becomes.map { declined == nil && Check.same(now[item.key], $0) } ?? (declined != nil && !changed)
             let got = (declined.map { "declined: \($0)" + (changed ? "; the page got \(Check.show(now[item.key]))" : "") })
                 ?? (changed ? "→ \(Check.show(now[item.key]))" : "no change")
             rows.append(Check.Row(control: item.key, operation: item.operation,
@@ -76,13 +83,38 @@ enum WebCheck {
         let operation: String
         /// nil: the operation must decline and leave the page as it was.
         let becomes: Any?
+        /// A measurement: it passes by throwing `.success`, fails otherwise.
+        var measure = false
         let run: () throws -> Void
+
+        init(key: String, operation: String, becomes: Any?, measure: Bool = false, run: @escaping () throws -> Void) {
+            (self.key, self.operation, self.becomes, self.measure, self.run) = (key, operation, becomes, measure, run)
+        }
     }
 
     static func cases(_ app: App, keys: Bool) -> [Case] {
         let byDom = { (id: String) in try WebCheck.byDom(app, id) }
         let parts = DateComponents(calendar: Calendar(identifier: .gregorian), year: 2026, month: 12, day: 3)
         return [
+            Case(key: "n_textarea", operation: "Controls.insert (textarea, no keys)", becomes: "Inserted") {
+                let field = try byDom("n_textarea")
+                try Input.selectAll(field)
+                try Controls.insert("Inserted", into: field)
+            },
+            Case(key: "n_editable", operation: "Controls.insert (contenteditable, no keys)", becomes: "Inserted") {
+                let field = try byDom("n_editable")
+                try Input.selectAll(field)
+                try Controls.insert("Inserted", into: field)
+            },
+            Case(key: "r_text", operation: "Controls.insert (React input, no keys)", becomes: "Inserted") {
+                let field = try byDom("r_text")
+                try Input.selectAll(field)
+                try Controls.insert("Inserted", into: field)
+            },
+            Case(key: "n_textarea", operation: "Controls.typeText special characters", becomes: Check.special) {
+                let field = try byDom("n_textarea")
+                try Controls.typeText(Check.special, into: field, route: .process(field.pid ?? 0))
+            },
             Case(key: "n_text", operation: "Controls.setText (input)", becomes: "Weekly sync") {
                 try Controls.setText("Weekly sync", on: try byDom("n_text"))
             },
@@ -125,10 +157,15 @@ enum WebCheck {
         ]
     }
 
+    /// Tries for up to 2 s: a page's tree can be rebuilding.
     static func byDom(_ app: App, _ id: String) throws -> Element {
-        guard let window = app.windows.first(where: { Glob.matches("Web controls*", $0.title ?? "") }),
-              let hit = Walk.find(in: window, dom: id, options: WalkOptions(budget: 20000)).first?.0
-        else { throw AXKitError.ax(.failure, "find #\(id)") }
+        var hit: Element?
+        _ = Check.wait(2) {
+            hit = app.windows.first(where: { Glob.matches("Web controls*", $0.title ?? "") })
+                .flatMap { Walk.find(in: $0, dom: id, options: WalkOptions(budget: 20000)).first?.0 }
+            return hit != nil
+        }
+        guard let hit else { throw AXKitError.ax(.failure, "find #\(id)") }
         return hit
     }
 

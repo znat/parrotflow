@@ -6,6 +6,10 @@ import Foundation
 /// control operation through accessibility only, and compares what the window
 /// reports it received with what was measured on 2026-09-27.
 enum Check {
+    /// Accents, AZERTY dead keys, emoji with a skin tone, right-to-left and
+    /// CJK text: what `type` must pass through untouched.
+    static let special = "é à ç ô ü ï ñ ß € £ « » – … ^ ¨ 🙂👍🏽 مرحبا שלום 日本語"
+
     enum Expect {
         /// The truth key takes this value.
         case becomes(String, Any)
@@ -35,6 +39,41 @@ enum Check {
     }
 
     static func run(json: Bool, popups: Bool, keyboard: Bool) -> Int32 {
+        let rows = play(popups: popups, keyboard: keyboard)
+        report(rows, json: json)
+        return rows.allSatisfy { $0.pass && !$0.tookFocus } ? 0 : 1
+    }
+
+    /// The matrix `times` times over, each with a fresh fixture: which cases
+    /// do not pass every time.
+    static func repeated(_ times: Int, popups: Bool, keyboard: Bool) -> Int32 {
+        var tally: [String: (pass: Int, runs: Int, focus: Int, last: String)] = [:]
+        var order: [String] = []
+        let started = Date()
+        for round in 1...times {
+            for row in play(popups: popups, keyboard: keyboard) where !row.got.hasPrefix("skipped") {
+                let key = "\(row.control) · \(row.operation)"
+                if tally[key] == nil { order.append(key) }
+                var entry = tally[key] ?? (0, 0, 0, "")
+                entry.runs += 1
+                if row.pass { entry.pass += 1 } else { entry.last = row.got }
+                if row.tookFocus { entry.focus += 1 }
+                tally[key] = entry
+            }
+            FileHandle.standardError.write("round \(round)/\(times) done\n".data(using: .utf8)!)
+        }
+        let unstable = order.filter { tally[$0]!.pass < tally[$0]!.runs || tally[$0]!.focus > 0 }
+        for key in unstable {
+            let entry = tally[key]!
+            print("\(entry.pass)/\(entry.runs)  \(key)" + (entry.focus > 0 ? "  took the focus \(entry.focus)×" : "")
+                  + (entry.last.isEmpty ? "" : "  last failure: \(entry.last)"))
+        }
+        print("-- \(order.count - unstable.count)/\(order.count) cases passed all \(times) rounds, "
+              + "\(Int(Date().timeIntervalSince(started))) s")
+        return unstable.isEmpty ? 0 : 1
+    }
+
+    static func play(popups: Bool, keyboard: Bool) -> [Row] {
         let binary = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
             .appendingPathComponent("AXKitFixtures").path
         guard FileManager.default.isExecutableFile(atPath: binary) else {
@@ -47,7 +86,8 @@ enum Check {
         fixture.arguments = ["300", "--state", state, "--background"]
         fixture.standardOutput = FileHandle.nullDevice
         do { try fixture.run() } catch { fail("could not start the fixture app: \(error)") }
-        defer { fixture.terminate() }
+        cleanups.append { fixture.terminate() }
+        defer { cleanups.removeLast()() }
 
         let app = App(pid: fixture.processIdentifier)
         guard wait(10, { truth(state) != nil && window(app) != nil }), let window = window(app) else {
@@ -56,6 +96,7 @@ enum Check {
         let front = App.frontmost?.pid
         var rows: [Row] = []
         for item in cases(app: app, window: window, popups: popups, keyboard: keyboard) {
+            stopIfLocked()
             let before = truth(state) ?? [:]
             var refusal: AXError?
             do { try item.run() } catch AXKitError.ax(let code, _) { refusal = code } catch {
@@ -93,8 +134,7 @@ enum Check {
             rows.append(Row(control: item.control, operation: item.operation, expected: wanted, got: got,
                             pass: pass, tookFocus: App.frontmost?.pid != front))
         }
-        report(rows, json: json)
-        return rows.allSatisfy { $0.pass && !$0.tookFocus } ? 0 : 1
+        return rows
     }
 
     // MARK: - The cases
@@ -219,6 +259,36 @@ enum Check {
                     throw AXKitError.ax(.failure, "the image is \(image.width)×\(image.height)")
                 }
             },
+            // On a private pasteboard, so the user's is never touched.
+            Case(control: "clipboard", operation: "save, replace, restore: rich items", expect: .ignored("volume")) {
+                let board = NSPasteboard(name: NSPasteboard.Name("axkit-check-\(ProcessInfo.processInfo.processIdentifier)"))
+                defer { board.releaseGlobally() }
+                board.clearContents()
+                let image = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in
+                    NSColor.systemPurple.setFill(); rect.fill(); return true }
+                let rich = NSAttributedString(string: "bold", attributes: [.font: NSFont.boldSystemFont(ofSize: 12)])
+                let text = NSPasteboardItem()
+                text.setString("plain", forType: .string)
+                text.setData(try rich.data(from: NSRange(location: 0, length: 4),
+                                           documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]),
+                             forType: .rtf)
+                let picture = NSPasteboardItem()
+                picture.setData(image.tiffRepresentation!, forType: .tiff)
+                board.writeObjects([text, picture, URL(fileURLWithPath: "/tmp/axkit.txt") as NSURL])
+                func snapshot() -> [[String: Data]] {
+                    (board.pasteboardItems ?? []).map { item in
+                        Dictionary(uniqueKeysWithValues: item.types.compactMap { t in item.data(forType: t).map { (t.rawValue, $0) } })
+                    }
+                }
+                let before = snapshot()
+                let saved = Clipboard.save(board)
+                Clipboard.put(text: "temporary", on: board)
+                Clipboard.restore(saved, to: board)
+                let after = snapshot()
+                guard before == after else {
+                    throw AXKitError.ax(.failure, "\(before.count) items with \(before.map(\.count)) types became \(after.count) with \(after.map(\.count))")
+                }
+            },
             Case(control: "keyboard", operation: "the layout has a key for v", expect: .ignored("volume")) {
                 guard Input.keyCode(for: "v") != nil else { throw AXKitError.ax(.failure, "no key for v") }
             },
@@ -259,6 +329,13 @@ enum Check {
                     let zone = try window.first(where: { $0.identifier == "file_zone" })
                         ?? { throw AXKitError.ax(.failure, "find file_zone") }()
                     try Controls.paste(files: [file], into: zone)
+                },
+                Case(control: "notes", operation: "type accents, dead keys, emoji, RTL, CJK",
+                     expect: .becomes("notes", Check.special)) {
+                    let notes = try control("notes")
+                    guard Input.prepare(notes) else { throw AXKitError.ax(.cannotComplete, "focus notes") }
+                    try Input.selectAll(notes)
+                    try Input.type(Check.special, to: route)
                 },
                 Case(control: "room", operation: "select all, type, Return", expect: .becomes("room", "Room D")) {
                     let room = try control("room")

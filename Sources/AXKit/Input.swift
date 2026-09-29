@@ -98,6 +98,11 @@ public enum Input {
     public static func prepare(_ element: Element) -> Bool {
         if let window = element.window {
             try? window.set(kAXMainAttribute, to: kCFBooleanTrue)
+            // Chromium delivers keys to its focused window only; main is not
+            // enough (Electron, 09-28).
+            if let pid = element.pid {
+                try? App(pid: pid).element.set(kAXFocusedWindowAttribute, to: window.ref)
+            }
         }
         try? element.set(kAXFocusedAttribute, to: kCFBooleanTrue)
         return Controls.wait { element.isFocused == true }

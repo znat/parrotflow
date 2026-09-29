@@ -33,6 +33,12 @@ final class ControlsSurface: NSObject {
 
     static let timeZone = TimeZone(identifier: "Europe/Paris")!
 
+    /// For layout checks: several windows by title, one with a minimum
+    /// size, one that ignores moves as the Finder did.
+    var title = "Controls"
+    var minimum: NSSize?
+    var refusesMoves = false
+
     init(statePath: String) {
         self.statePath = statePath
     }
@@ -208,10 +214,13 @@ final class ControlsSurface: NSObject {
         columns.spacing = 24
         columns.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
 
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 640),
-                          styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                          backing: .buffered, defer: false)
-        window.title = "Controls"
+        let stubborn = StubbornWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 640),
+                                      styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                                      backing: .buffered, defer: false)
+        stubborn.refusesMoves = refusesMoves
+        window = stubborn
+        window.title = title
+        if let minimum { window.contentMinSize = minimum }
         window.isReleasedWhenClosed = false
         window.contentView = columns
         window.center()
@@ -537,5 +546,22 @@ final class FileZone: NSTextView {
         guard !names.isEmpty else { return super.performDragOperation(sender) }
         received?("dropped_files", names)
         return true
+    }
+}
+
+
+/// A window that keeps its place when told to move, as the Finder did on
+/// 09-28, while taking a new size.
+final class StubbornWindow: NSWindow {
+    var refusesMoves = false
+
+    override func setFrameOrigin(_ point: NSPoint) {
+        if !refusesMoves { super.setFrameOrigin(point) }
+    }
+
+    override func setFrame(_ rect: NSRect, display: Bool) {
+        guard refusesMoves, isVisible else { return super.setFrame(rect, display: display) }
+        super.setFrame(NSRect(x: frame.minX, y: frame.maxY - rect.height, width: rect.width, height: rect.height),
+                       display: display)
     }
 }

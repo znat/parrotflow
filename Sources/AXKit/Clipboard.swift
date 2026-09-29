@@ -7,8 +7,8 @@ public enum Clipboard {
         let items: [[NSPasteboard.PasteboardType: Data]]
     }
 
-    public static func save() -> Saved {
-        let items = NSPasteboard.general.pasteboardItems ?? []
+    public static func save(_ board: NSPasteboard = .general) -> Saved {
+        let items = board.pasteboardItems ?? []
         return Saved(items: items.map { item in
             var kept: [NSPasteboard.PasteboardType: Data] = [:]
             for type in item.types { kept[type] = item.data(forType: type) }
@@ -16,8 +16,7 @@ public enum Clipboard {
         })
     }
 
-    public static func restore(_ saved: Saved) {
-        let board = NSPasteboard.general
+    public static func restore(_ saved: Saved, to board: NSPasteboard = .general) {
         board.clearContents()
         let items = saved.items.map { kept -> NSPasteboardItem in
             let item = NSPasteboardItem()
@@ -27,13 +26,13 @@ public enum Clipboard {
         if !items.isEmpty { board.writeObjects(items) }
     }
 
-    public static func put(text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+    public static func put(text: String, on board: NSPasteboard = .general) {
+        board.clearContents()
+        board.setString(text, forType: .string)
     }
 
-    public static func put(files: [URL]) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects(files as [NSURL])
+    public static func put(files: [URL], on board: NSPasteboard = .general) {
+        board.clearContents()
+        board.writeObjects(files as [NSURL])
     }
 }

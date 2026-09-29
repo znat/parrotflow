@@ -17,8 +17,10 @@ public struct App: Sendable {
         return found.map { App(pid: $0.processIdentifier) }
     }
 
+    /// Asked of accessibility first: NSWorkspace's answer goes stale in a
+    /// process that runs no event loop, such as a command-line tool.
     public static var frontmost: App? {
-        NSWorkspace.shared.frontmostApplication.map { App(pid: $0.processIdentifier) }
+        focused ?? NSWorkspace.shared.frontmostApplication.map { App(pid: $0.processIdentifier) }
     }
 
     /// The app with the keyboard focus. Spotlight or a system dialog has it

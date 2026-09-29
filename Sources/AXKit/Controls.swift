@@ -25,6 +25,7 @@ public enum Controls {
     /// A page's date input is set part by part; `keys: false` keeps it to
     /// accessibility calls.
     public static func setDate(_ date: Date, on element: Element, keys: Bool = true) throws -> Outcome {
+        if let done = try inFront(element, { try setDate(date, on: element, keys: keys) }) { return done }
         if element.role == "AXDateField" || element.role == "AXTimeField" {
             return try setPageDate(date, on: element, keys: keys)
         }
@@ -44,6 +45,7 @@ public enum Controls {
     /// and the page is not told. So a page's text area is typed into.
     @discardableResult
     public static func setText(_ text: String, on element: Element) throws -> Outcome {
+        if let done = try inFront(element, { try setText(text, on: element) }) { return done }
         if element.role == kAXTextAreaRole, element.isInWebArea, let pid = element.pid {
             return try typeText(text, into: element, route: .process(pid))
         }
@@ -60,6 +62,7 @@ public enum Controls {
     /// stepped to the number instead.
     @discardableResult
     public static func setNumber(_ number: Double, on element: Element) throws -> Outcome {
+        if let done = try inFront(element, { try setNumber(number, on: element) }) { return done }
         let before = element.valueText
         if element.isInWebArea { return try stepTo(number, element) }
         try element.set(kAXValueAttribute, to: number as NSNumber)
@@ -74,6 +77,7 @@ public enum Controls {
     /// ignores a value set, so this is the way to move one.
     @discardableResult
     public static func step(_ element: Element, by count: Int) throws -> Outcome {
+        if let done = try inFront(element, { try step(element, by: count) }) { return done }
         let before = element.valueText
         let action = count >= 0 ? kAXIncrementAction : kAXDecrementAction
         for _ in 0..<abs(count) { try element.perform(action) }
@@ -89,6 +93,7 @@ public enum Controls {
     /// nothing changes.
     @discardableResult
     public static func ensure(_ on: Bool, _ element: Element) throws -> Outcome {
+        if let done = try inFront(element, { try ensure(on, element) }) { return done }
         let state = { (element.value as? NSNumber).map { $0.intValue == 1 } }
         let before = state()
         if before == nil { throw AXKitError.unreadable("turn \(on ? "on" : "off") \(describe(element))") }
@@ -108,6 +113,7 @@ public enum Controls {
     /// general; the caller checks what the press was for.
     @discardableResult
     public static func press(_ element: Element) throws -> Outcome {
+        if let done = try inFront(element, { try press(element) }) { return done }
         try element.perform(kAXPressAction)
         return Outcome(before: nil, after: nil, method: "AXPress", verified: nil)
     }
@@ -116,6 +122,7 @@ public enum Controls {
     /// set, and its items are not children until it is open.
     @discardableResult
     public static func choose(_ item: String, in popup: Element) throws -> Outcome {
+        if let done = try inFront(popup, { try choose(item, in: popup) }) { return done }
         let before = popup.valueText
         guard before != item else {
             return Outcome(before: before, after: before, method: "none, already chosen", verified: true)
@@ -206,6 +213,7 @@ public enum Controls {
     /// accessibility, then the text as keys to the field's process.
     @discardableResult
     public static func typeText(_ text: String, into element: Element, route: Input.Route) throws -> Outcome {
+        if let done = try inFront(element, { try typeText(text, into: element, route: route) }) { return done }
         let before = element.valueText
         guard Input.prepare(element) else { throw AXKitError.ax(.cannotComplete, "focus \(describe(element))") }
         try Input.selectAll(element)
@@ -303,10 +311,23 @@ public enum Controls {
     /// Inserts text at the caret, replacing the selection, as a paste would,
     /// through accessibility: no pasteboard and no key, so it works with the
     /// app in the background.
+    ///
+    /// Measured 09-28 in Chrome: AXSelectedText returns success and changes
+    /// nothing in a textarea, a contenteditable or a React input. In a page
+    /// the text is typed at the caret instead, as keys to the process.
     @discardableResult
     public static func insert(_ text: String, into element: Element) throws -> Outcome {
+        if let done = try inFront(element, { try insert(text, into: element) }) { return done }
         let before = element.valueText
         guard Input.prepare(element) else { throw AXKitError.ax(.cannotComplete, "focus \(describe(element))") }
+        if element.isInWebArea, let pid = element.pid {
+            try Input.type(text, to: .process(pid))
+            let ok = wait { (element.valueText ?? "").contains(text) }
+            let outcome = Outcome(before: before, after: element.valueText, method: "keys at the caret (page)",
+                                  verified: ok)
+            if !ok { throw AXKitError.notApplied("type into \(describe(element))") }
+            return outcome
+        }
         try element.set(kAXSelectedTextAttribute, to: text as NSString)
         let ok = wait { (element.valueText ?? "").contains(text) }
         let outcome = Outcome(before: before, after: element.valueText, method: "set AXSelectedText", verified: ok)
@@ -341,6 +362,51 @@ public enum Controls {
         guard app.activate() else { throw Input.Refusal.notFrontmost(expected: pid, actual: App.frontmost?.pid) }
         try Input.shortcut("v", .command, to: .frontmost(pid))
         return Outcome(before: nil, after: nil, method: "in front, ⌘V", verified: nil)
+    }
+
+    /// A field that lists suggestions as you type (To:, attendees, a
+    /// search): types `text`, waits until the field holds it and the list
+    /// has stopped changing, then presses the suggestion named `name`. Each
+    /// typed letter rebuilds such a list; a row taken from an earlier one is
+    /// gone by the time it is pressed (measured 09-28: 2 misses in 5).
+    @discardableResult
+    public static func pick(_ name: String, typing text: String, into field: Element,
+                            in window: Element, timeout: Double = 3) throws -> Outcome {
+        if let done = try inFront(field, { try pick(name, typing: text, into: field, in: window, timeout: timeout) }) {
+            return done
+        }
+        guard let pid = field.pid else { throw AXKitError.ax(.invalidUIElement, "no process") }
+        let before = field.valueText
+        guard Input.prepare(field) else { throw AXKitError.ax(.cannotComplete, "focus \(describe(field))") }
+        try Input.type(text, to: .process(pid))
+        let end = Date().addingTimeInterval(timeout)
+        let rowRoles: Set<String> = [kAXMenuItemRole, kAXRowRole, "AXCell", kAXStaticTextRole, "AXOption"]
+        func rows() -> [Element] {
+            var found: [Element] = []
+            var queue = window.children
+            var left = 5000
+            while !queue.isEmpty, left > 0 {
+                let element = queue.removeFirst()
+                left -= 1
+                if rowRoles.contains(element.role ?? ""), element.shownText == name { found.append(element) }
+                queue.append(contentsOf: element.children)
+            }
+            return found
+        }
+        while Date() < end, !(field.valueText ?? "").contains(text) { Thread.sleep(forTimeInterval: 0.05) }
+        var chosen: Element?
+        var last: [Element] = []
+        while Date() < end {
+            let now = rows()
+            if !now.isEmpty, now == last { chosen = now.first; break }
+            last = now
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+        guard let chosen else { throw AXKitError.ax(.failure, "no suggestion \"\(name)\" after typing \"\(text)\"") }
+        try chosen.perform(kAXPressAction)
+        let gone = wait { !rows().contains(chosen) }
+        return Outcome(before: before, after: field.valueText, method: "typed, waited for the list, pressed",
+                       verified: gone ? nil : false)
     }
 
     public enum DateOrder: String, Sendable {
@@ -401,6 +467,25 @@ public enum Controls {
         let outcome = Outcome(before: before.map(iso), after: (area.value as? Date).map(iso),
                               method: "keys \(fields.joined(separator: " → "))", verified: ok)
         if !ok { throw AXKitError.notApplied("type the \(time ? "time" : "date") of \(describe(area))") }
+        return outcome
+    }
+
+    /// Set while an operation runs in front, so it does not ask again.
+    nonisolated(unsafe) static var inFrontNow = false
+
+    /// The operation again with the element's app in front, when the element
+    /// is in a page whose window nobody can see; nil when it is not needed.
+    static func inFront(_ element: Element, _ body: () throws -> Outcome) throws -> Outcome? {
+        guard !inFrontNow, element.isInWebArea else { return nil }
+        inFrontNow = true
+        defer { inFrontNow = false }
+        var ranInFront = false
+        let run = { (front: Bool) throws -> Outcome in
+            ranInFront = front
+            return try body()
+        }
+        var outcome = try Foreground.ifHidden(element, run)
+        if ranInFront { outcome.method += ", in front: a page behind other windows takes nothing" }
         return outcome
     }
 

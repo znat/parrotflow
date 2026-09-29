@@ -13,11 +13,26 @@ usage: axkit trusted
        axkit check [--json] [--popups] [--keyboard]    plays the control matrix on the fixture window, in the background
        axkit check --web [--page <index.html>] [--json]    the same on the web page, in a throwaway Chrome
        axkit check --electron [--folder <app>] [--json]    Teams and Slack patterns, in an Electron window
+       axkit check --layout [--json]    fixture windows in halves and thirds on each screen, in the background
        axkit check --drag [--json]    a file dragged from the Finder, in the foreground: hands off the mouse
 """
 
+/// Closes what a check opened: `fail` exits without running `defer`, and a
+/// fixture left open blocks the next run (one Electron per profile).
+var cleanups: [() -> Void] = []
+
+/// A locked screen hides every window's contents and refuses keys: whatever
+/// a check measures after it is meaningless, so the check stops there.
+func stopIfLocked() {
+    let session = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]
+    if (session["CGSSessionScreenIsLocked"] as? Bool) == true {
+        fail("the screen is locked: the check stops here, and what follows would measure nothing")
+    }
+}
+
 func fail(_ message: String, _ code: Int32 = 1) -> Never {
     FileHandle.standardError.write((message + "\n").data(using: .utf8)!)
+    cleanups.reversed().forEach { $0() }
     exit(code)
 }
 
@@ -112,6 +127,9 @@ case "hit":
     let node = Walk.run(from: element, options: WalkOptions(depth: 1)).nodes.first
     if has("--json") { printJSON(node) } else { node.map { print(line($0)) } }
 
+case "check" where has("--layout"):
+    exit(LayoutCheck.run(json: has("--json")))
+
 case "check" where has("--drag"):
     exit(DragCheck.run(json: has("--json")))
 
@@ -122,6 +140,9 @@ case "check" where has("--electron"):
 case "check" where has("--web"):
     let page = value("--page") ?? FileManager.default.currentDirectoryPath + "/Fixtures/web-controls/index.html"
     exit(WebCheck.run(page: page, json: has("--json"), only: value("--only"), keys: !has("--no-keys")))
+
+case "check" where value("--repeat") != nil:
+    exit(Check.repeated(Int(value("--repeat")!) ?? 5, popups: has("--popups"), keyboard: has("--keyboard")))
 
 case "check":
     exit(Check.run(json: has("--json"), popups: has("--popups"), keyboard: has("--keyboard")))
