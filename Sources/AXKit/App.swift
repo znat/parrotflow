@@ -91,18 +91,45 @@ public struct App: Sendable {
     /// Brings the app in front and says whether it is. This takes the
     /// focus: a foreground step. Since macOS 14 an app may not activate
     /// another unless it is active itself, so accessibility's AXFrontmost is
-    /// tried first; NSRunningApplication.activate is the fallback.
+    /// tried first, then NSRunningApplication.activate, then Launch Services,
+    /// as `open -b` does. The app says it is frontmost before its menus
+    /// follow: wait for the item itself to be enabled (Safari, 09-29).
+    /// Which try brought the app in front last: "accessibility",
+    /// "NSRunningApplication", "Launch Services", or nil when none did.
+    nonisolated(unsafe) public static var lastActivation: String?
+
     @discardableResult
     public func activate(timeout: Double = 2) -> Bool {
+        App.lastActivation = nil
         try? element.set(kAXFrontmostAttribute, to: kCFBooleanTrue)
+        if waitFrontmost(timeout) { App.lastActivation = "accessibility"; return true }
+        running?.activate()
+        if waitFrontmost(0.5) { App.lastActivation = "NSRunningApplication"; return true }
+        // Launch Services picks the instance by bundle: with two running
+        // (a throwaway Chrome beside the user's), it could pick the other.
+        guard let bundle = bundleIdentifier, let url = running?.bundleURL,
+              NSRunningApplication.runningApplications(withBundleIdentifier: bundle).count == 1 else { return false }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.addsToRecentItems = false
+        let done = DispatchSemaphore(value: 0)
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in done.signal() }
+        _ = done.wait(timeout: .now() + timeout)
+        guard waitFrontmost(timeout) else { return false }
+        App.lastActivation = "Launch Services"
+        return true
+    }
+
+    /// Until the app says it is frontmost and the system gives it the
+    /// focus, which comes later: keys sent between go to the old app.
+    func waitFrontmost(_ timeout: Double) -> Bool {
+        let front = { self.isFrontmost && App.focused?.pid == self.pid }
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {
-            if isFrontmost { return true }
+            if front() { return true }
             Thread.sleep(forTimeInterval: 0.05)
         }
-        running?.activate()
-        Thread.sleep(forTimeInterval: 0.3)
-        return isFrontmost
+        return front()
     }
 
     /// The window becomes the app's main one and is raised within the app,

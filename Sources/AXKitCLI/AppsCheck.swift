@@ -29,6 +29,18 @@ enum AppsCheck {
         }
         rows.append(Check.Row(control: "Calculator", operation: "App.launch in the background",
                               expected: "running, not in front", got: got, pass: pass, tookFocus: false))
+
+        // A foreground step: Calculator in front, then the app that was.
+        if let calc = App.named(calculator), let front {
+            let came = calc.activate()
+            let cameBy = App.lastActivation ?? "none"
+            let back = front.activate()
+            let backBy = App.lastActivation ?? "none"
+            rows.append(Check.Row(control: "Calculator", operation: "App.activate, then back",
+                                  expected: "in front, then \(front.name ?? "the app") back",
+                                  got: "\(came ? "came in front" : "stayed behind") (\(cameBy)), \(back ? "\(front.name ?? "the app") back" : "the app did not come back") (\(backBy))",
+                                  pass: came && back, tookFocus: false))
+        }
         if !calcWasRunning { running(calculator)?.terminate() }
 
         let textEdit = "com.apple.TextEdit"

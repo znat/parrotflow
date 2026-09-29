@@ -198,21 +198,17 @@ enum SafariCheck {
         }
         let front = App.frontmost
         FileHandle.standardError.write("Safari comes in front to delete the check's visits\n".data(using: .utf8)!)
-        // App.activate is refused here; Launch Services is not (09-29).
-        let open = Process()
-        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        open.arguments = ["-b", safari]
-        try? open.run()
-        open.waitUntilExit()
-        Thread.sleep(forTimeInterval: 0.8)
+        _ = app.activate()
+        FileHandle.standardError.write("Safari in front by \(App.lastActivation ?? "nothing")\n".data(using: .utf8)!)
         try? list.set(kAXFocusedAttribute, to: kCFBooleanTrue)
         let ours = list.elements(kAXRowsAttribute).filter(isOurs)
         try? list.set(kAXSelectedRowsAttribute, to: ours.map(\.ref) as CFArray)
         let selected = list.elements(kAXSelectedRowsAttribute)
-        // Edit > Delete has no shortcut to find it by. The Delete key is
-        // refused: accessibility still names the old front app (09-29).
+        // Edit > Delete has no shortcut to find it by. It is enabled a moment
+        // after Safari says it is in front (09-29).
         let edit = app.element.element(kAXMenuBarAttribute)?.children.first { $0.title == "Edit" }
         let delete = edit?.first(budget: 60) { $0.role == kAXMenuItemRole && $0.title == "Delete" }
+        _ = Check.wait(3) { delete?.isEnabled == true }
         if !selected.isEmpty, selected.allSatisfy(isOurs), let delete {
             try? delete.perform(kAXPressAction)
         } else {
@@ -221,13 +217,7 @@ enum SafariCheck {
         _ = Check.wait(2) { !list.elements(kAXRowsAttribute).contains(where: isOurs) }
         let left = list.elements(kAXRowsAttribute).filter(isOurs).count
         FileHandle.standardError.write("AXKit visits left in Safari's history: \(left)\n".data(using: .utf8)!)
-        if let bundle = front?.bundleIdentifier {
-            let back = Process()
-            back.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            back.arguments = ["-b", bundle]
-            try? back.run()
-            back.waitUntilExit()
-        }
+        front?.activate()
     }
 
     static func quit(_ app: App) {
