@@ -14,7 +14,7 @@ usage: axkit trusted
        axkit check --web [--page <index.html>] [--json]    the same on the web page, in a throwaway Chrome
        axkit check --electron [--folder <app>] [--json]    Teams and Slack patterns, in an Electron window
        axkit check --apps [--json]    Calculator and a file opened in the background, then quit
-       axkit check --layout [--json]    fixture windows in halves and thirds on each screen, in the background
+       axkit check --layout [--fullscreen] [--json]    fixture windows in halves and thirds on each screen, in the background
        axkit check --drag [--json]    a file dragged from the Finder, in the foreground: hands off the mouse
 """
 
@@ -132,7 +132,7 @@ case "check" where has("--apps"):
     exit(AppsCheck.run(json: has("--json")))
 
 case "check" where has("--layout"):
-    exit(LayoutCheck.run(json: has("--json")))
+    exit(LayoutCheck.run(json: has("--json"), fullScreen: has("--fullscreen")))
 
 case "check" where has("--drag"):
     exit(DragCheck.run(json: has("--json")))

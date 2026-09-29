@@ -28,7 +28,7 @@ enum LayoutCheck {
         return element.map { Window(process: fixture, element: $0) }
     }
 
-    static func run(json: Bool) -> Int32 {
+    static func run(json: Bool, fullScreen: Bool = false) -> Int32 {
         guard let a = open("Tile A"), let b = open("Tile B"), let c = open("Tile C") else {
             fail("the fixture windows did not show")
         }
@@ -74,6 +74,19 @@ enum LayoutCheck {
             if !hiddenWhenMinimized { placement.status += " (was not seen as hidden)" }
             add("minimized, then a left half", [placement]) {
                 $0.status == "placed" && hiddenWhenMinimized && a.element.isMinimized == false
+            }
+            // Full screen: on a Space of its own, then back and placed.
+            if fullScreen {
+                try? c.element.fullScreen()
+                let went = Check.wait(5) { c.element.isFullScreen == true }
+                Thread.sleep(forTimeInterval: 1.5)
+                let hidden = Visibility.isHidden(c.element)
+                var back = Layout.place(c.element, in: Layout.columns(2, of: screen)[1])
+                back.status += went ? "" : " (never went full screen)"
+                FileHandle.standardError.write("full screen: \(went ? "yes" : "no"); seen as hidden meanwhile: \(hidden)\n".data(using: .utf8)!)
+                add("full screen, then a right half", [back]) {
+                    went && c.element.isFullScreen == false && ($0.status == "placed" || ($0.status == "constrained" && honest($0)))
+                }
             }
             // Across screens: from the last screen to the first and back.
             if let other = Layout.screens.last, other != screen {

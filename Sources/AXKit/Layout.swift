@@ -44,6 +44,13 @@ public enum Layout {
     @discardableResult
     public static func place(_ window: Element, in frame: CGRect, tolerance: CGFloat = 2) -> Placement {
         let name = window.title ?? "?"
+        // Full screen, it cannot be moved: out first, and wait for the
+        // animation back to its Space to end.
+        if window.isFullScreen == true {
+            try? window.fullScreen(false)
+            _ = Controls.wait { window.isFullScreen == false }
+            Thread.sleep(forTimeInterval: 1)
+        }
         // A minimized window has no place to move: bring it back first.
         let restored = window.isMinimized == true
         if restored {

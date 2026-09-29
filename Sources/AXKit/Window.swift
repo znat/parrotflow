@@ -18,6 +18,14 @@ extension Element {
 
     public var isMinimized: Bool? { bool(kAXMinimizedAttribute) }
 
+    /// Full screen puts the window on a Space of its own, where it cannot be
+    /// moved or sized.
+    public var isFullScreen: Bool? { bool("AXFullScreen") }
+
+    public func fullScreen(_ on: Bool = true) throws {
+        try set("AXFullScreen", to: on as CFBoolean)
+    }
+
     public func minimize(_ minimized: Bool = true) throws {
         try set(kAXMinimizedAttribute, to: minimized as CFBoolean)
     }
