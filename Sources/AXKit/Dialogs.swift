@@ -48,6 +48,9 @@ public enum Dialogs {
         return nil
     }
 
+    /// A window read as a dialog: its text and its buttons.
+    public static func dialogFor(_ window: Element) -> Dialog { dialog(window, kind: "alert") }
+
     static func dialog(_ element: Element, kind: String) -> Dialog {
         var texts: [String] = []
         var buttons: [Element] = []
