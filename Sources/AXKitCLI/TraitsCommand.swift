@@ -16,7 +16,7 @@ enum TraitsCommand {
         let kind: App.Pages? = bundle.map { bundle in App.named(bundle).map(\.pages) ?? App.pages(bundle: bundle) }
         let pages = kind.map { $0 != .none }
         let listed = operations.isEmpty ? Gesture.allCases : operations
-        let rows = listed.map { ($0, pages.map($0.traits(pages:)) ?? $0.native, $0.page) }
+        let rows = listed.map { gesture in (gesture, kind.map { gesture.traits(for: $0) } ?? gesture.native, gesture.page) }
         if json {
             struct Row: Encodable { let gesture: String; let native: Traits; let page: Traits }
             struct Out: Encodable { let bundle: String?; let pages: Bool?; let gestures: [Row]; let together: Traits?

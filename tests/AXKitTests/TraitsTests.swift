@@ -40,6 +40,22 @@ final class TraitsTests: XCTestCase {
         XCTAssertEqual(Gesture.press.traits(in: nil, target: "Ne pas enregistrer").reversible, .no)
         XCTAssertEqual(Gesture.press.traits(in: nil, target: "Bold").reversible, .dependsOnTarget)
         XCTAssertEqual(Gesture.setText.traits(in: nil, target: "Send").reversible, .yes)
+        XCTAssertTrue(Traits.looksIrreversible("Send now"))
+        XCTAssertTrue(Traits.looksIrreversible("Delete…"))
+        XCTAssertFalse(Traits.looksIrreversible("Sender"))
+        XCTAssertFalse(Traits.looksIrreversible("Postpone"))
+        // The share check: Share opens a draft in Messages, nothing is sent.
+        XCTAssertFalse(Traits.looksIrreversible("Share"))
+        XCTAssertFalse(Traits.looksIrreversible("Reply"))
+    }
+
+    func testAnAppWithSomePagesMayComeInFront() {
+        XCTAssertEqual(Gesture.setDate.traits(for: .some).front, .maybe)
+        XCTAssertEqual(Gesture.setDate.traits(for: .all).front, .always)
+        XCTAssertEqual(Gesture.setDate.traits(for: .none).front, .never)
+        XCTAssertEqual(Gesture.paste.traits(for: .some).front, .always)
+        XCTAssertEqual(Gesture.setDate.traits(for: .some).warnings.first,
+                       "the app may come in front: it has web pages in it")
     }
 
     func testTheElectronFixtureHasPages() throws {

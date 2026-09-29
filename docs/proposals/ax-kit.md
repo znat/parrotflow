@@ -81,9 +81,11 @@ Outlook and Teams. Each rule is a contract of the kit.
    A skill adds up its steps with `Traits.combined` and warns once, before
    the run. `App.pages` says whether an app is all pages (a Chromium or
    Electron engine in the bundle, or Safari and Teams by id), some pages (a
-   web area in a native window, as Outlook), or none. A press is
-   irreversible when the target's title looks like Send, Delete or
-   Discard. `Outcome.cameToFront` records what really happened.
+   web area in a native window, as Outlook), or none. For "some", a step
+   that would come in front for a page is declared `maybe`: which element
+   it hits is known only in the run, where `traits(on:)` is exact. A press
+   is irreversible when the target's title is a verb such as Send, Delete
+   or Discard. Share, Reply and Forward are not: they open a draft. `Outcome.cameToFront` records what really happened.
    `axkit traits --bundle <id> <gesture> …` prints the table and the
    warning.
 

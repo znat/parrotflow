@@ -5,13 +5,21 @@ import AppKit
 /// A declaration is a prediction: `Outcome.cameToFront` and
 /// `Outcome.verified` say what really happened.
 public struct Traits: Codable, Equatable, Sendable {
+    /// What the kit needs. What the target does after is the app's: a
+    /// notification's "Open" or a service may bring an app in front.
     public enum Front: String, Codable, Comparable, Sendable {
         /// Accessibility calls only: the app stays where it is.
         case never
+        /// In front only if the step hits a web page in a native app, which
+        /// is not known before the run: Outlook's message body.
+        case maybe
         /// The app comes in front for the step, then the previous app comes back.
         case always
 
-        public static func < (a: Front, b: Front) -> Bool { a == .never && b == .always }
+        static let order: [Front] = [.never, .maybe, .always]
+        public static func < (a: Front, b: Front) -> Bool {
+            order.firstIndex(of: a)! < order.firstIndex(of: b)!
+        }
     }
 
     public enum HandsOff: String, Codable, Comparable, Sendable {
@@ -78,6 +86,7 @@ public struct Traits: Codable, Equatable, Sendable {
     public var warnings: [String] {
         var lines: [String] = []
         if front == .always { lines.append("the app comes in front") }
+        if front == .maybe { lines.append("the app may come in front: it has web pages in it") }
         switch handsOff {
         case .none: break
         case .keyboard: lines.append("do not type while it runs")
@@ -90,15 +99,19 @@ public struct Traits: Codable, Equatable, Sendable {
 
     /// Button and item titles that send, delete or discard: a press on one
     /// cannot be undone. A guess from the title, for `dependsOnTarget`.
-    public static var irreversibleTitles = [
-        "Send*", "Delete*", "Remove*", "Discard*", "Don't Save*", "Don’t Save*", "Erase*", "Empty Trash*",
-        "Submit*", "Post*", "Publish*", "Share*", "Reply*", "Forward*", "Pay*", "Buy*", "Purchase*", "Leave*",
-        "Envoyer*", "Supprimer*", "Effacer*", "Ne pas enregistrer*", "Publier*", "Partager*", "Répondre*",
-        "Transférer*", "Payer*", "Acheter*", "Quitter la*",
+    /// Share, Reply and Forward only open a draft (09-29), so they are not here.
+    public static var irreversibleVerbs = [
+        "Send", "Delete", "Remove", "Discard", "Don't Save", "Don’t Save", "Erase", "Empty Trash",
+        "Submit", "Post", "Publish", "Pay", "Buy", "Purchase", "Leave",
+        "Envoyer", "Supprimer", "Effacer", "Ne pas enregistrer", "Publier", "Payer", "Acheter", "Quitter",
     ]
 
+    /// The verb alone, or followed by a word or an ellipsis: "Send", "Send
+    /// now", "Delete…". Not "Sender" or "Postpone".
     public static func looksIrreversible(_ title: String) -> Bool {
-        irreversibleTitles.contains { Glob.matches($0, title) }
+        irreversibleVerbs.contains { verb in
+            [verb, verb + " *", verb + "…", verb + "..."].contains { Glob.matches($0, title) }
+        }
     }
 }
 
@@ -118,6 +131,8 @@ public enum Gesture: String, CaseIterable, Codable, Sendable {
             return Traits()
         case .step:
             return Traits(safeToRetry: false)
+        // A menu item runs in the background (File > Export on the bench), but
+        // one that acts on the key window does not: use `shortcut` for those.
         case .press, .menu, .contextMenu, .menuExtra, .notificationAction, .service:
             return Traits(safeToRetry: false, readsBack: false, reversible: .dependsOnTarget)
         case .answerDialog:
@@ -166,7 +181,8 @@ public enum Gesture: String, CaseIterable, Codable, Sendable {
     public var page: Traits {
         var traits = native
         switch self {
-        case .setDate, .setText, .setNumber, .step, .ensure, .press, .choose, .typeText, .insert, .pick, .typeDate:
+        // The ones that call `Controls.inFront`.
+        case .setDate, .setText, .setNumber, .step, .ensure, .press, .choose, .typeText, .insert, .pick:
             traits.front = .always
         case .place, .tile, .fullScreen, .resizeWindow:
             // Enhanced UI is turned off to place the window, which rebuilds the tree.
@@ -189,11 +205,21 @@ public enum Gesture: String, CaseIterable, Codable, Sendable {
 }
 
 extension Gesture {
-    /// Before the run, knowing only the app. An app with some pages (Outlook's
-    /// message body) counts as pages: which element a step hits is not known yet.
-    /// A press on a button or item that sends or deletes becomes irreversible.
+    /// Before the run, knowing only the app. `App.pages` walks the app's
+    /// windows: for many steps, read it once and pass it to `traits(for:)`.
     public func traits(in app: App?, target title: String? = nil) -> Traits {
-        resolved(traits(pages: (app?.pages ?? .none) != .none), title)
+        traits(for: app?.pages ?? .none, target: title)
+    }
+
+    /// With an app that has some pages, a step that would come in front for
+    /// a page may come in front: which element it hits is not known yet.
+    /// A press on a button or item that sends or deletes becomes irreversible.
+    public func traits(for pages: App.Pages, target title: String? = nil) -> Traits {
+        guard pages == .some else { return resolved(self.traits(pages: pages == .all), title) }
+        var traits = native
+        if page.front == .always, native.front == .never { traits.front = .maybe }
+        traits.invalidatesElements = page.invalidatesElements
+        return resolved(traits, title)
     }
 
     /// With the element in hand: exact.
