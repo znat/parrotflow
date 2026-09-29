@@ -160,6 +160,22 @@ public struct Element: Hashable, @unchecked Sendable {
         return nil
     }
 
+    /// The first descendant that matches, depth first, no deeper than
+    /// `depth`. For a big tree where the element sits deep but not far down:
+    /// Messages lists every conversation before its text field. Breadth first
+    /// ran out of budget, and an unbounded walk read the whole transcript
+    /// for more than 25 s (09-29).
+    public func first(depth: Int, budget: Int = 20000, where match: (Element) -> Bool) -> Element? {
+        var stack = children.reversed().map { ($0, 1) }
+        var left = budget
+        while let (element, level) = stack.popLast(), left > 0 {
+            left -= 1
+            if match(element) { return element }
+            if level < depth { stack.append(contentsOf: element.children.reversed().map { ($0, level + 1) }) }
+        }
+        return nil
+    }
+
     /// What the element shows: its value, else its title, else its first static text's value.
     public var shownText: String? {
         if let text = valueText, !text.isEmpty { return text }

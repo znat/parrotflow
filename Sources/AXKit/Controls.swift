@@ -51,7 +51,8 @@ public enum Controls {
         }
         let before = element.valueText
         try element.set(kAXValueAttribute, to: text as NSString)
-        let ok = wait { element.valueText == text }
+        // Messages reads an emptied field back as no value at all (09-29).
+        let ok = wait { (element.valueText ?? "") == text }
         let outcome = Outcome(before: before, after: element.valueText, method: "set AXValue (text)",
                               verified: ok)
         if !ok { throw AXKitError.notApplied("set the text of \(describe(element))") }

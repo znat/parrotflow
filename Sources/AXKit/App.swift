@@ -11,6 +11,11 @@ public struct App: Sendable {
 
     /// By bundle identifier, else by name, ignoring case.
     public static func named(_ name: String) -> App? {
+        // NSWorkspace's list is not refreshed in a process that runs no event
+        // loop: an app launched after the first call never appears (09-29).
+        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: name).first {
+            return App(pid: app.processIdentifier)
+        }
         let apps = NSWorkspace.shared.runningApplications
         let found = apps.first { $0.bundleIdentifier?.caseInsensitiveCompare(name) == .orderedSame }
             ?? apps.first { $0.localizedName?.caseInsensitiveCompare(name) == .orderedSame }

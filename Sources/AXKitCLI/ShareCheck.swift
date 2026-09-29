@@ -41,14 +41,17 @@ enum ShareCheck {
             _ = Check.wait(25) {
                 guard let app = App.named(messages) else { return false }
                 launched = app
-                draft = app.windows.lazy.compactMap { window in
-                    window.first(budget: 5000) { $0.role == kAXTextFieldRole && $0.valueText == "Shared by axkit" }
-                }.first
+                let isDraft = { (e: Element) in e.role == kAXTextFieldRole && e.valueText == "Shared by axkit" }
+                // Messages focuses the new draft's field.
+                if let focused = app.focusedElement, isDraft(focused) { draft = focused; return true }
+                draft = app.windows.lazy.compactMap { $0.first(depth: 20, where: isDraft) }.first
                 return draft != nil
             }
             guard let draft, let launched else { throw AXKitError.ax(.failure, "no draft in Messages after 25 s") }
             let seconds = Int(Date().timeIntervalSince(started))
-            let to = launched.windows.lazy.compactMap { $0.first(budget: 5000) { $0.role == kAXTextFieldRole && $0.name == "To:" } }.first
+            let to = launched.windows.lazy.compactMap {
+                $0.first(depth: 20) { $0.role == kAXTextFieldRole && $0.name == "To:" }
+            }.first
             try Controls.setText("", on: draft)
             if !wasRunning { launched.running?.terminate() }
             pass = true
