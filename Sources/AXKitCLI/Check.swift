@@ -317,6 +317,43 @@ enum Check {
                 let ms = Int(Date().timeIntervalSince(started) * 1000)
                 FileHandle.standardError.write("wait: settled after \(ms) ms\n".data(using: .utf8)!)
             },
+            Case(control: "alert", operation: "Dialogs.answer confirm (Return's button)", expect: .becomes("alert", "save")) {
+                try Controls.press(try control("close_draft"))
+                guard Wait.until(app, timeout: 3, { Dialogs.current(in: app) != nil }), let dialog = Dialogs.current(in: app) else {
+                    throw AXKitError.ax(.failure, "no dialog")
+                }
+                guard dialog.buttons.count == 3, dialog.text.contains(where: { $0.hasPrefix("Do you want to save") }) else {
+                    throw AXKitError.ax(.failure, "\(dialog.kind) with \(dialog.titles) saying \(dialog.text)")
+                }
+                try Dialogs.answer(.confirm, to: dialog, in: app)
+            },
+            Case(control: "alert", operation: "Dialogs.answer cancel (Escape's button)", expect: .becomes("alert", "cancel")) {
+                try Controls.press(try control("close_draft"))
+                guard Wait.until(app, timeout: 3, { Dialogs.current(in: app) != nil }), let dialog = Dialogs.current(in: app) else {
+                    throw AXKitError.ax(.failure, "no dialog")
+                }
+                guard dialog.buttons.count == 3, dialog.text.contains(where: { $0.hasPrefix("Do you want to save") }) else {
+                    throw AXKitError.ax(.failure, "\(dialog.kind) with \(dialog.titles) saying \(dialog.text)")
+                }
+                try Dialogs.answer(.cancel, to: dialog, in: app)
+            },
+            Case(control: "alert", operation: "Dialogs.answer the other button", expect: .becomes("alert", "dont_save")) {
+                try Controls.press(try control("close_draft"))
+                guard Wait.until(app, timeout: 3, { Dialogs.current(in: app) != nil }), let dialog = Dialogs.current(in: app) else {
+                    throw AXKitError.ax(.failure, "no dialog")
+                }
+                guard dialog.buttons.count == 3, dialog.text.contains(where: { $0.hasPrefix("Do you want to save") }) else {
+                    throw AXKitError.ax(.failure, "\(dialog.kind) with \(dialog.titles) saying \(dialog.text)")
+                }
+                try Dialogs.answer(.other, to: dialog, in: app)
+            },
+            Case(control: "sheet", operation: "Dialogs.answer confirm on a custom sheet", expect: .becomes("sheet", "ok")) {
+                try Controls.press(try control("open_sheet"))
+                guard Wait.until(app, timeout: 3, { Dialogs.current(in: app) != nil }), let dialog = Dialogs.current(in: app) else {
+                    throw AXKitError.ax(.failure, "no dialog")
+                }
+                try Dialogs.answer(.confirm, to: dialog, in: app)
+            },
             Case(control: "keyboard", operation: "the layout has a key for v", expect: .ignored("volume")) {
                 guard Input.keyCode(for: "v") != nil else { throw AXKitError.ax(.failure, "no key for v") }
             },

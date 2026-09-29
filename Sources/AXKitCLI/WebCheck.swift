@@ -115,6 +115,14 @@ enum WebCheck {
                 let field = try byDom("n_textarea")
                 try Controls.typeText(Check.special, into: field, route: .process(field.pid ?? 0))
             },
+            Case(key: "a_dialog", operation: "Dialogs: a page's dialog, answered by title", becomes: "cancel") {
+                try Controls.press(try byDom("a_dialog_open"))
+                guard Wait.until(app, timeout: 3, { Dialogs.current(in: app)?.kind == "page" }),
+                      let dialog = Dialogs.current(in: app) else {
+                    throw AXKitError.ax(.failure, "no dialog in the page")
+                }
+                try Dialogs.answer(.titled("Cancel"), to: dialog, in: app)
+            },
             Case(key: "n_text", operation: "Controls.setText (input)", becomes: "Weekly sync") {
                 try Controls.setText("Weekly sync", on: try byDom("n_text"))
             },

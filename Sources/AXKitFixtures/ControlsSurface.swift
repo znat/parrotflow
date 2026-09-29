@@ -205,7 +205,9 @@ final class ControlsSurface: NSObject {
         sheetButton.identifier = NSUserInterfaceItemIdentifier("open_sheet")
         let popoverButton = NSButton(title: "Open popover…", target: self, action: #selector(openPopover(_:)))
         popoverButton.identifier = NSUserInterfaceItemIdentifier("open_popover")
-        let buttons = NSStackView(views: [sheetButton, popoverButton])
+        let alertButton = NSButton(title: "Close draft…", target: self, action: #selector(openAlert))
+        alertButton.identifier = NSUserInterfaceItemIdentifier("close_draft")
+        let buttons = NSStackView(views: [sheetButton, popoverButton, alertButton])
         right.addArrangedSubview(buttons)
 
         let columns = NSStackView(views: [left, right])
@@ -237,6 +239,7 @@ final class ControlsSurface: NSObject {
         values["export_pdf"] = 0
         values["export_csv"] = 0
         values["show_grid"] = false
+        values["alert"] = "closed"
         values["pasted_files"] = [String]()
         values["dropped_files"] = [String]()
         refresh(source: "start")
@@ -336,6 +339,22 @@ final class ControlsSurface: NSObject {
         showGrid.toggle()
         item.state = showGrid ? .on : .off
         set("show_grid", showGrid, via: "action")
+    }
+
+    /// What closing an unsaved draft asks, in the words the Mac uses.
+    @objc private func openAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Do you want to save the changes made to the draft?"
+        alert.informativeText = "Your changes will be lost if you don't save them."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Don't Save")
+        set("alert", "open", via: "action")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            let answer = [NSApplication.ModalResponse.alertFirstButtonReturn: "save",
+                          .alertSecondButtonReturn: "cancel", .alertThirdButtonReturn: "dont_save"][response] ?? "other"
+            MainActor.assumeIsolated { self?.set("alert", answer, via: "action") }
+        }
     }
 
     @objc private func openSheet() {
