@@ -135,7 +135,7 @@ case "check" where has("--layout"):
     exit(LayoutCheck.run(json: has("--json"), fullScreen: has("--fullscreen")))
 
 case "check" where has("--drag"):
-    exit(DragCheck.run(json: has("--json")))
+    exit(DragCheck.run(json: has("--json"), only: value("--only")))
 
 case "check" where has("--electron"):
     let folder = value("--folder") ?? FileManager.default.currentDirectoryPath + "/Fixtures/electron-app"

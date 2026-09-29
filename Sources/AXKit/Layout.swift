@@ -38,6 +38,10 @@ public enum Layout {
         return (0..<count).map { CGRect(x: area.minX + CGFloat($0) * width, y: area.minY, width: width, height: area.height) }
     }
 
+    /// After placing a Chromium or Electron window, look its elements up
+    /// again: switching AXEnhancedUserInterface back on rebuilds its tree, and
+    /// an element found before has no frame after (09-29).
+    ///
     /// Moves and sizes the window to `frame`, and says what it became. Move,
     /// size, then move again: a window pushed against a screen edge can
     /// refuse a size until it has moved.

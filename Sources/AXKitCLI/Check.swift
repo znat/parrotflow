@@ -30,12 +30,12 @@ enum Check {
     }
 
     struct Row: Encodable {
-        let control: String
-        let operation: String
-        let expected: String
-        let got: String
-        let pass: Bool
-        let tookFocus: Bool
+        var control: String
+        var operation: String
+        var expected: String
+        var got: String
+        var pass: Bool
+        var tookFocus: Bool
     }
 
     static func run(json: Bool, popups: Bool, keyboard: Bool) -> Int32 {

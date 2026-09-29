@@ -2,148 +2,180 @@ import AXKit
 import AppKit
 import Foundation
 
-/// `axkit check --drag`: a foreground check. A temporary file is shown in a
-/// Finder window, the fixture window is put beside it, and the file is
-/// dragged with the real pointer onto the fixture's drop zone. The Finder
-/// window the check opened is closed after. Do not touch the mouse meanwhile.
+/// `axkit check --drag`: a foreground check. Temporary files are shown in a
+/// Finder window, a target window is put beside it, and the files are
+/// dragged with the real pointer onto the target's drop zone: the native
+/// fixture's, or the Electron fixture's (as Slack or Teams take files). The
+/// Finder window and the targets are closed after. Hands off the mouse.
 enum DragCheck {
-    static func run(json: Bool) -> Int32 {
-        let products = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
-        let binary = products.appendingPathComponent("AXKitFixtures").path
-        guard FileManager.default.isExecutableFile(atPath: binary) else { fail("no fixture app at \(binary)") }
-        let state = NSTemporaryDirectory() + "axkit-drag-\(ProcessInfo.processInfo.processIdentifier).json"
-        let folder = URL(fileURLWithPath: NSTemporaryDirectory() + "axkit-drag-\(ProcessInfo.processInfo.processIdentifier)")
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let file = folder.appendingPathComponent("axkit-drag.txt")
-        try? "dragged by axkit\n".write(to: file, atomically: true, encoding: .utf8)
+    struct Scene {
+        let name: String
+        /// "icon" or "list": the Finder's view.
+        let view: String
+        let files: Int
+        /// "native" or "electron".
+        let target: String
+    }
 
-        let fixture = Process()
-        fixture.executableURL = URL(fileURLWithPath: binary)
-        fixture.arguments = ["120", "--state", state]
-        fixture.standardOutput = FileHandle.nullDevice
-        do { try fixture.run() } catch { fail("could not start the fixture: \(error)") }
-        let app = App(pid: fixture.processIdentifier)
+    static let scenes = [
+        Scene(name: "one file, icon view, native zone", view: "icon", files: 1, target: "native"),
+        Scene(name: "one file, list view, native zone", view: "list", files: 1, target: "native"),
+        Scene(name: "two files, list view, native zone", view: "list", files: 2, target: "native"),
+        Scene(name: "one file, icon view, Electron zone", view: "icon", files: 1, target: "electron"),
+    ]
+
+    static func run(json: Bool, only: String?) -> Int32 {
+        let front = App.frontmost
+        var rows: [Check.Row] = []
+        for scene in scenes where only == nil || scene.name.contains(only!) {
+            stopIfLocked()
+            rows.append(play(scene))
+        }
+        front?.activate()
+        if json {
+            Check.report(rows, json: true)
+        } else {
+            for row in rows {
+                print("\(row.pass ? "ok  " : "FAIL") \(row.operation): expected \(row.expected), got \(row.got)")
+            }
+            print("-- \(rows.filter(\.pass).count)/\(rows.count), a foreground check: the Finder and the target came in front, then the app that was")
+        }
+        return rows.allSatisfy(\.pass) ? 0 : 1
+    }
+
+    static func say(_ text: String) {
+        FileHandle.standardError.write((text + "\n").data(using: .utf8)!)
+    }
+
+    static func play(_ scene: Scene) -> Check.Row {
+        let tag = "axkit-drag-\(ProcessInfo.processInfo.processIdentifier)-\(scene.view)-\(scene.files)-\(scene.target)"
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory() + tag)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let names = (0..<scene.files).map { "axkit-drag-\(["a", "b", "c"][$0]).txt" }
+        let files = names.map { folder.appendingPathComponent($0) }
+        files.forEach { try? "dragged by axkit\n".write(to: $0, atomically: true, encoding: .utf8) }
+        var row = Check.Row(control: "drag", operation: scene.name, expected: "→ \(names.joined(separator: ", "))",
+                            got: "not run", pass: false, tookFocus: false)
+
+        // The target: its window, its drop zone, and how to read what it got.
+        var closeTarget: () -> Void = {}
         var finderWindow: Element?
         defer {
             if let close = finderWindow?.first(budget: 50, where: { $0.subrole == kAXCloseButtonSubrole }) {
                 try? close.perform(kAXPressAction)
             }
-            fixture.terminate()
+            closeTarget()
             try? FileManager.default.removeItem(at: folder)
         }
-        guard Check.wait(10, { Check.truth(state) != nil && Check.window(app) != nil }),
-              let window = Check.window(app),
-              let zone = window.first(where: { $0.identifier == "file_zone" }) else {
-            fail("the fixture window did not show in 10 s")
-        }
-
-        NSWorkspace.shared.activateFileViewerSelecting([file])
-        let finder = App.named("com.apple.finder")!
-        var source: Element?
-        _ = Check.wait(10) {
-            finderWindow = finder.windows.first { ($0.title ?? "").hasPrefix("axkit-drag") }
-            source = finderWindow?.first(budget: 2000) {
-                ($0.role == kAXTextFieldRole || $0.role == kAXStaticTextRole || $0.role == kAXImageRole)
-                    && ($0.valueText == file.lastPathComponent || $0.name == file.lastPathComponent)
-            }
-            return source != nil
-        }
-        guard let finderWindow, source != nil else { fail("the Finder did not show the file in 10 s") }
-
-        // Side by side, so each point shows its own window on top.
-        // Side by side. A move can return success and be ignored (the Finder
-        // did, 09-28), so the fixture goes beside where the Finder window is.
-        try? finderWindow.resize(to: CGSize(width: 520, height: 420))
-        try? finderWindow.move(to: CGPoint(x: 40, y: 80))
-        _ = Check.wait(1) { finderWindow.frame?.minX == 40 }
-        if let finderFrame = finderWindow.frame, let fixtureFrame = window.frame {
-            let screen = NSScreen.screens.first?.frame ?? .zero
-            let x = finderFrame.maxX + 20 + fixtureFrame.width <= screen.width
-                ? finderFrame.maxX + 20 : max(0, finderFrame.minX - 20 - fixtureFrame.width)
-            try? window.move(to: CGPoint(x: x, y: max(40, min(finderFrame.minY, screen.height - fixtureFrame.height))))
-        }
-        let fixtureFront = app.activate()
-        let finderFront = finder.activate()
-        if !fixtureFront || !finderFront {
-            FileHandle.standardError.write("could not bring in front: \(fixtureFront ? "" : "the fixture ")\(finderFront ? "" : "the Finder")\n".data(using: .utf8)!)
-        }
-        // Activating the Finder brings all its windows: the check's own goes
-        // on top of the others.
-        do { try finder.raise(finderWindow) } catch {
-            FileHandle.standardError.write("raise failed: \(error)\n".data(using: .utf8)!)
-        }
-        Thread.sleep(forTimeInterval: 0.3)
-        func where_(_ e: Element) -> String { e.frame.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))×\(Int($0.height))" } ?? "?" }
-        FileHandle.standardError.write(("Finder window \"\(finderWindow.title ?? "")\" at \(where_(finderWindow)), main: \(finderWindow.bool(kAXMainAttribute).map(String.init) ?? "?")"
-            + "; fixture at \(where_(window)); Finder's focused window: \"\(finder.focusedWindow?.title ?? "none")\"\n").data(using: .utf8)!)
-        // Measured 09-28: the middle of a list row's name hit-tests as the
-        // list itself, and pressing there starts a selection rectangle. The
-        // row's icon, near its left edge, starts a drag.
-        let named = { (e: Element) in e.valueText == file.lastPathComponent || e.name == file.lastPathComponent }
-        // The row inside the file list: the same name also shows in the
-        // path bar, outside the list.
-        // The sidebar is an outline too, and comes first: the list is the one
-        // that holds the file.
-        let list = finderWindow.first(budget: 3000, where: {
-            ($0.role == kAXOutlineRole || $0.role == kAXListRole || $0.role == kAXTableRole)
-                && $0.first(budget: 500, where: named) != nil
-        })
-        // A list view has rows; an icon view has one group per file, its icon
-        // and its name.
-        let row = list?.first(budget: 2000, where: {
-            ($0.role == kAXRowRole || $0.role == "AXCell" || $0.role == kAXGroupRole)
-                && $0.first(budget: 20, where: named) != nil
-        })
-        if row == nil, let list {
-            let seen = list.children.prefix(6).map { "\($0.role ?? "?")[\($0.children.map { $0.role ?? "?" }.joined(separator: ","))]" }
-            FileHandle.standardError.write("no row for the file in \(list.role ?? "?"): \(seen.joined(separator: " "))\n".data(using: .utf8)!)
-        }
-        source = row ?? finderWindow.first(budget: 2000, where: named)
-        var grip: CGPoint?
-        if let row, let frame = row.frame {
-            let icon = row.first(budget: 20, where: { $0.role == kAXImageRole })?.frame
-            grip = icon.map { CGPoint(x: $0.midX, y: $0.midY) } ?? CGPoint(x: frame.minX + 28, y: frame.midY)
-        }
-        FileHandle.standardError.write("drag from \(source?.role ?? "?") at \(grip.map { "\(Int($0.x)),\(Int($0.y))" } ?? "its middle")\n".data(using: .utf8)!)
-
-        var got = "no change"
-        var pass = false
-        let dragBoard = NSPasteboard(name: .drag)
-        let dragCount = dragBoard.changeCount
-        if let frame = source?.frame {
-            let top = App.element(at: grip ?? CGPoint(x: frame.midX, y: frame.midY))
-            FileHandle.standardError.write(("under the start: \(top?.role ?? "nothing") \"\(top?.name ?? top?.valueText ?? "")\""
-                + " of \(top?.pid.flatMap { App(pid: $0).name } ?? "?"); Finder in front: \(finder.isFrontmost)\n").data(using: .utf8)!)
-        }
-        if let frame = zone.visibleFrame {
-            FileHandle.standardError.write("zone frame \(zone.frame.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))×\(Int($0.height))" } ?? "?"), visible \(Int(frame.minX)),\(Int(frame.minY)) \(Int(frame.width))×\(Int(frame.height))\n".data(using: .utf8)!)
-            let top = App.element(at: CGPoint(x: frame.midX, y: frame.midY))
-            FileHandle.standardError.write("under the drop: \(top?.role ?? "nothing") \"\(top?.identifier ?? top?.name ?? "")\" at \(Int(frame.midX)),\(Int(frame.midY))\n".data(using: .utf8)!)
-        }
-        defer {
-            FileHandle.standardError.write("the zone saw: \((Check.truth(state)?["drag_seen"] as? [String])?.joined(separator: ", ") ?? "nothing")\n".data(using: .utf8)!)
-            let started = dragBoard.changeCount != dragCount
-            FileHandle.standardError.write(("a drag session started: \(started ? "yes" : "no")"
-                + (started ? ", carrying \(dragBoard.types?.map(\.rawValue).prefix(4).joined(separator: ", ") ?? "")" : "") + "\n").data(using: .utf8)!)
-        }
-        do {
-            try Input.drag(from: source!, at: grip, to: zone)
-            _ = Check.wait(2) { (Check.truth(state)?["dropped_files"] as? [String]) == [file.lastPathComponent] }
-            let dropped = Check.truth(state)?["dropped_files"] as? [String] ?? []
-            pass = dropped == [file.lastPathComponent]
-            got = dropped.isEmpty ? "nothing dropped" : "→ \(dropped.joined(separator: ", "))"
-        } catch {
-            got = "stopped: \(error)"
-        }
-        let rows = [Check.Row(control: "file_zone", operation: "Input.drag a file from the Finder",
-                              expected: "→ \(file.lastPathComponent)", got: got, pass: pass, tookFocus: false)]
-        if json {
-            Check.report(rows, json: true)
+        let target: App
+        let targetWindow: Element
+        var zone: Element
+        let dropped: () -> [String]
+        let products = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+        if scene.target == "native" {
+            let state = NSTemporaryDirectory() + tag + ".json"
+            let fixture = Process()
+            fixture.executableURL = products.appendingPathComponent("AXKitFixtures")
+            fixture.arguments = ["120", "--state", state]
+            fixture.standardOutput = FileHandle.nullDevice
+            guard (try? fixture.run()) != nil else { row.got = "no fixture"; return row }
+            closeTarget = { fixture.terminate() }
+            target = App(pid: fixture.processIdentifier)
+            guard Check.wait(10, { Check.window(target)?.first(where: { $0.identifier == "file_zone" }) != nil }),
+                  let window = Check.window(target), let found = window.first(where: { $0.identifier == "file_zone" })
+            else { row.got = "the fixture did not show"; return row }
+            (targetWindow, zone) = (window, found)
+            dropped = { (Check.truth(state)?["dropped_files"] as? [String] ?? []).sorted() }
         } else {
-            let row = rows[0]
-            print("\(row.pass ? "ok  " : "FAIL") \(row.control) \(row.operation): expected \(row.expected), got \(row.got)")
-            print("-- a foreground check: the Finder and the fixture came in front, then the app that was")
+            let folderApp = FileManager.default.currentDirectoryPath + "/Fixtures/electron-app"
+            let binary = folderApp + "/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
+            let profile = NSTemporaryDirectory() + tag + "-profile"
+            let electron = Process()
+            electron.executableURL = URL(fileURLWithPath: binary)
+            electron.arguments = [folderApp, "--user-data-dir=\(profile)"]
+            electron.standardOutput = FileHandle.nullDevice
+            electron.standardError = FileHandle.nullDevice
+            guard (try? electron.run()) != nil else { row.got = "no Electron (npm install?)"; return row }
+            closeTarget = {
+                electron.terminate()
+                try? FileManager.default.removeItem(atPath: profile)
+            }
+            target = App(pid: electron.processIdentifier)
+            _ = Check.wait(15) { target.windows.contains { Glob.matches("Web controls*", $0.title ?? "") } }
+            target.wake()
+            guard Check.wait(10, { WebCheck.truth(target)?["ready"] as? Bool == true }),
+                  let window = target.windows.first(where: { Glob.matches("Web controls*", $0.title ?? "") }),
+                  let found = try? WebCheck.byDom(target, "drop_zone")
+            else { row.got = "the Electron window did not show"; return row }
+            (targetWindow, zone) = (window, found)
+            dropped = { (WebCheck.truth(target)?["dropped_files"] as? [String] ?? []).sorted() }
         }
-        return pass ? 0 : 1
+
+        // The Finder, with the files selected, in the scene's view.
+        NSWorkspace.shared.activateFileViewerSelecting(files)
+        guard let finder = App.named("com.apple.finder") else { row.got = "no Finder"; return row }
+        _ = Check.wait(10) {
+            finderWindow = finder.windows.first { $0.title == folder.lastPathComponent }
+            return finderWindow != nil
+        }
+        guard let finderWindow else { row.got = "the Finder did not show the folder"; return row }
+        _ = finder.activate()
+        try? finder.raise(finderWindow)
+        if let item = Controls.menuItem(shortcut: scene.view == "list" ? "2" : "1", in: finder) {
+            try? item.perform(kAXPressAction)
+        }
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Side by side on the main screen, target to the right.
+        let area = Layout.screens.first ?? .zero
+        Layout.place(finderWindow, in: CGRect(x: area.minX + 20, y: area.minY + 20, width: 700, height: 500))
+        if let finderFrame = finderWindow.frame {
+            let x = finderFrame.maxX + 20
+            Layout.place(targetWindow, in: CGRect(x: x, y: area.minY + 20, width: max(700, area.maxX - x - 20),
+                                                  height: area.height - 40))
+        }
+        _ = target.activate()
+        _ = finder.activate()
+        try? finder.raise(finderWindow)
+        Thread.sleep(forTimeInterval: 0.4)
+        // Placing a Chromium window rebuilds its tree: find the zone again.
+        if scene.target == "electron", let again = try? WebCheck.byDom(target, "drop_zone") { zone = again }
+
+        // Where the Finder starts a drag: the icon of a list row, or of an
+        // icon view's item. The middle of a row's name is the list itself.
+        let named = { (e: Element) in e.valueText == names[0] || e.name == names[0] }
+        let list = finderWindow.first(budget: 3000, where: {
+            [kAXOutlineRole, kAXListRole, kAXTableRole].contains($0.role ?? "") && $0.first(budget: 500, where: named) != nil
+        })
+        let item = list?.first(budget: 2000, where: {
+            [kAXRowRole, "AXCell", kAXGroupRole].contains($0.role ?? "") && $0.first(budget: 20, where: named) != nil
+        })
+        guard let item else { row.got = "no \(names[0]) in the Finder's \(scene.view) view"; return row }
+        let icon = item.first(budget: 20, where: { $0.role == kAXImageRole })?.visibleFrame
+        let grip = icon.map { CGPoint(x: $0.midX, y: $0.midY) }
+            ?? item.visibleFrame.map { CGPoint(x: $0.minX + 28, y: $0.midY) }
+        if scene.files > 1, list?.role == kAXOutlineRole {
+            let rows = list?.elements(kAXRowsAttribute) ?? []
+            let chosen = rows.enumerated().filter { _, row in
+                names.contains { name in row.first(budget: 20, where: { $0.valueText == name || $0.name == name }) != nil }
+            }.map(\.offset)
+            if let list { try? Controls.select(rows: chosen, in: list) }
+        }
+        say("\(scene.name): from the \(item.role ?? "?") at \(grip.map { "\(Int($0.x)),\(Int($0.y))" } ?? "?")")
+
+        let board = NSPasteboard(name: .drag)
+        let count = board.changeCount
+        do {
+            try Input.drag(from: item, at: grip, to: zone)
+            _ = Check.wait(3) { dropped() == names.sorted() }
+            let got = dropped()
+            row.pass = got == names.sorted()
+            row.got = got.isEmpty
+                ? "nothing dropped (a drag session \(board.changeCount != count ? "started" : "never started"))"
+                : "→ \(got.joined(separator: ", "))"
+        } catch {
+            row.got = "stopped: \(error)"
+        }
+        return row
     }
 }

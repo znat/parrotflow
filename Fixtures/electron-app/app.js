@@ -177,6 +177,14 @@
   });
   $('message').addEventListener('input', function () { report('message', $('message').innerText, 'input'); });
 
+  var zone = $('drop_zone');
+  zone.addEventListener('dragover', function (e) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+  zone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    var names = Array.prototype.map.call(e.dataTransfer.files, function (f) { return f.name; }).sort();
+    report('dropped_files', names, 'drop');
+  });
+
   summary();
   report('ready', true, 'initial');
 })();
