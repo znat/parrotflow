@@ -90,6 +90,25 @@ enum SystemCheck {
             guard App.frontmost?.pid == front else { throw AXKitError.ax(.failure, "TextEdit stayed in front") }
             return "window \"\(window.title ?? "")\", " + (sentBack ? "TextEdit came in front and was sent back" : "the front app kept")
         }
+        row("notification", "System.notifications: read a banner, then Close", "title, body, and gone after Close") {
+            let stamp = "axkit \(Int(Date().timeIntervalSince1970) % 100000)"
+            let post = Process()
+            post.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            post.arguments = ["-e", "display notification \"\(stamp)\" with title \"AXKit check\""]
+            try post.run()
+            post.waitUntilExit()
+            var mine: System.Notification?
+            _ = Check.wait(5) {
+                mine = System.notifications.first { $0.body == stamp }
+                return mine != nil
+            }
+            guard let mine else { throw AXKitError.ax(.failure, "no banner saying \(stamp)") }
+            try System.act("Close", on: mine)
+            guard Check.wait(3, { !System.notifications.contains { $0.body == stamp } }) else {
+                throw AXKitError.ax(.failure, "the banner is still there after Close")
+            }
+            return "\"\(mine.title ?? "")\" / \"\(mine.body ?? "")\", actions \(mine.actions), gone after Close"
+        }
         _ = appA
         Check.report(rows, json: json)
         return rows.allSatisfy(\.pass) ? 0 : 1

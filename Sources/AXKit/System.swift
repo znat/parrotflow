@@ -107,3 +107,58 @@ extension Controls {
         return Clipboard.save()
     }
 }
+
+extension System {
+    /// A banner or alert in Notification Center.
+    public struct Notification: Sendable {
+        public let element: Element
+        /// "Script Editor, AXKit check, Posted by …": app, title, then body.
+        public let summary: String
+        public let texts: [String]
+        /// Its named actions: "Show Details", "Show", "Close", and any the
+        /// app adds (Reply, Mark as Read).
+        public let actions: [String]
+
+        public var title: String? { texts.first }
+        public var body: String? { texts.dropFirst().first }
+    }
+
+    /// The notifications on screen now, newest first.
+    public static var notifications: [Notification] {
+        guard let center = App.named("com.apple.notificationcenterui") else { return [] }
+        return center.windows.flatMap { window -> [Notification] in
+            var found: [Notification] = []
+            var queue = window.children
+            var left = 2000
+            while !queue.isEmpty, left > 0 {
+                let element = queue.removeFirst()
+                left -= 1
+                if element.subrole == "AXNotificationCenterBanner" || element.subrole == "AXNotificationCenterAlert" {
+                    let texts = element.children.filter { $0.role == kAXStaticTextRole }.compactMap(\.valueText)
+                    found.append(Notification(element: element, summary: element.accessibilityDescription ?? "",
+                                              texts: texts, actions: element.actions.compactMap(actionName)))
+                } else {
+                    queue.append(contentsOf: element.children)
+                }
+            }
+            return found
+        }
+    }
+
+    /// "Name:Close\nTarget:…" is how a named action comes: its name.
+    static func actionName(_ raw: String) -> String? {
+        guard raw.hasPrefix("Name:") else { return raw == kAXPressAction ? "Open" : nil }
+        return raw.dropFirst(5).split(separator: "\n").first.map(String.init)
+    }
+
+    /// Runs a notification's action by name: "Open" presses it.
+    @discardableResult
+    public static func act(_ name: String, on notification: Notification) throws -> Outcome {
+        let raw = notification.element.actions.first { actionName($0) == name }
+        guard let raw else {
+            throw AXKitError.ax(.actionUnsupported, "no \"\(name)\" among \(notification.actions)")
+        }
+        try notification.element.perform(raw)
+        return Outcome(before: notification.summary, after: nil, method: name, verified: nil)
+    }
+}
