@@ -9,11 +9,13 @@ public struct Outcome: Codable, Equatable, Sendable {
     public var method: String
     /// The value read back is the one asked for. `nil`: nothing to read back.
     public var verified: Bool?
+    /// The app was brought in front for the step. See `Traits.front`.
+    public var cameToFront: Bool? = nil
 }
 
 /// Operations on one kind of control each. Every write is read back, because
 /// the accessibility API returns success when the app ignores the value.
-/// They are all accessibility calls: none needs the app in front.
+/// What each one asks of the user is declared in `Gesture`.
 public enum Controls {
     /// How long a change may take to show after the call.
     public static var settle: Double = 1
@@ -376,11 +378,11 @@ public enum Controls {
         guard Input.prepare(element) else { throw AXKitError.ax(.cannotComplete, "focus \(describe(element))") }
         if let item = menuItem(shortcut: "v", in: app), item.isEnabled == true {
             try item.perform(kAXPressAction)
-            return Outcome(before: nil, after: nil, method: "the ⌘V menu item", verified: nil)
+            return Outcome(before: nil, after: nil, method: "the ⌘V menu item", verified: nil, cameToFront: false)
         }
         guard app.activate() else { throw Input.Refusal.notFrontmost(expected: pid, actual: App.frontmost?.pid) }
         try Input.shortcut("v", .command, to: .frontmost(pid))
-        return Outcome(before: nil, after: nil, method: "in front, ⌘V", verified: nil)
+        return Outcome(before: nil, after: nil, method: "in front, ⌘V", verified: nil, cameToFront: true)
     }
 
     /// A field that lists suggestions as you type (To:, attendees, a
@@ -448,14 +450,14 @@ public enum Controls {
         // enabled: an app that is not active has no key window (09-29).
         if app.isFrontmost, let item, item.isEnabled == true {
             try item.perform(kAXPressAction)
-            return Outcome(before: nil, after: nil, method: "the \(label) menu item", verified: nil)
+            return Outcome(before: nil, after: nil, method: "the \(label) menu item", verified: nil, cameToFront: false)
         }
         let front = App.frontmost
         defer { if let front, front.pid != pid { front.activate() } }
         guard app.activate() else { throw Input.Refusal.notFrontmost(expected: pid, actual: App.frontmost?.pid) }
         Thread.sleep(forTimeInterval: 0.2)
         try Input.shortcut(letter, shift ? [.command, .shift] : .command, to: .frontmost(pid))
-        return Outcome(before: nil, after: nil, method: "in front, \(label)", verified: nil)
+        return Outcome(before: nil, after: nil, method: "in front, \(label)", verified: nil, cameToFront: true)
     }
 
     /// The element's context menu (what a right click shows), then the item
@@ -600,6 +602,7 @@ public enum Controls {
         }
         var outcome = try Foreground.ifHidden(element, run)
         if ranInFront { outcome.method += ", in front: a page behind other windows takes nothing" }
+        outcome.cameToFront = ranInFront
         return outcome
     }
 

@@ -10,6 +10,8 @@ usage: axkit trusted
        axkit find  (--app … | --pid … | --front) [--role AXButton] [--name <glob>] [--dom <id>]
                    [--wake] [--json]
        axkit hit   <x> <y> [--app … | --pid …] [--json]
+       axkit traits [--bundle <id>] [<operation> …] [--json]    what each operation asks of the user,
+                   native or in the app's pages; with operations, the warning for running them together
        axkit check [--json] [--popups] [--keyboard]    plays the control matrix on the fixture window, in the background
        axkit check --web [--page <index.html>] [--json]    the same on the web page, in a throwaway Chrome
        axkit check --electron [--folder <app>] [--json]    Teams and Slack patterns, in an Electron window
@@ -84,7 +86,7 @@ func line(_ node: Node) -> String {
     return parts.joined(separator: " ")
 }
 
-if command != "trusted" && command != "apps" && !App.isTrusted {
+if !["trusted", "apps", "traits"].contains(command) && !App.isTrusted {
     fail(AXKitError.notTrusted.description + " (the terminal running this needs it)")
 }
 
@@ -129,6 +131,9 @@ case "hit":
     guard let element = app?.element(at: point) ?? App.element(at: point) else { fail("nothing at \(x),\(y)") }
     let node = Walk.run(from: element, options: WalkOptions(depth: 1)).nodes.first
     if has("--json") { printJSON(node) } else { node.map { print(line($0)) } }
+
+case "traits":
+    exit(TraitsCommand.run(arguments, bundle: value("--bundle"), json: has("--json")))
 
 case "check" where has("--share"):
     exit(ShareCheck.run(json: has("--json")))

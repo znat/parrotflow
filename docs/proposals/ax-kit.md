@@ -33,6 +33,7 @@ first user. The agent (Python, skills, memories) is out of scope here.
 | Wait | `AXObserver` notifications (value changed, created, focus changed, window created) and bounded "wait until" predicates, instead of polling |
 | Controls | typed adapters, one per role family, each op verified (below) |
 | Input | keys (unicode text, key codes, modifiers) and mouse clicks; route to the frontmost app or to one pid; guards |
+| Traits | what each gesture asks of the user, native and in a page; summed for a skill before it runs |
 | CLI | `axkit dump`, `find`, `get`, `set`, `press`, `type`, and one verb per control op |
 
 ## Rules the measurements force
@@ -67,11 +68,24 @@ Outlook and Teams. Each rule is a contract of the kit.
    the kit's default is 64, with the element budget unchanged.
 7. **Background:** AX actions work with the app in the background. Keys
    posted to one pid work in Chrome and Teams, and in Outlook once the
-   field's window is made main (`AXMain`). Each op declares
-   `needsForeground`.
+   field's window is made main (`AXMain`). Pages are the exception: a
+   Chromium page behind other windows queues keys and ignores clicks, so
+   its controls come in front (rule 9).
 8. **Guards before any key or click:** the screen is not locked, no other
    pid holds secure input, and the target is frontmost when the route needs
    it. Text is typed as unicode, so the keyboard layout does not matter.
+9. **Each gesture declares what it asks of the user.** `Gesture` lists the
+   public operations, each with `Traits` for a native window and for a
+   page: comes in front, hands off (keyboard or pointer), borrows the
+   clipboard, safe to retry, reads back, reversible, invalidates elements.
+   A skill adds up its steps with `Traits.combined` and warns once, before
+   the run. `App.pages` says whether an app is all pages (a Chromium or
+   Electron engine in the bundle, or Safari and Teams by id), some pages (a
+   web area in a native window, as Outlook), or none. A press is
+   irreversible when the target's title looks like Send, Delete or
+   Discard. `Outcome.cameToFront` records what really happened.
+   `axkit traits --bundle <id> <gesture> …` prints the table and the
+   warning.
 
 ## What comes in, from where
 
