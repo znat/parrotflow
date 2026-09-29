@@ -99,7 +99,10 @@ enum Check {
             stopIfLocked()
             let before = truth(state) ?? [:]
             var refusal: AXError?
-            do { try item.run() } catch AXKitError.ax(let code, _) { refusal = code } catch {
+            do { try item.run() } catch AXKitError.ax(let code, let what) {
+                refusal = code
+                if code == .failure { FileHandle.standardError.write("\(item.control): \(what)\n".data(using: .utf8)!) }
+            } catch {
                 refusal = .failure
                 FileHandle.standardError.write("\(item.control): \(error)\n".data(using: .utf8)!)
             }
@@ -128,7 +131,7 @@ enum Check {
             let pass: Bool
             switch item.expect {
             case .becomes, .becomesDay, .becomesTime: pass = refusal == nil && goal(item.expect)!(now[key])
-            case .ignored: pass = !changed
+            case .ignored: pass = refusal == nil && !changed
             case .refused(_, let code): pass = refusal == code && !changed
             }
             rows.append(Row(control: item.control, operation: item.operation, expected: wanted, got: got,
@@ -354,6 +357,22 @@ enum Check {
                 }
                 try Dialogs.answer(.confirm, to: dialog, in: app)
             },
+            Case(control: "files", operation: "Controls.contextMenu Rename on gamma.pdf",
+                 expect: .becomes("row_menu", "Rename gamma.pdf")) {
+                let rows = try control("files").elements(kAXRowsAttribute)
+                guard rows.count > 2 else { throw AXKitError.ax(.failure, "\(rows.count) rows") }
+                try Controls.contextMenu("Rename", on: rows[2])
+            },
+            Case(control: "long_list", operation: "Controls.reveal Item 55", expect: .ignored("volume")) {
+                let list = try control("long_list")
+                let rows = list.elements(kAXRowsAttribute)
+                guard let row = rows.first(where: { $0.shownText == "Item 55" }) ?? (rows.count >= 55 ? rows[54] : nil) else {
+                    throw AXKitError.ax(.failure, "\(rows.count) rows in the tree")
+                }
+                let before = row.visibleFrame
+                try Controls.reveal(row)
+                FileHandle.standardError.write("reveal: \(rows.count) rows in the tree; Item 55 \(before == nil ? "was out of sight" : "already showed")\n".data(using: .utf8)!)
+            },
             Case(control: "keyboard", operation: "the layout has a key for v", expect: .ignored("volume")) {
                 guard Input.keyCode(for: "v") != nil else { throw AXKitError.ax(.failure, "no key for v") }
             },
@@ -401,6 +420,24 @@ enum Check {
                     guard Input.prepare(notes) else { throw AXKitError.ax(.cannotComplete, "focus notes") }
                     try Input.selectAll(notes)
                     try Input.type(Check.special, to: route)
+                },
+                Case(control: "notes", operation: "Controls.shortcut ⌘Z undoes typing (in front)", expect: .becomes("notes", "Inserted by axkit")) {
+                    let notes = try control("notes")
+                    let before = notes.valueText ?? ""
+                    guard Input.prepare(notes) else { throw AXKitError.ax(.cannotComplete, "focus notes") }
+                    try Input.press(.end, to: route)
+                    try Input.type(" draft", to: route)
+                    guard Check.wait(1, { (notes.valueText ?? "") != before }) else {
+                        throw AXKitError.ax(.failure, "the typing did not land")
+                    }
+                    let typed = notes.valueText ?? ""
+                    try Controls.shortcut("z", near: notes)
+                    // Typing in one editing session is one undo step: the
+                    // field may go back further than before " draft".
+                    guard Check.wait(1.5, { !(notes.valueText ?? "").hasSuffix(" draft") && notes.valueText != typed }) else {
+                        throw AXKitError.ax(.failure, "after undo: \"\(notes.valueText ?? "")\"")
+                    }
+                    _ = before
                 },
                 Case(control: "room", operation: "select all, type, Return", expect: .becomes("room", "Room D")) {
                     let room = try control("room")

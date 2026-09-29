@@ -30,6 +30,7 @@ final class ControlsSurface: NSObject {
     private lazy var outlineChildren: [[NSString]] = outlineData.map { $0.1.map { $0 as NSString } }
     private var outline: NSOutlineView!
     private var table: NSTableView!
+    private var longList: NSTableView!
 
     static let timeZone = TimeZone(identifier: "Europe/Paris")!
 
@@ -200,6 +201,25 @@ final class ControlsSurface: NSObject {
         table.identifier = NSUserInterfaceItemIdentifier("files")
         right.addArrangedSubview(labelled("files", scrolled(table, height: 120)))
         pollers["files_selected"] = { [unowned self] in table.selectedRowIndexes.map { tableData[$0].0 } }
+        // A context menu on the rows, as a file list or a mail list has.
+        let rowMenu = NSMenu()
+        for title in ["Rename", "Delete…"] {
+            let item = NSMenuItem(title: title, action: #selector(rowMenuChosen(_:)), keyEquivalent: "")
+            item.target = self
+            rowMenu.addItem(item)
+        }
+        table.menu = rowMenu
+
+        // A list longer than its view, to scroll an element into sight.
+        longList = NSTableView()
+        let itemColumn = NSTableColumn(identifier: .init("item"))
+        itemColumn.title = "Item"
+        itemColumn.width = 200
+        longList.addTableColumn(itemColumn)
+        longList.dataSource = self
+        longList.delegate = self
+        longList.identifier = NSUserInterfaceItemIdentifier("long_list")
+        right.addArrangedSubview(labelled("long_list", scrolled(longList, height: 80)))
 
         let sheetButton = NSButton(title: "Open sheet…", target: self, action: #selector(openSheet))
         sheetButton.identifier = NSUserInterfaceItemIdentifier("open_sheet")
@@ -240,6 +260,7 @@ final class ControlsSurface: NSObject {
         values["export_csv"] = 0
         values["show_grid"] = false
         values["alert"] = "closed"
+        values["row_menu"] = "none"
         values["pasted_files"] = [String]()
         values["dropped_files"] = [String]()
         refresh(source: "start")
@@ -312,6 +333,11 @@ final class ControlsSurface: NSObject {
         // What every real app has: ⌘C and ⌘V are these items, not keys.
         let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(redo)
+        edit.addItem(.separator())
         edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
@@ -339,6 +365,12 @@ final class ControlsSurface: NSObject {
         showGrid.toggle()
         item.state = showGrid ? .on : .off
         set("show_grid", showGrid, via: "action")
+    }
+
+    @objc private func rowMenuChosen(_ sender: NSMenuItem) {
+        let index = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
+        let row = index >= 0 ? tableData[index].0 : "none"
+        set("row_menu", "\(sender.title) \(row)", via: "action")
     }
 
     /// What closing an unsaved draft asks, in the words the Mac uses.
@@ -505,9 +537,10 @@ extension ControlsSurface: NSOutlineViewDataSource, NSOutlineViewDelegate {
 }
 
 extension ControlsSurface: NSTableViewDataSource, NSTableViewDelegate {
-    func numberOfRows(in tableView: NSTableView) -> Int { tableData.count }
+    func numberOfRows(in tableView: NSTableView) -> Int { tableView === longList ? 60 : tableData.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        if tableView === longList { return NSTextField(labelWithString: "Item \(row + 1)") }
         let entry = tableData[row]
         return NSTextField(labelWithString: tableColumn?.identifier.rawValue == "size" ? entry.1 : entry.0)
     }

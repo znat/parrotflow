@@ -409,6 +409,101 @@ public enum Controls {
                        verified: gone ? nil : false)
     }
 
+    /// Runs the app's menu item for ⌘ plus `letter` (⌘Z undo, ⌘⇧Z redo,
+    /// ⌘V paste) with `element` focused. A background app does not enable its
+    /// menu items (09-28), so when the item is disabled this is a short
+    /// foreground step: the app comes in front for the shortcut, then the app
+    /// that was in front comes back.
+    @discardableResult
+    public static func shortcut(_ letter: Character, shift: Bool = false, near element: Element) throws -> Outcome {
+        guard let pid = element.pid else { throw AXKitError.ax(.invalidUIElement, "no process") }
+        let app = App(pid: pid)
+        guard Input.prepare(element) else { throw AXKitError.ax(.cannotComplete, "focus \(describe(element))") }
+        let wanted = String(letter).uppercased()
+        let item = app.element.element(kAXMenuBarAttribute)?.first(budget: 3000) {
+            $0.role == kAXMenuItemRole && $0.string(kAXMenuItemCmdCharAttribute)?.uppercased() == wanted
+                && ($0.attribute(kAXMenuItemCmdModifiersAttribute) as? NSNumber)?.intValue == (shift ? 1 : 0)
+        }
+        let label = "⌘\(shift ? "⇧" : "")\(wanted)"
+        // In the background a menu item has no window to act on, even when
+        // enabled: an app that is not active has no key window (09-29).
+        if app.isFrontmost, let item, item.isEnabled == true {
+            try item.perform(kAXPressAction)
+            return Outcome(before: nil, after: nil, method: "the \(label) menu item", verified: nil)
+        }
+        let front = App.frontmost
+        defer { if let front, front.pid != pid { front.activate() } }
+        guard app.activate() else { throw Input.Refusal.notFrontmost(expected: pid, actual: App.frontmost?.pid) }
+        Thread.sleep(forTimeInterval: 0.2)
+        try Input.shortcut(letter, shift ? [.command, .shift] : .command, to: .frontmost(pid))
+        return Outcome(before: nil, after: nil, method: "in front, \(label)", verified: nil)
+    }
+
+    /// The element's context menu (what a right click shows), then the item
+    /// whose title matches `item`. Waits for the menu, and says what it held
+    /// when the item is not there.
+    @discardableResult
+    public static func contextMenu(_ item: String, on element: Element) throws -> Outcome {
+        guard let pid = element.pid else { throw AXKitError.ax(.invalidUIElement, "no process") }
+        let app = App(pid: pid)
+        // A table row takes no AXShowMenu (-25206): its cell or its table
+        // does, and the table's menu goes to the selected row.
+        if element.role == kAXRowRole, let table = element.parent, table.isSettable(kAXSelectedRowsAttribute) {
+            try? table.set(kAXSelectedRowsAttribute, to: [element.ref] as CFArray)
+        }
+        let target = [element] + element.children + element.children.flatMap(\.children)
+            + [element.parent, element.parent?.parent].compactMap { $0 }
+        guard let owner = target.first(where: { $0.actions.contains(kAXShowMenuAction) }) else {
+            throw AXKitError.ax(.actionUnsupported, "no context menu on \(describe(element)) or around it")
+        }
+        try owner.perform(kAXShowMenuAction)
+        var menu: Element?
+        Wait.until(app, timeout: 2) {
+            menu = owner.first(budget: 50, where: { $0.role == kAXMenuRole })
+                ?? app.element.children.first(where: { $0.role == kAXMenuRole })
+            return menu != nil
+        }
+        guard let menu else { throw AXKitError.ax(.failure, "no menu for \(describe(element))") }
+        let items = menu.children.filter { $0.role == kAXMenuItemRole }
+        guard let chosen = items.first(where: { Glob.matches(item, $0.title ?? "") }) else {
+            try? menu.perform(kAXCancelAction)
+            throw AXKitError.ax(.failure, "no \"\(item)\" in \(items.compactMap(\.title))")
+        }
+        try chosen.perform(kAXPressAction)
+        return Outcome(before: nil, after: nil, method: "AXShowMenu, \(chosen.title ?? item)", verified: nil)
+    }
+
+    /// Scrolls the element into sight and says whether any of it shows.
+    /// Without AXScrollToVisible (table rows lack it), the scroll bar of the
+    /// scroll area around it is moved by halves until the element shows.
+    @discardableResult
+    public static func reveal(_ element: Element) throws -> Outcome {
+        let shows = { (element.visibleFrame.map { $0.width > 1 && $0.height > 1 }) == true }
+        if shows() { return Outcome(before: nil, after: nil, method: "already in sight", verified: true) }
+        if element.actions.contains("AXScrollToVisible") {
+            try element.perform("AXScrollToVisible")
+        } else {
+            var area = element.parent
+            while let current = area, current.role != kAXScrollAreaRole { area = current.parent }
+            guard let bar = area?.element(kAXVerticalScrollBarAttribute), let view = area?.frame else {
+                throw AXKitError.ax(.actionUnsupported, "no way to scroll \(describe(element))")
+            }
+            var (low, high) = (0.0, 1.0)
+            for _ in 0..<16 where !shows() {
+                let middle = (low + high) / 2
+                try bar.set(kAXValueAttribute, to: middle as NSNumber)
+                _ = wait { element.frame != nil }
+                guard let frame = element.frame else { break }
+                if frame.midY < view.minY { high = middle } else if frame.midY > view.maxY { low = middle } else { break }
+            }
+        }
+        let ok = wait(shows)
+        let outcome = Outcome(before: nil, after: element.visibleFrame.map { "\(Int($0.minX)),\(Int($0.minY))" },
+                              method: "scrolled into sight", verified: ok)
+        if !ok { throw AXKitError.notApplied("scroll \(describe(element)) into sight") }
+        return outcome
+    }
+
     public enum DateOrder: String, Sendable {
         case dmy, mdy, ymd
 
