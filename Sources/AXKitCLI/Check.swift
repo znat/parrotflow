@@ -289,6 +289,34 @@ enum Check {
                     throw AXKitError.ax(.failure, "\(before.count) items with \(before.map(\.count)) types became \(after.count) with \(after.map(\.count))")
                 }
             },
+            Case(control: "sheet", operation: "Wait.element: the sheet, as soon as it shows", expect: .becomes("sheet", "cancel")) {
+                try Controls.press(try control("open_sheet"))
+                let started = Date()
+                let cancel = app.windows.first.flatMap { window in
+                    Wait.element(in: window, app: app, timeout: 3) { $0.identifier == "sheet_cancel" }
+                }
+                let ms = Int(Date().timeIntervalSince(started) * 1000)
+                guard let cancel else { throw AXKitError.ax(.failure, "no sheet after \(ms) ms") }
+                FileHandle.standardError.write("wait: the sheet showed after \(ms) ms\n".data(using: .utf8)!)
+                try Controls.press(cancel)
+            },
+            Case(control: "window", operation: "Wait.until gives up at its timeout", expect: .ignored("volume")) {
+                let started = Date()
+                let held = Wait.until(app, timeout: 0.5) { window.first(budget: 200, where: { $0.identifier == "never_there" }) != nil }
+                let seconds = Date().timeIntervalSince(started)
+                guard !held, seconds >= 0.45, seconds < 1 else {
+                    throw AXKitError.ax(.failure, "held \(held) after \(Int(seconds * 1000)) ms")
+                }
+            },
+            Case(control: "room", operation: "Wait.settled after a change", expect: .becomes("room", "Room E")) {
+                try Controls.setText("Room E", on: try control("room"))
+                let started = Date()
+                guard Wait.settled(app, on: window, quiet: 0.3, timeout: 2) else {
+                    throw AXKitError.ax(.failure, "still changing after 2 s")
+                }
+                let ms = Int(Date().timeIntervalSince(started) * 1000)
+                FileHandle.standardError.write("wait: settled after \(ms) ms\n".data(using: .utf8)!)
+            },
             Case(control: "keyboard", operation: "the layout has a key for v", expect: .ignored("volume")) {
                 guard Input.keyCode(for: "v") != nil else { throw AXKitError.ax(.failure, "no key for v") }
             },
