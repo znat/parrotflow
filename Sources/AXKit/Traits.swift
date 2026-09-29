@@ -123,6 +123,7 @@ public enum Gesture: String, CaseIterable, Codable, Sendable {
     case moveWindow, resizeWindow, minimizeWindow, fullScreen, place, tile
     case launch, open, openWith, activate, raise, wake
     case menuExtra, copy, textOf, notificationAction, service, capture
+    case showTab, closeTab, newTab, suggestions, goTo, openPage, history
 
     /// In a native window. `page` gives the traits in a web page.
     public var native: Traits {
@@ -172,6 +173,13 @@ public enum Gesture: String, CaseIterable, Codable, Sendable {
             return Traits(front: .always)
         case .wake:
             return Traits(invalidatesElements: true)
+        // Chrome stays behind for all of these (09-29): no keys are sent.
+        case .showTab, .suggestions, .history:
+            return Traits()
+        case .newTab, .openPage:
+            return Traits(safeToRetry: false)
+        case .closeTab, .goTo:
+            return Traits(safeToRetry: false, reversible: .no)
         }
     }
 

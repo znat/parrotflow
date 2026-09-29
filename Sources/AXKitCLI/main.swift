@@ -15,6 +15,7 @@ usage: axkit trusted
        axkit check [--json] [--popups] [--keyboard]    plays the control matrix on the fixture window, in the background
        axkit check --web [--page <index.html>] [--json]    the same on the web page, in a throwaway Chrome
        axkit check --electron [--folder <app>] [--json]    Teams and Slack patterns, in an Electron window
+       axkit check --browser [--json]    tabs, address bar suggestions and history in a throwaway Chrome, kept behind
        axkit check --share [--json]    File > Share > Messages, then Cancel: a foreground check, nothing sent
        axkit check --system [--json]    Dock badge, menu bar icon, text and copy between apps, open with
        axkit check --apps [--json]    Calculator and a file opened in the background, then quit
@@ -134,6 +135,9 @@ case "hit":
 
 case "traits":
     exit(TraitsCommand.run(arguments, bundle: value("--bundle"), json: has("--json")))
+
+case "check" where has("--browser"):
+    exit(BrowserCheck.run(json: has("--json")))
 
 case "check" where has("--share"):
     exit(ShareCheck.run(json: has("--json")))

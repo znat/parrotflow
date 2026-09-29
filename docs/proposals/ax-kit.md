@@ -34,6 +34,7 @@ first user. The agent (Python, skills, memories) is out of scope here.
 | Controls | typed adapters, one per role family, each op verified (below) |
 | Input | keys (unicode text, key codes, modifiers) and mouse clicks; route to the frontmost app or to one pid; guards |
 | Traits | what each gesture asks of the user, native and in a page; summed for a skill before it runs |
+| Browser | a Chromium browser's tabs, address bar suggestions and history, without keys |
 | CLI | `axkit dump`, `find`, `get`, `set`, `press`, `type`, and one verb per control op |
 
 ## Rules the measurements force
@@ -88,6 +89,16 @@ Outlook and Teams. Each rule is a contract of the kit.
    or Discard. Share, Reply and Forward are not: they open a draft. `Outcome.cameToFront` records what really happened.
    `axkit traits --bundle <id> <gesture> …` prints the table and the
    warning.
+10. **Browser: no keys, and Chrome stays behind.** Measured 09-29 in a
+   throwaway Chrome behind other windows. Pressing a tab, setting the
+   address bar's value, pressing a suggestion and setting the History
+   page's search all work there. Typing into the address bar brings Chrome
+   in front, so `Browser` never types. The suggestion list is a small web
+   page whose rows have ids `match-0`, `match-1`…; a row holding a "Switch
+   to this tab" button is an open tab. `Browser.history` reads
+   `chrome://history` in a tab it opens and closes. The browser's own tab
+   strip is not in a web area; the History page's tabs are, and are left
+   out. Chromium only; Safari is not measured.
 
 ## What comes in, from where
 
