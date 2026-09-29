@@ -98,7 +98,18 @@ Outlook and Teams. Each rule is a contract of the kit.
    to this tab" button is an open tab. `Browser.history` reads
    `chrome://history` in a tab it opens and closes. The browser's own tab
    strip is not in a web area; the History page's tabs are, and are left
-   out. Chromium only; Safari is not measured.
+   out.
+11. **Safari: tabs and History yes, the address field never.** Measured
+   09-29 in Safari 27 behind other windows. Pressing a tab or New Tab and
+   reading the History view work there. Setting the address field's value
+   makes Safari run a Google search by itself, and its suggestions take no
+   press, so `open` goes through `App.open` and `suggestions` throws. The
+   page's URL comes from its web area: the field shows a shortened address.
+   History > Show History (⌘Y, found by its shortcut) turns the shown tab
+   into History and back; its search field ignores a value set, so the
+   rows are matched in the kit. Deleting a visit needs Safari in front and
+   the list focused. `axkit check --browser --safari` needs Safari quit,
+   and deletes its visits at the end, in front.
 
 ## What comes in, from where
 
