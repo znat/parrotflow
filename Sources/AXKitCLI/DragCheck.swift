@@ -22,6 +22,7 @@ enum DragCheck {
         Scene(name: "one file, list view, native zone", view: "list", files: 1, target: "native"),
         Scene(name: "two files, list view, native zone", view: "list", files: 2, target: "native"),
         Scene(name: "one file, icon view, Electron zone", view: "icon", files: 1, target: "electron"),
+        Scene(name: "a file out of an app, Electron zone", view: "app", files: 1, target: "electron"),
     ]
 
     static func run(json: Bool, only: String?) -> Int32 {
@@ -111,6 +112,9 @@ enum DragCheck {
             dropped = { (WebCheck.truth(target)?["dropped_files"] as? [String] ?? []).sorted() }
         }
 
+        if scene.view == "app" { return appToApp(scene, row: row, target: target, targetWindow: targetWindow,
+                                                  zone: zone, dropped: dropped) }
+
         // The Finder, with the files selected, in the scene's view.
         NSWorkspace.shared.activateFileViewerSelecting(files)
         guard let finder = App.named("com.apple.finder") else { row.got = "no Finder"; return row }
@@ -173,6 +177,55 @@ enum DragCheck {
             row.got = got.isEmpty
                 ? "nothing dropped (a drag session \(board.changeCount != count ? "started" : "never started"))"
                 : "→ \(got.joined(separator: ", "))"
+        } catch {
+            row.got = "stopped: \(error)"
+        }
+        return row
+    }
+
+    /// From the native fixture's drag source to the target's zone: two apps,
+    /// no Finder.
+    static func appToApp(_ scene: Scene, row: Check.Row, target: App, targetWindow: Element, zone: Element,
+                         dropped: () -> [String]) -> Check.Row {
+        var row = row
+        row.expected = "→ axkit-from-app.txt"
+        let products = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+        let fixture = Process()
+        fixture.executableURL = products.appendingPathComponent("AXKitFixtures")
+        fixture.arguments = ["120", "--title", "Source", "--state", NSTemporaryDirectory() + "axkit-drag-source.json"]
+        fixture.standardOutput = FileHandle.nullDevice
+        guard (try? fixture.run()) != nil else { row.got = "no fixture"; return row }
+        defer { fixture.terminate() }
+        let source = App(pid: fixture.processIdentifier)
+        var window: Element?
+        var handle: Element?
+        _ = Check.wait(10) {
+            window = source.windows.first { $0.title == "Source" }
+            handle = window?.first(where: { $0.identifier == "drag_source" || $0.name == "axkit-from-app.txt" })
+            return handle != nil
+        }
+        guard let window, handle != nil else { row.got = "the source did not show"; return row }
+        let area = Layout.screens.first ?? .zero
+        Layout.place(window, in: CGRect(x: area.minX + 20, y: area.minY + 20, width: 900, height: area.height - 40))
+        if let frame = window.frame {
+            let x = frame.maxX + 20
+            Layout.place(targetWindow, in: CGRect(x: x, y: area.minY + 20, width: max(700, area.maxX - x - 20),
+                                                  height: area.height - 40))
+        }
+        _ = target.activate()
+        _ = source.activate()
+        Thread.sleep(forTimeInterval: 0.4)
+        var zone = zone
+        if let again = try? WebCheck.byDom(target, "drop_zone") { zone = again }
+        guard let pull = window.first(where: { $0.identifier == "drag_source" || $0.name == "axkit-from-app.txt" }) else {
+            row.got = "no handle"; return row
+        }
+        do {
+            try Input.drag(from: pull, to: zone)
+            _ = Check.wait(3) { dropped() == ["axkit-from-app.txt"] }
+            let got = dropped()
+            row.pass = got == ["axkit-from-app.txt"]
+            row.got = got.isEmpty ? "nothing dropped" : "→ \(got.joined(separator: ", "))"
         } catch {
             row.got = "stopped: \(error)"
         }

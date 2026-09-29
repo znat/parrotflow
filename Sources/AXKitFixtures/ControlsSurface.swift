@@ -173,6 +173,16 @@ final class ControlsSurface: NSObject {
         zone.frame = NSRect(x: 0, y: 0, width: 220, height: 44)
         right.addArrangedSubview(labelled("file_zone", zoneScroll))
 
+        // A file to drag out of the app, as an attachment in Mail or Slack.
+        let source = DragSource()
+        source.identifier = NSUserInterfaceItemIdentifier("drag_source")
+        source.setAccessibilityElement(true)
+        source.setAccessibilityRole(.image)
+        source.setAccessibilityLabel("axkit-from-app.txt")
+        source.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        source.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        right.addArrangedSubview(labelled("drag_source", source))
+
         outline = NSOutlineView()
         let outlineColumn = NSTableColumn(identifier: .init("name"))
         outlineColumn.title = "Name"
@@ -632,5 +642,28 @@ final class StubbornWindow: NSWindow {
         guard refusesMoves, isVisible else { return super.setFrame(rect, display: display) }
         super.setFrame(NSRect(x: frame.minX, y: frame.maxY - rect.height, width: rect.width, height: rect.height),
                        display: display)
+    }
+}
+
+
+/// Drags a file out when pulled: `axkit-from-app.txt` in the temporary folder.
+final class DragSource: NSView, NSDraggingSource {
+    let file = URL(fileURLWithPath: NSTemporaryDirectory() + "axkit-from-app.txt")
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.systemPurple.withAlphaComponent(0.3).setFill()
+        bounds.fill()
+        ("file" as NSString).draw(at: NSPoint(x: 16, y: 12), withAttributes: nil)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        try? "dragged out of an app by axkit\n".write(to: file, atomically: true, encoding: .utf8)
+        let item = NSDraggingItem(pasteboardWriter: file as NSURL)
+        item.setDraggingFrame(bounds, contents: nil)
+        beginDraggingSession(with: [item], event: event, source: self)
+    }
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        .copy
     }
 }
