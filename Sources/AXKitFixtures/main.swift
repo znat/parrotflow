@@ -1,6 +1,6 @@
 import AppKit
 
-// AXKitFixtures [seconds] [--state <path>] [--background] [--title T] [--min-size W H] [--stubborn]
+// AXKitFixtures [seconds] [--state <path>] [--background] [--title T] [--min-size W H] [--stubborn] [--badge N]
 // A window of native controls whose values go to a JSON file on each change.
 MainActor.assumeIsolated {
     var arguments = Array(CommandLine.arguments.dropFirst())
@@ -18,6 +18,11 @@ MainActor.assumeIsolated {
         title = arguments[index + 1]
         arguments.removeSubrange(index...index + 1)
     }
+    var badge: String?
+    if let index = arguments.firstIndex(of: "--badge"), index + 1 < arguments.count {
+        badge = arguments[index + 1]
+        arguments.removeSubrange(index...index + 1)
+    }
     var minimum: NSSize?
     if let index = arguments.firstIndex(of: "--min-size"), index + 2 < arguments.count,
        let width = Double(arguments[index + 1]), let height = Double(arguments[index + 2]) {
@@ -31,6 +36,7 @@ MainActor.assumeIsolated {
     surface.title = title
     surface.minimum = minimum
     surface.refusesMoves = stubborn
+    surface.badge = badge
     surface.show(background: background)
     print("controls: pid \(ProcessInfo.processInfo.processIdentifier), state \(statePath)")
     fflush(stdout)

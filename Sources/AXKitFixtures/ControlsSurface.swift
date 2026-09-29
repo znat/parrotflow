@@ -39,6 +39,9 @@ final class ControlsSurface: NSObject {
     var title = "Controls"
     var minimum: NSSize?
     var refusesMoves = false
+    /// A Dock badge and a menu bar icon, for the system checks.
+    var badge: String?
+    private var statusItem: NSStatusItem?
 
     init(statePath: String) {
         self.statePath = statePath
@@ -259,6 +262,18 @@ final class ControlsSurface: NSObject {
         values["export_pdf"] = 0
         values["export_csv"] = 0
         values["show_grid"] = false
+        if let badge {
+            NSApp.dockTile.badgeLabel = badge
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            item.button?.title = "AXK"
+            let menu = NSMenu()
+            let action = NSMenuItem(title: "Status action", action: #selector(statusChosen), keyEquivalent: "")
+            action.target = self
+            menu.addItem(action)
+            item.menu = menu
+            statusItem = item
+            values["status_menu"] = "none"
+        }
         values["alert"] = "closed"
         values["row_menu"] = "none"
         values["pasted_files"] = [String]()
@@ -366,6 +381,8 @@ final class ControlsSurface: NSObject {
         item.state = showGrid ? .on : .off
         set("show_grid", showGrid, via: "action")
     }
+
+    @objc private func statusChosen() { set("status_menu", "chosen", via: "action") }
 
     @objc private func rowMenuChosen(_ sender: NSMenuItem) {
         let index = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow

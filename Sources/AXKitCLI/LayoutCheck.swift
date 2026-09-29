@@ -17,8 +17,8 @@ enum LayoutCheck {
             .appendingPathComponent("AXKitFixtures").path
         let fixture = Process()
         fixture.executableURL = URL(fileURLWithPath: binary)
-        fixture.arguments = ["120", "--background", "--title", title,
-                             "--state", NSTemporaryDirectory() + "axkit-layout-\(title).json"] + extra
+        let state = extra.contains("--state") ? [] : ["--state", NSTemporaryDirectory() + "axkit-layout-\(title).json"]
+        fixture.arguments = ["120", "--background", "--title", title] + state + extra
         fixture.standardOutput = FileHandle.nullDevice
         fixture.standardError = FileHandle.nullDevice
         guard (try? fixture.run()) != nil else { return nil }

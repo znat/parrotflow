@@ -5,6 +5,14 @@ import AppKit
 public enum Clipboard {
     public struct Saved {
         let items: [[NSPasteboard.PasteboardType: Data]]
+
+        /// The first item's plain text, if it has some.
+        public var string: String? {
+            items.first?[.string].flatMap { String(data: $0, encoding: .utf8) }
+        }
+
+        /// Every type the items carry: rich text, images, file URLs.
+        public var types: [String] { items.flatMap { $0.keys.map(\.rawValue) } }
     }
 
     public static func save(_ board: NSPasteboard = .general) -> Saved {
