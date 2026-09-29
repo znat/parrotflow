@@ -7,21 +7,23 @@ import ApplicationServices
 /// returns as `context.*`, so a later stage — a `command:` script, a prompt —
 /// can read the conversation the transcript is about to join.
 ///
-/// ## Terminals only, for now
+/// ## Two kinds of screen
 ///
-/// A terminal is the one surface where this is nearly free. Its accessibility
-/// value *is* the visible screen — `Surface.Kind.screen` exists for exactly that
-/// reason — so the whole context is one AX call, the same call the app already
-/// makes to edit a line in place.
+/// A terminal is the cheap one. Its accessibility value *is* the visible screen
+/// — `Surface.Kind.screen` exists for exactly that reason — so the whole
+/// context is one AX call, the same call the app already makes to edit a line
+/// in place, and it costs about 1ms.
 ///
-/// Everywhere else it is not one call. A Slack composer publishes its own
-/// contents and nothing above it, so the messages would have to come from
-/// walking the window's children: hundreds of IPC round trips, per app, for a
-/// flat run of text nodes with no author attached. That may still be worth
-/// building. It is not the same feature, and shipping it behind the same name
-/// would make one stage mean "cheap" in one app and "expensive" in the next.
+/// Slack is the other kind. The composer publishes its own contents and nothing
+/// above it, so the messages come from walking the window's children: 973 nodes
+/// for one window and 130–150ms, against 1ms for a terminal. `TreeContext` does
+/// that walk, and it also returns what the flat screen of a terminal cannot —
+/// which conversation this is and who is in it.
 ///
-/// So a non-terminal app is declined, out loud, rather than half-served.
+/// Both run where `capturePress` runs, off the main thread once recording has
+/// started, so neither is on the path that makes the hotkey feel fast.
+///
+/// An app that is neither is declined, out loud, rather than half-served.
 enum Context {
 
     /// One read of the screen.
@@ -31,6 +33,18 @@ enum Context {
         let text: String
         /// Whether `maxChars` cut anything off the front.
         let truncated: Bool
+        /// Where the words are: the channel or direct message in Slack. Empty
+        /// from a terminal, which publishes no such thing.
+        var place: String = ""
+        /// Who is named on screen: message authors, and the members the header
+        /// lists. Empty from a terminal, for the same reason.
+        var people: [String] = []
+        /// What was written as code on screen. A terminal is all code and says
+        /// nothing here; Slack marks a backticked run and this is it.
+        var code: [String] = []
+        /// Every channel and person the window offers, from Slack's sidebar.
+        /// Not who is in this conversation — who exists to be named.
+        var roster: [String] = []
 
         var chars: Int { text.count }
         var lines: Int { text.isEmpty ? 0 : text.components(separatedBy: "\n").count }
@@ -42,7 +56,7 @@ enum Context {
     enum Declined: String, Error {
         case noPermission = "accessibility is not granted"
         case noApp = "the pipeline was not told which app this is for"
-        case notATerminal = "not a terminal; reading other apps needs a tree walk that does not exist yet"
+        case notReadable = "this app publishes no pane and no tree this stage knows how to walk"
         case appChanged = "the frontmost app is no longer the one dictated into"
         case nothingFocused = "nothing is focused"
         case unreadable = "the focused element publishes no value"
@@ -181,7 +195,8 @@ enum Context {
     static func read(app: Pipeline.App?) -> Result<Capture, Declined> {
         guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard let app else { return .failure(.noApp) }
-        guard AppProfile.of(app).readsPane else { return .failure(.notATerminal) }
+        let profile = AppProfile.of(app)
+        guard profile.readsPane || profile.readsTree else { return .failure(.notReadable) }
 
         let front = NSWorkspace.shared.frontmostApplication
         let frontID = front?.bundleIdentifier ?? ""
@@ -189,6 +204,12 @@ enum Context {
 
         guard let element = SelectionReader.focusedElement(),
               !SelectionReader.isOurs(element) else { return .failure(.nothingFocused) }
+        // The focus is looked up system-wide, after the check above, so another
+        // app can have come forward in between.
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success,
+              NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == app.bundleID
+        else { return .failure(.appChanged) }
         return read(app: app, from: element)
     }
 
@@ -217,8 +238,10 @@ enum Context {
     ) -> Result<Capture, Declined> {
         guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard let app else { return .failure(.noApp) }
-        guard AppProfile.of(app).readsPane else { return .failure(.notATerminal) }
+        let profile = AppProfile.of(app)
+        guard profile.readsPane || profile.readsTree else { return .failure(.notReadable) }
         guard !SelectionReader.isOurs(element) else { return .failure(.nothingFocused) }
+        if profile.readsTree { return readTree(from: element) }
         guard let value = SelectionReader.visibleText(of: element) else {
             return .failure(.unreadable)
         }
@@ -228,6 +251,45 @@ enum Context {
 
         let (text, truncated) = tail(of: above, limit: maxChars)
         return .success(Capture(text: text, truncated: truncated))
+    }
+
+    /// The conversation around the box, for an app whose screen is a tree.
+    ///
+    /// The subtree is climbed from the focused composer rather than chosen by
+    /// geometry: the Slack window measured on 2026-09-18 held two composers and
+    /// two conversations at once, and a rule about which side of the window the
+    /// sidebar ends on would have had to guess between them.
+    ///
+    /// Only that pane is read. A short conversation is a short pane, not a wrong
+    /// one. On 2026-09-28, with one DM open, a whole-window read took its place
+    /// from a sidebar row, added a line from outside the pane, and lost 7 of the
+    /// pane's 36 lines.
+    static func readTree(from element: AXUIElement) -> Result<Capture, Declined> {
+        let window = TreeContext.window(of: element)
+        let title = window.flatMap(TreeContext.title(of:))
+        let conversation = TreeContext.conversation(around: element).map {
+            TreeContext.assemble(TreeContext.nodes(under: $0), title: title)
+        }
+        return treeCapture(conversation, roster: window.map(TreeContext.roster(in:)) ?? [])
+    }
+
+    /// What a tree app publishes: the conversation when the climb found one,
+    /// and the sidebar either way.
+    ///
+    /// Pure, so `--tree-test` scores it.
+    static func treeCapture(
+        _ conversation: TreeContext.Assembled?, roster: [String]
+    ) -> Result<Capture, Declined> {
+        let found = conversation
+            ?? TreeContext.Assembled(place: "", people: [], text: "", code: [])
+        let nothing = found.text.isEmpty && found.place.isEmpty && found.people.isEmpty
+            && found.code.isEmpty && roster.isEmpty
+        guard !nothing else { return .failure(.empty) }
+        let (text, truncated) = tail(of: found.text, limit: maxChars)
+        return .success(Capture(
+            text: text, truncated: truncated,
+            place: found.place, people: found.people, code: found.code, roster: roster
+        ))
     }
 
     // MARK: - Cutting the screen up

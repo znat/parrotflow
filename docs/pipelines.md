@@ -1259,7 +1259,7 @@ pipeline:
     when: context.ok && context.chars > 200
 ```
 
-It publishes five things, on top of the four every stage gets:
+It publishes nine things, on top of the four every stage gets:
 
 | | |
 |---|---|
@@ -1267,6 +1267,10 @@ It publishes five things, on top of the four every stage gets:
 | `context.chars` | how much of it there is |
 | `context.lines` | how many rows |
 | `context.truncated` | whether the cap cut anything off the front |
+| `context.place` | which conversation this is — the channel or direct message in Slack, empty in a terminal |
+| `context.people` | who is named on screen, joined on `; ` — message authors and the members the header lists |
+| `context.code` | what was written as code, joined on `; ` — a backticked run in Slack, empty in a terminal |
+| `context.roster` | every channel and person the window offers, joined on `; ` — Slack's sidebar, empty in a terminal |
 | `context.declined` | why nothing was read, when nothing was |
 
 **It never changes the transcript.** `context.changed` is false on every run and
@@ -1274,15 +1278,36 @@ means it — the stage returns its input by construction, not by outcome. A stag
 that could put the screen into the transcript is a stage that could paste your
 terminal into a chat message.
 
-**Terminals only, for now.** A terminal's accessibility value *is* its visible
+**Terminals and Slack.** A terminal's accessibility value *is* its visible
 screen, so the whole context costs one call — the same call the app already
-makes to edit a line in place. No other app works that way. A Slack composer
-publishes its own contents and nothing above it, so the messages would have to
-come from walking the window's children: hundreds of round trips, per app, for a
-flat run of text with no author attached. That may still be worth building. It
-is not the same feature, and one stage that means "cheap" in one app and
-"expensive" in the next is not a stage anybody can budget for. So everything
-else is declined out loud.
+makes to edit a line in place, about 1ms. No other app works that way. A Slack
+composer publishes its own contents and nothing above it, so the messages come
+from walking the window's children: 973 nodes for one window and 130–150ms,
+measured 2026-09-18. Both run off the main thread once recording has started, so
+neither is on the path that makes the hotkey feel fast.
+
+The walk pays for itself by answering what a flat screen cannot. Slack labels
+each message group with its author, so `context.people` holds names the text
+alone does not give — a name at the start of a line before a colon is exactly
+what a tagger reads as a heading. And the list naming the conversation gives
+`context.place`, so "the eng platform channel" has a spelling on screen.
+
+Only the conversation you are typing in is read. The walk climbs from the
+focused box to the nearest pane that names a conversation and holds a message.
+A short conversation is published as it is. The rest of the window is never
+read for `text`, `place`, `people` or `code`, because it holds other
+conversations. When the climb finds no pane, those four are empty and
+`context.roster` is still published.
+
+Only the messages are published as `context.text`. The composer's formatting
+bar and the channel header are in the same pane and are dropped: the author
+label is the boundary, and everything under it is language rather than the app
+talking about itself. The sidebar is kept out of `context.text` too, and is
+published on its own as `context.roster`: every channel and person it lists.
+
+An app that is neither is declined out loud. Adding one means measuring it and
+naming it in `AppProfile.treeBundleIDs`, because the walk picks its subtree by
+the labels that app writes.
 
 **The screen is read when the hotkey goes down, not when the stage runs.** The
 press is the last moment the pane is known. By the time the pipeline reaches
@@ -1295,9 +1320,10 @@ reading and a stage reading agreed 15 times, and both differences were under 35
 characters of spinner and token counter. The reason to take the earlier one is
 not that it is fresher. It is that the pane is certain.
 
-The read costs about 1ms on a small pane and 36–39ms on a long scrollback, so it
-runs on a background queue after the recorder has started. It is skipped
-entirely unless some pipeline names the stage.
+A terminal read costs about 1ms on a small pane and 36–39ms on a long
+scrollback. A Slack walk costs 130–150ms. Both run on a background queue after
+the recorder has started. The read is skipped entirely unless some pipeline
+names the stage.
 
 **This does not fix where the text lands.** If you dictate into one pane and
 switch to another before the transcript is ready, the ⌘V still goes to the pane
