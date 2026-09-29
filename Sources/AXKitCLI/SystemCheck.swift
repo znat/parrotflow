@@ -109,6 +109,16 @@ enum SystemCheck {
             }
             return "\"\(mine.title ?? "")\" / \"\(mine.body ?? "")\", actions \(mine.actions), gone after Close"
         }
+        row("services", "System.services: the Services menu, whatever its title", "at least one service") {
+            let services = System.services(of: appA)
+            guard !services.isEmpty else { throw AXKitError.ax(.failure, "no services") }
+            return "\(services.count): \(services.prefix(4).joined(separator: ", "))…"
+        }
+        row("share", "Controls.menuItems File > Share", "the destinations macOS offers") {
+            let destinations = try Controls.menuItems(["File", "Share"], in: appA)
+            guard !destinations.isEmpty else { throw AXKitError.ax(.failure, "no destinations") }
+            return destinations.joined(separator: ", ")
+        }
         _ = appA
         Check.report(rows, json: json)
         return rows.allSatisfy(\.pass) ? 0 : 1

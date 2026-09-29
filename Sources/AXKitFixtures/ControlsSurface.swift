@@ -285,6 +285,7 @@ final class ControlsSurface: NSObject {
             values["status_menu"] = "none"
         }
         values["alert"] = "closed"
+        values["share"] = "none"
         values["row_menu"] = "none"
         values["pasted_files"] = [String]()
         values["dropped_files"] = [String]()
@@ -332,6 +333,13 @@ final class ControlsSurface: NSObject {
         let main = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
+        // Services: macOS fills it from what other apps offer for the selection.
+        let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        let services = NSMenu(title: "Services")
+        servicesItem.submenu = services
+        NSApp.servicesMenu = services
+        appMenu.addItem(servicesItem)
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit Controls", action: #selector(NSApplication.terminate(_:)),
                         keyEquivalent: "q")
         appItem.submenu = appMenu
@@ -352,6 +360,17 @@ final class ControlsSurface: NSObject {
         let grid = NSMenuItem(title: "Show Grid", action: #selector(toggleGrid(_:)), keyEquivalent: "")
         grid.target = self
         file.addItem(grid)
+        // Share: the destinations macOS offers for a line of text.
+        let shareItem = NSMenuItem(title: "Share", action: nil, keyEquivalent: "")
+        let share = NSMenu(title: "Share")
+        for service in NSSharingService.sharingServices(forItems: ["Shared by axkit"]) {
+            let item = NSMenuItem(title: service.menuItemTitle, action: #selector(shareChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = service
+            share.addItem(item)
+        }
+        shareItem.submenu = share
+        file.addItem(shareItem)
         fileItem.submenu = file
         main.addItem(fileItem)
 
@@ -390,6 +409,11 @@ final class ControlsSurface: NSObject {
         showGrid.toggle()
         item.state = showGrid ? .on : .off
         set("show_grid", showGrid, via: "action")
+    }
+
+    @objc private func shareChosen(_ sender: NSMenuItem) {
+        set("share", sender.title, via: "action")
+        (sender.representedObject as? NSSharingService)?.perform(withItems: ["Shared by axkit"])
     }
 
     @objc private func statusChosen() { set("status_menu", "chosen", via: "action") }

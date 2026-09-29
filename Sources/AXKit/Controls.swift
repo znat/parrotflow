@@ -154,6 +154,24 @@ public enum Controls {
         return outcome
     }
 
+    /// The titles of a menu's items, by its path in the menu bar, e.g.
+    /// ["File", "Share"]: what an app offers there, read without opening it.
+    public static func menuItems(_ path: [String], in app: App) throws -> [String] {
+        guard let bar = app.element.element(kAXMenuBarAttribute) else {
+            throw AXKitError.ax(.failure, "\(app.name ?? "the app") has no menu bar")
+        }
+        var current = bar
+        for (index, title) in path.enumerated() {
+            let wanted = index == 0 ? kAXMenuBarItemRole : kAXMenuItemRole
+            guard let next = current.first(budget: 400, where: { $0.role == wanted && $0.title == title }) else {
+                throw AXKitError.ax(.failure, "no menu \"\(path[...index].joined(separator: " > "))\"")
+            }
+            current = next
+        }
+        let menu = current.children.first { $0.role == kAXMenuRole } ?? current
+        return menu.children.filter { $0.role == kAXMenuItemRole }.compactMap(\.title).filter { !$0.isEmpty }
+    }
+
     /// A menu bar item by its path, e.g. ["File", "Export", "PDF…"]. The leaf
     /// takes AXPress with every menu closed, so nothing opens on screen.
     @discardableResult

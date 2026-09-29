@@ -162,3 +162,32 @@ extension System {
         return Outcome(before: notification.summary, after: nil, method: name, verified: nil)
     }
 }
+
+extension System {
+    /// The app's Services menu: the one submenu in its application menu
+    /// (the second in the bar), found without its title, which is localized.
+    public static func servicesMenu(of app: App) -> Element? {
+        guard let bar = app.element.element(kAXMenuBarAttribute) else { return nil }
+        let menus = bar.children.filter { $0.role == kAXMenuBarItemRole }
+        guard menus.count > 1, let appMenu = menus[1].children.first(where: { $0.role == kAXMenuRole }) else { return nil }
+        return appMenu.children.first { item in
+            item.role == kAXMenuItemRole && item.children.contains { $0.role == kAXMenuRole }
+        }?.children.first { $0.role == kAXMenuRole }
+    }
+
+    /// What the Services menu offers now: it depends on the selection.
+    public static func services(of app: App) -> [String] {
+        servicesMenu(of: app)?.children.filter { $0.role == kAXMenuItemRole }.compactMap(\.title).filter { !$0.isEmpty } ?? []
+    }
+
+    /// Runs a service by title, with whatever the app has selected.
+    @discardableResult
+    public static func service(_ name: String, in app: App) throws -> Outcome {
+        guard let menu = servicesMenu(of: app) else { throw AXKitError.ax(.failure, "no Services menu") }
+        guard let item = menu.children.first(where: { Glob.matches(name, $0.title ?? "") }) else {
+            throw AXKitError.ax(.failure, "no service \"\(name)\" among \(services(of: app))")
+        }
+        try item.perform(kAXPressAction)
+        return Outcome(before: nil, after: nil, method: "Services > \(item.title ?? name)", verified: nil)
+    }
+}
