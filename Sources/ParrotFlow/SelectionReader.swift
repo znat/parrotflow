@@ -47,9 +47,9 @@ enum SelectionReader {
     /// Captured at hotkey press so a rule learned by voice can still fix the
     /// word already sitting in the field — there was never a selection to
     /// snapshot, only a transcript that got typed there a moment ago.
-    static func focusSnapshot() -> Selection? {
+    static func focusSnapshot(failure: inout AXError?) -> Selection? {
         guard Permissions.accessibility == .granted else { return nil }
-        guard let element = focusedElement() else { return nil }
+        guard let element = focusedElement(failure: &failure) else { return nil }
         return Selection(
             text: "",
             owner: NSWorkspace.shared.frontmostApplication,
@@ -338,6 +338,13 @@ enum SelectionReader {
     }
 
     static func focusedElement() -> AXUIElement? {
+        var failure: AXError?
+        return focusedElement(failure: &failure)
+    }
+
+    /// `failure` gets the code when nothing comes back: -25212 is an app with
+    /// its tree switched off, -25204 one that did not answer in time.
+    static func focusedElement(failure: inout AXError?) -> AXUIElement? {
         let system = AXUIElementCreateSystemWide()
         // Without this the default timeout is ~6s, and these calls run on the
         // main thread on every hotkey press. One busy app — Xcode indexing, a
@@ -345,14 +352,18 @@ enum SelectionReader {
         // the run loop is stuck waiting for it to answer.
         AXUIElementSetMessagingTimeout(system, 0.25)
         var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
+        let result = AXUIElementCopyAttributeValue(
             system,
             kAXFocusedUIElementAttribute as CFString,
             &focused
-        ) == .success,
+        )
+        guard result == .success,
             let element = focused,
             CFGetTypeID(element) == AXUIElementGetTypeID()
-        else { return nil }
+        else {
+            failure = result
+            return nil
+        }
         return (element as! AXUIElement)
     }
 

@@ -67,7 +67,8 @@ enum Destination: Equatable {
     /// typed anywhere, which the app has always reported in its own way.
     enum Reason: Equatable {
         case noAccessibility
-        case nothingFocused
+        /// The AXError the focus read answered, when it said one.
+        case nothingFocused(AXError?)
         case notAField(role: String)
 
         /// The case alone, for the reason `Destination.traceName` gives:
@@ -84,7 +85,8 @@ enum Destination: Equatable {
         var described: String {
             switch self {
             case .noAccessibility: return "accessibility is not granted"
-            case .nothingFocused: return "nothing has keyboard focus"
+            case .nothingFocused(let code):
+                return "nothing has keyboard focus" + (code.map { " (AXError \($0.rawValue))" } ?? "")
             case .notAField(let role): return "\(role) does not take text"
             }
         }
@@ -121,7 +123,9 @@ enum Destination: Equatable {
     /// asked — the snapshot is on the main thread against apps that can be slow
     /// to answer, and a second traversal for a second opinion is how a hotkey
     /// starts feeling late.
-    static func at(app: Pipeline.App?, focus: AXUIElement?) -> Destination {
+    static func at(
+        app: Pipeline.App?, focus: AXUIElement?, focusFailure: AXError? = nil
+    ) -> Destination {
         // First, and ahead of the terminals, because without the grant there is
         // no focused element to inspect *and* no paste to aim: `TextInserter`
         // leaves the text on the clipboard whatever this says, terminal or not.
@@ -141,7 +145,7 @@ enum Destination: Equatable {
             }
         }
 
-        guard let focus else { return .nowhere(.nothingFocused) }
+        guard let focus else { return .nowhere(.nothingFocused(focusFailure)) }
         let role = SelectionReader.role(of: focus) ?? "an unnamed element"
         guard SelectionReader.acceptsTypedText(focus) else {
             return .nowhere(.notAField(role: role))

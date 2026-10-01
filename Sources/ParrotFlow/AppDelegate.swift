@@ -404,7 +404,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Starts at nothing, which is only read if a transcript ever arrives
     /// without a press behind it — and one that did not come from a press has
     /// no window it was aimed at either, so the clipboard is the honest answer.
-    private var destinationAtPress: Destination = .nowhere(.nothingFocused)
+    private var destinationAtPress: Destination = .nowhere(.nothingFocused(nil))
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
@@ -1364,7 +1364,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // because this is the main thread and recording must start regardless.
         let snapshotStart = Date()
         selectionAtPress = SelectionReader.snapshot()
-        focusAtPress = selectionAtPress ?? SelectionReader.focusSnapshot()
+        var focusFailure: AXError?
+        focusAtPress = selectionAtPress ?? SelectionReader.focusSnapshot(failure: &focusFailure)
         let front = Self.appInFront()
         appAtPress = front?.app
         pidAtPress = front?.pid
@@ -1372,12 +1373,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // so it is only made when they will. Off the element the snapshot above
         // already fetched — the answer costs two more attribute reads on a
         // reference we are holding, not another walk of the tree.
-        destinationAtPress = Destination.at(app: front?.app, focus: focusAtPress?.element)
+        destinationAtPress = Destination.at(
+            app: front?.app, focus: focusAtPress?.element, focusFailure: focusFailure
+        )
         appIconAtPress = destinationAtPress.acceptsText ? front?.icon : nil
         // The app by name: `field (AXTextArea)` alone cannot be acted on.
         let inWhichApp = destinationAtPress.namesTheApp
             ? "" : " in \(front?.app.described ?? "nothing")"
         Log.write("destination: \(destinationAtPress.described)\(inWhichApp)")
+        // Chrome can stay in front while something else turns its tree off,
+        // and then no activation comes to turn it back on. Too late for this
+        // press: the tree takes over a second to build. Not after -25204: that
+        // app is too slow to answer, and this is the main thread.
+        if case .nowhere(.nothingFocused(let code)) = destinationAtPress, code != .cannotComplete {
+            ChromiumAccessibility.askIfNeeded(NSWorkspace.shared.frontmostApplication)
+        }
         let elapsed = Date().timeIntervalSince(snapshotStart)
         if elapsed > 0.15 {
             Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
@@ -5723,8 +5733,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setLabel(nil)
     }
 
-    /// Activation and not the press: the tree is not built by the time the
-    /// call returns. The app already in front at launch never sends one.
+    /// Activation, so the tree is built before the first press: it is not
+    /// built by the time the call returns. The app already in front at launch
+    /// never sends one. The press asks again when nothing has focus.
     private func watchActivation() {
         let centre = NSWorkspace.shared.notificationCenter
         centre.addObserver(
