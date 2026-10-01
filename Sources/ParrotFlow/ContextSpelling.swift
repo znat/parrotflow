@@ -182,10 +182,28 @@ enum ContextSpelling {
         }.map(\.element)
     }
 
+    /// How close a span is to its term: 1 for the same letters, otherwise the
+    /// better of the letter and sound scores.
+    static func closeness(_ candidate: Candidate) -> Double {
+        max(candidate.ratio, candidate.sound)
+    }
+
     /// Longest first among those that clear their floor, with no overlaps.
+    ///
+    /// Between overlapping spans for the same term, only the closest match is
+    /// kept, whatever its length: "conversation health org" must not take
+    /// `conversationHEALTH` from "conversation health" and eat "org". Length
+    /// still decides between different terms, where a full name beats its
+    /// surname.
     static func choose(_ candidates: [Candidate]) -> [Candidate] {
+        let closest = candidates.filter { candidate in
+            !candidates.contains {
+                $0.term == candidate.term && $0.start < candidate.end && candidate.start < $0.end
+                    && closeness($0) > closeness(candidate)
+            }
+        }
         var chosen: [Candidate] = []
-        for candidate in ranked(candidates) {
+        for candidate in ranked(closest) {
             let floor: Double
             if candidate.exact {
                 floor = candidate.code ? codeFloor : exactFloor
@@ -244,6 +262,19 @@ enum ContextSpelling {
     private static let fileStem = try? NSRegularExpression(
         pattern: #"^(.+)\.(?:py|swift|sh|ya?ml|json|md|js|ts|tsx|txt|toml|rs|go|rb|c|h|cpp)$"#)
 
+    private static let url = try? NSRegularExpression(pattern: #"https?://([^\s<>"'`)]+)"#)
+
+    /// A path is said one segment at a time: `conversationHEALTH` out of
+    /// `github.com/conversationHEALTH/Redcrawl/issues/2507`. Only segments
+    /// that cannot be English on their own.
+    private static func addSegments(of path: String, to found: inout Terms) {
+        for segment in path.split(separator: "/").map(String.init)
+        where norm(segment).count >= 4 && segment.contains(where: \.isLetter)
+            && shaped(segment, strippingSigil: false) {
+            found.add(segment, .ident)
+        }
+    }
+
     /// Backticked runs, identifiers, capitalised names mid-sentence and long
     /// lowercase words, in the order the screen shows them.
     static func terms(in context: String) -> Terms {
@@ -268,6 +299,12 @@ enum ContextSpelling {
                norm(stem).count >= 4 {
                 found.add(stem, .ident)
             }
+            if group <= 2, term.contains("/") { addSegments(of: term, to: &found) }
+        }
+        // The identifier pattern cannot start after `//`, so a URL with a scheme
+        // gives no term of its own.
+        for match in url?.matches(in: context, range: NSRange(location: 0, length: whole.length)) ?? [] {
+            addSegments(of: whole.substring(with: match.range(at: 1)), to: &found)
         }
         for term in found.order where term.hasSuffix("()") {
             found.remove(String(term.dropLast(2)))
@@ -401,10 +438,12 @@ enum ContextSpelling {
         return out
     }
 
-    /// Character offsets, as UTF-16, a span may not start or end on.
+    /// Character offsets, as UTF-16, a span may not start or end on. Only
+    /// known words: the tagger also tags a misheard word, and called "helf" a
+    /// pronoun.
     static func edgeStops(_ tokens: [Tagger.Token], in text: String) -> [Int: String] {
         var stops: [Int: String] = [:]
-        for token in tokens where edgeTags.contains(token.tag) {
+        for token in tokens where edgeTags.contains(token.tag) && known(token.text) {
             guard let at = text.index(text.startIndex, offsetBy: token.at, limitedBy: text.endIndex)
             else { continue }
             stops[at.utf16Offset(in: text)] = token.text.lowercased()
