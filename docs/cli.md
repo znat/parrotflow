@@ -769,6 +769,7 @@ $PF --peek 3 [--find <sentinel>]
 $PF --edit-test <needle> <replacement> --find <sentinel> [--after 3] [--literal]
 $PF --span-test <start> <length> <replacement> --find <sentinel> [--after 3]
 $PF --clipboard-test
+$PF --landing-test
 $PF --span-rule
 $PF --paste-probe <plain|markdown|html|rtf|all> [--file <fixture.md>] [--bare] [--show]
 ```
@@ -813,6 +814,12 @@ with the count already moved by its own paste — this checks that the fallback
 writes anyway, that it still refuses once somebody else has copied, and that the
 restore queued behind the paste does not land on the rewrite. Your clipboard is
 saved and put back.
+
+`--landing-test` checks the second look at focus for a press that found nowhere
+to type. The words paste only when a field of the same app has focus by the
+time they are ready. Anything else copies. It also checks the ⌘V by hand that
+follows: the usual offer appears only when our words are still on the
+clipboard and sit right before the caret of a field, line endings aside.
 
 `--paste-probe` answers a different question: which pasteboard flavour each app
 accepts. A pasteboard item can carry `public.html`, `public.rtf` and plain text
@@ -1088,6 +1095,7 @@ scripts/check-no-voice.sh          # nothing in git is one person's voice
 scripts/check-audio-recovery.sh    # a microphone that changes leaves a usable engine
 scripts/check-profiles.sh          # which app gets examined, named, or read for context
 scripts/check-clipboard.sh         # when a rewrite may go to the clipboard, and stay there
+scripts/check-landing.sh           # when a press with nowhere to type pastes after all
 scripts/check-span-rule.sh         # which range a rewrite is written as, before any app sees it
 scripts/check-bug-report.sh        # what a bug report carries, and that it carries no home path
 scripts/check-slot-tokenizer.sh    # the slot tokenizer against HuggingFace's own

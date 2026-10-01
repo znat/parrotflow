@@ -47,9 +47,9 @@ enum SelectionReader {
     /// Captured at hotkey press so a rule learned by voice can still fix the
     /// word already sitting in the field — there was never a selection to
     /// snapshot, only a transcript that got typed there a moment ago.
-    static func focusSnapshot() -> Selection? {
+    static func focusSnapshot(failure: inout AXError?) -> Selection? {
         guard Permissions.accessibility == .granted else { return nil }
-        guard let element = focusedElement() else { return nil }
+        guard let element = focusedElement(failure: &failure) else { return nil }
         return Selection(
             text: "",
             owner: NSWorkspace.shared.frontmostApplication,
@@ -338,6 +338,13 @@ enum SelectionReader {
     }
 
     static func focusedElement() -> AXUIElement? {
+        var failure: AXError?
+        return focusedElement(failure: &failure)
+    }
+
+    /// `failure` gets the code when nothing comes back: -25212 is an app with
+    /// its tree switched off, -25204 one that did not answer in time.
+    static func focusedElement(failure: inout AXError?) -> AXUIElement? {
         let system = AXUIElementCreateSystemWide()
         // Without this the default timeout is ~6s, and these calls run on the
         // main thread on every hotkey press. One busy app — Xcode indexing, a
@@ -345,14 +352,18 @@ enum SelectionReader {
         // the run loop is stuck waiting for it to answer.
         AXUIElementSetMessagingTimeout(system, 0.25)
         var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
+        let result = AXUIElementCopyAttributeValue(
             system,
             kAXFocusedUIElementAttribute as CFString,
             &focused
-        ) == .success,
+        )
+        guard result == .success,
             let element = focused,
             CFGetTypeID(element) == AXUIElementGetTypeID()
-        else { return nil }
+        else {
+            failure = result
+            return nil
+        }
         return (element as! AXUIElement)
     }
 
@@ -458,6 +469,25 @@ enum SelectionReader {
             element, kAXStringForRangeParameterizedAttribute as CFString, parameter, &answer
         ) == .success else { return nil }
         return answer as? String
+    }
+
+    /// Up to `length` UTF-16 units before the caret, or nil when something is
+    /// selected or the app will not say. In the app's own offsets first, then
+    /// by cutting the value, which is off in Chromium past a block boundary.
+    static func textBeforeCaret(of element: AXUIElement, length: Int) -> String? {
+        AXUIElementSetMessagingTimeout(element, 0.25)
+        guard let caret = selectedRange(of: element), caret.length == 0,
+              caret.location > 0, length > 0 else { return nil }
+        let start = max(0, caret.location - length)
+        if let text = string(of: element, at: start, length: caret.location - start) {
+            return text
+        }
+        guard let value = visibleText(of: element, within: nil) else { return nil }
+        let units = value.utf16
+        guard caret.location <= units.count else { return nil }
+        let from = units.index(units.startIndex, offsetBy: start)
+        let to = units.index(units.startIndex, offsetBy: caret.location)
+        return String(units[from..<to])
     }
 
     // MARK: - Synthetic copy

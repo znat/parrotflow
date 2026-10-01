@@ -90,7 +90,7 @@ release-certificate:
 ## those by hand and put the numbers in the pull request.
 CHECKS := replacements pipeline pipeline-config wake split dates keyed \
           transform-folders eval audio-recovery possessive word-gate suggest input join \
-          profiles span-rule clipboard default-config vocabulary-config learn \
+          profiles span-rule clipboard landing default-config vocabulary-config learn \
           signing-identity no-voice sound slot-tokenizer sentence-case term-uses \
           edit-diff sentence-open invented-tail sentence-window lowercase-refused \
           selector sound-group trace-edits

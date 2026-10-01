@@ -67,7 +67,8 @@ enum Destination: Equatable {
     /// typed anywhere, which the app has always reported in its own way.
     enum Reason: Equatable {
         case noAccessibility
-        case nothingFocused
+        /// The AXError the focus read answered, when it said one.
+        case nothingFocused(AXError?)
         case notAField(role: String)
 
         /// The case alone, for the reason `Destination.traceName` gives:
@@ -84,7 +85,8 @@ enum Destination: Equatable {
         var described: String {
             switch self {
             case .noAccessibility: return "accessibility is not granted"
-            case .nothingFocused: return "nothing has keyboard focus"
+            case .nothingFocused(let code):
+                return "nothing has keyboard focus" + (code.map { " (AXError \($0.rawValue))" } ?? "")
             case .notAField(let role): return "\(role) does not take text"
             }
         }
@@ -121,7 +123,9 @@ enum Destination: Equatable {
     /// asked — the snapshot is on the main thread against apps that can be slow
     /// to answer, and a second traversal for a second opinion is how a hotkey
     /// starts feeling late.
-    static func at(app: Pipeline.App?, focus: AXUIElement?) -> Destination {
+    static func at(
+        app: Pipeline.App?, focus: AXUIElement?, focusFailure: AXError? = nil
+    ) -> Destination {
         // First, and ahead of the terminals, because without the grant there is
         // no focused element to inspect *and* no paste to aim: `TextInserter`
         // leaves the text on the clipboard whatever this says, terminal or not.
@@ -141,12 +145,64 @@ enum Destination: Equatable {
             }
         }
 
-        guard let focus else { return .nowhere(.nothingFocused) }
+        guard let focus else { return .nowhere(.nothingFocused(focusFailure)) }
         let role = SelectionReader.role(of: focus) ?? "an unnamed element"
         guard SelectionReader.acceptsTypedText(focus) else {
             return .nowhere(.notAField(role: role))
         }
         return .field(role: role)
+    }
+
+    /// What a second focus read found when the words were ready.
+    struct LateFocus: Equatable {
+        var accessibility: Bool
+        /// The app in front.
+        var front: pid_t?
+        /// The app the focused element belongs to.
+        var owner: pid_t?
+        var takesText: Bool
+        var ours: Bool
+    }
+
+    /// Whether a press that found nowhere to type can paste after all: you
+    /// clicked into a field of the same app while speaking. Any other app, or
+    /// anything that is not a field, is a guess about where the words go.
+    static func pastesLate(after reason: Reason, pressedIn pid: pid_t?, found: LateFocus) -> Bool {
+        if case .noAccessibility = reason { return false }
+        guard found.accessibility, let pid, found.front == pid, found.owner == pid else {
+            return false
+        }
+        return found.takesText && !found.ours
+    }
+
+    /// Whether a ⌘V by hand, while "On your clipboard" is up, earns the usual
+    /// offer: our words still on the clipboard, a field that is not ours, and
+    /// those words found right before the caret. `before` is nil when the app
+    /// would not say.
+    static func offersAfterHandPaste(
+        clipboardIsOurs: Bool, field: Bool, before: String?, pasted: String
+    ) -> Bool {
+        guard clipboardIsOurs, field, let before else { return false }
+        return endsAtCaret(before, with: pasted)
+    }
+
+    /// Whether the text before the caret ends with what was pasted. A field
+    /// can store "\r\n" where the clipboard has "\n", so both are normalised.
+    /// Through Foundation: Swift reads "\r\n" as one `Character`, and
+    /// `hasSuffix` would not match it against "\n".
+    static func endsAtCaret(_ before: String, with pasted: String) -> Bool {
+        func lines(_ text: String) -> String {
+            text.replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
+        }
+        let wanted = lines(pasted)
+        guard !wanted.isEmpty else { return false }
+        if lines(before).hasSuffix(wanted) { return true }
+        // Chrome 154 skips the break between two blocks of a contenteditable:
+        // AXStringForRange gave "Hi team.Ship it" for two paragraphs.
+        func unbroken(_ text: String) -> String { text.replacingOccurrences(of: "\n", with: "") }
+        let joined = unbroken(wanted)
+        return !joined.isEmpty && unbroken(lines(before)).hasSuffix(joined)
     }
 
 }

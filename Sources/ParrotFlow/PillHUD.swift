@@ -54,6 +54,9 @@ enum PillState: Equatable {
     case working(String)
     /// A sentence, for a few seconds.
     case notice(String, NoticeTone)
+    /// The transcript is on the clipboard and nowhere else. No chips and no
+    /// keys taken: it stays until ⌘V, Escape, the next press or another copy.
+    case clipboard(String)
     /// Why something could not run, as markdown, with a bar draining over it.
     /// The one message state that takes the mouse.
     case alert(String, NoticeTone)
@@ -517,6 +520,17 @@ final class PillHUD {
     /// A `duration` of nil leaves the message up until `hide()`.
     func notice(_ message: String, tone: NoticeTone = .plain, duration: TimeInterval? = 3.5) {
         set(.notice(message, tone), for: duration)
+    }
+
+    /// Up until `hide()` or another state.
+    func clipboard(_ message: String) {
+        set(.clipboard(message))
+    }
+
+    var showsClipboard: Bool {
+        guard let panel, panel.isVisible, !isFading else { return false }
+        if case .clipboard = model.state { return true }
+        return false
     }
 
     /// Several lines about something that could not run, as markdown. A
@@ -1596,6 +1610,7 @@ enum PillMetrics {
             // `RecordingContent`. A notice is not: it is a sentence, and a
             // sentence needs the height it has always had.
             if case .notice = state { return height }
+            if case .clipboard = state { return height }
             return tabHeight
         }
         guard open else { return tabHeight }
@@ -1706,7 +1721,7 @@ enum PillMetrics {
             return recordingWidth(label: label)
         case .working(let message):
             return tabWidth(label: message, icon: icon)
-        case .notice(let message, _): return text(message)
+        case .notice(let message, _), .clipboard(let message): return text(message)
         case .alert: return alertWidth
         case .offer(let commands, let headline, let reading, let open):
             guard open else { return tabWidth(hotkey: hotkey) }
@@ -2111,6 +2126,9 @@ struct PillView: View {
                 case .notice(let message, let tone):
                     MessageContent(message: message, tone: tone)
                         .transition(.opacity)
+                case .clipboard(let message):
+                    MessageContent(message: message, tone: .plain, symbol: "doc.on.clipboard")
+                        .transition(.opacity)
                 case .alert(let markdown, let tone):
                     AlertContent(
                         markdown: markdown, tone: tone, fraction: model.alertRemaining,
@@ -2379,10 +2397,17 @@ private struct WorkingContent: View {
 private struct MessageContent: View {
     let message: String
     let tone: NoticeTone
+    /// Drawn in place of the dot.
+    var symbol: String?
 
     var body: some View {
         HStack(spacing: PillMetrics.gap) {
-            ToneDot(tone: tone)
+            if let symbol {
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .medium))
+            } else {
+                ToneDot(tone: tone)
+            }
 
             Text(message)
                 .font(.system(size: 12, weight: .medium, design: .rounded))

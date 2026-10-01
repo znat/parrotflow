@@ -887,10 +887,9 @@ enum PanelsCommand {
             Confidence.Reading(), open: true
         ), docked: .below)
         // Beside the plain one: the two endings must not look the same.
-        let offerCopied = pill(.offer(
-            offerChips, .landing("Nowhere to type · ⌘V"), Confidence.Reading(),
-            open: true
-        ), docked: .below)
+        // Free, because a press with nowhere to type reads no caret to hang
+        // from.
+        let offerCopied = pill(.clipboard("On your clipboard · ⌘V to paste"), docked: .free)
         // The warning on its own, which is what most people will ever see of
         // this: `feedback.confidence` is off by default and the thresholds are
         // not, so a shaky dictation raises one line and nothing else.

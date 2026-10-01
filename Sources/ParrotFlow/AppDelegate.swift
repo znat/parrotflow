@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import Carbon.HIToolbox
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
@@ -189,10 +190,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let run: Int
         /// What was focused when the key went down. The same element `focus`
         /// carries, held here as well so the offer needs nothing but the press.
-        let element: AXUIElement?
+        /// Replaced when a press with nowhere to type pastes late.
+        var element: AXUIElement?
         /// And the app it belonged to, for the same reason: an offer taken
         /// later has to write back into the window that was dictated into.
-        let owner: NSRunningApplication?
+        var owner: NSRunningApplication?
+        /// The app in front at the press, which `owner` is not when nothing had
+        /// focus.
+        let pid: pid_t?
         /// The microphone this dictation was recorded on. Frozen for the same
         /// reason as everything above it: the default input can change while
         /// the decoder runs — a headset disconnects, somebody picks another
@@ -404,7 +409,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Starts at nothing, which is only read if a transcript ever arrives
     /// without a press behind it — and one that did not come from a press has
     /// no window it was aimed at either, so the clipboard is the honest answer.
-    private var destinationAtPress: Destination = .nowhere(.nothingFocused)
+    private var destinationAtPress: Destination = .nowhere(.nothingFocused(nil))
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
@@ -480,6 +485,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Watches for a click outside the offer, for as long as it is up. See
     /// `watchForOfferOutsideClick`.
     private var offerClickMonitors: [Any] = []
+    /// What the clipboard notice is about, and what watches it. See
+    /// `showClipboardNotice`.
+    private struct ClipboardWatch {
+        let press: Press
+        /// `NSPasteboard.changeCount` as our write left it.
+        let change: Int
+        let keys: [Any]
+        let timer: Timer
+    }
+    private var clipboardWatch: ClipboardWatch?
+    /// Bumped by every notice and every ending, so a late read after ⌘V can
+    /// tell its notice is gone.
+    private var clipboardGeneration = 0
     /// True while the pointer is resting on the offer.
     ///
     /// The clock is stopped then, and `offerUntil` becomes a date that never
@@ -1285,6 +1303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // run between the key going down and the microphone opening, and this
         // is the only measurement that can say what they cost the speaker.
         pressedAt = Date()
+        endTheClipboardNotice(reason: "the next press")
 
         // The gesture, kept for the `Press` built when the recording stops.
         // Only for a press that starts a dictation: the second press of a
@@ -1364,7 +1383,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // because this is the main thread and recording must start regardless.
         let snapshotStart = Date()
         selectionAtPress = SelectionReader.snapshot()
-        focusAtPress = selectionAtPress ?? SelectionReader.focusSnapshot()
+        var focusFailure: AXError?
+        focusAtPress = selectionAtPress ?? SelectionReader.focusSnapshot(failure: &focusFailure)
         let front = Self.appInFront()
         appAtPress = front?.app
         pidAtPress = front?.pid
@@ -1372,12 +1392,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // so it is only made when they will. Off the element the snapshot above
         // already fetched — the answer costs two more attribute reads on a
         // reference we are holding, not another walk of the tree.
-        destinationAtPress = Destination.at(app: front?.app, focus: focusAtPress?.element)
+        destinationAtPress = Destination.at(
+            app: front?.app, focus: focusAtPress?.element, focusFailure: focusFailure
+        )
         appIconAtPress = destinationAtPress.acceptsText ? front?.icon : nil
         // The app by name: `field (AXTextArea)` alone cannot be acted on.
         let inWhichApp = destinationAtPress.namesTheApp
             ? "" : " in \(front?.app.described ?? "nothing")"
         Log.write("destination: \(destinationAtPress.described)\(inWhichApp)")
+        // Chrome can stay in front while something else turns its tree off,
+        // and then no activation comes to turn it back on. Too late for this
+        // press: the tree takes over a second to build. Not after -25204: that
+        // app is too slow to answer, and this is the main thread.
+        if case .nowhere(.nothingFocused(let code)) = destinationAtPress, code != .cannotComplete {
+            ChromiumAccessibility.askIfNeeded(NSWorkspace.shared.frontmostApplication)
+        }
         let elapsed = Date().timeIntervalSince(snapshotStart)
         if elapsed > 0.15 {
             Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
@@ -2204,7 +2233,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // device. Taken here rather than read at the end for the same reason as
         // the rest: the default input can change while the decoder runs.
         let press = Press(
-            run: pressRun, element: focus?.element, owner: focus?.owner, mic: micAtPress,
+            run: pressRun, element: focus?.element, owner: focus?.owner, pid: pidAtPress,
+            mic: micAtPress,
             // Plain when nobody was in front, which is the answer that cannot
             // lose a sentence.
             paste: appAtPress.map { AppProfile.of($0).paste } ?? .plain,
@@ -3418,10 +3448,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// After every ending, not only a paste that worked. A word the recogniser
     /// got wrong is worth teaching whether or not the sentence reached a text
     /// field, and the offer cannot wait: it is about the words you are looking
-    /// at now. The messages the clipboard endings used to put on the pill —
-    /// "on your clipboard", "grant Accessibility" — are worth keeping and worth
-    /// less than the offer, so they moved to the menu bar, where messages that
-    /// are not urgent live. See `insertDictation`.
+    /// at now. See `insertDictation`.
+    ///
+    /// Except the two clipboard endings nobody chose, nowhere to type and focus
+    /// moved: `clipboardNotice` puts up a notice with no chips instead. The
+    /// offer there closed on the next key, 1–3 s after landing, so nobody saw
+    /// it.
     ///
     /// `landing` is where those words actually went. It is frozen into the
     /// correction, and it is what keeps a correction out of a field the
@@ -3435,9 +3467,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `press` is the dictation this offer is about, carried down from its own
     /// key-down — see `insertDictation`. Nothing below reads press-time state
     /// off `self`, so an offer can never be moved by another dictation's press.
-    /// `headline` is only passed for an ending nobody chose.
     private func showCorrectOffer(
-        for press: Press, landing: Correction.Landing, headline: Headline? = nil
+        for press: Press, landing: Correction.Landing, clipboardNotice: Bool = false
     ) {
         // Beside the offer, not on it: its own window, so advice about the
         // microphone never costs you the chance to fix the sentence. Here
@@ -3468,6 +3499,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the second one would sit on the first.
         if !micNotice.isShowing { keyboardNotice.showIfNeeded() }
 
+        // Not an offer, so not behind `correct_offer`.
+        if clipboardNotice, case .clipboard(let change) = landing {
+            showClipboardNotice(for: press, change: change)
+        }
+
         guard config.feedback.correctOffer else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return }
@@ -3488,6 +3524,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // and carrying the words as well as the field — see `lastDictated`.
         lastDictated = (press.run, text, press.element, press.owner, landing)
         watchForReselection()
+        // A tap still summons the offer over these words.
+        guard !clipboardNotice else { return }
 
         // The decoder's words matched back onto the sentence that came out of
         // the pipeline — see `Confidence.read`. Taken rather than copied: this
@@ -3514,7 +3552,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 original: text, element: press.element, owner: press.owner,
                 landing: landing, dictation: press.run
             ),
-            run: press.run, headline: headline, reading: reading,
+            run: press.run, headline: nil, reading: reading,
             // Nobody asked for this one. It arrives as a tab unless the decode
             // is worth a second look, which `raiseOffer` decides for itself.
             open: false
@@ -4711,6 +4749,129 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerClickMonitors.removeAll()
     }
 
+    /// "On your clipboard", with no chips and no deadline. It takes no key:
+    /// ⌘V and Escape are heard, not taken, so both still reach the app, and
+    /// typing anything else leaves it up. The next press ends it, and so does
+    /// anything else being copied, since ⌘V would no longer paste these words.
+    private func showClipboardNotice(for press: Press, change: Int) {
+        if let owner = offerPressRun, owner > press.run {
+            Log.write("clipboard notice: a newer dictation already has the pill")
+            return
+        }
+        offerPressRun = press.run
+        stopWatchingTheClipboard()
+        clipboardGeneration += 1
+        pill.clipboard("On your clipboard · ⌘V to paste")
+        let heard: (NSEvent) -> Void = { [weak self] event in
+            if event.keyCode == UInt16(kVK_Escape) {
+                self?.endTheClipboardNotice(reason: "escape")
+            } else if event.modifierFlags.contains(.command),
+                      event.charactersIgnoringModifiers?.lowercased() == "v" {
+                self?.clipboardPastedByHand()
+            }
+        }
+        // Global for other apps, local for our own windows, which the global
+        // one never sees.
+        let keys = [
+            NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: heard),
+            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { heard($0); return $0 },
+        ].compactMap { $0 }
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            if !self.pill.showsClipboard {
+                self.stopWatchingTheClipboard()
+            } else if !TextInserter.clipboardIsOurs(unchangedFrom: change) {
+                self.endTheClipboardNotice(reason: "the clipboard changing")
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        clipboardWatch = ClipboardWatch(press: press, change: change, keys: keys, timer: timer)
+    }
+
+    private func stopWatchingTheClipboard() {
+        clipboardWatch?.keys.forEach(NSEvent.removeMonitor)
+        clipboardWatch?.timer.invalidate()
+        clipboardWatch = nil
+    }
+
+    private func endTheClipboardNotice(reason: String) {
+        stopWatchingTheClipboard()
+        clipboardGeneration += 1
+        // Something else may have the pill by now.
+        guard pill.showsClipboard else { return }
+        Log.write("clipboard notice: closed by \(reason)")
+        pill.hide()
+    }
+
+    /// ⌘V while the notice is up. When it put our words into a field, the
+    /// usual offer follows, as if this app had pasted there itself.
+    private func clipboardPastedByHand() {
+        guard let watch = clipboardWatch, pill.showsClipboard else {
+            stopWatchingTheClipboard()
+            return
+        }
+        let ours = TextInserter.clipboardIsOurs(unchangedFrom: watch.change)
+        let pasted = ours ? NSPasteboard.general.string(forType: .string) ?? "" : ""
+        let element = ours ? SelectionReader.focusedElement() : nil
+        let field = element.map {
+            SelectionReader.acceptsTypedText($0) && !SelectionReader.isOurs($0)
+        } ?? false
+        guard let element, field, !pasted.isEmpty else {
+            endTheClipboardNotice(reason: "⌘V")
+            return
+        }
+        // Held now, so a key repeat does not start a second look.
+        stopWatchingTheClipboard()
+        let generation = clipboardGeneration
+        // The app applies the paste after the key. Two looks, not a poll.
+        lookForTheHandPaste(pasted, in: element, after: [0.15, 0.25]) { [weak self] before in
+            guard let self, self.clipboardGeneration == generation, self.pill.showsClipboard
+            else { return }
+            guard Destination.offersAfterHandPaste(
+                clipboardIsOurs: ours, field: field, before: before, pasted: pasted
+            ) else {
+                Log.write("clipboard: ⌘V, but the words are not before the caret; no offer")
+                self.endTheClipboardNotice(reason: "⌘V")
+                return
+            }
+            var press = watch.press
+            var pid: pid_t = 0
+            if AXUIElementGetPid(element, &pid) == .success {
+                press.owner = NSRunningApplication(processIdentifier: pid)
+            }
+            press.element = element
+            let role = SelectionReader.role(of: element) ?? "an unnamed element"
+            Log.write("clipboard: pasted by hand into \(role) in"
+                + " \(press.owner?.localizedName ?? "pid \(pid)"); offering as a paste")
+            self.endTheClipboardNotice(reason: "⌘V")
+            self.showCorrectOffer(for: press, landing: .field)
+        }
+    }
+
+    /// The text before the caret, read off the main thread after each delay
+    /// until it ends with `pasted`. Hands back the last read either way.
+    private func lookForTheHandPaste(
+        _ pasted: String, in element: AXUIElement, after delays: [TimeInterval],
+        then decide: @escaping (String?) -> Void
+    ) {
+        guard let delay = delays.first else { return }
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) {
+            // Twice the length: a field can store "\r\n" for each "\n".
+            let before = SelectionReader.textBeforeCaret(
+                of: element, length: pasted.utf16.count * 2
+            )
+            DispatchQueue.main.async { [weak self] in
+                let rest = Array(delays.dropFirst())
+                let found = before.map { Destination.endsAtCaret($0, with: pasted) } ?? false
+                if found || rest.isEmpty {
+                    decide(before)
+                } else {
+                    self?.lookForTheHandPaste(pasted, in: element, after: rest, then: decide)
+                }
+            }
+        }
+    }
+
     /// Take the offer down without running anything on it — Escape, Return, or
     /// a click outside it. `reason` is only for the log.
     ///
@@ -5723,8 +5884,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setLabel(nil)
     }
 
-    /// Activation and not the press: the tree is not built by the time the
-    /// call returns. The app already in front at launch never sends one.
+    /// Activation, so the tree is built before the first press: it is not
+    /// built by the time the call returns. The app already in front at launch
+    /// never sends one. The press asks again when nothing has focus.
     private func watchActivation() {
         let centre = NSWorkspace.shared.notificationCenter
         centre.addObserver(
@@ -6563,19 +6725,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// this same `CFEqual` across 17 real dictations and the element was equal
     /// every time.
     private func insertDictation(
-        _ text: String, to destination: Destination, for press: Press
+        _ text: String, to aimed: Destination, for pressed: Press
     ) {
         // Before anything can fail: `showCorrectOffer` measures the span from
         // this and every ending below reaches it. See `wroteAtPress`.
-        wroteAtPress[press.run] = text.utf16.count
-        let element = press.element
+        wroteAtPress[pressed.run] = text.utf16.count
         // However this ends, this dictation is over and nothing wants the pane
         // it started with. Every path here makes the offer now, and the offer
         // takes the pane before this runs — so this is the backstop for the
-        // three ways `showCorrectOffer` returns without getting that far: the
-        // offer switched off in the config, an empty transcript, and a newer
-        // dictation that already had the pill.
-        defer { dictationEnded(press.run) }
+        // four ways `showCorrectOffer` returns without getting that far: the
+        // offer switched off in the config, an empty transcript, a newer
+        // dictation that already had the pill, and the clipboard notice.
+        defer { dictationEnded(pressed.run) }
+        var destination = aimed
+        var press = pressed
+        // Nowhere to type at the press, and a field of the same app by now: it
+        // was clicked into while you spoke. The words and the edit watch go
+        // there.
+        if config.transcription.insertMode == .paste, case .nowhere(let reason) = aimed,
+           reason != .noAccessibility,
+           let late = lateField(after: reason, pressedIn: pressed.pid) {
+            Log.write("nothing to type into at the press; \(late.role) had focus at landing; pasting")
+            destination = .field(role: late.role)
+            press.element = late.element
+            press.owner = pressed.pid.flatMap(NSRunningApplication.init(processIdentifier:))
+        }
+        let element = press.element
         // Confirmed the same field, or nothing to confirm against. Anything
         // else copies.
         //
@@ -6601,9 +6776,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     ? "could not read what is focused; copied instead of pasting"
                     : "focus moved since the press; copied instead of pasting")
                 setLabel("Focus moved — the transcription is on your clipboard", clearAfter: 4)
-                showCorrectOffer(
-                    for: press, landing: .clipboardNow(), headline: .landing("Focus moved · ⌘V")
-                )
+                showCorrectOffer(for: press, landing: .clipboardNow(), clipboardNotice: true)
                 updateUI()
                 return
             }
@@ -6635,9 +6808,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("nothing to type into (\(reason.described)); copied instead")
             setLabel("Nowhere to type — the transcription is on your clipboard", clearAfter: 4)
             // And on the pill: the menu bar row is inside a menu you must open.
-            showCorrectOffer(
-                for: press, landing: .clipboardNow(), headline: .landing("Nowhere to type · ⌘V")
-            )
+            showCorrectOffer(for: press, landing: .clipboardNow(), clipboardNotice: true)
             updateUI()
             return
         }
@@ -6663,6 +6834,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showCorrectOffer(for: press, landing: .clipboardNow())
         }
         updateUI()
+    }
+
+    /// The field a press with nowhere to type can still paste into, read when
+    /// the words are ready. See `Destination.pastesLate`.
+    private func lateField(
+        after reason: Destination.Reason, pressedIn pid: pid_t?
+    ) -> (element: AXUIElement, role: String)? {
+        let element = SelectionReader.focusedElement()
+        var owner: pid_t = 0
+        let found = Destination.LateFocus(
+            accessibility: Permissions.accessibility == .granted,
+            front: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            owner: element.flatMap { AXUIElementGetPid($0, &owner) == .success ? owner : nil },
+            takesText: element.map(SelectionReader.acceptsTypedText) ?? false,
+            ours: element.map(SelectionReader.isOurs) ?? false
+        )
+        guard Destination.pastesLate(after: reason, pressedIn: pid, found: found),
+              let element else { return nil }
+        return (element, SelectionReader.role(of: element) ?? "an unnamed element")
     }
 
     /// The token `setLabel` held while a load owned the label, so `.ready`
