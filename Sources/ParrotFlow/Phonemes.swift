@@ -128,7 +128,7 @@ enum Phonemes {
     /// against some other word's sound, and the first measurement built that
     /// way reported the opposite of the truth. `cleaned` removes what splits,
     /// and this refuses the answer if anything else does.
-    private static func run(
+    static func run(
         _ binary: String, _ words: [String], voice: String
     ) -> [String]? {
         let process = Process()

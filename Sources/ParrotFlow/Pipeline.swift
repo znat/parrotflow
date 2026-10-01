@@ -53,6 +53,10 @@ struct Pipeline: Equatable, Codable {
         /// sentence it stands in — see `VocabularyPass` and `SentenceGate`.
         /// The pipeline entry is `- vocabulary`. It calls no model.
         case vocabulary
+        /// A span respelled the way the screen writes it — see
+        /// `ContextSpelling`. Switched by `transcription.context_spelling`,
+        /// and last, after every listed step.
+        case contextSpelling = "context_spelling"
         /// One of the entries in `transforms:`, run over the whole
         /// transcript. The only stage that names something outside itself, and
         /// the only one that might call a model — see `Step.transform`.
@@ -75,7 +79,7 @@ struct Pipeline: Equatable, Codable {
         /// settings blocks.
         var isAutomatic: Bool {
             self != .transform && self != .context && self != .input
-                && self != .sentenceRepair && self != .vocabulary
+                && self != .sentenceRepair && self != .vocabulary && self != .contextSpelling
         }
     }
 
@@ -373,7 +377,12 @@ struct Pipeline: Equatable, Codable {
                 config.transcription.vocabulary,
                 carrying: carried.first { $0.stage == .vocabulary }))
         }
-        steps += carried.filter { $0.stage != .sentenceRepair && $0.stage != .vocabulary }
+        steps += carried.filter {
+            $0.stage != .sentenceRepair && $0.stage != .vocabulary && $0.stage != .contextSpelling
+        }
+        if config.transcription.contextSpelling.enabled {
+            steps.append(Step(stage: .contextSpelling))
+        }
         return Pipeline(steps: steps)
     }
 
@@ -922,6 +931,8 @@ struct Pipeline: Equatable, Codable {
         case .vocabulary:
             return await settleVocabulary(step, on: text, config: config, scope: scope,
                                         )
+        case .contextSpelling:
+            return await ContextSpelling.apply(to: text, scope: scope)
         case .transform:
             return await runTransform(step, on: text, config: config, scope: scope)
         }

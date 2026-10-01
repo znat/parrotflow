@@ -2444,7 +2444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         downloads.expect(
             SentenceReadings.download,
-            off: config.readsBoundaries ? nil : ModelDownload.gateOff
+            off: config.readsSentenceModel ? nil : ModelDownload.gateOff
         )
         downloads.expect(NeuralPhonemes.soundDownload)
         downloads.expect(
@@ -2487,7 +2487,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // never waits for either: without this the first few dictations of
             // a launch keep the periods a pause put in. Not fetched at all when
             // nothing will read them — nothing else does.
-            if #available(macOS 14, *), config.readsBoundaries {
+            if #available(macOS 14, *), config.readsSentenceModel {
                 Task.detached(priority: .background) {
                     await SentenceReadings.shared.warm()
                 }
@@ -2547,7 +2547,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `warmModels` below goes through it. Without this the row would go
         // back to waiting with nothing fetching it. Pressing the button is
         // somebody saying try now.
-        if #available(macOS 14, *), config.readsBoundaries {
+        if #available(macOS 14, *), config.readsSentenceModel {
             Task { await SentenceReadings.shared.retryNow() }
         }
         warmModels()

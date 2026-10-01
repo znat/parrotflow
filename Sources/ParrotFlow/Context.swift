@@ -123,6 +123,7 @@ enum Context {
     /// names no pipeline must not read the screen, whatever the default holds.
     static func isConfigured(in config: Config) -> Bool {
         config.transcription.pipeline?.stages.contains(.context) ?? false
+            || config.transcription.contextSpelling.enabled
     }
 
     /// Read the screen at press. Call **after** recording has started, off the

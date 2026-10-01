@@ -176,6 +176,7 @@ enum InputBox {
     /// names no pipeline must not read the field, whatever the default holds.
     static func isConfigured(in config: Config) -> Bool {
         config.transcription.pipeline?.stages.contains(.input) ?? false
+            || config.transcription.contextSpelling.enabled
     }
 
     /// Call **after** recording has started, off the main thread, and after

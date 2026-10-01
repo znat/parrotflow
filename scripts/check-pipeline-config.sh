@@ -490,6 +490,34 @@ check "and pipeline: is what runs" "$(stages)" "sentence_repair → vocabulary"
 check "and the message says so" \
   "$(printf '%s\n' "$out" | grep -c 'the `pipeline:` list is what runs')" "1"
 
+# --- context_spelling ---------------------------------------------------------
+#
+# A switch, not a step. On, it runs after the last listed step. A listed line
+# does not place it.
+
+run_config spelling_on 'transcription:
+  languages: [en]
+  context_spelling:
+    enabled: true
+  pipeline:
+    - context
+    - input'
+
+check "context_spelling: enabled loads" "$code" "0"
+check "and runs after the last listed step" \
+  "$(stages)" "sentence_repair → vocabulary → context → input → context_spelling"
+
+run_config spelling_listed 'transcription:
+  languages: [en]
+  pipeline:
+    - context_spelling
+    - context'
+
+check "a listed - context_spelling does not run while the switch is off" \
+  "$(stages)" "sentence_repair → vocabulary → context"
+check "and the notice says so" \
+  "$(printf '%s\n' "$out" | grep -c '`- context_spelling` is not a step')" "1"
+
 echo
 echo "  $pass/$total$failed"
 [ "$pass" = "$total" ]

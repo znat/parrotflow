@@ -309,6 +309,16 @@ if let at = arguments.firstIndex(of: "--sentence-join") {
     exit(SentenceJoinCommand.run(text, caseOnly: caseOnly))
 }
 
+if let at = arguments.firstIndex(of: "--context-spelling-test") {
+    guard arguments.indices.contains(at + 1) else {
+        print("usage: ParrotFlow --context-spelling-test <cases.json> [--reference <reference.json>]")
+        exit(2)
+    }
+    let reference = arguments.firstIndex(of: "--reference")
+        .flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+    exit(ContextSpellingCommand.run(cases: arguments[at + 1], reference: reference))
+}
+
 if let index = arguments.firstIndex(of: "--replace") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --replace \"<text>\" [--app <name>]")
