@@ -182,11 +182,26 @@ enum TreeContext {
         return found
     }
 
+    /// The same walk over several elements under one limit, in drawing order.
+    /// The last element is walked first, so a long thread loses its oldest
+    /// messages to the limit and keeps its newest.
+    static func nodes(under elements: [AXUIElement]) -> [Node] {
+        var parts: [[Node]] = []
+        var left = nodeLimit
+        for element in elements.reversed() where left > 0 {
+            var found: [Node] = []
+            walk(element, depth: 0, inList: false, limit: left, into: &found)
+            left -= found.count
+            parts.append(found)
+        }
+        return parts.reversed().flatMap { $0 }
+    }
+
     private static func walk(
         _ element: AXUIElement, depth: Int, inList: Bool, code: Bool = false,
-        inComposer: Bool = false, into found: inout [Node]
+        inComposer: Bool = false, limit: Int = nodeLimit, into found: inout [Node]
     ) {
-        guard found.count < nodeLimit, depth < depthLimit else { return }
+        guard found.count < limit, depth < depthLimit else { return }
         let role = attribute(element, kAXRoleAttribute) as? String ?? ""
         let text = label(of: element)
         let inCode = code
@@ -203,7 +218,7 @@ enum TreeContext {
         for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
             walk(
                 child, depth: depth + 1, inList: messages, code: inCode,
-                inComposer: composer, into: &found)
+                inComposer: composer, limit: limit, into: &found)
         }
     }
 
@@ -246,7 +261,9 @@ enum TreeContext {
             if role == "AXList" {
                 let items = (attribute(up, kAXChildrenAttribute) as? [AXUIElement]) ?? []
                 guard let at = items.firstIndex(where: { CFEqual($0, item) }) else { return nil }
-                let start = items[..<at].lastIndex(where: { !composers(in: $0).isEmpty })
+                // A reply box sits 7 levels under its item; 10 bounds the search.
+                let start = items[..<at]
+                    .lastIndex(where: { !composers(in: $0, depth: depthLimit - 10).isEmpty })
                     .map { $0 + 1 } ?? 0
                 return (Array(items[start..<at]), place)
             }
