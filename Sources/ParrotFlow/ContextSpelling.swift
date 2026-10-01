@@ -26,8 +26,8 @@ enum ContextSpelling {
     /// A name off the window, near-missed. Right writes scored -6.4 and -6.8.
     static let personFloor = -8.0
     static let prefixChars = 2000
-    /// Seconds before scoring gives up and the text goes through as
-    /// dictated. The prototype's client timeout.
+    /// Seconds of scoring, the prototype's client timeout. What finished by
+    /// then is used; the rest is left out.
     static let budget: TimeInterval = 5
     static let minRatio = 0.8
     static let soundFloor = 0.85
@@ -96,10 +96,10 @@ enum ContextSpelling {
             Log.write("context spelling: no screen and no text above the caret")
             return unchanged
         }
-        let found = candidates(
+        let found = capped(candidates(
             in: text, screen: screen, voice: Phonemes.voice(for: language),
             tokens: Tagger.tokens(in: text, language: language)
-        )
+        ))
         guard !found.isEmpty else {
             Log.write("context spelling: no candidate")
             return unchanged
@@ -127,7 +127,9 @@ enum ContextSpelling {
         let changes = chosen.map(described).joined(separator: "; ")
         let best = scored.max { ($0.delta ?? 0) < ($1.delta ?? 0) }.map(described) ?? ""
         Log.write("context spelling: \(scored.count) candidate(s), best \(best)"
-            + (changes.isEmpty ? "" : ", wrote \(changes)") + String(format: ", %.0fms", ms))
+            + (changes.isEmpty ? "" : ", wrote \(changes)") + String(format: ", %.0fms", ms)
+            + (scored.count < found.count
+                ? ", \(found.count - scored.count) not scored within \(Int(budget))s" : ""))
         return StageResult(text: rewrite(text, with: chosen), vars: [
             "count": .int(chosen.count),
             "score_ms": .double(ms),
@@ -162,14 +164,32 @@ enum ContextSpelling {
     // MARK: - Choosing
 
     /// Each candidate's gain over the sentence as heard. `totals[0]` is the
-    /// sentence as heard.
+    /// sentence as heard. Totals can stop short at the budget, and a candidate
+    /// with no total is left out.
     static func scoring(_ candidates: [Candidate], _ totals: [Double]) -> [Candidate] {
-        guard totals.count == candidates.count + 1 else { return [] }
+        guard let heard = totals.first else { return [] }
         return zip(candidates, totals.dropFirst()).map { candidate, total in
             var scored = candidate
-            scored.delta = total - totals[0]
+            scored.delta = total - heard
             return scored
         }
+    }
+
+    /// One model pass each, about 100-200ms. The 47 prototype cases never
+    /// found more than 5.
+    static let maxScored = 8
+
+    /// The candidates worth a model pass, in their original order: exact
+    /// matches first, then the closest.
+    static func capped(_ candidates: [Candidate]) -> [Candidate] {
+        guard candidates.count > maxScored else { return candidates }
+        let kept = Set(candidates.indices.sorted { i, j in
+            let (a, b) = (candidates[i], candidates[j])
+            if a.exact != b.exact { return a.exact }
+            if closeness(a) != closeness(b) { return closeness(a) > closeness(b) }
+            return i < j
+        }.prefix(maxScored))
+        return candidates.indices.filter(kept.contains).map { candidates[$0] }
     }
 
     /// Longest first, then the largest gain.
@@ -575,8 +595,14 @@ enum ContextSpelling {
         for phrase in phrases where !phrase.isEmpty && seen.insert(phrase).inserted {
             unique.append(phrase)
         }
+        // espeak starts a new output line at `, : ; ! ?`, and one extra line
+        // voids the whole answer. Each phrase keeps its key and is read
+        // without them; digits and `#` stay, since espeak reads them in line.
+        let read = unique.map {
+            $0.replacingOccurrences(of: "[,:;!?]", with: " ", options: .regularExpression)
+        }
         guard !unique.isEmpty, let binary = Phonemes.binary,
-              let lines = Phonemes.run(binary, unique, voice: voice) else { return [:] }
+              let lines = Phonemes.run(binary, read, voice: voice) else { return [:] }
         return Dictionary(zip(unique, lines), uniquingKeysWith: { first, _ in first })
     }
 }

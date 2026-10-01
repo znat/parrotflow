@@ -99,7 +99,6 @@ actor SentenceReadings {
     enum Failure: LocalizedError {
         case notQwen(String)
         case empty
-        case slow(TimeInterval)
 
         var errorDescription: String? {
             switch self {
@@ -107,8 +106,6 @@ actor SentenceReadings {
                 return "the sentence model loaded as \(kind), not Qwen3"
             case .empty:
                 return "sentence readings: nothing either side of the boundary"
-            case .slow(let budget):
-                return String(format: "scoring took more than %.0fs", budget)
             }
         }
     }
@@ -326,8 +323,10 @@ actor SentenceReadings {
     /// padding changes every score, so it stays.
     ///
     /// One row per forward pass. A 2000-character prefix is about 600 tokens,
-    /// and the logits of one such row are about 200 MB. Throws `slow` when
-    /// scoring runs past `budget` seconds; a pass already running is not cut.
+    /// and the logits of one such row are about 200 MB. Stops at `budget`
+    /// seconds and returns the totals finished by then, so the result can be
+    /// shorter than `continuations`. A pass that ends late is dropped; one
+    /// already running is not cut.
     func totals(
         prefix: String, continuations: [String], budget: TimeInterval
     ) async throws -> [Double] {
@@ -341,20 +340,25 @@ actor SentenceReadings {
         let bare = tokenizer.encode(text: prefix, addSpecialTokens: false)
         let lead = Array(repeating: newline, count: (64 - bare.count % 64) % 64)
         let padded = lead + bare
-        return try continuations.map { continuation in
-            guard Date() < deadline else { throw Failure.slow(budget) }
+        var totals: [Double] = []
+        for continuation in continuations {
+            guard Date() < deadline else { break }
             let full = lead + tokenizer.encode(text: prefix + continuation, addSpecialTokens: false)
             let from = max(1, zip(full, padded).prefix { $0.0 == $0.1 }.count)
-            guard from < full.count else { return 0 }
+            guard from < full.count else {
+                totals.append(0)
+                continue
+            }
             let logits = model(MLXArray(full.map { Int32($0) }, [1, full.count]), cache: nil)
             let slice = logits[0, (from - 1) ..< (full.count - 1)].asType(.float32)
             let targets = MLXArray(full[from...].map { Int32($0) }, [full.count - from, 1])
             let total = (takeAlong(slice, targets, axis: 1)
                 - logSumExp(slice, axis: 1, keepDims: true)).sum()
             total.eval()
-            guard Date() < deadline else { throw Failure.slow(budget) }
-            return Double(total.item(Float.self))
+            guard Date() < deadline else { break }
+            totals.append(Double(total.item(Float.self)))
         }
+        return totals
     }
 
     /// Every reading padded into one batch and scored in one forward pass.

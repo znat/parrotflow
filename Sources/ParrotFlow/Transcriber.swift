@@ -645,13 +645,15 @@ actor Transcriber {
         // French words and the answer is noise. So is the boundary reading,
         // which runs in the pipeline now as the `interpret` step and refuses
         // every other language itself.
-        if Pipeline.language(of: text, config: config) == "en" {
-            // 320 MB and a 1.3s load, and a dictation never waits for either.
-            // Fetched only where the step will read a boundary, so deleting
-            // the line stops the download — and so does the legacy switch.
-            if config.readsSentenceModel {
-                Task { await SentenceReadings.shared.warm() }
-            }
+        let english = Pipeline.language(of: text, config: config) == "en"
+        // 320 MB and a 1.3s load, and a dictation never waits for either.
+        // Fetched only where a step will read it, so deleting the line stops
+        // the download — and so does the legacy switch. `context_spelling`
+        // reads it in every language.
+        if config.transcription.contextSpelling.enabled || (english && config.readsBoundaries) {
+            Task { await SentenceReadings.shared.warm() }
+        }
+        if english {
             // The set the sound pass actually reads, not the shorter one the
             // audio search needed. `vocabularyTerms` drops anything under five
             // letters or with a space in it, so a vocabulary of `Claude Code`

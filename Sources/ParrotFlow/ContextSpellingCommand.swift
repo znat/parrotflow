@@ -115,9 +115,9 @@ enum ContextSpellingCommand {
                 .compactMap { $0 }.first { !$0.isEmpty } ?? ""
         }
         let language = item.language ?? "en"
-        let found = ContextSpelling.candidates(
+        let found = ContextSpelling.capped(ContextSpelling.candidates(
             in: item.text, screen: screen, voice: Phonemes.voice(for: language),
-            tokens: Tagger.tokens(in: item.text, language: language))
+            tokens: Tagger.tokens(in: item.text, language: language)))
         var result = Row(case: index, text: item.text, candidates: found, chosen: [],
                          output: item.text)
         guard !found.isEmpty else { return result }
@@ -152,14 +152,28 @@ enum ContextSpellingCommand {
 
     /// Candidate sets by position and term, the largest gain difference over
     /// the candidates both found, and the output.
+    ///
+    /// Passes on the same cases, the same candidate sets, every candidate
+    /// scored, and the same outputs. Gains are reported and not gated: the
+    /// prototype's own scorer moved by 0.15 nat at the median, and 4.6 at worst,
+    /// between its cached and uncached passes over the same tokens.
     private static func compare(_ rows: [Row], against expected: [Row]) -> Int32 {
         let tolerance = 0.1
-        var (sameSets, withinTolerance, sameOutputs) = (0, 0, 0)
+        var (sameSets, withinTolerance, sameOutputs, faults) = (0, 0, 0, 0)
         let byCase = Dictionary(expected.map { ($0.case, $0) }, uniquingKeysWith: { first, _ in first })
+        for absent in Set(expected.map(\.case)).subtracting(rows.map(\.case)).sorted() {
+            print("case \(absent): in the reference, not run")
+            faults += 1
+        }
         for row in rows {
             guard let want = byCase[row.case] else {
                 print("case \(row.case): not in the reference")
+                faults += 1
                 continue
+            }
+            if row.candidates.contains(where: { $0.delta == nil }) {
+                print("case \(row.case): not scored")
+                faults += 1
             }
             func key(_ c: ContextSpelling.Candidate) -> String { "\(c.start):\(c.end):\(c.term)" }
             let mine = Dictionary(row.candidates.map { (key($0), $0) }, uniquingKeysWith: { a, _ in a })
@@ -193,6 +207,6 @@ enum ContextSpellingCommand {
                 times.count, times[times.count / 2], times[times.count - 1],
                 firsts[firsts.count / 2], firsts[firsts.count - 1]))
         }
-        return sameOutputs == rows.count ? 0 : 1
+        return sameSets == rows.count && sameOutputs == rows.count && faults == 0 ? 0 : 1
     }
 }

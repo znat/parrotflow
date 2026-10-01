@@ -1395,9 +1395,11 @@ that `sentence_repair` loads then scores the sentence as dictated against each
 rewrite, and a rewrite is kept when it wins by enough: "rewrite line" becomes
 `rewrite_line` when the screen shows it. It reads the screen and the field at
 every press, whether or not the pipeline names `context` or `input`, and uses
-the text above the caret when there is no screen. It never waits: until the
-model is in memory, or when scoring passes 5 seconds, the text goes through as
-dictated. `--context-spelling-test <cases.json>` runs it over a case file.
+the text above the caret when there is no screen. It never waits for the model:
+until it is in memory, the text goes through as dictated. Each rewrite costs one
+model pass, so at most 8 are scored, exact matches first, and scoring stops at 5
+seconds with what it finished. `--context-spelling-test <cases.json>` runs it
+over a case file.
 
 ## Input: what is already in the field
 
