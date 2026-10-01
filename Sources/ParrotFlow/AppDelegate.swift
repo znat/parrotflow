@@ -491,7 +491,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let press: Press
         /// `NSPasteboard.changeCount` as our write left it.
         let change: Int
-        let keys: Any?
+        let keys: [Any]
         let timer: Timer
     }
     private var clipboardWatch: ClipboardWatch?
@@ -4762,7 +4762,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stopWatchingTheClipboard()
         clipboardGeneration += 1
         pill.clipboard("On your clipboard · ⌘V to paste")
-        let keys = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        let heard: (NSEvent) -> Void = { [weak self] event in
             if event.keyCode == UInt16(kVK_Escape) {
                 self?.endTheClipboardNotice(reason: "escape")
             } else if event.modifierFlags.contains(.command),
@@ -4770,6 +4770,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.clipboardPastedByHand()
             }
         }
+        // Global for other apps, local for our own windows, which the global
+        // one never sees.
+        let keys = [
+            NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: heard),
+            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { heard($0); return $0 },
+        ].compactMap { $0 }
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self else { return }
             if !self.pill.showsClipboard {
@@ -4783,7 +4789,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopWatchingTheClipboard() {
-        if let keys = clipboardWatch?.keys { NSEvent.removeMonitor(keys) }
+        clipboardWatch?.keys.forEach(NSEvent.removeMonitor)
         clipboardWatch?.timer.invalidate()
         clipboardWatch = nil
     }
