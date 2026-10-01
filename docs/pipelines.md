@@ -1296,8 +1296,11 @@ Only the conversation you are typing in is read. The walk climbs from the
 focused box to the nearest pane that names a conversation and holds a message.
 A short conversation is published as it is. The rest of the window is never
 read for `text`, `place`, `people` or `code`, because it holds other
-conversations. When the climb finds no pane, those four are empty and
-`context.roster` is still published.
+conversations. Slack's Threads view has no such pane: it stacks threads in one
+list, each ending with its reply box. There the thread is the run of items above
+the box you are typing in, back to the previous reply box, and the place is the
+name of the box, "Reply to thread in …". When neither finds anything, those four
+are empty and `context.roster` is still published.
 
 Only the messages are published as `context.text`. The composer's formatting
 bar and the channel header are in the same pane and are dropped: the author

@@ -150,6 +150,14 @@ enum TreeContextCommand {
         // A name with brackets of its own: the last "(" opens the kind.
         ("place, bracketed name", TreeContext.place(in: "Nathan (Swoop) (direct message, away)"),
          "Nathan (Swoop)"),
+        ("place, side-panel thread", TreeContext.place(in: "Thread in sws-engineering (channel)"),
+         "#sws-engineering"),
+        // The Threads view names the place only on each reply box.
+        ("thread place, channel", TreeContext.threadPlace(in: "Reply to thread in sws-engineering"),
+         "#sws-engineering"),
+        ("thread place, dm", TreeContext.threadPlace(in: "Reply to thread with Tasmeen Kathuria"),
+         "Tasmeen Kathuria"),
+        ("thread place, not a reply box", TreeContext.threadPlace(in: "Message to sws-engineering"), nil),
         ("author", TreeContext.author(in: "Martin Alix: the deploy hook fired"), "Martin Alix"),
         // A lowercase display name is still a message, and still not a person:
         // `people` is offered to a dictation as a spelling, and "tip" is a word.

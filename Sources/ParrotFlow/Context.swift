@@ -269,6 +269,11 @@ enum Context {
         let title = window.flatMap(TreeContext.title(of:))
         let conversation = TreeContext.conversation(around: element).map {
             TreeContext.assemble(TreeContext.nodes(under: $0), title: title)
+        } ?? TreeContext.threadRun(around: element).map { run in
+            // The reply box names the place. The window title would say "Threads".
+            let found = TreeContext.assemble(run.items.flatMap(TreeContext.nodes(under:)), title: nil)
+            return TreeContext.Assembled(
+                place: run.place, people: found.people, text: found.text, code: found.code)
         }
         return treeCapture(conversation, roster: window.map(TreeContext.roster(in:)) ?? [])
     }
