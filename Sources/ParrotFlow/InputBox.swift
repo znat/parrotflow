@@ -172,8 +172,9 @@ enum InputBox {
         pressLock.unlock()
     }
 
-    /// Read off the config rather than off `Pipeline.resolved`: a config that
-    /// names no pipeline must not read the field, whatever the default holds.
+    /// Whether the pipeline names the stage, or `context_spelling` is on. Read
+    /// off the listed pipeline rather than off `Pipeline.resolved`, so the
+    /// default list never turns the read on by itself.
     static func isConfigured(in config: Config) -> Bool {
         config.transcription.pipeline?.stages.contains(.input) ?? false
             || config.transcription.contextSpelling.enabled

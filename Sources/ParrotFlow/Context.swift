@@ -114,13 +114,13 @@ enum Context {
         return press
     }
 
-    /// Whether the pipeline names the stage.
+    /// Whether the pipeline names the stage, or `context_spelling` is on.
     ///
-    /// The gate on the whole thing. A screen read on every hotkey press is not
-    /// a cost to impose on people who never asked for context, and `context` is
-    /// not in any default, so most configs answer false here and pay nothing.
-    /// Read off the config rather than off `Pipeline.resolved`: a config that
-    /// names no pipeline must not read the screen, whatever the default holds.
+    /// The gate on the whole thing. `context_spelling` is on by default, so a
+    /// config reads the screen at every press unless it turns that off and
+    /// leaves `context` out of its pipeline. Read off the listed pipeline
+    /// rather than off `Pipeline.resolved`, so the default list never turns
+    /// the read on by itself.
     static func isConfigured(in config: Config) -> Bool {
         config.transcription.pipeline?.stages.contains(.context) ?? false
             || config.transcription.contextSpelling.enabled

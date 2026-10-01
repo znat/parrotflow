@@ -97,7 +97,7 @@ transcription:
 
   # Spells a dictated word the way the screen does. Reads the screen at press.
   context_spelling:
-    enabled: false
+    enabled: true
 
   # What a transcript runs through, in order. Everything here rewrites text
   # and may be moved. Remove a line to skip that stage. One list for every

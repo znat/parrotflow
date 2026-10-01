@@ -1948,9 +1948,10 @@ struct Config: Decodable, Equatable {
             }
         }
 
-        /// Off unless asked for: it reads the screen at every press.
+        /// On unless turned off. It reads the screen and the field at every
+        /// press.
         struct ContextSpelling: Decodable, Equatable {
-            var enabled = false
+            var enabled = true
 
             enum CodingKeys: String, CodingKey {
                 case enabled

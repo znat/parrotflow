@@ -1386,9 +1386,9 @@ It prints what the stage would publish, in full, under `as context:`.
 
 ### Spelling a word the way the screen does
 
-`transcription.context_spelling: {enabled: true}` turns on a pass that runs
-after the last pipeline step. It takes terms off the screen captured at the
-press — backticked runs, identifiers, names, long words the dictionary does not
+`transcription.context_spelling` is a pass that runs after the last pipeline
+step. It is on by default, and `{enabled: false}` turns it off. It takes terms
+off the screen captured at the press — backticked runs, identifiers, names, long words the dictionary does not
 know, and Slack's place, people, roster and code — and matches each run of one
 to four dictated words against them, by letters or by sound. The sentence model
 that `sentence_repair` loads then scores the sentence as dictated against each
