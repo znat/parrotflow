@@ -471,6 +471,25 @@ enum SelectionReader {
         return answer as? String
     }
 
+    /// Up to `length` UTF-16 units before the caret, or nil when something is
+    /// selected or the app will not say. In the app's own offsets first, then
+    /// by cutting the value, which is off in Chromium past a block boundary.
+    static func textBeforeCaret(of element: AXUIElement, length: Int) -> String? {
+        AXUIElementSetMessagingTimeout(element, 0.25)
+        guard let caret = selectedRange(of: element), caret.length == 0,
+              caret.location > 0, length > 0 else { return nil }
+        let start = max(0, caret.location - length)
+        if let text = string(of: element, at: start, length: caret.location - start) {
+            return text
+        }
+        guard let value = visibleText(of: element, within: nil) else { return nil }
+        let units = value.utf16
+        guard caret.location <= units.count else { return nil }
+        let from = units.index(units.startIndex, offsetBy: start)
+        let to = units.index(units.startIndex, offsetBy: caret.location)
+        return String(units[from..<to])
+    }
+
     // MARK: - Synthetic copy
 
     private static func viaCopy() -> String? {

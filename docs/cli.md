@@ -817,7 +817,9 @@ saved and put back.
 
 `--landing-test` checks the second look at focus for a press that found nowhere
 to type. The words paste only when a field of the same app has focus by the
-time they are ready. Anything else copies.
+time they are ready. Anything else copies. It also checks the ⌘V by hand that
+follows: the usual offer appears only when our words are still on the
+clipboard and sit right before the caret of a field, line endings aside.
 
 `--paste-probe` answers a different question: which pasteboard flavour each app
 accepts. A pasteboard item can carry `public.html`, `public.rtf` and plain text

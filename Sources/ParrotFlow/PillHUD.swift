@@ -55,7 +55,7 @@ enum PillState: Equatable {
     /// A sentence, for a few seconds.
     case notice(String, NoticeTone)
     /// The transcript is on the clipboard and nowhere else. No chips and no
-    /// keys taken: it stays until ⌘V, Escape or the next press.
+    /// keys taken: it stays until ⌘V, Escape, the next press or another copy.
     case clipboard(String)
     /// Why something could not run, as markdown, with a bar draining over it.
     /// The one message state that takes the mouse.

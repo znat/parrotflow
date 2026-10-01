@@ -485,9 +485,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Watches for a click outside the offer, for as long as it is up. See
     /// `watchForOfferOutsideClick`.
     private var offerClickMonitors: [Any] = []
-    /// Hears ⌘V and Escape while the clipboard notice is up. See
+    /// What the clipboard notice is about, and what watches it. See
     /// `showClipboardNotice`.
-    private var clipboardKeys: Any?
+    private struct ClipboardWatch {
+        let press: Press
+        /// `NSPasteboard.changeCount` as our write left it.
+        let change: Int
+        let keys: Any?
+        let timer: Timer
+    }
+    private var clipboardWatch: ClipboardWatch?
+    /// Bumped by every notice and every ending, so a late read after ⌘V can
+    /// tell its notice is gone.
+    private var clipboardGeneration = 0
     /// True while the pointer is resting on the offer.
     ///
     /// The clock is stopped then, and `offerUntil` becomes a date that never
@@ -3490,7 +3500,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !micNotice.isShowing { keyboardNotice.showIfNeeded() }
 
         // Not an offer, so not behind `correct_offer`.
-        if clipboardNotice { showClipboardNotice(for: press.run) }
+        if clipboardNotice, case .clipboard(let change) = landing {
+            showClipboardNotice(for: press, change: change)
+        }
 
         guard config.feedback.correctOffer else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -4739,32 +4751,119 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// "On your clipboard", with no chips and no deadline. It takes no key:
     /// ⌘V and Escape are heard, not taken, so both still reach the app, and
-    /// typing anything else leaves it up. The next press ends it too.
-    private func showClipboardNotice(for run: Int) {
-        if let owner = offerPressRun, owner > run {
+    /// typing anything else leaves it up. The next press ends it, and so does
+    /// anything else being copied, since ⌘V would no longer paste these words.
+    private func showClipboardNotice(for press: Press, change: Int) {
+        if let owner = offerPressRun, owner > press.run {
             Log.write("clipboard notice: a newer dictation already has the pill")
             return
         }
-        offerPressRun = run
+        offerPressRun = press.run
+        stopWatchingTheClipboard()
+        clipboardGeneration += 1
         pill.clipboard("On your clipboard · ⌘V to paste")
-        if let clipboardKeys { NSEvent.removeMonitor(clipboardKeys) }
-        clipboardKeys = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        let keys = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == UInt16(kVK_Escape) {
                 self?.endTheClipboardNotice(reason: "escape")
             } else if event.modifierFlags.contains(.command),
                       event.charactersIgnoringModifiers?.lowercased() == "v" {
-                self?.endTheClipboardNotice(reason: "⌘V")
+                self?.clipboardPastedByHand()
             }
         }
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            if !self.pill.showsClipboard {
+                self.stopWatchingTheClipboard()
+            } else if !TextInserter.clipboardIsOurs(unchangedFrom: change) {
+                self.endTheClipboardNotice(reason: "the clipboard changing")
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        clipboardWatch = ClipboardWatch(press: press, change: change, keys: keys, timer: timer)
+    }
+
+    private func stopWatchingTheClipboard() {
+        if let keys = clipboardWatch?.keys { NSEvent.removeMonitor(keys) }
+        clipboardWatch?.timer.invalidate()
+        clipboardWatch = nil
     }
 
     private func endTheClipboardNotice(reason: String) {
-        if let clipboardKeys { NSEvent.removeMonitor(clipboardKeys) }
-        clipboardKeys = nil
+        stopWatchingTheClipboard()
+        clipboardGeneration += 1
         // Something else may have the pill by now.
         guard pill.showsClipboard else { return }
         Log.write("clipboard notice: closed by \(reason)")
         pill.hide()
+    }
+
+    /// ⌘V while the notice is up. When it put our words into a field, the
+    /// usual offer follows, as if this app had pasted there itself.
+    private func clipboardPastedByHand() {
+        guard let watch = clipboardWatch, pill.showsClipboard else {
+            stopWatchingTheClipboard()
+            return
+        }
+        let ours = TextInserter.clipboardIsOurs(unchangedFrom: watch.change)
+        let pasted = ours ? NSPasteboard.general.string(forType: .string) ?? "" : ""
+        let element = ours ? SelectionReader.focusedElement() : nil
+        let field = element.map {
+            SelectionReader.acceptsTypedText($0) && !SelectionReader.isOurs($0)
+        } ?? false
+        guard let element, field, !pasted.isEmpty else {
+            endTheClipboardNotice(reason: "⌘V")
+            return
+        }
+        // Held now, so a key repeat does not start a second look.
+        stopWatchingTheClipboard()
+        let generation = clipboardGeneration
+        // The app applies the paste after the key. Two looks, not a poll.
+        lookForTheHandPaste(pasted, in: element, after: [0.15, 0.25]) { [weak self] before in
+            guard let self, self.clipboardGeneration == generation, self.pill.showsClipboard
+            else { return }
+            guard Destination.offersAfterHandPaste(
+                clipboardIsOurs: ours, field: field, before: before, pasted: pasted
+            ) else {
+                Log.write("clipboard: ⌘V, but the words are not before the caret; no offer")
+                self.endTheClipboardNotice(reason: "⌘V")
+                return
+            }
+            var press = watch.press
+            var pid: pid_t = 0
+            if AXUIElementGetPid(element, &pid) == .success {
+                press.owner = NSRunningApplication(processIdentifier: pid)
+            }
+            press.element = element
+            let role = SelectionReader.role(of: element) ?? "an unnamed element"
+            Log.write("clipboard: pasted by hand into \(role) in"
+                + " \(press.owner?.localizedName ?? "pid \(pid)"); offering as a paste")
+            self.endTheClipboardNotice(reason: "⌘V")
+            self.showCorrectOffer(for: press, landing: .field)
+        }
+    }
+
+    /// The text before the caret, read off the main thread after each delay
+    /// until it ends with `pasted`. Hands back the last read either way.
+    private func lookForTheHandPaste(
+        _ pasted: String, in element: AXUIElement, after delays: [TimeInterval],
+        then decide: @escaping (String?) -> Void
+    ) {
+        guard let delay = delays.first else { return }
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) {
+            // Twice the length: a field can store "\r\n" for each "\n".
+            let before = SelectionReader.textBeforeCaret(
+                of: element, length: pasted.utf16.count * 2
+            )
+            DispatchQueue.main.async { [weak self] in
+                let rest = Array(delays.dropFirst())
+                let found = before.map { Destination.endsAtCaret($0, with: pasted) } ?? false
+                if found || rest.isEmpty {
+                    decide(before)
+                } else {
+                    self?.lookForTheHandPaste(pasted, in: element, after: rest, then: decide)
+                }
+            }
+        }
     }
 
     /// Take the offer down without running anything on it — Escape, Return, or

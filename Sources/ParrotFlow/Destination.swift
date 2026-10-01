@@ -175,4 +175,34 @@ enum Destination: Equatable {
         return found.takesText && !found.ours
     }
 
+    /// Whether a ⌘V by hand, while "On your clipboard" is up, earns the usual
+    /// offer: our words still on the clipboard, a field that is not ours, and
+    /// those words found right before the caret. `before` is nil when the app
+    /// would not say.
+    static func offersAfterHandPaste(
+        clipboardIsOurs: Bool, field: Bool, before: String?, pasted: String
+    ) -> Bool {
+        guard clipboardIsOurs, field, let before else { return false }
+        return endsAtCaret(before, with: pasted)
+    }
+
+    /// Whether the text before the caret ends with what was pasted. A field
+    /// can store "\r\n" where the clipboard has "\n", so both are normalised.
+    /// Through Foundation: Swift reads "\r\n" as one `Character`, and
+    /// `hasSuffix` would not match it against "\n".
+    static func endsAtCaret(_ before: String, with pasted: String) -> Bool {
+        func lines(_ text: String) -> String {
+            text.replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
+        }
+        let wanted = lines(pasted)
+        guard !wanted.isEmpty else { return false }
+        if lines(before).hasSuffix(wanted) { return true }
+        // Chrome 154 skips the break between two blocks of a contenteditable:
+        // AXStringForRange gave "Hi team.Ship it" for two paragraphs.
+        func unbroken(_ text: String) -> String { text.replacingOccurrences(of: "\n", with: "") }
+        let joined = unbroken(wanted)
+        return !joined.isEmpty && unbroken(lines(before)).hasSuffix(joined)
+    }
+
 }

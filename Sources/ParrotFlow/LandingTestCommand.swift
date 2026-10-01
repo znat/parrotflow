@@ -1,7 +1,9 @@
 import Foundation
 
-/// `--landing-test` — checks `Destination.pastesLate`, the second look at
-/// focus when the words of a press with nowhere to type are ready.
+/// `--landing-test` — checks the two rules for words that had nowhere to go:
+/// `Destination.pastesLate`, the second look at focus when they are ready, and
+/// `Destination.offersAfterHandPaste`, a ⌘V by hand while they wait on the
+/// clipboard.
 enum LandingTestCommand {
 
     static func run() -> Int32 {
@@ -36,12 +38,52 @@ enum LandingTestCommand {
         ]
 
         var failures = 0
-        for (name, reason, pid, found, want) in cases {
-            let got = Destination.pastesLate(after: reason, pressedIn: pid, found: found)
+        var total = 0
+        func check(_ name: String, _ got: Bool, _ want: Bool) {
+            total += 1
             print("\(got == want ? "✓" : "✗") \(name)")
             if got != want { failures += 1 }
         }
-        print(failures == 0 ? "\(cases.count)/\(cases.count)" : "\(failures) failed")
+
+        print("A press with nowhere to type, at landing")
+        for (name, reason, pid, found, want) in cases {
+            check(name, Destination.pastesLate(after: reason, pressedIn: pid, found: found), want)
+        }
+
+        print("A ⌘V by hand while \"On your clipboard\" is up")
+        let words = "Ship it on Friday."
+        func hand(_ ours: Bool, _ field: Bool, _ before: String?) -> Bool {
+            Destination.offersAfterHandPaste(
+                clipboardIsOurs: ours, field: field, before: before, pasted: words
+            )
+        }
+        check("ours, a field, the words before the caret: offer", hand(true, true, words), true)
+        check("the clipboard changed: close", hand(false, true, words), false)
+        check("not a field: close", hand(true, false, words), false)
+        check("the app will not say: close", hand(true, true, nil), false)
+        check("other words before the caret: close", hand(true, true, "Ship it on Monday."), false)
+
+        print("The words before the caret")
+        func ends(_ before: String, _ pasted: String) -> Bool {
+            Destination.endsAtCaret(before, with: pasted)
+        }
+        check("exactly the words", ends(words, words), true)
+        check("text before them in the field", ends("Hi team. " + words, words), true)
+        check("the field has CRLF, the clipboard LF",
+              ends("Notes:\r\nfirst\r\nsecond", "first\nsecond"), true)
+        check("the field has LF, the clipboard CRLF",
+              ends("Notes:\nfirst\nsecond", "first\r\nsecond"), true)
+        check("the field has CR alone", ends("first\rsecond", "first\nsecond"), true)
+        // Measured in a Chrome contenteditable with two paragraphs.
+        check("a web composer drops the break between blocks",
+              ends("Hi team.Ship it on Friday.", "Hi team.\nShip it on Friday."), true)
+        check("dropping breaks still needs the same words",
+              ends("Hi team.Ship it on Monday.", "Hi team.\nShip it on Friday."), false)
+        check("the caret is not at their end", ends(words + " And more", words), false)
+        check("only part of them", ends("on Friday.", words), false)
+        check("nothing was pasted", ends(words, ""), false)
+
+        print(failures == 0 ? "\(total)/\(total)" : "\(failures) failed")
         return failures == 0 ? 0 : 1
     }
 }
