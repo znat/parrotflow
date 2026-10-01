@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import Carbon.HIToolbox
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
@@ -480,6 +481,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Watches for a click outside the offer, for as long as it is up. See
     /// `watchForOfferOutsideClick`.
     private var offerClickMonitors: [Any] = []
+    /// Hears ⌘V and Escape while the clipboard notice is up. See
+    /// `showClipboardNotice`.
+    private var clipboardKeys: Any?
     /// True while the pointer is resting on the offer.
     ///
     /// The clock is stopped then, and `offerUntil` becomes a date that never
@@ -1285,6 +1289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // run between the key going down and the microphone opening, and this
         // is the only measurement that can say what they cost the speaker.
         pressedAt = Date()
+        endTheClipboardNotice(reason: "the next press")
 
         // The gesture, kept for the `Press` built when the recording stops.
         // Only for a press that starts a dictation: the second press of a
@@ -3428,10 +3433,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// After every ending, not only a paste that worked. A word the recogniser
     /// got wrong is worth teaching whether or not the sentence reached a text
     /// field, and the offer cannot wait: it is about the words you are looking
-    /// at now. The messages the clipboard endings used to put on the pill —
-    /// "on your clipboard", "grant Accessibility" — are worth keeping and worth
-    /// less than the offer, so they moved to the menu bar, where messages that
-    /// are not urgent live. See `insertDictation`.
+    /// at now. See `insertDictation`.
+    ///
+    /// Except the two clipboard endings nobody chose, nowhere to type and focus
+    /// moved: `clipboardNotice` puts up a notice with no chips instead. The
+    /// offer there closed on the next key, 1–3 s after landing, so nobody saw
+    /// it.
     ///
     /// `landing` is where those words actually went. It is frozen into the
     /// correction, and it is what keeps a correction out of a field the
@@ -3445,9 +3452,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `press` is the dictation this offer is about, carried down from its own
     /// key-down — see `insertDictation`. Nothing below reads press-time state
     /// off `self`, so an offer can never be moved by another dictation's press.
-    /// `headline` is only passed for an ending nobody chose.
     private func showCorrectOffer(
-        for press: Press, landing: Correction.Landing, headline: Headline? = nil
+        for press: Press, landing: Correction.Landing, clipboardNotice: Bool = false
     ) {
         // Beside the offer, not on it: its own window, so advice about the
         // microphone never costs you the chance to fix the sentence. Here
@@ -3478,6 +3484,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the second one would sit on the first.
         if !micNotice.isShowing { keyboardNotice.showIfNeeded() }
 
+        // Not an offer, so not behind `correct_offer`.
+        if clipboardNotice { showClipboardNotice(for: press.run) }
+
         guard config.feedback.correctOffer else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return }
@@ -3498,6 +3507,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // and carrying the words as well as the field — see `lastDictated`.
         lastDictated = (press.run, text, press.element, press.owner, landing)
         watchForReselection()
+        // A tap still summons the offer over these words.
+        guard !clipboardNotice else { return }
 
         // The decoder's words matched back onto the sentence that came out of
         // the pipeline — see `Confidence.read`. Taken rather than copied: this
@@ -3524,7 +3535,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 original: text, element: press.element, owner: press.owner,
                 landing: landing, dictation: press.run
             ),
-            run: press.run, headline: headline, reading: reading,
+            run: press.run, headline: nil, reading: reading,
             // Nobody asked for this one. It arrives as a tab unless the decode
             // is worth a second look, which `raiseOffer` decides for itself.
             open: false
@@ -4719,6 +4730,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopWatchingForOfferOutsideClick() {
         offerClickMonitors.forEach(NSEvent.removeMonitor)
         offerClickMonitors.removeAll()
+    }
+
+    /// "On your clipboard", with no chips and no deadline. It takes no key:
+    /// ⌘V and Escape are heard, not taken, so both still reach the app, and
+    /// typing anything else leaves it up. The next press ends it too.
+    private func showClipboardNotice(for run: Int) {
+        if let owner = offerPressRun, owner > run {
+            Log.write("clipboard notice: a newer dictation already has the pill")
+            return
+        }
+        offerPressRun = run
+        pill.clipboard("On your clipboard · ⌘V to paste")
+        if let clipboardKeys { NSEvent.removeMonitor(clipboardKeys) }
+        clipboardKeys = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == UInt16(kVK_Escape) {
+                self?.endTheClipboardNotice(reason: "escape")
+            } else if event.modifierFlags.contains(.command),
+                      event.charactersIgnoringModifiers?.lowercased() == "v" {
+                self?.endTheClipboardNotice(reason: "⌘V")
+            }
+        }
+    }
+
+    private func endTheClipboardNotice(reason: String) {
+        if let clipboardKeys { NSEvent.removeMonitor(clipboardKeys) }
+        clipboardKeys = nil
+        // Something else may have the pill by now.
+        guard pill.showsClipboard else { return }
+        Log.write("clipboard notice: closed by \(reason)")
+        pill.hide()
     }
 
     /// Take the offer down without running anything on it — Escape, Return, or
@@ -6583,9 +6624,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // However this ends, this dictation is over and nothing wants the pane
         // it started with. Every path here makes the offer now, and the offer
         // takes the pane before this runs — so this is the backstop for the
-        // three ways `showCorrectOffer` returns without getting that far: the
-        // offer switched off in the config, an empty transcript, and a newer
-        // dictation that already had the pill.
+        // four ways `showCorrectOffer` returns without getting that far: the
+        // offer switched off in the config, an empty transcript, a newer
+        // dictation that already had the pill, and the clipboard notice.
         defer { dictationEnded(press.run) }
         // Confirmed the same field, or nothing to confirm against. Anything
         // else copies.
@@ -6612,9 +6653,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     ? "could not read what is focused; copied instead of pasting"
                     : "focus moved since the press; copied instead of pasting")
                 setLabel("Focus moved — the transcription is on your clipboard", clearAfter: 4)
-                showCorrectOffer(
-                    for: press, landing: .clipboardNow(), headline: .landing("Focus moved · ⌘V")
-                )
+                showCorrectOffer(for: press, landing: .clipboardNow(), clipboardNotice: true)
                 updateUI()
                 return
             }
@@ -6646,9 +6685,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("nothing to type into (\(reason.described)); copied instead")
             setLabel("Nowhere to type — the transcription is on your clipboard", clearAfter: 4)
             // And on the pill: the menu bar row is inside a menu you must open.
-            showCorrectOffer(
-                for: press, landing: .clipboardNow(), headline: .landing("Nowhere to type · ⌘V")
-            )
+            showCorrectOffer(for: press, landing: .clipboardNow(), clipboardNotice: true)
             updateUI()
             return
         }
