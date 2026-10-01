@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.0](https://github.com/znat/parrotflow/compare/v0.14.0...v0.15.0) (2026-10-01)
+
+
+### Features
+
+* the context stage reads Slack: place, people, code and sidebar ([#322](https://github.com/znat/parrotflow/issues/322)) ([89dd134](https://github.com/znat/parrotflow/commit/89dd134323f4ee2c592819d898d112ee136bce08))
+
+
+### Fixes
+
+* dictation lands in Chrome fields, and a copy stays shown until ⌘V ([#334](https://github.com/znat/parrotflow/issues/334)) ([d78e47e](https://github.com/znat/parrotflow/commit/d78e47e4e965b9dc9f76bd586e82a02e1dda2544))
+* refresh README demo and make Ollama opt-in ([#331](https://github.com/znat/parrotflow/issues/331)) ([8eedd7c](https://github.com/znat/parrotflow/commit/8eedd7c14a26bf847a9e6163b5566e46b2dda630))
+
 ## [0.14.0](https://github.com/znat/parrotflow/compare/v0.13.1...v0.14.0) (2026-09-24)
 
 
