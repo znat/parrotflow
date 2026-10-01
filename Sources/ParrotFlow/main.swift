@@ -862,6 +862,10 @@ if arguments.contains("--clipboard-test") {
     exit(ClipboardTestCommand.run())
 }
 
+if arguments.contains("--landing-test") {
+    exit(LandingTestCommand.run())
+}
+
 if let index = arguments.firstIndex(of: "--paste-probe") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --paste-probe <plain|markdown|html|rtf|all>"

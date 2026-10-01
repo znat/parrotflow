@@ -190,10 +190,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let run: Int
         /// What was focused when the key went down. The same element `focus`
         /// carries, held here as well so the offer needs nothing but the press.
-        let element: AXUIElement?
+        /// Replaced when a press with nowhere to type pastes late.
+        var element: AXUIElement?
         /// And the app it belonged to, for the same reason: an offer taken
         /// later has to write back into the window that was dictated into.
-        let owner: NSRunningApplication?
+        var owner: NSRunningApplication?
+        /// The app in front at the press, which `owner` is not when nothing had
+        /// focus.
+        let pid: pid_t?
         /// The microphone this dictation was recorded on. Frozen for the same
         /// reason as everything above it: the default input can change while
         /// the decoder runs — a headset disconnects, somebody picks another
@@ -2219,7 +2223,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // device. Taken here rather than read at the end for the same reason as
         // the rest: the default input can change while the decoder runs.
         let press = Press(
-            run: pressRun, element: focus?.element, owner: focus?.owner, mic: micAtPress,
+            run: pressRun, element: focus?.element, owner: focus?.owner, pid: pidAtPress,
+            mic: micAtPress,
             // Plain when nobody was in front, which is the answer that cannot
             // lose a sentence.
             paste: appAtPress.map { AppProfile.of($0).paste } ?? .plain,
@@ -6615,19 +6620,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// this same `CFEqual` across 17 real dictations and the element was equal
     /// every time.
     private func insertDictation(
-        _ text: String, to destination: Destination, for press: Press
+        _ text: String, to aimed: Destination, for pressed: Press
     ) {
         // Before anything can fail: `showCorrectOffer` measures the span from
         // this and every ending below reaches it. See `wroteAtPress`.
-        wroteAtPress[press.run] = text.utf16.count
-        let element = press.element
+        wroteAtPress[pressed.run] = text.utf16.count
         // However this ends, this dictation is over and nothing wants the pane
         // it started with. Every path here makes the offer now, and the offer
         // takes the pane before this runs — so this is the backstop for the
         // four ways `showCorrectOffer` returns without getting that far: the
         // offer switched off in the config, an empty transcript, a newer
         // dictation that already had the pill, and the clipboard notice.
-        defer { dictationEnded(press.run) }
+        defer { dictationEnded(pressed.run) }
+        var destination = aimed
+        var press = pressed
+        // Nowhere to type at the press, and a field of the same app by now: it
+        // was clicked into while you spoke. The words and the edit watch go
+        // there.
+        if config.transcription.insertMode == .paste, case .nowhere(let reason) = aimed,
+           reason != .noAccessibility,
+           let late = lateField(after: reason, pressedIn: pressed.pid) {
+            Log.write("nothing to type into at the press; \(late.role) had focus at landing; pasting")
+            destination = .field(role: late.role)
+            press.element = late.element
+            press.owner = pressed.pid.flatMap(NSRunningApplication.init(processIdentifier:))
+        }
+        let element = press.element
         // Confirmed the same field, or nothing to confirm against. Anything
         // else copies.
         //
@@ -6711,6 +6729,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showCorrectOffer(for: press, landing: .clipboardNow())
         }
         updateUI()
+    }
+
+    /// The field a press with nowhere to type can still paste into, read when
+    /// the words are ready. See `Destination.pastesLate`.
+    private func lateField(
+        after reason: Destination.Reason, pressedIn pid: pid_t?
+    ) -> (element: AXUIElement, role: String)? {
+        let element = SelectionReader.focusedElement()
+        var owner: pid_t = 0
+        let found = Destination.LateFocus(
+            accessibility: Permissions.accessibility == .granted,
+            front: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            owner: element.flatMap { AXUIElementGetPid($0, &owner) == .success ? owner : nil },
+            takesText: element.map(SelectionReader.acceptsTypedText) ?? false,
+            ours: element.map(SelectionReader.isOurs) ?? false
+        )
+        guard Destination.pastesLate(after: reason, pressedIn: pid, found: found),
+              let element else { return nil }
+        return (element, SelectionReader.role(of: element) ?? "an unnamed element")
     }
 
     /// The token `setLabel` held while a load owned the label, so `.ready`

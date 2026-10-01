@@ -153,4 +153,26 @@ enum Destination: Equatable {
         return .field(role: role)
     }
 
+    /// What a second focus read found when the words were ready.
+    struct LateFocus: Equatable {
+        var accessibility: Bool
+        /// The app in front.
+        var front: pid_t?
+        /// The app the focused element belongs to.
+        var owner: pid_t?
+        var takesText: Bool
+        var ours: Bool
+    }
+
+    /// Whether a press that found nowhere to type can paste after all: you
+    /// clicked into a field of the same app while speaking. Any other app, or
+    /// anything that is not a field, is a guess about where the words go.
+    static func pastesLate(after reason: Reason, pressedIn pid: pid_t?, found: LateFocus) -> Bool {
+        if case .noAccessibility = reason { return false }
+        guard found.accessibility, let pid, found.front == pid, found.owner == pid else {
+            return false
+        }
+        return found.takesText && !found.ours
+    }
+
 }

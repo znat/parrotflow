@@ -272,6 +272,11 @@ jobs:
       - name: The clipboard rules
         run: scripts/check-clipboard.sh
 
+      # Whether a press with nowhere to type pastes after all, when a field of
+      # the same app has focus by the time the words are ready. The rule only.
+      - name: Where a late field takes the words
+        run: scripts/check-landing.sh
+
       # Not a validation set: it checks that the file a new install is written
       # with still teaches everything config.example.yaml documents. That has
       # drifted twice, both times silently.
