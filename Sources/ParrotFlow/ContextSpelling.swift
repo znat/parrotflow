@@ -136,17 +136,19 @@ enum ContextSpelling {
         ])
     }
 
-    /// The screen at press, or the text above the caret when the screen is
-    /// blank. Read here rather than from `context.*`, so the switch works
-    /// without the `context` stage.
+    /// The screen at this dictation's press, or the text above the caret when
+    /// the screen is blank. Read here rather than from `context.*`, so the
+    /// switch works without the `context` stage. A newer press has replaced
+    /// the screen when the runs differ, and that screen is not this one's.
     static func captured(scope: Scope) -> Screen {
         var screen = Screen(text: "")
-        if case .success(let capture)? = Context.pressCapture?.outcome {
+        guard case .int(let run)? = scope["press.run"] else { return screen }
+        if let press = Context.pressCapture, press.run == run,
+           case .success(let capture) = press.outcome {
             screen = Screen(text: capture.text, code: capture.code, place: capture.place,
                             people: capture.people, roster: capture.roster)
         }
         if screen.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           case .int(let run)? = scope["press.run"],
            case .success(let box)? = InputBox.capture(for: run)?.outcome {
             screen.text = [box.before, box.text].compactMap { $0 }.first { !$0.isEmpty } ?? ""
         }

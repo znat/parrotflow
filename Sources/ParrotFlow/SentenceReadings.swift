@@ -326,8 +326,8 @@ actor SentenceReadings {
     /// padding changes every score, so it stays.
     ///
     /// One row per forward pass. A 2000-character prefix is about 600 tokens,
-    /// and the logits of one such row are about 200 MB. Throws `slow` when a
-    /// row would start after `budget` seconds.
+    /// and the logits of one such row are about 200 MB. Throws `slow` when
+    /// scoring runs past `budget` seconds; a pass already running is not cut.
     func totals(
         prefix: String, continuations: [String], budget: TimeInterval
     ) async throws -> [Double] {
@@ -352,6 +352,7 @@ actor SentenceReadings {
             let total = (takeAlong(slice, targets, axis: 1)
                 - logSumExp(slice, axis: 1, keepDims: true)).sum()
             total.eval()
+            guard Date() < deadline else { throw Failure.slow(budget) }
             return Double(total.item(Float.self))
         }
     }

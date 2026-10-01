@@ -88,6 +88,9 @@ enum Context {
         /// rather than assumed. Measured at ~1ms on a small pane and 36–39ms on
         /// a long scrollback, which is why this runs off the main thread.
         let ms: Double
+        /// The dictation this press started: `press.run` in its pipeline.
+        /// Dictations overlap, and the slot holds the newest press only.
+        let run: Int
     }
 
     private static let pressLock = NSLock()
@@ -138,7 +141,7 @@ enum Context {
     /// dictation can never be published as if it were this one — and the
     /// generation taken here is checked before storing, so a read that has been
     /// overtaken cannot put the stale one back. See `pressGeneration`.
-    static func capturePress(app: Pipeline.App?, element: AXUIElement?) {
+    static func capturePress(run: Int, app: Pipeline.App?, element: AXUIElement?) {
         pressLock.lock()
         pressGeneration += 1
         let mine = pressGeneration
@@ -152,7 +155,7 @@ enum Context {
 
         pressLock.lock()
         let newest = mine == pressGeneration
-        if newest { press = Press(element: element, outcome: outcome, ms: ms) }
+        if newest { press = Press(element: element, outcome: outcome, ms: ms, run: run) }
         pressLock.unlock()
 
         guard newest else {

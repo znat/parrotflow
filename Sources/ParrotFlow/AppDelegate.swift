@@ -1458,8 +1458,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if startsDictation, Context.isConfigured(in: config) {
             let app = front?.app
             let element = focusAtPress?.element
+            let run = pressRun
             DispatchQueue.global(qos: .userInitiated).async {
-                Context.capturePress(app: app, element: element)
+                Context.capturePress(run: run, app: app, element: element)
             }
         }
 
