@@ -68,7 +68,7 @@ Which keys exist:
 | A language model, local or cloud | `references/models.md` |
 | Rewrites that read the screen or the text field | `references/context.md` |
 | To know why something went wrong | `references/diagnose.md` |
-| Names the app keeps getting wrong | `references/spoken-commands.md` (teaching a word) |
+| Names the app keeps getting wrong | `references/vocabulary.md` |
 | "What can it do?", "help me set it up", or anything vague | `references/catalogue.md`, then step 4 |
 
 `references/cli.md` lists every flag this skill uses. Use no other flag.
@@ -128,6 +128,8 @@ This is the default when the request has no clear target.
    `"$PF" --eval <name>`. For a prompt, see `references/cli.md`.
 6. If any check fails, fix it or restore the backup. Never leave a config that
    `--check-config` refuses.
+7. **After a Slack roster edit**, offer to add those names to the vocabulary.
+   The roster matches spelling. See `references/vocabulary.md`.
 
 ## 6. Report
 

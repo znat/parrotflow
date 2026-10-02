@@ -21,7 +21,7 @@ in the last column.
 | Area | What it does | Key | Cost | Default | A user might ask | More |
 |---|---|---|---|---|---|---|
 | Sentence repair | Removes a full stop a pause put mid-sentence. English | `transcription.sentence_repair` | none on the path | on | "It breaks my sentences in two" | rewrites |
-| Vocabulary | Writes names it was taught, checked against the sentence | `vocabulary.yaml`, `transcription.vocabulary` | none | on | "It never spells Tasmeen right" | spoken-commands |
+| Vocabulary | Writes names it was taught, checked against the sentence | `vocabulary.yaml`, `transcription.vocabulary` | none | on | "It never spells Tasmeen right" | vocabulary |
 | Screen spelling | Spells a word the way the screen shows it | `transcription.context_spelling` | none on the path | on | "Write the variable name as it is in my code" | context |
 | Fillers | Deletes um, uh, euh | `transforms` `fillers`, `fillers_fr`; `lists` | none | in the pipeline | "Keep my ums" | rewrites |
 | Dates and times | "March third at ten fifteen" → March 3 at 10:15 | `dates_en`, `dates_fr` | 30–100 ms | English only | "Make French dates work" | rewrites |

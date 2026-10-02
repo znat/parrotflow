@@ -135,7 +135,7 @@ model, do the same with whatever it calls.
 "$PF" --learn "<heard>" "<written>"     # writes one rule to vocabulary.yaml
 ```
 
-Back up `vocabulary.yaml` first. See `spoken-commands.md`.
+Back up `vocabulary.yaml` first. See `vocabulary.md`.
 
 ## Only the user runs these
 

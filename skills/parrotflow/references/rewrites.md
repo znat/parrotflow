@@ -18,7 +18,7 @@ words were a name, with a script doing the rest. Split the job: the model
 judges, code writes.
 
 A name the recogniser mangles is not a rewrite. It goes in the vocabulary: see
-`spoken-commands.md`.
+`vocabulary.md`.
 
 ## The three bodies
 
@@ -247,7 +247,7 @@ defined but not in the pipeline.
 - `github_refs`: "PR one two three" becomes a link. See below.
 - `slack_mentions`: the user fills `ROSTER` in
   `transforms/slack_mentions/slack_mentions.py`. Not in the pipeline on purpose:
-  naming someone is not always a request to ping them.
+  naming someone is not always a request to ping them. See below.
 - `disfluency`: four rules for repeats and false starts, and a fifth for "you
   know" that needs a parser. The app installs the parser itself.
 - `join` (a script in `built-in/join/join.py`, with `returns: json`): fits the
@@ -289,6 +289,35 @@ cases:
   - probe: keep
     input:  the PR is ready for review
 ```
+
+### Filling the Slack roster
+
+`ROSTER` maps what is said to a handle. The user gives the names and the
+handles. Never guess a handle: a wrong one pings the wrong person. The
+script's docstring has a prompt the user can give the assistant in their Slack.
+
+- **Key it by what people say.** Full names first, then first names. The
+  script replaces in dict order, so with `"Mark"` above `"Mark Bell"`, "ask
+  Mark Bell" becomes `ask @mark Bell`.
+- **Leave out a first name that is a common word.** Matching is
+  case-sensitive, and a sentence starts with a capital. With `"Mark"` in the
+  roster, "Mark it as done" becomes `@mark it as done`. Keep the full name only.
+- **Write `transforms/slack_mentions/cases.yaml`, with keep cases.**
+
+```yaml
+cases:
+  - probe: full
+    input:  ask Mark Bell about it
+    expect: ask @mbell about it
+  - probe: keep
+    input:  Mark it as done
+  - probe: keep
+    input:  "@mbell already knows"
+```
+
+**Then offer to add the names to the vocabulary.** The roster matches
+spelling, so a name the recogniser writes another way is never tagged. See
+`vocabulary.md`.
 
 ## Test it
 
