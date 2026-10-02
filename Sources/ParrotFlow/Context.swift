@@ -88,6 +88,9 @@ enum Context {
         /// rather than assumed. Measured at ~1ms on a small pane and 36–39ms on
         /// a long scrollback, which is why this runs off the main thread.
         let ms: Double
+        /// The dictation this press started: `press.run` in its pipeline.
+        /// Dictations overlap, and the slot holds the newest press only.
+        let run: Int
     }
 
     private static let pressLock = NSLock()
@@ -114,15 +117,16 @@ enum Context {
         return press
     }
 
-    /// Whether the pipeline names the stage.
+    /// Whether the pipeline names the stage, or `context_spelling` is on.
     ///
-    /// The gate on the whole thing. A screen read on every hotkey press is not
-    /// a cost to impose on people who never asked for context, and `context` is
-    /// not in any default, so most configs answer false here and pay nothing.
-    /// Read off the config rather than off `Pipeline.resolved`: a config that
-    /// names no pipeline must not read the screen, whatever the default holds.
+    /// The gate on the whole thing. `context_spelling` is on by default, so a
+    /// config reads the screen at every press unless it turns that off and
+    /// leaves `context` out of its pipeline. Read off the listed pipeline
+    /// rather than off `Pipeline.resolved`, so the default list never turns
+    /// the read on by itself.
     static func isConfigured(in config: Config) -> Bool {
         config.transcription.pipeline?.stages.contains(.context) ?? false
+            || config.transcription.contextSpelling.enabled
     }
 
     /// Read the screen at press. Call **after** recording has started, off the
@@ -137,7 +141,7 @@ enum Context {
     /// dictation can never be published as if it were this one — and the
     /// generation taken here is checked before storing, so a read that has been
     /// overtaken cannot put the stale one back. See `pressGeneration`.
-    static func capturePress(app: Pipeline.App?, element: AXUIElement?) {
+    static func capturePress(run: Int, app: Pipeline.App?, element: AXUIElement?) {
         pressLock.lock()
         pressGeneration += 1
         let mine = pressGeneration
@@ -151,7 +155,7 @@ enum Context {
 
         pressLock.lock()
         let newest = mine == pressGeneration
-        if newest { press = Press(element: element, outcome: outcome, ms: ms) }
+        if newest { press = Press(element: element, outcome: outcome, ms: ms, run: run) }
         pressLock.unlock()
 
         guard newest else {

@@ -53,7 +53,7 @@ run_config new 'transcription:
     - vocabulary'
 
 check "a bare pipeline: list loads" "$code" "0"
-check "and it is the pipeline that runs" "$(stages)" "sentence_repair → vocabulary"
+check "and it is the pipeline that runs" "$(stages)" "sentence_repair → vocabulary → context_spelling"
 
 # --- an empty list is a choice ------------------------------------------------
 
@@ -65,7 +65,7 @@ check "an empty pipeline loads" "$code" "0"
 # The list is empty; the two fixed passes are not in it and still run. That is
 # the point of the blocks — `pipeline: []` says "no transforms", not "no app".
 check "and runs no transforms, the fixed passes still" \
-  "$(stages)" "sentence_repair → vocabulary"
+  "$(stages)" "sentence_repair → vocabulary → context_spelling"
 
 # --- no pipeline at all -------------------------------------------------------
 
@@ -74,7 +74,7 @@ run_config absent 'transcription:
 
 check "a config naming no pipeline loads" "$code" "0"
 check "and gets the built-in default, said out loud" \
-  "$(stages)" "sentence_repair → vocabulary  (nothing configured, so every stage)"
+  "$(stages)" "sentence_repair → vocabulary → context_spelling  (nothing configured, so every stage)"
 
 # --- the interpret step -------------------------------------------------------
 #
@@ -95,7 +95,7 @@ run_config interpret_bare 'transcription:
 
 check "a bare - interpret line loads" "$code" "0"
 check "and runs above vocabulary without being refused for it" \
-  "$(stages)" "sentence_repair → vocabulary"
+  "$(stages)" "sentence_repair → vocabulary → context_spelling"
 check "and takes the built-in marks" "$(marks)" ". , ?"
 
 run_config interpret_options 'transcription:
@@ -111,7 +111,7 @@ check "a map with every option loads" "$code" "0"
 # `app:` is gone from these two. They are not steps, so there is no line for a
 # condition to sit on — the options are still read, the condition is not.
 check "and the condition is dropped with the step's position" \
-  "$(stages)" "sentence_repair → vocabulary"
+  "$(stages)" "sentence_repair → vocabulary → context_spelling"
 check "and the step marks are what runs" "$(marks)" ". ?  (bare capitals off)"
 
 run_config interpret_capitals 'transcription:
@@ -128,7 +128,7 @@ run_config interpret_pause 'transcription:
     - {stage: sentence_repair, pause: 0}'
 
 check "pause: 0 loads" "$code" "0"
-check "and the step still resolves" "$(stages)" "sentence_repair → vocabulary"
+check "and the step still resolves" "$(stages)" "sentence_repair → vocabulary → context_spelling"
 
 run_config interpret_bad_marks 'transcription:
   languages: [en]
@@ -159,7 +159,7 @@ run_config without_step 'transcription:
   pipeline: []'
 
 check "interpret enabled: false loads" "$code" "0"
-check "and it is not in what runs" "$(stages)" "vocabulary"
+check "and it is not in what runs" "$(stages)" "vocabulary → context_spelling"
 check "and no marks line is printed for a pass that is off" \
   "$(marks)" ""
 
@@ -169,7 +169,7 @@ run_config omitted_step 'transcription:
 
 check "leaving interpret out of the list loads" "$code" "0"
 check "and it runs anyway, because the list is not its switch" \
-  "$(stages)" "sentence_repair → vocabulary"
+  "$(stages)" "sentence_repair → vocabulary → context_spelling"
 
 # --- the vocabulary step's gates ----------------------------------------------
 #
@@ -398,7 +398,7 @@ check "and names the other language too" \
   "$(printf '%s\n' "$out" | grep -c 'transform: numbers_fr')" "1"
 check "and does not offer the list of stages instead" \
   "$(printf '%s\n' "$out" | grep -c 'is not a stage')" "0"
-check "and the rest of the pipeline still runs" "$(stages)" "sentence_repair → vocabulary"
+check "and the rest of the pipeline still runs" "$(stages)" "sentence_repair → vocabulary → context_spelling"
 
 # Half the migration: the pipeline line rewritten, the `transforms:` entry
 # forgotten. The message has to name the missing half rather than only say the
@@ -437,7 +437,7 @@ check "and says what to write instead" \
 check "and says the built-in default is what runs" \
   "$(printf '%s\n' "$out" | grep -c 'no pipeline of yours is running')" "1"
 check "and that is what resolves" \
-  "$(stages)" "sentence_repair → vocabulary  (nothing configured, so every stage)"
+  "$(stages)" "sentence_repair → vocabulary → context_spelling  (nothing configured, so every stage)"
 
 # --- any shape under the retired key ------------------------------------------
 #
@@ -454,7 +454,7 @@ check "a bare list under pipelines: is refused the same way" "$code" "1"
 check "with the same one message" \
   "$(printf '%s\n' "$out" | grep -c 'transcription.pipelines: is retired')" "1"
 check "and the built-in default resolves" \
-  "$(stages)" "sentence_repair → vocabulary  (nothing configured, so every stage)"
+  "$(stages)" "sentence_repair → vocabulary → context_spelling  (nothing configured, so every stage)"
 
 # --- the rest of the config still loads ---------------------------------------
 #
@@ -474,7 +474,7 @@ check "a refused pipelines: does not cost the rest of the config" \
 check "including a setting read after it" \
   "$(printf '%s\n' "$out" | grep -c 'copy to clipboard')" "1"
 check "and the built-in default is still what resolves" \
-  "$(stages)" "sentence_repair → vocabulary  (nothing configured, so every stage)"
+  "$(stages)" "sentence_repair → vocabulary → context_spelling  (nothing configured, so every stage)"
 
 # --- both keys ----------------------------------------------------------------
 
@@ -486,9 +486,39 @@ run_config both 'transcription:
     default: [interpret]'
 
 check "pipelines: beside pipeline: is still refused" "$code" "1"
-check "and pipeline: is what runs" "$(stages)" "sentence_repair → vocabulary"
+check "and pipeline: is what runs" "$(stages)" "sentence_repair → vocabulary → context_spelling"
 check "and the message says so" \
   "$(printf '%s\n' "$out" | grep -c 'the `pipeline:` list is what runs')" "1"
+
+# --- context_spelling ---------------------------------------------------------
+#
+# A switch, not a step, and on by default. On, it runs after the last listed
+# step. A listed line does not place it.
+
+run_config spelling_on 'transcription:
+  languages: [en]
+  context_spelling:
+    enabled: true
+  pipeline:
+    - context
+    - input'
+
+check "context_spelling: enabled loads" "$code" "0"
+check "and runs after the last listed step" \
+  "$(stages)" "sentence_repair → vocabulary → context → input → context_spelling"
+
+run_config spelling_listed 'transcription:
+  languages: [en]
+  context_spelling:
+    enabled: false
+  pipeline:
+    - context_spelling
+    - context'
+
+check "a listed - context_spelling does not run while the switch is off" \
+  "$(stages)" "sentence_repair → vocabulary → context"
+check "and the notice says so" \
+  "$(printf '%s\n' "$out" | grep -c '`- context_spelling` is not a step')" "1"
 
 echo
 echo "  $pass/$total$failed"

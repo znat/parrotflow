@@ -1384,6 +1384,23 @@ open -na ParrotFlowDev --args --peek 6
 
 It prints what the stage would publish, in full, under `as context:`.
 
+### Spelling a word the way the screen does
+
+`transcription.context_spelling` is a pass that runs after the last pipeline
+step. It is on by default, and `{enabled: false}` turns it off. It takes terms
+off the screen captured at the press — backticked runs, identifiers, names, long words the dictionary does not
+know, and Slack's place, people, roster and code — and matches each run of one
+to four dictated words against them, by letters or by sound. The sentence model
+that `sentence_repair` loads then scores the sentence as dictated against each
+rewrite, and a rewrite is kept when it wins by enough: "rewrite line" becomes
+`rewrite_line` when the screen shows it. It reads the screen and the field at
+every press, whether or not the pipeline names `context` or `input`, and uses
+the text above the caret when there is no screen. It never waits for the model:
+until it is in memory, the text goes through as dictated. Each rewrite costs one
+model pass, so at most 8 are scored, exact matches first, and scoring stops at 5
+seconds with what it finished. `--context-spelling-test <cases.json>` runs it
+over a case file.
+
 ## Input: what is already in the field
 
 `context` reads the screen *around* the box. `input` reads the box itself —

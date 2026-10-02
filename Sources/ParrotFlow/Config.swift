@@ -1787,6 +1787,9 @@ struct Config: Decodable, Equatable {
         /// Whether the block was written under its old name, for `notices()`.
         var retiredInterpretBlock = false
         var vocabulary = Vocabulary()
+        /// A span respelled the way the screen writes it, after the last step
+        /// — see `ContextSpelling`.
+        var contextSpelling = ContextSpelling()
 
         /// The marks the `interpret` step tries beside removing the period,
         /// where the step names none of its own. English only — that stage has
@@ -1945,6 +1948,23 @@ struct Config: Decodable, Equatable {
             }
         }
 
+        /// On unless turned off. It reads the screen and the field at every
+        /// press.
+        struct ContextSpelling: Decodable, Equatable {
+            var enabled = true
+
+            enum CodingKeys: String, CodingKey {
+                case enabled
+            }
+
+            init() {}
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
+            }
+        }
+
         /// Names from `vocabulary.yaml`, matched and then settled against the
         /// sentence they stand in.
         ///
@@ -2031,6 +2051,7 @@ struct Config: Decodable, Equatable {
         enum CodingKeys: String, CodingKey {
             case enabled, replacements, pipeline, languages, vocabulary
             case sentenceRepair = "sentence_repair"
+            case contextSpelling = "context_spelling"
             case insertMode = "insert_mode"
             case activationPhrases = "activation_phrases"
             case activationPhrase = "activation_phrase"
@@ -2462,6 +2483,9 @@ struct Config: Decodable, Equatable {
                 sentenceRepair = v
             }
             if let v = try c.decodeIfPresent(Vocabulary.self, forKey: .vocabulary) { vocabulary = v }
+            if let v = try c.decodeIfPresent(ContextSpelling.self, forKey: .contextSpelling) {
+                contextSpelling = v
+            }
             if let v = try c.decodeIfPresent([String].self, forKey: .languages) {
                 let known = v.map { $0.lowercased() }
                     .filter { DictationLanguage.supported.contains($0) }
@@ -3260,6 +3284,10 @@ struct Config: Decodable, Equatable {
                 + " use `transcription.\(stage.name): {enabled: false}` to turn"
                 + " it off")
         }
+        if transcription.pipeline?.stages.contains(.contextSpelling) == true {
+            said.append("pipeline: `- context_spelling` is not a step. It runs last"
+                + " when `transcription.context_spelling: {enabled: true}` — delete the line")
+        }
         // A condition on one of those lines is the one thing that cannot come
         // across: the pass is not a step, so there is no position for a
         // condition to gate. Named, because a `vocabulary` scoped to terminals
@@ -3374,6 +3402,12 @@ struct Config: Decodable, Equatable {
     /// warm that disagrees with the pipeline fetches weights nothing will read.
     var readsBoundaries: Bool {
         Pipeline.resolved(config: self).stages.contains(.sentenceRepair)
+    }
+
+    /// Whether anything will read the sentence model: `sentence_repair` or
+    /// `context_spelling`.
+    var readsSentenceModel: Bool {
+        readsBoundaries || transcription.contextSpelling.enabled
     }
 
     /// The `vocabulary` steps in the pipeline. More than one is legal, so

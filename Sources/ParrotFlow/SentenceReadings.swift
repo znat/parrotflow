@@ -314,6 +314,53 @@ actor SentenceReadings {
         )
     }
 
+    /// The summed log-probability of each continuation after `prefix`, for
+    /// `ContextSpelling`. Not divided by the token count.
+    ///
+    /// Split the way the prototype's scorer split it: the prefix is
+    /// left-padded with newline tokens to a multiple of 64, and the score
+    /// starts at the first token that differs from the padded prefix. The
+    /// padding changes every score, so it stays.
+    ///
+    /// One row per forward pass. A 2000-character prefix is about 600 tokens,
+    /// and the logits of one such row are about 200 MB. Stops at `budget`
+    /// seconds and returns the totals finished by then, so the result can be
+    /// shorter than `continuations`. A pass that ends late is dropped; one
+    /// already running is not cut.
+    func totals(
+        prefix: String, continuations: [String], budget: TimeInterval
+    ) async throws -> [Double] {
+        let deadline = Date().addingTimeInterval(budget)
+        let context = try await context()
+        guard let model = context.model as? Qwen3Model else {
+            throw Failure.notQwen(String(describing: type(of: context.model)))
+        }
+        let tokenizer = context.tokenizer
+        let newline = tokenizer.encode(text: "\n", addSpecialTokens: false).last ?? 0
+        let bare = tokenizer.encode(text: prefix, addSpecialTokens: false)
+        let lead = Array(repeating: newline, count: (64 - bare.count % 64) % 64)
+        let padded = lead + bare
+        var totals: [Double] = []
+        for continuation in continuations {
+            guard Date() < deadline else { break }
+            let full = lead + tokenizer.encode(text: prefix + continuation, addSpecialTokens: false)
+            let from = max(1, zip(full, padded).prefix { $0.0 == $0.1 }.count)
+            guard from < full.count else {
+                totals.append(0)
+                continue
+            }
+            let logits = model(MLXArray(full.map { Int32($0) }, [1, full.count]), cache: nil)
+            let slice = logits[0, (from - 1) ..< (full.count - 1)].asType(.float32)
+            let targets = MLXArray(full[from...].map { Int32($0) }, [full.count - from, 1])
+            let total = (takeAlong(slice, targets, axis: 1)
+                - logSumExp(slice, axis: 1, keepDims: true)).sum()
+            total.eval()
+            guard Date() < deadline else { break }
+            totals.append(Double(total.item(Float.self)))
+        }
+        return totals
+    }
+
     /// Every reading padded into one batch and scored in one forward pass.
     ///
     /// Right-padded with the prefix's last token, causal attention, and the pad
