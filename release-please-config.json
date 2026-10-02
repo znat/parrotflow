@@ -12,6 +12,14 @@
         {
           "type": "generic",
           "path": "Resources/Info.plist"
+        },
+        {
+          "type": "generic",
+          "path": "skills/parrotflow/SKILL.md"
+        },
+        {
+          "type": "generic",
+          "path": "README.md"
         }
       ],
       "changelog-sections": [

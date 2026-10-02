@@ -1,0 +1,17 @@
+# The contract, in prose: what counts as a case here, and what is out of scope.
+#
+# Spoken arrow keys become arrow symbols. A bare "arrow" is out of scope: it is
+# an ordinary word.
+#
+# A case with no `expect` must come back unchanged. Keep about half of them.
+cases:
+  - probe: spoken
+    input: press right arrow twice
+    expect: press → twice
+  - probe: spoken
+    input: left arrow then enter
+    expect: ← then enter
+  - probe: keep
+    input: an arrow function
+  - probe: keep
+    input: the arrow on the right

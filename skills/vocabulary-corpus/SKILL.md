@@ -12,9 +12,10 @@ the mistake to have happened first.
 
 The hard part is not finding candidate terms. It is throwing away the ones that
 will do damage. Most of this skill is rejection criteria, and they are all
-earned from measurements: see the scoreboard in `docs/transcription.md`.
+earned from measurements: see the scoreboard in
+[docs/transcription.md](https://github.com/znat/parrotflow/blob/main/docs/transcription.md).
 
-**What you are producing:** a `vocabulary:` block for the user's config, and a
+**What you are producing:** the `terms:` of the user's `vocabulary.yaml`, and a
 short list of terms that need checking by ear because a machine cannot settle
 them.
 
@@ -33,16 +34,16 @@ Then keep it true:
 - **Do not put names into any tool that leaves the machine.** No web search on
   a colleague's name to check its spelling, no asking a hosted model to tidy
   the list. Work from what the user pastes.
-- **Write only to the user's config.** Names belong in
-  `~/.config/parrotflow/config.yaml`, not in a scratch file somewhere, and not
-  in a commit.
+- **Write only to the user's config folder.** Names belong in
+  `~/.config/parrotflow/vocabulary.yaml`, not in a scratch file somewhere, and
+  not in a commit.
 - **Do not repeat the whole roster back in chat** beyond what is needed to
   confirm a decision. A list of everyone someone works with is not something
   to restate for the sake of a tidy summary.
 
-If the user is on a project with `transforms:` that call a hosted API — the
-OpenAI scripts in this repo are an example — say so plainly, because that is a
-real exception to "nothing leaves the machine" and it is theirs to weigh.
+If the user's config has `transforms:` that call a hosted API, or a cloud
+entry in `models:`, say so plainly, because that is a real exception to
+"nothing leaves the machine" and it is theirs to weigh.
 
 ## The shape of a good term
 
@@ -171,15 +172,14 @@ Two things to tell the user when you hand it over:
 For each surviving candidate, find its nearest ordinary word. That distance
 decides one thing: whether the term can be matched by sound at all.
 
-There is no number to pick per term. The app takes two numbers for the whole
-file — `offer_below`, how far a spelling may sit from a term and still reach
-the judge's menu, and `decide_above`, how hard the audio has to argue before a
-reading is dropped. Leave both at their defaults. A near neighbour is no longer
-a word that gets overwritten; it is a second line on a menu, and the sentence
-picks.
+There is no number to pick per term. The app has one threshold,
+`transcription.vocabulary.sound_below` in `config.yaml`, and it ships
+measured. Leave it alone. A near neighbour is no longer a word that gets
+overwritten: every match is checked against the sentence before it is
+written.
 
-Use `NSSpellChecker` for "is this a word", because that is what
-`Replacements.isRealWord` uses. Check only the languages this person dictates
+Use `NSSpellChecker` for "is this a word", because that is what the app
+uses. Check only the languages this person dictates
 in — a French word list rejects English terms that are perfectly safe for an
 English-only speaker:
 
@@ -202,8 +202,7 @@ for word in CommandLine.arguments.dropFirst() {
 acronym — `XQZPT` comes back known. Ask about the lowercase form for anything
 capitalised.
 
-For the distance, use plain Levenshtein over the longer length, which is what
-FluidAudio's gate computes:
+For the distance, use plain Levenshtein over the longer length:
 
     similarity = 1 - editDistance / max(len(a), len(b))
 
@@ -211,8 +210,7 @@ Then:
 
 - **Nearest ordinary word at 0.85 or above** — no threshold works. None both
   catches the term's mishearings and excludes that word. Ship it as
-  `floor: off` with a `pronunciations:` list, and let it put the term on the menu and
-  the sentence decide.
+  `floor: off` with a `pronunciations:` list, and let the sentence decide.
 - **Otherwise** — plain entry. Nothing to write but the name.
 - **Check two-word phrases as well as single words.** This is the hole that
   bites: `Turndown` has no dictionary collision and scores a clean 1.00, but
@@ -257,10 +255,6 @@ dozen terms it is a few minutes of reading.
 The contents of `vocabulary.yaml`, which sits beside `config.yaml`:
 
 ```yaml
-acoustic: true
-offer_below: 0.50
-decide_above: 3.0
-
 terms:
   RedCrawl:             # "red crawl", glues to 1.00
   LangSmith:
@@ -279,9 +273,9 @@ term's name, which is what reaches a name no threshold can — `Versailles` is
 0.40 from `Vercel`. `heard: [a, b]` is the old spelling of the same list; it
 still loads, and `--check-config` says what to write instead.
 
-An empty entry is the normal one. The two numbers at the top are the file's,
-not a term's, and they ship untuned — leave them alone unless you have
-measured the whole set.
+An empty entry is the normal one. Write no number at the top of the file:
+`acoustic:`, `offer_below:` and `decide_above:` are read and do nothing now,
+and `--check-config` names each one.
 
 That file carries a "do not edit unless you know what you are doing" header
 because it is normally written by the app — from corrections and from
@@ -293,8 +287,8 @@ And beside it, three short lists:
 - **Rejected, with the reason.** `Praisy` — "praise" at 0.83. `Sentry` —
   "entry" at 0.83. These go in with `floor: off` and a `pronunciations:` list
   of renderings actually seen. `floor: off` turns sound matching off for the
-  whole term, renderings included, so those are exact rules and the judge reads
-  the sentence. Give the reason, or someone re-adds them next month.
+  whole term, renderings included, so those are exact rules and the sentence
+  decides. Give the reason, or someone re-adds them next month.
 - **Already fine.** The terms the decoder writes correctly. Same reason.
 - **Read these aloud.** The step 5 sentences.
 

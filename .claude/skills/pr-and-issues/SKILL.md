@@ -1,6 +1,8 @@
 ---
 name: pr-and-issues
 description: Write a pull request or an issue that reads in twenty seconds. A title that works on its own in the release notes, a short lead, and the evidence folded into expandable details. Use when opening or editing a PR or an issue, when rewriting a title so the changelog reads well, or when a body has grown too long to skim.
+metadata:
+  internal: true
 ---
 
 # Writing a pull request or an issue

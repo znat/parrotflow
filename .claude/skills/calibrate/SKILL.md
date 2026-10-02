@@ -1,6 +1,8 @@
 ---
 name: calibrate
 description: Measure a ParrotFlow vocabulary against the user's own voice — write sentences containing each vocabulary term and the words it can be confused with, have the user read them aloud into the app, and compute the safe band per term. Use after gathering a vocabulary, when a name keeps being mis-transcribed, or when a term is overwriting an ordinary word.
+metadata:
+  internal: true
 ---
 
 # Calibrating a vocabulary against one person's voice

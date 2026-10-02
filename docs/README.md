@@ -55,8 +55,12 @@ the app.
 
 ## Working with a coding agent
 
-Start the agent at [AGENTS.md](../AGENTS.md). Give it a concrete behavior and
-examples, including cases that must not change.
+Without the repository, install the `parrotflow` skill:
+`npx skills add znat/parrotflow --skill parrotflow`. It lets the agent change
+your config and explain what is possible. See [the README](../README.md#bring-your-coding-agent).
+
+In the repository, start the agent at [AGENTS.md](../AGENTS.md). Give it a
+concrete behavior and examples, including cases that must not change.
 
 The agent should validate with the actual binary, score an existing rewrite
 before and after changing it, and test failure behavior. A `command:` transform

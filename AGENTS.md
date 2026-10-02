@@ -11,6 +11,13 @@ this file is the router.
 
 The full map is [docs/README.md](docs/README.md).
 
+Users without this repository get the same help from the public skill in
+[skills/parrotflow/](skills/parrotflow/SKILL.md), installed with
+`npx skills add znat/parrotflow --skill parrotflow`. It names config keys and
+flags; `scripts/check-skill.sh` fails when one of them stops existing, so
+rename a key or a flag there too. Skills under `.claude/skills/` are for work
+in this repository and are marked `metadata.internal`.
+
 ## Rules that hold across all three
 
 **Validate with the binary, not by reading the file.**

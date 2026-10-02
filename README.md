@@ -159,10 +159,38 @@ with its own test cases.
 
 ## Bring your coding agent
 
-Point your agent at [AGENTS.md](AGENTS.md), describe the behavior you want, and
-ask it to implement and test a transform. The repository includes authoring
-instructions, command-line checks, and evaluation cases.
+Install the ParrotFlow skill, and your coding agent can change your setup and
+explain what is possible. It works with Claude Code, Codex, Cursor and the
+other agents the [`skills`](https://github.com/vercel-labs/skills) CLI supports.
+You do not need this repository.
 
+```sh
+npx skills add znat/parrotflow --skill parrotflow
+```
+
+To match the skill to the app version you run, name its tag:
+
+<!-- x-release-please-start-version -->
+```sh
+npx skills add 'znat/parrotflow#v0.15.0@parrotflow'
+```
+<!-- x-release-please-end -->
+
+A skill pinned to a tag stays on it through `npx skills update`. After an app
+update, run `add` again with the new tag. The skill warns you when the two
+versions differ, and prints the line to run.
+
+Then ask, for example:
+
+- "What can ParrotFlow do that I'm not using?"
+- "Use right option as my hotkey."
+- "I also dictate in French: make numbers and dates work in French."
+- "When I say 'arrow', write →, but only in my terminal."
+
+The agent backs up `config.yaml`, makes the change, checks it with the app's
+own binary, and asks you for one real dictation.
+
+Working in this repository instead? Point your agent at [AGENTS.md](AGENTS.md).
 Start with one small thing you keep correcting by hand.
 
 ## Go deeper

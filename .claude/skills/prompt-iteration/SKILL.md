@@ -1,6 +1,8 @@
 ---
 name: prompt-iteration
 description: Decide what should do a narrow text job — a prompt, a regex, a script, or a combination of them — by measuring against a validation set instead of judging by eye. Use when tuning a prompt for extraction, classification or rewriting, especially with a small local model; when a prompt "works" but fails unpredictably; or when deciding whether a model is needed at all. Covers building the set, splitting model work from code, proposing the combination, and the failure patterns measurement exposes.
+metadata:
+  internal: true
 ---
 
 # Deciding what does the job, and proving it
