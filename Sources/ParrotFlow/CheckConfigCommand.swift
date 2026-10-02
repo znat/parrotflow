@@ -27,6 +27,7 @@ enum CheckConfigCommand {
             config = try ConfigStore.load()
         } catch {
             emit("  ✗ \(describe(error))")
+            unknownKeys().forEach(emit)
             return finished(false)
         }
 
@@ -166,12 +167,7 @@ enum CheckConfigCommand {
         for notice in config.notices() {
             emit("  · \(notice)")
         }
-        // A warning, never a failure: a config with an unknown key still loads.
-        if let text = try? String(contentsOf: ConfigStore.fileURL, encoding: .utf8) {
-            for unknown in ConfigSchema.unknownKeys(in: text) {
-                emit("  ⚠ \(unknown.said)")
-            }
-        }
+        unknownKeys().forEach(emit)
         if !transcription.retired.isEmpty {
             emit("      pipeline: [\(Pipeline.everything.stages.map(\.name).joined(separator: ", "))]")
         }
@@ -397,6 +393,14 @@ enum CheckConfigCommand {
         }
 
         return finished(ok)
+    }
+
+    /// A warning, never a failure: a config with an unknown key still loads.
+    private static func unknownKeys() -> [String] {
+        guard let text = try? String(contentsOf: ConfigStore.fileURL, encoding: .utf8) else {
+            return []
+        }
+        return ConfigSchema.unknownKeys(in: text).map { "  ⚠ \($0.said)" }
     }
 
     /// Which of the three bodies this is, in one column.

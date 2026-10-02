@@ -20,9 +20,13 @@ enum ConfigSchema {
         case integer
         case number
         case range(Bounds)
+        case wholeRange(Bounds)
         case text
         case pattern(String)
+        /// Read case-insensitively, as every decoder that checks a word does.
         case choice([String])
+        /// Sentence marks, as `Language.checked(marks:)` refuses them.
+        case marks
         case list(Kind)
         case object(Section)
         /// Any key, each value of this kind: names the user chooses.
@@ -39,6 +43,7 @@ enum ConfigSchema {
         var fallback: Any?
         /// Still read, and not to be written. The text says what to write instead.
         var deprecated: String?
+        var required = false
     }
 
     struct Section {
@@ -54,9 +59,10 @@ enum ConfigSchema {
 
     private static func key(
         _ name: String, _ kind: Kind, _ help: String,
-        default fallback: Any? = nil, deprecated: String? = nil
+        default fallback: Any? = nil, deprecated: String? = nil, required: Bool = false
     ) -> Field {
-        Field(name: name, kind: kind, help: help, fallback: fallback, deprecated: deprecated)
+        Field(name: name, kind: kind, help: help, fallback: fallback, deprecated: deprecated,
+              required: required)
     }
 
     // MARK: - The table
@@ -232,9 +238,9 @@ enum ConfigSchema {
                     .map(\.stringValue),
                 fields: [
             key("enabled", .bool, "false is the only way off.", default: true),
-            key("marks", .list(.text),
-                "What a boundary may be written with, one punctuation character each."
-                    + " Left out, the set for the language."),
+            key("marks", .marks,
+                "What a boundary may be written with, one punctuation character each,"
+                    + " at least one of . ? !. Left out, the set for the language."),
             key("capitals", .bool,
                 "Read a capital with no mark in front of it as a boundary too.",
                 default: true),
@@ -259,12 +265,14 @@ enum ConfigSchema {
                 fields: [
             key("enabled", .bool, "false is the only way off.", default: true),
             key("sound_below", .range(Bounds(min: 0, max: 1)),
-                "How close a run of words must sound to a term, from 0 to 1.",
-                default: 0.85),
-            key("gate_sentence", .bool, "Read the sentence before keeping a match.",
-                default: true),
-            key("asks", .bool, "Ask before typing a name it could not settle.",
-                default: true),
+                "How close a run of words must sound to a term, from 0 to 1. Left out,"
+                    + " the value in vocabulary.yaml, else 0.85."),
+            key("gate_sentence", .bool,
+                "Read the sentence before keeping a match. Left out, the value in"
+                    + " vocabulary.yaml, else true."),
+            key("asks", .bool,
+                "Ask before typing a name it could not settle. Left out, the value in"
+                    + " vocabulary.yaml, else true."),
             key("slot_floor", slotFloor,
                 "How far the heard word must win by before a rewrite is refused."
                     + " Built in: 0.20 in English, 0.30 in French."),
@@ -291,10 +299,10 @@ enum ConfigSchema {
     static var caps: Section {
         Section(source: "VocabularyPass.Caps",
                 keys: VocabularyPass.Caps.CodingKeys.allCases.map(\.stringValue), fields: [
-            key("perSlot", .integer, "Readings per place, the heard word included. At most 2.",
-                default: 2),
-            key("perTerm", .integer, "Places in one sentence that may be about one term.",
-                default: 2),
+            key("perSlot", perSlot, "Readings per place, the heard word included. At most 2.",
+                default: 2, required: true),
+            key("perTerm", perTerm, "Places in one sentence that may be about one term.",
+                default: 2, required: true),
             key("readings", .integer, "Retired.",
                 deprecated: "nothing reads it. It capped a lettered menu, and there is no"
                     + " menu. Delete the line"),
@@ -303,6 +311,12 @@ enum ConfigSchema {
                     + " makes none. Delete the line"),
         ])
     }
+
+    /// `Caps.problems` refuses anything below 1, and a third reading per place.
+    static var perSlot: Kind {
+        .wholeRange(Bounds(min: 1, max: Double(VocabularyPass.Caps.readingCeiling)))
+    }
+    static var perTerm: Kind { .wholeRange(Bounds(min: 1)) }
 
     /// A number for every language, or one per language.
     static var slotFloor: Kind {
@@ -329,7 +343,7 @@ enum ConfigSchema {
                 key("unless", .text, "Skip when this holds. Same forms as when."),
                 key("app", .text,
                     "Run only in apps this regex matches, on name and bundle id."),
-                key("marks", .list(.text), "sentence_repair: what a boundary may be written with."),
+                key("marks", .marks, "sentence_repair: what a boundary may be written with."),
                 key("capitals", .bool, "sentence_repair: read a bare capital as a boundary."),
                 key("pause", .number, "sentence_repair: silence a bare capital needs first."),
                 key("near_misses", .bool, "vocabulary: also match a rendering one edit away."),
@@ -340,9 +354,9 @@ enum ConfigSchema {
                 key("lowercase_refused", .bool,
                     "vocabulary: refuse a term where the decoder wrote lower case."),
                 key("slot_floor", slotFloor, "vocabulary: the slot floor, as in the block."),
-                key("max_per_slot", .integer, "vocabulary: readings per place. At most 2.",
+                key("max_per_slot", perSlot, "vocabulary: readings per place. At most 2.",
                     default: 2),
-                key("max_per_term", .integer,
+                key("max_per_term", perTerm,
                     "vocabulary: places in one sentence about one term.", default: 2),
                 key("prompt", .text, "The older spelling of transform.",
                     deprecated: "the older spelling of `transform:`. Still read"),
@@ -385,7 +399,7 @@ enum ConfigSchema {
                 fields: [
             key("api", .choice(ModelSpec.API.allCases.map(\.rawValue)),
                 "The protocol, not the vendor.", default: ModelSpec.API.ollama.rawValue),
-            key("model", .text, "The model id, as the provider spells it."),
+            key("model", .text, "The model id, as the provider spells it.", required: true),
             key("endpoint", .text, "Where to send it. Left out, the default for the protocol."),
             key("api_key", .text,
                 "keychain, env:NAME, file:PATH, or the key itself. Left out, the keychain"
@@ -557,19 +571,29 @@ enum ConfigSchema {
         case .bool: return ["type": "boolean"]
         case .integer: return ["type": "integer"]
         case .number: return ["type": "number"]
-        case .range(let bounds):
-            var out: [String: Any] = ["type": "number"]
-            if let min = bounds.min { out[bounds.aboveMin ? "exclusiveMinimum" : "minimum"] = min }
-            if let max = bounds.max { out["maximum"] = max }
-            return out
+        case .range(let bounds): return bounded("number", bounds)
+        case .wholeRange(let bounds): return bounded("integer", bounds)
         case .text: return ["type": "string"]
         case .pattern(let pattern): return ["type": "string", "pattern": pattern]
-        case .choice(let values): return ["type": "string", "enum": values]
+        case .choice(let values):
+            // The enum is what an editor offers; the pattern accepts any casing.
+            return ["type": "string", "anyOf": [["enum": values], ["pattern": anyCase(values)]]]
+        case .marks:
+            return [
+                "type": "array", "minItems": 1,
+                "items": ["type": "string", "minLength": 1, "maxLength": 1],
+                "contains": ["enum": SentenceReadings.enders.sorted()],
+            ]
         case .list(let inner): return ["type": "array", "items": json(inner)]
         case .object(let section):
             var properties: [String: Any] = [:]
             for field in section.fields { properties[field.name] = json(field) }
-            return ["type": "object", "properties": properties, "additionalProperties": false]
+            var out: [String: Any] = [
+                "type": "object", "properties": properties, "additionalProperties": false,
+            ]
+            let required = section.fields.filter(\.required).map(\.name)
+            if !required.isEmpty { out["required"] = required }
+            return out
         case .open(let inner): return ["type": "object", "additionalProperties": json(inner)]
         case .anything: return [:]
         case .either(let kinds): return ["anyOf": kinds.map(json)]
@@ -591,6 +615,24 @@ enum ConfigSchema {
             out["type"] = [type, "null"]
         }
         return out
+    }
+
+    private static func bounded(_ type: String, _ bounds: Bounds) -> [String: Any] {
+        var out: [String: Any] = ["type": type]
+        if let min = bounds.min { out[bounds.aboveMin ? "exclusiveMinimum" : "minimum"] = min }
+        if let max = bounds.max { out["maximum"] = max }
+        return out
+    }
+
+    /// `^(?:[oO][fF][fF]|…)$`. JSON Schema patterns have no case-insensitive flag.
+    private static func anyCase(_ values: [String]) -> String {
+        let spelled = values.map { value in
+            NSRegularExpression.escapedPattern(for: value).map { letter -> String in
+                let lower = letter.lowercased(), upper = letter.uppercased()
+                return lower == upper ? String(letter) : "[\(lower)\(upper)]"
+            }.joined()
+        }
+        return "^(?:\(spelled.joined(separator: "|")))$"
     }
 
     /// JSONSerialization writes 0.3 as 0.29999999999999999. Swift's own
@@ -615,8 +657,8 @@ enum ConfigSchema {
     /// Every key in `text` the schema does not know, by full path.
     ///
     /// The decoder never sees a key its `CodingKeys` does not list, so this
-    /// reads the same YAML again as a plain tree. A deprecated key is not
-    /// reported here: `problems()` and `notices()` already name it.
+    /// reads the same YAML again as a plain tree. A deprecated key is known,
+    /// so it gets no line here, but what is under it is still checked.
     static func unknownKeys(in text: String) -> [Unknown] {
         guard let node = try? Yams.compose(yaml: text) else { return [] }
         var found: [Unknown] = []
@@ -636,7 +678,6 @@ enum ConfigSchema {
                     found.append(Unknown(path: joined(key), suggestion: closest(to: key, in: current)))
                     continue
                 }
-                guard field.deprecated == nil else { continue }
                 walk(value, field.kind, at: joined(key), into: &found)
             }
         case .open(let inner):
@@ -651,10 +692,17 @@ enum ConfigSchema {
                 walk(item, inner, at: "\(path)[\(name ?? String(index))]", into: &found)
             }
         case .either(let kinds):
-            if node.mapping != nil {
+            if let mapping = node.mapping {
+                // The parser reads `{ path: <string> }` as a file before it reads a
+                // table, and ignores whatever else is beside `path`.
+                let file = kinds.first { $0.section?.field("path") != nil }
+                if let file, mapping["path"]?.scalar != nil {
+                    walk(node, file, at: path, into: &found)
+                    return
+                }
                 // An open branch accepts any key, so there is nothing to report.
                 guard !kinds.contains(where: \.isOpen),
-                      let object = kinds.first(where: \.isObject) else { return }
+                      let object = kinds.first(where: { $0.section != nil }) else { return }
                 walk(node, object, at: path, into: &found)
             } else if node.sequence != nil, let list = kinds.first(where: \.isList) {
                 walk(node, list, at: path, into: &found)
@@ -674,22 +722,26 @@ enum ConfigSchema {
             .name
     }
 
+    /// Edits between two names, where swapping two neighbours is one edit:
+    /// `moed` is one from `mode`.
     static func editDistance(_ a: String, _ b: String) -> Int {
         let a = Array(a), b = Array(b)
         guard !a.isEmpty else { return b.count }
         guard !b.isEmpty else { return a.count }
-        var previous = Array(0...b.count)
+        var table = [[Int]](repeating: [Int](repeating: 0, count: b.count + 1), count: a.count + 1)
+        for i in 0...a.count { table[i][0] = i }
+        for j in 0...b.count { table[0][j] = j }
         for i in 1...a.count {
-            var current = [i] + Array(repeating: 0, count: b.count)
             for j in 1...b.count {
-                current[j] = min(
-                    previous[j] + 1, current[j - 1] + 1,
-                    previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1)
-                )
+                let cost = a[i - 1] == b[j - 1] ? 0 : 1
+                table[i][j] = min(table[i - 1][j] + 1, table[i][j - 1] + 1,
+                                  table[i - 1][j - 1] + cost)
+                if i > 1, j > 1, a[i - 1] == b[j - 2], a[i - 2] == b[j - 1] {
+                    table[i][j] = min(table[i][j], table[i - 2][j - 2] + 1)
+                }
             }
-            previous = current
         }
-        return previous[b.count]
+        return table[a.count][b.count]
     }
 }
 
@@ -701,9 +753,9 @@ private extension ConfigSchema.Kind {
         }
     }
 
-    var isObject: Bool {
-        if case .object = self { return true }
-        return false
+    var section: ConfigSchema.Section? {
+        if case .object(let section) = self { return section }
+        return nil
     }
 
     var isList: Bool {
