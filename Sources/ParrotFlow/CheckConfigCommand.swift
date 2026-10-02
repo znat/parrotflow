@@ -166,6 +166,12 @@ enum CheckConfigCommand {
         for notice in config.notices() {
             emit("  · \(notice)")
         }
+        // A warning, never a failure: a config with an unknown key still loads.
+        if let text = try? String(contentsOf: ConfigStore.fileURL, encoding: .utf8) {
+            for unknown in ConfigSchema.unknownKeys(in: text) {
+                emit("  ⚠ \(unknown.said)")
+            }
+        }
         if !transcription.retired.isEmpty {
             emit("      pipeline: [\(Pipeline.everything.stages.map(\.name).joined(separator: ", "))]")
         }

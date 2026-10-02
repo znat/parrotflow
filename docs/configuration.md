@@ -37,6 +37,17 @@ not.
 **Validate before you trust it:** `--check-config` prints what the app would
 actually use, and names anything it had to ignore. See [cli.md](cli.md).
 
+**A key no setting reads is warned about.** The parser skips a key it does not
+know, so a typo used to load in silence. `--check-config` now names each one by
+its full path, and suggests the closest key:
+
+```
+  ⚠ feedback.sounds: not a setting. Did you mean "sound"?
+```
+
+It is a warning, not an error. The config still loads and runs, and the key
+does nothing.
+
 The following is a map of the main settings, **not a paste-ready config**:
 the `…` entries stand for sections explained in the reference. Start from your
 existing file or [config.example.yaml](../config.example.yaml).
@@ -63,7 +74,8 @@ transcription:
   sentence_repair: {enabled: true}    # a fixed pass, not a step — see pipelines.md
   vocabulary: {enabled: true}   # the same
   pipeline: …           # see pipelines.md
-  transforms: …         # see pipelines.md
+
+transforms: …           # see pipelines.md
 
 models:                 # every model, under names you pick
   gemma:

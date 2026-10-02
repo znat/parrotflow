@@ -1,4 +1,5 @@
 import Foundation
+import Yams
 
 /// What `config.yaml` may say, key by key: its type, the values it takes, its
 /// default and one line of help.
@@ -531,5 +532,116 @@ enum ConfigSchema {
         }
         visit(.object(root))
         return found.sorted()
+    }
+
+    // MARK: - Unknown keys
+
+    /// A key in the file that no setting reads.
+    struct Unknown: Equatable {
+        let path: String
+        let suggestion: String?
+
+        var said: String {
+            "\(path): not a setting." + (suggestion.map { " Did you mean \"\($0)\"?" } ?? "")
+        }
+    }
+
+    /// Every key in `text` the schema does not know, by full path.
+    ///
+    /// The decoder never sees a key its `CodingKeys` does not list, so this
+    /// reads the same YAML again as a plain tree. A deprecated key is not
+    /// reported here: `problems()` and `notices()` already name it.
+    static func unknownKeys(in text: String) -> [Unknown] {
+        guard let node = try? Yams.compose(yaml: text) else { return [] }
+        var found: [Unknown] = []
+        walk(node, .object(root), at: "", into: &found)
+        return found
+    }
+
+    private static func walk(_ node: Node, _ kind: Kind, at path: String, into found: inout [Unknown]) {
+        func joined(_ key: String) -> String { path.isEmpty ? key : "\(path).\(key)" }
+        switch kind {
+        case .object(let section):
+            guard let mapping = node.mapping else { return }
+            for (keyNode, value) in mapping {
+                guard let key = keyNode.scalar?.string else { continue }
+                guard let field = section.field(key) else {
+                    let current = section.fields.filter { $0.deprecated == nil }.map(\.name)
+                    found.append(Unknown(path: joined(key), suggestion: closest(to: key, in: current)))
+                    continue
+                }
+                guard field.deprecated == nil else { continue }
+                walk(value, field.kind, at: joined(key), into: &found)
+            }
+        case .open(let inner):
+            guard let mapping = node.mapping else { return }
+            for (keyNode, value) in mapping {
+                walk(value, inner, at: joined(keyNode.scalar?.string ?? "?"), into: &found)
+            }
+        case .list(let inner):
+            guard let sequence = node.sequence else { return }
+            for (index, item) in sequence.enumerated() {
+                let name = item.mapping?["name"]?.scalar?.string
+                walk(item, inner, at: "\(path)[\(name ?? String(index))]", into: &found)
+            }
+        case .either(let kinds):
+            if node.mapping != nil {
+                // An open branch accepts any key, so there is nothing to report.
+                guard !kinds.contains(where: \.isOpen),
+                      let object = kinds.first(where: \.isObject) else { return }
+                walk(node, object, at: path, into: &found)
+            } else if node.sequence != nil, let list = kinds.first(where: \.isList) {
+                walk(node, list, at: path, into: &found)
+            }
+        default:
+            return
+        }
+    }
+
+    /// The nearest name, when it is close enough to be the one meant.
+    static func closest(to key: String, in names: [String]) -> String? {
+        let limit = max(1, min(2, key.count / 3))
+        return names
+            .map { (name: $0, distance: editDistance(key.lowercased(), $0.lowercased())) }
+            .filter { $0.distance <= limit }
+            .min { $0.distance < $1.distance }?
+            .name
+    }
+
+    static func editDistance(_ a: String, _ b: String) -> Int {
+        let a = Array(a), b = Array(b)
+        guard !a.isEmpty else { return b.count }
+        guard !b.isEmpty else { return a.count }
+        var previous = Array(0...b.count)
+        for i in 1...a.count {
+            var current = [i] + Array(repeating: 0, count: b.count)
+            for j in 1...b.count {
+                current[j] = min(
+                    previous[j] + 1, current[j - 1] + 1,
+                    previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1)
+                )
+            }
+            previous = current
+        }
+        return previous[b.count]
+    }
+}
+
+private extension ConfigSchema.Kind {
+    var isOpen: Bool {
+        switch self {
+        case .open, .anything: return true
+        default: return false
+        }
+    }
+
+    var isObject: Bool {
+        if case .object = self { return true }
+        return false
+    }
+
+    var isList: Bool {
+        if case .list = self { return true }
+        return false
     }
 }
