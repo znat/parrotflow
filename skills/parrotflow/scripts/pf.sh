@@ -100,10 +100,13 @@ fi
 
 # --schema came after 0.15.0. An older binary reads the config to reject the
 # flag, and before 0.12.0 it started a second copy of the app instead. A dev
-# build keeps the last release's number, so it is asked from 0.12.0 on.
+# build keeps the last release's number, so it is asked from 0.12.0 on. With
+# no version, only a binary named by PARROTFLOW_BIN (a build of the source) is.
 schema=no
 probe=no
-if [ "$app_version" = unknown ] || ! version_ge 0.15.0 "$app_version"; then
+if [ "$app_version" = unknown ]; then
+  [ -n "${PARROTFLOW_BIN:-}" ] && probe=yes
+elif ! version_ge 0.15.0 "$app_version"; then
   probe=yes
 elif [ "$variant" = dev ] && version_ge "$app_version" 0.12.0; then
   probe=yes
