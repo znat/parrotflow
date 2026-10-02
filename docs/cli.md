@@ -28,6 +28,7 @@ means it did what it says**, so these compose into scripts — which is what
 | Command | Answers |
 |---|---|
 | `--check-config` | Is the config valid, and what will actually run? |
+| `--schema` | Which keys can `config.yaml` hold, and what does each take? |
 | `--pipeline <file.yaml> "<text>"` | What does this pipeline do to this sentence? |
 | `--replace "<text>"` | What do my replacement rules do to this sentence? |
 | `--route "<what you'd say>"` | Which transform does this instruction reach? |
@@ -72,6 +73,8 @@ It also names, every time and whether or not anything is wrong:
 - an `app:` lookahead that is not anchored, which would run the stage
   everywhere it was written to exclude
 - a `fuzzy` stage with no `replacements` stage before it
+- a key no setting reads, by its full path, with the closest key. This is a
+  `⚠` warning: it does not change the exit code
 
 **Accessibility is the one thing it cannot tell you.** macOS credits a
 permission check made from a terminal to the terminal, not to ParrotFlow, so
@@ -81,6 +84,23 @@ launch and writes the answer down:
 ```sh
 grep "launched —" ~/Library/Logs/ParrotFlow.log | tail -1
 ```
+
+### `--schema`
+
+Prints a JSON Schema (draft 2020-12) of `config.yaml` to stdout. It has every
+key, its type, the values it takes, its default and one line of help. It reads
+only the binary, not your config, and writes no file.
+
+```sh
+$PF --schema > ~/.config/parrotflow/config.schema.json
+```
+
+It is built from the same table that `--check-config` warns from. When that
+table and the parser disagree, it exits 1, prints nothing on stdout, and names
+each key on stderr: a key the parser reads with no entry, or an entry the parser
+does not read. `scripts/check-schema.sh` runs it on every pull request.
+
+To use it in VS Code, see [configuration.md](configuration.md#configuration-reference).
 
 ### `--bug-report`
 

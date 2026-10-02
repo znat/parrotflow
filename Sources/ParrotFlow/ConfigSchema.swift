@@ -534,6 +534,72 @@ enum ConfigSchema {
         return found.sorted()
     }
 
+    // MARK: - JSON Schema
+
+    static func jsonSchema() -> [String: Any] {
+        var out = json(.object(root))
+        out["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+        out["title"] = "ParrotFlow config.yaml"
+        out["description"] = "Written by `ParrotFlow --schema`. `--check-config` is the"
+            + " final word on what the app reads."
+        return out
+    }
+
+    static func rendered() throws -> Data {
+        try JSONSerialization.data(
+            withJSONObject: jsonSchema(),
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+    }
+
+    private static func json(_ kind: Kind) -> [String: Any] {
+        switch kind {
+        case .bool: return ["type": "boolean"]
+        case .integer: return ["type": "integer"]
+        case .number: return ["type": "number"]
+        case .range(let bounds):
+            var out: [String: Any] = ["type": "number"]
+            if let min = bounds.min { out[bounds.aboveMin ? "exclusiveMinimum" : "minimum"] = min }
+            if let max = bounds.max { out["maximum"] = max }
+            return out
+        case .text: return ["type": "string"]
+        case .pattern(let pattern): return ["type": "string", "pattern": pattern]
+        case .choice(let values): return ["type": "string", "enum": values]
+        case .list(let inner): return ["type": "array", "items": json(inner)]
+        case .object(let section):
+            var properties: [String: Any] = [:]
+            for field in section.fields { properties[field.name] = json(field) }
+            return ["type": "object", "properties": properties, "additionalProperties": false]
+        case .open(let inner): return ["type": "object", "additionalProperties": json(inner)]
+        case .anything: return [:]
+        case .either(let kinds): return ["anyOf": kinds.map(json)]
+        }
+    }
+
+    private static func json(_ field: Field) -> [String: Any] {
+        var out = json(field.kind)
+        var said = field.help
+        if let deprecated = field.deprecated {
+            out["deprecated"] = true
+            said += " " + deprecated.prefix(1).uppercased() + deprecated.dropFirst()
+            if !said.hasSuffix(".") { said += "." }
+        }
+        out["description"] = said
+        if let fallback = field.fallback { out["default"] = decimal(fallback) }
+        // A section with every line commented out is null, and reads as absent.
+        if let type = out["type"] as? String, type == "object" || type == "array" {
+            out["type"] = [type, "null"]
+        }
+        return out
+    }
+
+    /// JSONSerialization writes 0.3 as 0.29999999999999999. Swift's own
+    /// description is the shortest form that reads back the same.
+    private static func decimal(_ value: Any) -> Any {
+        guard let number = value as? Double else { return value }
+        return NSDecimalNumber(string: "\(number)")
+    }
+
     // MARK: - Unknown keys
 
     /// A key in the file that no setting reads.

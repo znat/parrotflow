@@ -48,6 +48,24 @@ its full path, and suggests the closest key:
 It is a warning, not an error. The config still loads and runs, and the key
 does nothing.
 
+**Autocomplete in VS Code.** *Edit Config…* opens VS Code when it is installed.
+With Red Hat's YAML extension, VS Code completes and checks keys against a
+schema. Write the schema next to the config, and again after an update:
+
+```sh
+/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --schema > ~/.config/parrotflow/config.schema.json
+```
+
+Then make this the first line of `config.yaml`. The path is relative to the
+config:
+
+```yaml
+# yaml-language-server: $schema=config.schema.json
+```
+
+The app does not write `config.schema.json` for you. The dev build reads
+`~/.config/parrotflow-dev/` instead.
+
 The following is a map of the main settings, **not a paste-ready config**:
 the `…` entries stand for sections explained in the reference. Start from your
 existing file or [config.example.yaml](../config.example.yaml).
