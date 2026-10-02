@@ -94,6 +94,10 @@ enum VocabularyPass {
         var readings: Int?
         var slots: Int?
 
+        enum CodingKeys: String, CodingKey, CaseIterable {
+            case perSlot, perTerm, readings, slots
+        }
+
         static let standard = Caps()
 
         /// Two readings a place, whatever was typed: the word that was heard,
