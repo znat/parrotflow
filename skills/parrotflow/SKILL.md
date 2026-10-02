@@ -131,9 +131,10 @@ This is the default when the request has no clear target.
 
 ## 6. Report
 
-First read the request again and check each part of it was done. Name any
-part that was not, and why. Then say four things, briefly:
+Say five things, briefly:
 
+- **Every part of the request**: read it again and check each part was done.
+  Name any part that was not, and why.
 - **What changed**: the key, old value to new value, and the backup path.
 - **What it costs per dictation**: nothing for a table, 30 to 100 ms for a
   Python script, about 1.5 s for a model call (6.7 s if the model was unloaded).
