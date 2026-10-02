@@ -3090,7 +3090,7 @@ struct Config: Decodable, Equatable {
     /// dropped by `Decodable` without a word, so a config that still says
     /// `llm:` would load, bind nothing, and look fine until a dictation did
     /// nothing — which is the failure this list exists to prevent.
-    private static let movedKeys = [
+    static let movedKeys = [
         "llm": "`llm.default` is now `default: true` on one entry in `models:`;"
             + " `llm.router` and `llm.spelling` are now `commands.router` and"
             + " `commands.spelling`; `llm.vocabulary` named the model behind the"
@@ -3129,6 +3129,11 @@ struct Config: Decodable, Equatable {
         return retiredStages.first { lowered.hasPrefix($0.key + "_") }?.value
     }
 
+    static let retiredReplacementsAdvice = "a name the recogniser mangles goes in"
+        + " vocabulary.yaml, where the `vocabulary` stage reviews it in context; a"
+        + " mechanical rule goes in a transform's `replace:`, which takes regexes,"
+        + " deletions and `{{lists}}` and needs no review"
+
     func problems() -> [String] {
         var found: [String] = []
         if let refused = feedback.refusedTheme {
@@ -3144,10 +3149,7 @@ struct Config: Decodable, Equatable {
         }
         for key in transcription.retired {
             let said = key == "replacements"
-                ? "a name the recogniser mangles goes in vocabulary.yaml, where the"
-                    + " `vocabulary` stage reviews it in context; a mechanical rule goes"
-                    + " in a transform's `replace:`, which takes regexes, deletions and"
-                    + " `{{lists}}` and needs no review"
+                ? Self.retiredReplacementsAdvice
                 : Self.retiredStageAdvice(key) ?? "it is a pipeline stage now"
             found.append("transcription.\(key) no longer does anything — \(said)")
         }
