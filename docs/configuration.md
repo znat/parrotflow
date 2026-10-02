@@ -37,6 +37,35 @@ not.
 **Validate before you trust it:** `--check-config` prints what the app would
 actually use, and names anything it had to ignore. See [cli.md](cli.md).
 
+**A key no setting reads is warned about.** The parser skips a key it does not
+know, so a typo used to load in silence. `--check-config` now names each one by
+its full path, and suggests the closest key:
+
+```
+  ⚠ feedback.sounds: not a setting. Did you mean "sound"?
+```
+
+It is a warning, not an error. The config still loads and runs, and the key
+does nothing.
+
+**Autocomplete in VS Code.** *Edit Config…* opens VS Code when it is installed.
+With Red Hat's YAML extension, VS Code completes and checks keys against a
+schema. Write the schema next to the config, and again after an update:
+
+```sh
+/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --schema > ~/.config/parrotflow/config.schema.json
+```
+
+Then make this the first line of `config.yaml`. The path is relative to the
+config:
+
+```yaml
+# yaml-language-server: $schema=config.schema.json
+```
+
+The app does not write `config.schema.json` for you. The dev build reads
+`~/.config/parrotflow-dev/` instead.
+
 The following is a map of the main settings, **not a paste-ready config**:
 the `…` entries stand for sections explained in the reference. Start from your
 existing file or [config.example.yaml](../config.example.yaml).
@@ -63,7 +92,8 @@ transcription:
   sentence_repair: {enabled: true}    # a fixed pass, not a step — see pipelines.md
   vocabulary: {enabled: true}   # the same
   pipeline: …           # see pipelines.md
-  transforms: …         # see pipelines.md
+
+transforms: …           # see pipelines.md
 
 models:                 # every model, under names you pick
   gemma:

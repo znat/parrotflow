@@ -226,7 +226,7 @@ struct ModelRef: Equatable, Decodable {
     /// Reported by `--check-config`; the key itself is ignored.
     var rejected: [String] = []
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case use, reasoning, temperature, params
         case maxTokens = "max_tokens"
         case timeout = "timeout_seconds"
@@ -323,7 +323,7 @@ extension ModelParam: Decodable {
 // MARK: - Reading one out of config.yaml
 
 extension ModelSpec: Decodable {
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case api, model, endpoint, reasoning, temperature, params
         case apiKey = "api_key"
         case maxTokens = "max_tokens"

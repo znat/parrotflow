@@ -166,6 +166,12 @@ jobs:
       - name: The pipeline a config resolves to
         run: scripts/check-pipeline-config.sh
 
+      # The schema table against the parser: `--schema` refuses when a key is in
+      # one and not the other. Then the unknown-key warnings, both ways: none
+      # on the example config and the fixtures, one per typo.
+      - name: The config schema
+        run: scripts/check-schema.sh
+
       # Where the wake phrase ends and the instruction begins. Deterministic,
       # unlike the routing that follows it, so it runs here.
       - name: Wake phrase

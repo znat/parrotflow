@@ -24,6 +24,11 @@ if arguments.contains("--version") {
     exit(0)
 }
 
+// Above the log and the config: it reads only the code, and writes nothing.
+if arguments.contains("--schema") {
+    exit(SchemaCommand.run())
+}
+
 // The first line of every run, app or command, and above the config for the
 // same reason: loading the config already logs — a transform it refused, a
 // vocabulary.yaml it wrote — and those lines need the stamp above them to say

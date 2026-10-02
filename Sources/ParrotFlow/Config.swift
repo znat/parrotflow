@@ -121,7 +121,7 @@ struct Config: Decodable, Equatable {
         Set((lists["abbreviations"] ?? Self.defaultAbbreviations).map { $0.lowercased() })
     }
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case hotkey, audio, feedback, transcription, llm, models, commands
         case transforms, prompts, updates, logging
         case freeForm = "free_form"
@@ -903,7 +903,7 @@ struct Config: Decodable, Equatable {
         /// `model: gpt`, or `model: { use: gpt, reasoning: low }`.
         var model: ModelRef?
 
-        enum CodingKeys: String, CodingKey {
+        enum CodingKeys: String, CodingKey, CaseIterable {
             case name, description, display, confirm, prompt, content, replace, command
             case tests, returns, offer, model, say, done, failed
             case offerKey = "key"
@@ -917,7 +917,12 @@ struct Config: Decodable, Equatable {
         /// to. This is for the ones long enough to want an editor of their own.
         private struct BodyFile: Decodable {
             var path: String
+
+            enum CodingKeys: String, CodingKey, CaseIterable { case path }
         }
+
+        static var schemaKeys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        static var bodyFileKeys: [String] { BodyFile.CodingKeys.allCases.map(\.stringValue) }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -1092,6 +1097,10 @@ struct Config: Decodable, Equatable {
     static func transforms(from decoder: Decoder) throws -> [Transform] {
         assembled(try [TransformEntry](from: decoder)).kept
     }
+
+    /// The keys a `transforms:` entry and a `{ path: }` body are read with.
+    static var transformKeys: [String] { TransformEntry.schemaKeys }
+    static var bodyFileKeys: [String] { TransformEntry.bodyFileKeys }
 
     /// The entries worth keeping, with a line in the log for each that is not.
     ///
@@ -1480,7 +1489,7 @@ struct Config: Decodable, Equatable {
         /// it is for.
         var afterDays: Int = 0
 
-        enum CodingKeys: String, CodingKey {
+        enum CodingKeys: String, CodingKey, CaseIterable {
             case afterDays = "after_days"
         }
 
@@ -1525,7 +1534,7 @@ struct Config: Decodable, Equatable {
         /// now — read, like the rest of `llm:`, only so `problems` can say so.
         var vocabulary: String = ""
 
-        enum CodingKeys: String, CodingKey {
+        enum CodingKeys: String, CodingKey, CaseIterable {
             case enabled, model, endpoint, router, vocabulary
             case defaultModel = "default"
             case timeoutSeconds = "timeout_seconds"
@@ -1583,7 +1592,7 @@ struct Config: Decodable, Equatable {
         /// Whether the catch-all is allowed at all.
         var catchAllEnabled = true
 
-        enum CodingKeys: String, CodingKey {
+        enum CodingKeys: String, CodingKey, CaseIterable {
             case router, spelling
             case catchAll = "catch_all"
         }
@@ -1922,7 +1931,7 @@ struct Config: Decodable, Equatable {
             /// Seconds of silence a bare capital needs first. 0 reads every one.
             var pause: Double?
 
-            enum CodingKeys: String, CodingKey {
+            enum CodingKeys: String, CodingKey, CaseIterable {
                 case enabled, marks, capitals, pause
             }
 
@@ -1953,7 +1962,7 @@ struct Config: Decodable, Equatable {
         struct ContextSpelling: Decodable, Equatable {
             var enabled = true
 
-            enum CodingKeys: String, CodingKey {
+            enum CodingKeys: String, CodingKey, CaseIterable {
                 case enabled
             }
 
@@ -2000,7 +2009,7 @@ struct Config: Decodable, Equatable {
             /// from `vocabulary.yaml`.
             var asks: Bool?
 
-            enum CodingKeys: String, CodingKey {
+            enum CodingKeys: String, CodingKey, CaseIterable {
                 case enabled, gate, portrait, caps, asks
                 case nearMisses = "near_misses"
                 case bySound = "by_sound"
@@ -2048,7 +2057,7 @@ struct Config: Decodable, Equatable {
             }
         }
 
-        enum CodingKeys: String, CodingKey {
+        enum CodingKeys: String, CodingKey, CaseIterable {
             case enabled, replacements, pipeline, languages, vocabulary
             case sentenceRepair = "sentence_repair"
             case contextSpelling = "context_spelling"
@@ -2061,7 +2070,7 @@ struct Config: Decodable, Equatable {
         /// Keys that are read but never written. Kept out of `CodingKeys` so
         /// the synthesised encoder doesn't need a property for a name we no
         /// longer use.
-        private enum LegacyKeys: String, CodingKey {
+        private enum LegacyKeys: String, CodingKey, CaseIterable {
             case correctionPhrase = "correction_phrase"
             // Retired into the pipeline. Still read, only so that a config
             // carrying them can be told so — see `retired`.
@@ -2072,6 +2081,8 @@ struct Config: Decodable, Equatable {
             // What `sentence_repair:` was called.
             case interpret
         }
+
+        static var legacyKeys: [String] { LegacyKeys.allCases.map(\.stringValue) }
         /// Grouped by the word you want written, since one name accumulates
         /// several mishearings — eleven rules had built up for four names
         /// before this was grouped.
@@ -2213,7 +2224,7 @@ struct Config: Decodable, Equatable {
             /// `Transcription.misplacedOptions`.
             var misplaced: [String] = []
 
-            private enum CodingKeys: String, CodingKey {
+            private enum CodingKeys: String, CodingKey, CaseIterable {
                 case stage, transform, prompt, vocabulary, when, unless, app
                 case nearMisses = "near_misses"
                 case bySound = "by_sound"
@@ -2229,6 +2240,8 @@ struct Config: Decodable, Equatable {
                 case lowercaseRefused = "lowercase_refused"
                 case slotFloor = "slot_floor"
             }
+
+            static var schemaKeys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
             init(from decoder: Decoder) throws {
                 if let bare = try? decoder.singleValueContainer().decode(String.self) {
@@ -2597,7 +2610,7 @@ struct Config: Decodable, Equatable {
         /// modifiers only; 0 fires on the down edge as before.
         var pressDelaySeconds: Double = 0.18
 
-        enum CodingKeys: String, CodingKey {
+        enum CodingKeys: String, CodingKey, CaseIterable {
             case key, modifiers, mode
             case releaseTailSeconds = "release_tail_seconds"
             case pressDelaySeconds = "press_delay_seconds"
@@ -2695,7 +2708,7 @@ struct Config: Decodable, Equatable {
         /// the same microphone it always did.
         var microphones: [String] = []
 
-        enum CodingKeys: String, CodingKey {
+        enum CodingKeys: String, CodingKey, CaseIterable {
             case sampleRate = "sample_rate"
             case outputDir = "output_dir"
             case minDurationSeconds = "min_duration_seconds"
@@ -2834,7 +2847,7 @@ struct Config: Decodable, Equatable {
             /// with it — there is nothing to hold a key over.
             init() {}
 
-            enum CodingKeys: String, CodingKey {
+            enum CodingKeys: String, CodingKey, CaseIterable {
                 case sentence
                 case word
                 case holdReturn = "hold_return"
@@ -2855,7 +2868,7 @@ struct Config: Decodable, Equatable {
             }
         }
 
-        enum CodingKeys: String, CodingKey {
+        enum CodingKeys: String, CodingKey, CaseIterable {
             case sound
             case soundVolume = "sound_volume"
             case overlay
@@ -2939,7 +2952,7 @@ struct Config: Decodable, Equatable {
         /// `--trace-view --redacted` is what makes one safe to send.
         var spans: Bool = true
 
-        enum CodingKeys: String, CodingKey { case text, audio, spans }
+        enum CodingKeys: String, CodingKey, CaseIterable { case text, audio, spans }
 
         init() {}
 
@@ -3077,7 +3090,7 @@ struct Config: Decodable, Equatable {
     /// dropped by `Decodable` without a word, so a config that still says
     /// `llm:` would load, bind nothing, and look fine until a dictation did
     /// nothing — which is the failure this list exists to prevent.
-    private static let movedKeys = [
+    static let movedKeys = [
         "llm": "`llm.default` is now `default: true` on one entry in `models:`;"
             + " `llm.router` and `llm.spelling` are now `commands.router` and"
             + " `commands.spelling`; `llm.vocabulary` named the model behind the"
@@ -3116,6 +3129,11 @@ struct Config: Decodable, Equatable {
         return retiredStages.first { lowered.hasPrefix($0.key + "_") }?.value
     }
 
+    static let retiredReplacementsAdvice = "a name the recogniser mangles goes in"
+        + " vocabulary.yaml, where the `vocabulary` stage reviews it in context; a"
+        + " mechanical rule goes in a transform's `replace:`, which takes regexes,"
+        + " deletions and `{{lists}}` and needs no review"
+
     func problems() -> [String] {
         var found: [String] = []
         if let refused = feedback.refusedTheme {
@@ -3131,10 +3149,7 @@ struct Config: Decodable, Equatable {
         }
         for key in transcription.retired {
             let said = key == "replacements"
-                ? "a name the recogniser mangles goes in vocabulary.yaml, where the"
-                    + " `vocabulary` stage reviews it in context; a mechanical rule goes"
-                    + " in a transform's `replace:`, which takes regexes, deletions and"
-                    + " `{{lists}}` and needs no review"
+                ? Self.retiredReplacementsAdvice
                 : Self.retiredStageAdvice(key) ?? "it is a pipeline stage now"
             found.append("transcription.\(key) no longer does anything — \(said)")
         }
