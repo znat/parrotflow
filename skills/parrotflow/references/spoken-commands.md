@@ -1,4 +1,4 @@
-# Spoken commands, and teaching a word
+# Spoken commands
 
 ## The activation phrase
 
@@ -58,33 +58,6 @@ Check with `"$PF" --route "use slack mentions" --keyed`.
 
 ## Teaching a word
 
-A name the recogniser gets wrong goes in `vocabulary.yaml`, beside
-`config.yaml`. The app writes that file. It is matched by sound, so one entry
-covers renderings never seen, and each match is checked against the sentence
-before it is written. A table in `replace:` is the wrong tool for a name: it
-fires on every sentence, even where the ordinary word was meant.
-
-Three ways in:
-
-- **The panel**: select the wrong word, hold the hotkey, say "hey parrot". A row
-  shows what was heard and what it should be. Needs no model.
-- **Spelling out loud**: "hey parrot, Tasmin spells T A S M E E N", or "hey
-  parrot, Jerome with a G". Needs a model. The panel opens prefilled.
-- **From a terminal**: `"$PF" --learn "super base" Supabase`. Back up
-  `vocabulary.yaml` first.
-
-The `vocabulary-corpus` skill, when installed, builds a first vocabulary from a
-codebase and a Slack workspace.
-
-Settings for the pass are in `config.yaml`, not in `vocabulary.yaml`:
-
-```yaml
-transcription:
-  vocabulary:
-    enabled: true
-    sound_below: 0.85     # how close a run of words must sound to a term
-    asks: true            # ask before typing a name it could not settle
-```
-
-Leave the other keys there alone. They exist to switch off half the pass for
-measuring.
+Names and terms the recogniser gets wrong: see `vocabulary.md`. "hey parrot"
+alone opens the correction panel, and "hey parrot, Tasmin spells T A S M E E N"
+fills it in. Both are described there.

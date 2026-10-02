@@ -21,7 +21,7 @@ in the last column.
 | Area | What it does | Key | Cost | Default | A user might ask | More |
 |---|---|---|---|---|---|---|
 | Sentence repair | Removes a full stop a pause put mid-sentence. English | `transcription.sentence_repair` | none on the path | on | "It breaks my sentences in two" | rewrites |
-| Vocabulary | Writes names it was taught, checked against the sentence | `vocabulary.yaml`, `transcription.vocabulary` | none | on | "It never spells Tasmeen right" | spoken-commands |
+| Vocabulary | Writes names it was taught, checked against the sentence | `vocabulary.yaml`, `transcription.vocabulary` | none | on | "It never spells Tasmeen right" | vocabulary |
 | Screen spelling | Spells a word the way the screen shows it | `transcription.context_spelling` | none on the path | on | "Write the variable name as it is in my code" | context |
 | Fillers | Deletes um, uh, euh | `transforms` `fillers`, `fillers_fr`; `lists` | none | in the pipeline | "Keep my ums" | rewrites |
 | Dates and times | "March third at ten fifteen" → March 3 at 10:15 | `dates_en`, `dates_fr` | 30–100 ms | English only | "Make French dates work" | rewrites |
@@ -29,14 +29,14 @@ in the last column.
 | Money | "twenty dollars" → $20 | `money_en`, `money_fr` | 30–100 ms | English only | "Euros too" | rewrites |
 | Disfluency | Repeats and false starts: "the the" → "the" | `disfluency` | 40–100 ms | on | "Stop removing my repetitions" | rewrites |
 | Your own rules | A word, symbol, pattern, link or format | `transforms`, `transcription.pipeline` | none to ~1.5 s | none | "When I say arrow, write →" | rewrites |
-| Per-app rules | A step that runs only in some apps | `app:` on a step | none | none | "Only in my terminal" | rewrites |
+| Per-app rules | A step that runs only in some apps. A chip cannot be limited to an app | `app:` on a step | none | none | "Only in my terminal" | rewrites |
 | Formatting into Slack | Lists, bold and links arrive formatted | — | none | Slack only | "Bullets in Slack" | rewrites |
 
 ## After a dictation
 
 | Area | What it does | Key | Cost | Default | A user might ask | More |
 |---|---|---|---|---|---|---|
-| The pill's chips | A letter runs a transform on what was just said | `feedback.correct_offer`, `offer:`, `key:` | only when pressed | `V` vocabulary, `G` grammar, `S` Slack | "Add a chip to shorten text" | rewrites |
+| The pill's chips | A letter runs a transform on what was just said, in any app | `feedback.correct_offer`, `offer:`, `key:` | only when pressed | `V` vocabulary, `G` grammar, `S` Slack | "Add a chip to shorten text" | rewrites |
 | Grammar | Fixes grammar on `G` | `transforms` `grammar` | ~1.5 s, needs a model | on the pill | "Fix my grammar" | models |
 | Slack mentions | Names → @handles on `S` | `transforms/slack_mentions/slack_mentions.py` | 30–100 ms | roster empty | "Tag people in Slack" | rewrites |
 | PR links | "PR 123" → a link to your repository | `github_refs` | none | defined, not on | "Link my pull requests" | rewrites |

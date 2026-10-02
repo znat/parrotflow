@@ -8,7 +8,8 @@
 #
 #   1. a backticked key path (`audio.microphones`) is in `--schema`, and is not
 #      a deprecated key outside a "Retired" section;
-#   2. a YAML block shaped like config.yaml gets no unknown-key warning;
+#   2. a YAML block shaped like config.yaml gets no unknown-key warning, and
+#      one shaped like vocabulary.yaml uses only keys the parser reads;
 #   3. every --flag is one the binary handles;
 #   4. scripts/pf.sh runs and prints what SKILL.md reads from it;
 #   5. metadata.app_version matches the release and carries the marker;
@@ -127,7 +128,7 @@ for md in sorted(skill.rglob("*.md")):
         elif block is not None and line.strip() == "```":
             # A config excerpt: top-level keys, and not a fixture or a case file.
             keys = {m.group(1) for l in block if (m := re.match(r"^([A-Za-z_][\w-]*):", l))}
-            if keys and not keys & {"languages", "pipeline", "cases"}:
+            if keys and not keys & {"languages", "pipeline", "cases", "terms"}:
                 count += 1
                 d = out / f"{count:03d}"
                 d.mkdir()
@@ -148,6 +149,52 @@ for dir in "$WORK"/blocks/*/; do
 done
 check "no config-shaped YAML block has an unknown key" "$warned" "0"
 check "and there are such blocks" "$([ "$blocks" -ge 10 ] && echo yes || echo "$blocks")" "yes"
+
+# --- 2b. vocabulary.yaml blocks ----------------------------------------------------
+
+# The app ignores an unknown key in vocabulary.yaml in silence, so the keys are
+# checked against the parser's own CodingKeys. Above the term, only `terms:`:
+# every other key there is retired or has moved to config.yaml.
+python3 - "$ROOT/Sources/ParrotFlow/Config.swift" "$SKILL" > "$WORK/vocab.txt" <<'PY'
+import pathlib, re, sys, yaml
+
+swift = pathlib.Path(sys.argv[1]).read_text()
+term_keys = set(re.search(r"enum CodingKeys: String, CodingKey \{ case (floor[^}]*)\}", swift)
+                .group(1).replace(" ", "").split(","))
+said_keys = set(re.search(r"case (heard, phonemes[^\n]*)", swift)
+                .group(1).replace(" ", "").split(","))
+term_keys.discard("heard")  # the old spelling of `pronunciations:`
+
+count = 0
+for md in sorted(pathlib.Path(sys.argv[2]).rglob("*.md")):
+    block = None
+    for n, line in enumerate(md.read_text().splitlines(), 1):
+        if block is None and line.strip() == "```yaml":
+            block, start = [], n
+        elif block is not None and line.strip() == "```":
+            doc = yaml.safe_load("\n".join(block))
+            if isinstance(doc, dict) and "terms" in doc:
+                count += 1
+                where = f"{md.relative_to(sys.argv[2])}:{start}"
+                for key in set(doc) - {"terms"}:
+                    print(f"{where}: `{key}:` is not read from vocabulary.yaml")
+                for term, entry in (doc["terms"] or {}).items():
+                    for key in set(entry or {}) - term_keys:
+                        print(f"{where}: `{key}:` on {term} is not a term key")
+                    for said in (entry or {}).get("pronunciations") or []:
+                        for key in set(said if isinstance(said, dict) else {}) - said_keys:
+                            print(f"{where}: `{key}:` is not a pronunciation key")
+            block = None
+        elif block is not None:
+            block.append(line)
+print(f"blocks {count}")
+PY
+out="$(cat "$WORK/vocab.txt")"
+printf '%s\n' "$out" | grep -v '^blocks ' | sed 's/^/      /'
+check "every vocabulary.yaml key the skill writes is one the parser reads" \
+  "$(printf '%s\n' "$out" | grep -vc '^blocks ')" "0"
+check "and the skill has vocabulary blocks" \
+  "$(printf '%s\n' "$out" | sed -n 's/^blocks //p' | awk '{print ($1 >= 1) ? "yes" : $1}')" "yes"
 
 # --- 3. flags ---------------------------------------------------------------------
 
