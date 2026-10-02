@@ -96,6 +96,15 @@ in Slack, the one app measured so far. Every other app gets plain text.
 
 ## When it runs
 
+Where a rewrite runs is a choice. When the request does not say, ask:
+
+- **A step with no condition**: runs by itself on every dictation, in every app.
+- **A step with `app:`**: runs by itself, only in the apps it names.
+- **A chip** (`offer: true`): runs when the user presses its letter, in any app.
+
+The three are independent and combine. One transform can be a step in Slack
+and a chip everywhere.
+
 ### In the pipeline: every dictation
 
 ```yaml
@@ -141,6 +150,27 @@ kitty, Alacritty. Check which ones are in `/Applications` (and
 No preview: it rewrites the words just dictated. Good for anything costly or
 occasional. The letter is taken from every app for six seconds, so pick one
 that rarely starts a word.
+
+A chip has no condition. `offer:` is only on or off, and the chip shows after
+every dictation, in every app. Only a pipeline step takes `app:`. The `offer`
+lines of `--check-config` list each chip with no app.
+
+**When a request names an app, the app goes on a pipeline step. When it also
+asks for a chip, do both.** "In Slack only, with a chip":
+
+```yaml
+transcription:
+  pipeline:
+    - transform: numbers_en
+    - transform: github_refs     # runs by itself, in Slack only
+      app: /slack/
+transforms:
+  - name: github_refs
+    offer: true                  # and a chip, L, in every app
+    key: l
+```
+
+Add `offer:` and `key:` to the transform's existing entry. Keep its body.
 
 ### Out loud
 
@@ -214,8 +244,7 @@ In the default config: `fillers`, `fillers_fr`, `dates_en`, `numbers_en`,
 `slack_mentions` (a script, chip `S`) on the pill; `github_refs` and `trace`
 defined but not in the pipeline.
 
-- `github_refs`: "PR one two three" becomes a link. Replace `OWNER/REPO` in both
-  URLs, then add `- transform: github_refs` below `numbers_en`.
+- `github_refs`: "PR one two three" becomes a link. See below.
 - `slack_mentions`: the user fills `ROSTER` in
   `transforms/slack_mentions/slack_mentions.py`. Not in the pipeline on purpose:
   naming someone is not always a request to ping them.
@@ -224,6 +253,41 @@ defined but not in the pipeline.
 - `join` (a script in `built-in/join/join.py`, with `returns: json`): fits the
   start and end of a clip to the text around the cursor. Needs the `input`
   stage above it. See `context.md`.
+
+### Setting up `github_refs`
+
+Replace `OWNER/REPO` in both URLs. Then add `- transform: github_refs` below
+`numbers_en`.
+
+- **Its step usually wants `app:`.** It writes a Markdown link. Slack renders
+  it. A terminal or a plain text field gets the raw `[#123](…)`.
+- **It sees the text after `numbers_en`**, as a step and as a chip. "PR four
+  one two" and "PR four hundred twelve" become `PR 412` and link. "PR four
+  twelve" stays as words and does not link. "issue forty five" becomes
+  `issue 45` and links. Tell the user to say the number digit by digit, or in
+  full.
+- **The shipped issue pattern makes a false link.** "we fixed 2 issues 3 days
+  ago" becomes "we fixed 2 [#3](…) days ago". Tell the user. Put that sentence
+  in the keep cases.
+
+The cases go in `transforms/github_refs/cases.yaml`. `--eval github_refs` finds
+them there with no `tests:` key. It runs the transform alone, so write the
+numbers as digits. Quote an input with a `#`: YAML reads the rest as a comment.
+A starter, with your repository in place of `OWNER/REPO`:
+
+```yaml
+cases:
+  - probe: link
+    input:  "PR #17 and PR 18"
+    expect: "[#17](https://github.com/OWNER/REPO/pull/17) and [#18](https://github.com/OWNER/REPO/pull/18)"
+  - probe: link
+    input:  fixed in issue 45
+    expect: fixed in [#45](https://github.com/OWNER/REPO/issues/45)
+  - probe: keep
+    input:  we fixed 2 issues 3 days ago   # the shipped pattern fails this one
+  - probe: keep
+    input:  the PR is ready for review
+```
 
 ## Test it
 
