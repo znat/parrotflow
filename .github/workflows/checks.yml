@@ -172,6 +172,11 @@ jobs:
       - name: The config schema
         run: scripts/check-schema.sh
 
+      # The public `parrotflow` agent skill runs on Macs without this repo. Every
+      # key, flag and file it names is checked against this build.
+      - name: The parrotflow skill
+        run: scripts/check-skill.sh
+
       # Where the wake phrase ends and the instruction begins. Deterministic,
       # unlike the routing that follows it, so it runs here.
       - name: Wake phrase

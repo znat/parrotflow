@@ -77,8 +77,6 @@ different owners: you write the config, the app writes the vocabulary — from
 corrections, from `--learn`, from the calibrate skill.
 
 ```yaml
-sound_below: 0.85
-
 terms:
   Tasmeen:                     # nothing close in this speaker's speech
   Praisy:
@@ -101,7 +99,10 @@ terms:
 
 **`sound_below`** is how close a run of words must *sound* to a term before the
 place is offered at all, from 0 to 1, where 1.0 is the term said exactly. It is
-the only threshold the vocabulary has.
+the only threshold the vocabulary has. Set it in `config.yaml`, as
+`transcription.vocabulary.sound_below`. A top-level `sound_below:` in
+`vocabulary.yaml` is the old place: it is read only when `config.yaml` sets
+none.
 
 `acoustic:`, `offer_below:`, `min_similarity:`, `decide_above:` and a per-term
 `floor:` *number* are read and do nothing. They belonged to a search of the

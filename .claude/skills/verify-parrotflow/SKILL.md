@@ -1,6 +1,8 @@
 ---
 name: verify-parrotflow
 description: Verify ParrotFlow, the macOS dictation app, by building its binary from this tree and driving its command line (--pipeline, --replace, --check-config, --route, --eval, --transcribe) under a scratch config, with evidence kept outside the repo. Use when you need proof that a change works, before saying a feature works, or when the app's behaviour is in question. Live dictation (hotkey, mic, paste) is not agent-driveable; this skill says how to ask the user for it.
+metadata:
+  internal: true
 ---
 
 # Verify ParrotFlow
