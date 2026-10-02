@@ -1104,6 +1104,7 @@ scripts/check-compose.sh           # what a prompt says once the scope is in it
 scripts/check-context.sh           # what the context stage publishes for a screen
 scripts/check-input.sh             # where the input stage cuts a field, and the caret
 scripts/check-pipeline-config.sh   # which pipeline a config resolves to, and what is refused
+scripts/check-schema.sh            # the config schema against the parser, and unknown-key warnings
 scripts/check-join.sh              # fitting a clip to the text either side of the caret
 scripts/check-span.sh              # a composer-shaped page, or Slack, or Outlook
 scripts/probe-offsets.sh           # measures whether an app's offsets index its own value
