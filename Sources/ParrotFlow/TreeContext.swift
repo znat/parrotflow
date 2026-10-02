@@ -182,11 +182,26 @@ enum TreeContext {
         return found
     }
 
+    /// The same walk over several elements under one limit, in drawing order.
+    /// The last element is walked first, so a long thread loses its oldest
+    /// messages to the limit and keeps its newest.
+    static func nodes(under elements: [AXUIElement]) -> [Node] {
+        var parts: [[Node]] = []
+        var left = nodeLimit
+        for element in elements.reversed() where left > 0 {
+            var found: [Node] = []
+            walk(element, depth: 0, inList: false, limit: left, into: &found)
+            left -= found.count
+            parts.append(found)
+        }
+        return parts.reversed().flatMap { $0 }
+    }
+
     private static func walk(
         _ element: AXUIElement, depth: Int, inList: Bool, code: Bool = false,
-        inComposer: Bool = false, into found: inout [Node]
+        inComposer: Bool = false, limit: Int = nodeLimit, into found: inout [Node]
     ) {
-        guard found.count < nodeLimit, depth < depthLimit else { return }
+        guard found.count < limit, depth < depthLimit else { return }
         let role = attribute(element, kAXRoleAttribute) as? String ?? ""
         let text = label(of: element)
         let inCode = code
@@ -203,7 +218,7 @@ enum TreeContext {
         for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
             walk(
                 child, depth: depth + 1, inList: messages, code: inCode,
-                inComposer: composer, into: &found)
+                inComposer: composer, limit: limit, into: &found)
         }
     }
 
@@ -224,6 +239,46 @@ enum TreeContext {
             if (attribute(up, kAXRoleAttribute) as? String) == "AXWindow" { return nil }
             if holdsMessageList(up) { return up }
             element = up
+        }
+        return nil
+    }
+
+    /// The thread a reply box belongs to in Slack's Threads view, when the
+    /// climb found no pane.
+    ///
+    /// That view stacks threads in one flat list, "Threads, 4 new replies":
+    /// a header, the messages, the reply box, then the next thread. No element
+    /// holds one thread, and the list is not labelled like a conversation. So
+    /// a thread is the run of list items after the previous reply box, down to
+    /// this one. Read with axkit on 2026-10-01.
+    static func threadRun(around focused: AXUIElement) -> (items: [AXUIElement], place: String)? {
+        guard let place = name(of: focused).flatMap(threadPlace(in:)) else { return nil }
+        var item = focused
+        for _ in 0..<depthLimit {
+            guard let up = elementValue(item, kAXParentAttribute) else { return nil }
+            let role = attribute(up, kAXRoleAttribute) as? String
+            if role == "AXWindow" { return nil }
+            if role == "AXList" {
+                let items = (attribute(up, kAXChildrenAttribute) as? [AXUIElement]) ?? []
+                guard let at = items.firstIndex(where: { CFEqual($0, item) }) else { return nil }
+                // A reply box sits 7 levels under its item; 10 bounds the search.
+                let start = items[..<at]
+                    .lastIndex(where: { !composers(in: $0, depth: depthLimit - 10).isEmpty })
+                    .map { $0 + 1 } ?? 0
+                return (Array(items[start..<at]), place)
+            }
+            item = up
+        }
+        return nil
+    }
+
+    /// `Reply to thread in sws-engineering-internal`, `Reply to thread with
+    /// Salman Adeeb`: the name Slack gives a reply box in the Threads view.
+    static func threadPlace(in name: String) -> String? {
+        for (prefix, sigil) in [("Reply to thread in ", "#"), ("Reply to thread with ", "")]
+        where name.hasPrefix(prefix) {
+            let rest = name.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+            return rest.isEmpty ? nil : sigil + rest
         }
         return nil
     }
@@ -278,7 +333,9 @@ enum TreeContext {
         // "group direct message" as well as "direct message, away": Slack says
         // which kind of conversation it is, and how many people are in it.
         guard kind.contains("channel") || kind.contains("direct message") else { return nil }
-        let name = String(label[..<open.lowerBound])
+        // A thread in the side panel: "Thread in sws-engineering-internal (channel)".
+        var name = String(label[..<open.lowerBound])
+        if name.hasPrefix("Thread in ") { name.removeFirst("Thread in ".count) }
         let isChannel = kind.contains("channel")
         return isChannel ? "#\(name)" : name
     }
@@ -505,6 +562,18 @@ enum TreeContext {
     /// it. An element that has both is worth reading for the text it holds.
     private static func label(of element: AXUIElement) -> String? {
         for name in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
+            if let text = attribute(element, name) as? String,
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return text
+            }
+        }
+        return nil
+    }
+
+    /// What an element is called, not what it holds: a reply box's value is
+    /// the draft, and its name is "Reply to thread in …".
+    private static func name(of element: AXUIElement) -> String? {
+        for name in [kAXTitleAttribute, kAXDescriptionAttribute, "AXPlaceholderValue"] {
             if let text = attribute(element, name) as? String,
                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return text
