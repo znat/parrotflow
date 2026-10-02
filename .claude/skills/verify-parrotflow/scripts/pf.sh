@@ -4,34 +4,47 @@
 # Writes <run-dir>/NN-<label>.{cmd,out,err,exit,log}. Prints stdout and the exit code.
 set -uo pipefail
 [ $# -ge 2 ] || { echo "usage: pf.sh <run-dir> <label> --flag [args...]" >&2; exit 2; }
-RUN="$1"; LABEL="$2"; shift 2
-[ -f "$RUN/run.env" ] || { echo "no $RUN/run.env; run start.sh first" >&2; exit 2; }
-# shellcheck source=/dev/null
-. "$RUN/run.env"
+LABEL="$2"
+RUN="$(cd "$1" 2>/dev/null && pwd)" && [ -f "$RUN/run.env" ] || { echo "no $1/run.env; run start.sh first" >&2; exit 2; }
+shift 2
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(git -C "$HERE" rev-parse --show-toplevel)"
+BIN="$ROOT/.build/release/ParrotFlow"
+# run.env is read as data, never sourced.
+CFG="$(sed -n 's/^CFG=//p' "$RUN/run.env" | tail -1)"
+TMP="${TMPDIR:-/tmp}"; TMP="${TMP%/}"
+# A direct child only: no "/" after the prefix, so no "..".
+name="${CFG#"$TMP"/}"
+case "$name" in
+  */*|"$CFG") ok=no ;;
+  parrotflow-verify.*) ok=yes ;;
+  *) ok=no ;;
+esac
+[ "$ok" = yes ] || { echo "CFG in $RUN/run.env is not a parrotflow-verify dir under $TMP: '$CFG'" >&2; exit 2; }
 
 refuse() { echo "refused: $1" >&2; exit 2; }
 
 # No flag means the binary starts a menu bar app, as the release variant.
 [ $# -gt 0 ] || refuse "no flag given; the binary would start a second menu bar app"
-case "$1" in --*) ;; *) refuse "first argument must be a flag, got '$1'";; esac
 
+# The binary looks for each mode flag anywhere in its arguments, so every
+# flag is checked, not only the first.
+modes=0
 for a in "$@"; do
   case "$a" in
-    --panels|--preview-panel|--preview-transform|--empty|--panel-sheet|--tutorial-sheet|--tour-film)
-      refuse "$a draws surfaces nobody can see or writes images; not part of verification";;
-    --record|--watch-modifiers|--watch-taps|--audio-recovery|--set)
-      refuse "$a uses the microphone, the keyboard, or changes the microphone list";;
-    --peek|--edit-test|--span-test|--clipboard-test|--paste-probe|--field-dump|--context-test)
-      refuse "$a reads or writes the frontmost app or the clipboard";;
-    --set-key)
-      refuse "$a writes the keychain";;
-    --warm|--warm-models|--slot-model|--sentence-model|--phonemes|--setup-parsing|--update-check|--update-install)
-      refuse "$a downloads models, installs software, or reaches the network";;
+    --pipeline|--replace|--check-config|--seed-config|--route|--eval|--version)
+      modes=$((modes + 1));;
     --transcribe)
       [ "${PF_ALLOW_TRANSCRIBE:-}" = 1 ] \
-        || refuse "--transcribe loads a ~1 GB model; ask the user, then set PF_ALLOW_TRANSCRIBE=1";;
+        || refuse "--transcribe loads a ~1 GB model; ask the user, then set PF_ALLOW_TRANSCRIBE=1"
+      modes=$((modes + 1));;
+    --app|--quiet|--vars|--no-prompts|--keyed|--cases|--probe|--verbose|--no-vocab) ;;
+    --*)
+      refuse "$a is not one of the flags this skill drives (see SKILL.md)";;
   esac
 done
+case "$1" in --*) ;; *) refuse "first argument must be a flag, got '$1'";; esac
+[ "$modes" -eq 1 ] || refuse "give exactly one of --pipeline, --replace, --check-config, --seed-config, --route, --eval, --transcribe, --version"
 
 [ -d "$CFG" ] || { echo "scratch config $CFG is gone; start a new run" >&2; exit 2; }
 

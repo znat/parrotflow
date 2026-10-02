@@ -41,7 +41,9 @@ the feature file you need.
   `--set-key`, `--warm`, `--warm-models`, `--slot-model`, `--sentence-model`,
   `--phonemes`, `--setup-parsing`, `--update-check`, `--update-install`,
   `--panels`, and the image writers `--panel-sheet`, `--tutorial-sheet`,
-  `--tour-film`. `pf.sh` refuses them. `--panels` is useless anyway: nobody can
+  `--tour-film`, `--onboarding-film`. Never read another app's tree
+  (`--tree-read`, `--tree-test`). `pf.sh` refuses all of these, and any flag
+  not listed under Drive. `--panels` is useless anyway: nobody can
   see the screen, and `screencapture` fails (no Screen Recording grant).
 - Never send keystrokes, clicks or Apple Events to an app the user works in.
 - `--transcribe` loads a ~1 GB model. Ask the user first.
@@ -112,8 +114,8 @@ It reports:
   The default config routes with `gemma4:e4b-mlx` and keeps it loaded. If it
   is not loaded, a model call loads it; ask first.
 
-Exit `0` means fine. Exit `1` means stale binary, no binary, a stray tree
-binary, or Ollama down when asked.
+Exit `0` means fine. Exit `1` means stale binary, no binary, a binary that
+fails `--version`, a stray tree binary, or Ollama down when asked.
 
 ## Drive
 
@@ -125,8 +127,10 @@ Every call goes through `pf.sh`, from the repo root:
 
 It runs `.build/release/ParrotFlow` with `PARROTFLOW_CONFIG_DIR` set to the
 run's scratch dir and the repo root as working dir, so `tests/pipelines/...`
-resolves. It prints stdout and `exit=<code>`, and it refuses an empty or
-forbidden flag.
+resolves. It prints stdout and `exit=<code>`. It refuses a call with no flag,
+with more than one mode flag, or with any flag outside the table below and
+its modifiers (`--app`, `--quiet`, `--vars`, `--no-prompts`, `--keyed`,
+`--cases`, `--probe`, `--verbose`, `--no-vocab`).
 
 The default proof feature, with its expected result. It runs the vocabulary
 stage, which loads the word vectors in the background and downloads them
@@ -180,7 +184,9 @@ A proof needs:
   recording, hotkeys, or paste can only be proved by the user (see
   `features/live-dictation.md`).
 - `state-diff.txt`. It shows what the run changed outside the scratch dir.
-  Expected: release log lines added, nothing else from you. Lines in the Dev
+  Expected: release log lines added. A run with the vocabulary stage may also
+  change the mtime of `phonemes-multilingual-g2p.json` in the release support
+  dir block (see below). Nothing else should come from you. Lines in the Dev
   log and `live` trace rows are the user dictating.
 
 Side effects that no env var or flag redirects. Each is also listed next to
@@ -238,8 +244,8 @@ by path from the repo root.
 |---|---|---|
 | `start.sh` | `start.sh` | Makes the evidence dir and a `mktemp -d` scratch config, writes `run.env`, snapshots shared state. Prints the run dir. |
 | `doctor.sh` | `doctor.sh [--ollama]` | Read-only health check. See Doctor. |
-| `pf.sh` | `pf.sh <run-dir> <label> --flag [args...]` | One binary call under the scratch config, with evidence files. Refuses forbidden flags. `PF_ALLOW_TRANSCRIBE=1` unlocks `--transcribe` after the user agreed. |
-| `snapshot.sh` | `snapshot.sh <out-file>` | Line and byte counts of both logs, row and `cli` row counts of the four traces, mtimes under the release support dir, `git status --short`. |
+| `pf.sh` | `pf.sh <run-dir> <label> --flag [args...]` | One binary call under the scratch config, with evidence files. Refuses any flag this page does not list. `PF_ALLOW_TRANSCRIBE=1` unlocks `--transcribe` after the user agreed. |
+| `snapshot.sh` | `snapshot.sh <out-file>` | Line and byte counts of both logs, row and `cli` row counts of the four traces, mtimes (to the nanosecond) and sizes under the release support dir, `git status --short`. |
 | `finish.sh` | `finish.sh <run-dir>` | After-snapshot, diff, scratch removal. See Cleanup. |
 
 A complete run, end to end:

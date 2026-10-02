@@ -34,7 +34,7 @@ Preconditions:
   `say -o` writes a file and plays nothing. `afinfo "$RUN/clip.wav"` shows
   `Data format:     1 ch,  16000 Hz, Int16`.
 - **Count trace rows before.** Run
-  `. "$RUN/run.env"; wc -l "$CFG/recordings/trace.jsonl" 2>/dev/null || echo "0 (no trace yet)"`.
+  `CFG=$(sed -n 's/^CFG=//p' "$RUN/run.env"); wc -l "$CFG/recordings/trace.jsonl" 2>/dev/null || echo "0 (no trace yet)"`.
   Also note the `## traces` block of `$RUN/state-before.txt`.
 - **Transcribe.** Run
   `PF_ALLOW_TRANSCRIBE=1 .claude/skills/verify-parrotflow/scripts/pf.sh "$RUN" transcribe --transcribe "$RUN/clip.wav"`.

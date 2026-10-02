@@ -6,6 +6,7 @@ set -uo pipefail
 OUT="$1"
 ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 SUPPORT="$HOME/Library/Application Support/ParrotFlow"
+rc=0
 
 {
   echo "## logs: lines bytes path"
@@ -30,10 +31,16 @@ SUPPORT="$HOME/Library/Application Support/ParrotFlow"
     fi
   done
 
-  echo "## release support dir: mtime path (depth 2, python/ skipped)"
-  find "$SUPPORT" -maxdepth 2 -type f ! -path '*/python/*' -exec stat -f '%m %N' {} + 2>/dev/null \
-    | sed "s|$HOME|~|" | sort -k2
+  echo "## release support dir: mtime size path (depth 2, python/ skipped)"
+  if [ -d "$SUPPORT" ]; then
+    find "$SUPPORT" -maxdepth 2 -type f ! -path '*/python/*' -exec stat -f '%Fm %z %N' {} + \
+      | sed "s|$HOME|~|" | sort -k3 || rc=1
+  else
+    echo "missing ${SUPPORT/#$HOME/~}"
+  fi
 
   echo "## git status --short"
-  git -C "$ROOT" status --short
-} > "$OUT"
+  git -C "$ROOT" status --short || rc=1
+} > "$OUT" || rc=1
+[ "$rc" -eq 0 ] || echo "snapshot.sh: $OUT is incomplete" >&2
+exit "$rc"

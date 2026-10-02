@@ -45,7 +45,7 @@ Preconditions:
 - The user is available and agrees.
 
 - **Record the starting point.** For Dev, run
-  `wc -l < ~/Library/Logs/ParrotFlow-Dev.log; wc -l < ~/.config/parrotflow-dev/recordings/trace.jsonl`.
+  `wc -l < ~/Library/Logs/ParrotFlow-Dev.log; wc -l < ~/.config/parrotflow-dev/recordings/trace.jsonl 2>/dev/null || echo 0`.
   Write both numbers down.
 - **Ask the user.** Send exactly this, for Dev:
   "Please do one dictation for me with ParrotFlow Dev. Open TextEdit and make

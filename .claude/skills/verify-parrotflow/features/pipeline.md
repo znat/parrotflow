@@ -4,7 +4,9 @@
 sentence and prints what each stage did. It is the same pipeline code a
 dictation runs after decoding: the vocabulary pass, `replace:` tables,
 `command:` scripts, conditions. A fixture carries its own languages,
-vocabulary, transforms and pipeline, so the result does not depend on any config.
+vocabulary, transforms and pipeline, so the stages do not come from the
+config. The vocabulary stage still reads `voice/` and `vocabulary-uses.yaml`
+from the config dir (see Gotchas); the scratch config has neither.
 
 ## Sub-features
 
@@ -49,8 +51,11 @@ Preconditions:
   Exit `0`. Output has `⊘ vocabulary  — skipped, prompts are off on this path`
   and ends `out:  our app is deployed on Versailles`.
 - **Proof.** Keep `NN-pipeline-vocabulary.out` and `.exit`. Run `finish.sh`
-  and keep `state-diff.txt`. Measured on the first call of a run: the only
-  shared change is about 37 new lines in `~/Library/Logs/ParrotFlow.log`.
+  and keep `state-diff.txt`. Measured on the first call of a run: about 37
+  new lines in `~/Library/Logs/ParrotFlow.log`, and nothing else. The phoneme
+  cache can also change when the sentence has an uncached word (see Gotchas);
+  read the release support dir block of `state-diff.txt` before you claim a
+  log-only run.
 
 ## Gotchas
 

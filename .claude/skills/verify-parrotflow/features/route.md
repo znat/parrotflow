@@ -4,7 +4,8 @@ When a user says "hey parrot, ..." or holds the key for an instruction, the app
 picks which transform the instruction reaches. `--route "<what you'd say>"`
 prints that choice without running the transform. `--keyed` scores the
 tap-and-hold path, which has no model: a transform named anywhere in the
-sentence wins, and anything else goes to the catch-all `ANY`.
+sentence wins. Anything else goes to the catch-all `ANY`, or to `NONE` when
+the config turns the catch-all off (`commands.catch_all`).
 
 ## Sub-features
 

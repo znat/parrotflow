@@ -6,18 +6,27 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ $# -eq 1 ] || { echo "usage: finish.sh <run-dir>" >&2; exit 2; }
 RUN="$1"
 [ -f "$RUN/run.env" ] || { echo "no $RUN/run.env" >&2; exit 2; }
-# shellcheck source=/dev/null
-. "$RUN/run.env"
+CFG="$(sed -n 's/^CFG=//p' "$RUN/run.env" | tail -1)"
 
-"$HERE/snapshot.sh" "$RUN/state-after.txt"
+[ -f "$RUN/state-before.txt" ] || { echo "no $RUN/state-before.txt; scratch config kept" >&2; exit 1; }
+"$HERE/snapshot.sh" "$RUN/state-after.txt" || { echo "after-snapshot failed; scratch config kept" >&2; exit 1; }
 diff "$RUN/state-before.txt" "$RUN/state-after.txt" > "$RUN/state-diff.txt"
+# diff exits 1 when the files differ; 2 is an error.
+[ $? -le 1 ] || { echo "diff failed; scratch config kept" >&2; exit 1; }
 echo "## shared-state diff (before < > after)"
 if [ -s "$RUN/state-diff.txt" ]; then cat "$RUN/state-diff.txt"; else echo "no change"; fi
 
 # Only the dir start.sh made: a mktemp dir named parrotflow-verify.*
 TMP="${TMPDIR:-/tmp}"; TMP="${TMP%/}"
-case "$CFG" in
-  "$TMP"/parrotflow-verify.*)
+# A direct child only: no "/" after the prefix, so no "..".
+name="${CFG#"$TMP"/}"
+case "$name" in
+  */*|"$CFG") ok=no ;;
+  parrotflow-verify.*) ok=yes ;;
+  *) ok=no ;;
+esac
+case "$ok" in
+  yes)
     if [ -d "$CFG" ]; then
       (cd "$CFG" && find . -maxdepth 2 | sort) > "$RUN/scratch-contents.txt"
       if [ -d "$CFG/recordings" ]; then
@@ -29,7 +38,12 @@ case "$CFG" in
           }
         done
       fi
-      rm -rf "$CFG" && echo "removed scratch config $CFG" | tee "$RUN/cleanup.txt"
+      if rm -rf "$CFG"; then
+        echo "removed scratch config $CFG" | tee "$RUN/cleanup.txt"
+      else
+        echo "could not remove scratch config $CFG" | tee "$RUN/cleanup.txt"
+        exit 1
+      fi
     else
       echo "scratch config already gone: $CFG" | tee "$RUN/cleanup.txt"
     fi

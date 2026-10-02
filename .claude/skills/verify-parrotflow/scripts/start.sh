@@ -12,10 +12,11 @@ mkdir -p "$(dirname "$RUN")"
 mkdir "$RUN"
 CFG="$(mktemp -d -t parrotflow-verify)"
 
+# Plain KEY=value lines: pf.sh and finish.sh parse this file, they never source it.
 {
-  printf 'ROOT=%q\n' "$ROOT"
-  printf 'BIN=%q\n' "$BIN"
-  printf 'CFG=%q\n' "$CFG"
+  printf 'ROOT=%s\n' "$ROOT"
+  printf 'BIN=%s\n' "$BIN"
+  printf 'CFG=%s\n' "$CFG"
 } > "$RUN/run.env"
 "$HERE/snapshot.sh" "$RUN/state-before.txt"
 echo "$RUN"

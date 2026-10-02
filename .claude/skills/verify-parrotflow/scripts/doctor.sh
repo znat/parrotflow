@@ -15,7 +15,12 @@ if [ ! -x "$BIN" ]; then
 fi
 echo "  $BIN  built $(stat -f '%Sm' "$BIN")"
 # --version exits before the first log write.
-echo "  --version: $("$BIN" --version 2>/dev/null)"
+if version="$("$BIN" --version 2>/dev/null)"; then
+  echo "  --version: $version"
+else
+  echo "  ✗ --version failed; the binary does not run"
+  bad=1
+fi
 
 newer="$(cd "$ROOT" && find Sources Package.swift Package.resolved -type f -newer "$BIN")"
 if [ -n "$newer" ]; then
@@ -64,7 +69,12 @@ if [ "${1:-}" = "--ollama" ]; then
     bad=1
   else
     echo "  pulled: $(printf '%s' "$tags" | python3 -c 'import json,sys; print(" ".join(m["name"] for m in json.load(sys.stdin)["models"]))')"
-    echo "  loaded: $(curl -s -m 3 localhost:11434/api/ps | python3 -c 'import json,sys; print(" ".join(m["name"] for m in json.load(sys.stdin)["models"]) or "nothing")')"
+    if loaded="$(curl -s -m 3 localhost:11434/api/ps | python3 -c 'import json,sys; print(" ".join(m["name"] for m in json.load(sys.stdin)["models"]) or "nothing")')"; then
+      echo "  loaded: $loaded"
+    else
+      echo "  ✗ /api/ps did not answer; loaded models unknown"
+      bad=1
+    fi
   fi
 fi
 
