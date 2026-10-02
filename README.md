@@ -168,7 +168,8 @@ You do not need this repository.
 npx skills add znat/parrotflow --skill parrotflow
 ```
 
-To match the skill to the app version you run, name its tag:
+To match the skill to the app version you run, name its tag. This works from
+the first release that ships the skill; v0.15.0 and older have none.
 
 <!-- x-release-please-start-version -->
 ```sh

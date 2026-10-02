@@ -114,9 +114,8 @@ check "and there are enough of them to mean something" \
 # --- 2. config-shaped YAML blocks ----------------------------------------------
 
 python3 - "$WORK/schema.json" "$SKILL" "$WORK/blocks" <<'PY'
-import json, pathlib, re, sys
+import pathlib, re, sys
 
-top = set(json.load(open(sys.argv[1]))["properties"])
 skill, out = pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3])
 out.mkdir()
 count = 0
@@ -126,9 +125,9 @@ for md in sorted(skill.rglob("*.md")):
         if block is None and line.strip() == "```yaml":
             block, start = [], n
         elif block is not None and line.strip() == "```":
-            first = next((l for l in block if l.strip() and not l.lstrip().startswith("#")), "")
-            key = re.match(r"^([a-z_]+):", first)
-            if key and key.group(1) in top:
+            # A config excerpt: top-level keys, and not a fixture or a case file.
+            keys = {m.group(1) for l in block if (m := re.match(r"^([A-Za-z_][\w-]*):", l))}
+            if keys and not keys & {"languages", "pipeline", "cases"}:
                 count += 1
                 d = out / f"{count:03d}"
                 d.mkdir()
