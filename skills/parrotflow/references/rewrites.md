@@ -257,7 +257,8 @@ defined but not in the pipeline.
 ### Setting up `github_refs`
 
 Replace `OWNER/REPO` in both URLs. Then add `- transform: github_refs` below
-`numbers_en`.
+`numbers_en`. The shipped entry has no chip. For one, add `offer: true` and a
+free `key:` to it, as in the example above.
 
 - **Its step usually wants `app:`.** It writes a Markdown link. Slack renders
   it. A terminal or a plain text field gets the raw `[#123](…)`.
