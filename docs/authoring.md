@@ -416,7 +416,7 @@ tree, not files kept in sync by hand. See `Config.builtInTransformsDirectory`.
 - [ ] any stage costing a model call has a `when:`, an `unless:` or an `app:`
 - [ ] failure leaves the transcript alone — kill the model, run it again, see
       the sentence come through untouched
-- [ ] a new default in `config.example.yaml` is covered by
+- [ ] a new default in `built-in/config.example.yaml` is covered by
       `scripts/check-default-config.sh`, which reads the real file rather than a
       fixture
 

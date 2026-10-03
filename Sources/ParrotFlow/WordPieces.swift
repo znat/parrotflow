@@ -81,6 +81,6 @@ enum WordPieces {
             .deletingLastPathComponent()  // WordPieces.swift -> Sources/ParrotFlow/
             .deletingLastPathComponent()  // -> Sources/
             .deletingLastPathComponent()  // -> repo root
-            .appendingPathComponent("data/wordpiece.txt")
+            .appendingPathComponent("built-in/data/wordpiece.txt")
     }
 }

@@ -60,7 +60,7 @@ Rules for the agent doing a PR. Follow them exactly.
    Everything else is replayable from the archive and runs without him.
 
 5. **Prose in simplified technical English** — commit messages, PR
-   descriptions, comments. See CLAUDE.md.
+   descriptions, comments. See .claude/CLAUDE.md.
 
 ### Fixed paths and facts
 

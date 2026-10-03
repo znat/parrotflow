@@ -61,8 +61,9 @@ enum AppVariant {
 
     static let repository = "https://github.com/znat/parrotflow"
 
-    /// Read from the bundle rather than from `version.txt`, so the number in the
-    /// About panel is the one this build was stamped with by `release.sh`.
+    /// Read from the bundle rather than from `.github/version.txt`, so the
+    /// number in the About panel is the one this build was stamped with by
+    /// `release.sh`.
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
     }

@@ -86,15 +86,17 @@ cp "$ROOT/Resources/parrot.svg" "$APP/Contents/Resources/"
 # and not two drifting apart. See Config.builtInTransformsDirectory and
 # Config.configTemplateURL.
 cp -R "$ROOT/built-in" "$APP/Contents/Resources/built-in"
+rm -rf "$APP/Contents/Resources/built-in/data"
 find "$APP/Contents/Resources/built-in" -name __pycache__ -type d -exec rm -rf {} +
-cp "$ROOT/config.example.yaml" "$APP/Contents/Resources/config.example.yaml"
+# The app reads the default config at the top of Resources, not in built-in/.
+mv "$APP/Contents/Resources/built-in/config.example.yaml" "$APP/Contents/Resources/config.example.yaml"
 
 # The word list the auto-apply gate asks whether a name is a name. Named here
-# rather than copying the whole of data/: the other files in it are read by
-# scripts/calibrate.py on a checkout and have no business in the bundle. See
-# WordPieces.fileURL.
-cp "$ROOT/data/wordpiece.txt" "$APP/Contents/Resources/wordpiece.txt"
-cp "$ROOT/data/parsing-requirements.txt" "$APP/Contents/Resources/parsing-requirements.txt"
+# rather than copying the whole of built-in/data/, which the copy above drops:
+# the other files in it are read by scripts/calibrate.py on a checkout and have
+# no business in the bundle. See WordPieces.fileURL.
+cp "$ROOT/built-in/data/wordpiece.txt" "$APP/Contents/Resources/wordpiece.txt"
+cp "$ROOT/built-in/data/parsing-requirements.txt" "$APP/Contents/Resources/parsing-requirements.txt"
 
 # SwiftPM resource bundles, which the binary looks for beside itself.
 #

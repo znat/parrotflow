@@ -73,9 +73,10 @@ release machinery and gets no warning. `make hooks` refuses it locally — see
 
 ## What not to change without being asked
 
-- `config.example.yaml` is what a new install gets — `Config.defaultYAML`
-  reads it directly, substituting only the few lines that differ per variant
-  — and several check scripts read the real file rather than a fixture.
+- `built-in/config.example.yaml` is what a new install gets —
+  `Config.defaultYAML` reads it directly, substituting only the few lines that
+  differ per variant — and several check scripts read the real file rather
+  than a fixture.
   Changing a default changes what everyone gets on first launch.
 - The word lists a `replace:` pattern reads, and the rules in
   `built-in/transforms/disfluency/disfluency.py`, are judgements about how

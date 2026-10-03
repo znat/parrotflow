@@ -1,7 +1,7 @@
 # The repository's own settings
 
 GitHub's settings for this repository are in
-[`settings/repo.yml`](../settings/repo.yml): the description, the topics, which
+[`.github/repo.yml`](../.github/repo.yml): the description, the topics, which
 merge buttons exist, the labels, private vulnerability reporting. The file is
 the record. The live repository is meant to match it.
 
@@ -9,7 +9,7 @@ Change one in the browser and the file is wrong. Change the file and nothing
 happens until someone applies it. So do it in this order.
 
 ```sh
-$EDITOR settings/repo.yml
+$EDITOR .github/repo.yml
 make repo-settings                  # dry run: prints what would change
 scripts/repo-settings.sh --apply    # writes it
 ```
@@ -26,8 +26,8 @@ script prints what it cannot read as skipped and carries on.
 Two settings there are load-bearing, and both are invisible once set.
 
 **`squash_merge_commit_title: COMMIT_OR_PR_TITLE`** is what makes
-`.githooks/commit-msg` worth running. A single-commit pull request squashes to
-that commit's subject, which the hook already checked. Switch it to
+`scripts/githooks/commit-msg` worth running. A single-commit pull request
+squashes to that commit's subject, which the hook already checked. Switch it to
 `PR_TITLE` and every squash takes the title instead, so the hook stops
 protecting anything. The comment at the top of
 [`.github/workflows/pr-title.yml`](../.github/workflows/pr-title.yml) is the

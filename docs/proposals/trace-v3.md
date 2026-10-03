@@ -65,7 +65,7 @@ Settled 2026-09-05 to 2026-09-07. Do not relitigate.
 | Version | `Trace.version` → 3. |
 | Old lines | Never converted. Nothing in v3 is derivable from v2 except `edits`, and a line stamped v3 with no spans breaks the contract the version field exists to keep. |
 | Opening one | A `command:` transform with `offer: true` and `key: t`. No new config grammar, no new primitive beside transforms. |
-| Shipping it | Documented in `docs/cli.md`, never in `config.example.yaml`. No default pipeline changes and no install gains a chip. |
+| Shipping it | Documented in `docs/cli.md`, never in `built-in/config.example.yaml`. No default pipeline changes and no install gains a chip. |
 | Viewer | Chrome Trace Event JSON, exported by a command, opened in Perfetto. Not stored in that format. |
 | Audience | Everyone, not the maintainer. Defaults, read path and redaction follow from that. |
 
@@ -292,9 +292,9 @@ No new primitive. `command:`, `offer:` and `key:` already exist
 (`AppDelegate.swift:513-515`), and `OfferKeys` claims the letter.
 
 **No default pipeline gains a stage, and no install gains a chip.** It ships in
-`config.example.yaml` with `offer:` and `key:` commented out, so it is reachable
-by voice through `say:` and nothing else until you uncomment them. `docs/cli.md`
-carries the same entry:
+`built-in/config.example.yaml` with `offer:` and `key:` commented out, so it is
+reachable by voice through `say:` and nothing else until you uncomment them.
+`docs/cli.md` carries the same entry:
 
 ```yaml
 transforms:
@@ -563,8 +563,8 @@ Two things in this document were **not** built:
    answered here.
 4. **The per-call `model` span**, and the fields that depend on it.
 5. **Whether the chip ships.** It does not. The transform is in
-   `config.example.yaml` with `offer:` and `key:` commented out — reachable by
-   voice, and one uncomment away from a chip.
+   `built-in/config.example.yaml` with `offer:` and `key:` commented out —
+   reachable by voice, and one uncomment away from a chip.
 
 ## Build order
 
@@ -584,7 +584,7 @@ guard (#272) and the empty-decode retry live. ~200 lines.
 
 **PR 3 — reading one.** `--trace-view` and `TraceText`, the Trace Event export
 behind `--perfetto`, `--redacted`, the `done:` key on a transform, the transform
-in `config.example.yaml` with its chip commented out, and the wordless timeline
-in `--bug-report`. None of it in the dictation path.
+in `built-in/config.example.yaml` with its chip commented out, and the wordless
+timeline in `--bug-report`. None of it in the dictation path.
 
 All three shipped together, in one pull request.

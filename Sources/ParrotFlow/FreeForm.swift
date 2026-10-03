@@ -37,11 +37,11 @@ import Foundation
 ///
 /// Two findings from that set shaped what shipped. The prompt beats the narrow
 /// prompts on their own ground — 14/16 against 12/16 on the cases `dates` and
-/// `digits` cover — which is why config.example.yaml no longer ships those two.
-/// And an `UNCHANGED` sentinel, the trick that won on the spelling extractor,
-/// was measured here and lost: it fixed the copy-back failures and cost two
-/// grammar cases, because a prompt whose examples end in a bare token stops
-/// returning terminal punctuation.
+/// `digits` cover — which is why built-in/config.example.yaml no longer ships
+/// those two. And an `UNCHANGED` sentinel, the trick that won on the spelling
+/// extractor, was measured here and lost: it fixed the copy-back failures and
+/// cost two grammar cases, because a prompt whose examples end in a bare token
+/// stops returning terminal punctuation.
 enum FreeForm {
 
     /// The name it reports as. Not in the catalogue, so this is only ever seen

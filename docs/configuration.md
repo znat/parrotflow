@@ -29,9 +29,9 @@ replace the whole configuration to change one behavior.
 ## Configuration reference
 
 `~/.config/parrotflow/config.yaml`, created on first launch. Save the file and
-the app picks it up immediately — no restart. `config.example.yaml` in the repo
-is the same file. It carries the keys most people change; every other key
-on this page works when written in, and takes the default below when it is
+the app picks it up immediately — no restart. `built-in/config.example.yaml` in
+the repo is the same file. It carries the keys most people change; every other
+key on this page works when written in, and takes the default below when it is
 not.
 
 **Validate before you trust it:** `--check-config` prints what the app would
@@ -68,7 +68,8 @@ The app does not write `config.schema.json` for you. The dev build reads
 
 The following is a map of the main settings, **not a paste-ready config**:
 the `…` entries stand for sections explained in the reference. Start from your
-existing file or [config.example.yaml](../config.example.yaml).
+existing file or
+[built-in/config.example.yaml](../built-in/config.example.yaml).
 
 ```yaml
 hotkey:
@@ -525,8 +526,8 @@ judge, under four words. Supported values are `en` and `fr`.
 
 Say one of these instead of dictating and what follows is an instruction:
 "hey parrot, make that a bullet list". An empty list disables spoken commands.
-The default is `[hey parrot]`, and it is not in `config.example.yaml` — write
-the key in to change it.
+The default is `[hey parrot]`, and it is not in `built-in/config.example.yaml` —
+write the key in to change it.
 
 One **mid-sentence** turns the rest into an instruction about the words before
 it, in the same breath. Any phrase in the list does that, so a second one is
@@ -573,8 +574,8 @@ transcription:
 `near_misses`, `by_sound`, `gate`, `slot_gate`, `portrait` and
 `lowercase_refused` are also keys here, all on by default. They are not
 everyday settings: they exist so a bench can switch off one half of the pass
-and score the other, which is why `config.example.yaml` does not write them
-out. `slot_gate: false` downloads nothing.
+and score the other, which is why `built-in/config.example.yaml` does not write
+them out. `slot_gate: false` downloads nothing.
 
 **Three keys moved out of `vocabulary.yaml`.** `sound_below`, `gate_sentence`
 and `asks` are person-chosen switches, and they were sitting in the file the
@@ -905,7 +906,7 @@ one is measured at its ceiling.
 Where recordings and `trace.jsonl` go. Defaults to
 `~/.config/parrotflow/recordings`, beside `transforms/` and `vocabulary.yaml`,
 so there is one folder to know about rather than two. Not in
-`config.example.yaml`: write the key in to move it.
+`built-in/config.example.yaml`: write the key in to move it.
 
 The dev build uses `~/.config/parrotflow-dev/recordings`, like everything else
 it keeps separate. `PARROTFLOW_CONFIG_DIR` moves this too, so a check script

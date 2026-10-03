@@ -202,7 +202,7 @@ Start with one small thing you keep correcting by hand.
 [Understand the architecture](docs/guides/architecture.md)
 
 [All documentation](docs/README.md) ·
-[Contribute](CONTRIBUTING.md) ·
+[Contribute](.github/CONTRIBUTING.md) ·
 [Ask a question](https://github.com/znat/parrotflow/discussions)
 
 ---

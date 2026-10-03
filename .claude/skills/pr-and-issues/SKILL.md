@@ -118,7 +118,7 @@ the change is too big or the writing is repeating itself.
 
 ## Language
 
-Follow `CLAUDE.md`: simplified technical English, in the body and the title.
+Follow `.claude/CLAUDE.md`: simplified technical English, in the body and the title.
 
 - Short sentences. One idea per sentence.
 - Plain words. "use", not "leverage". "so", not "which is why".

@@ -193,7 +193,7 @@ it — a shipped example that comes with its own set is the whole argument of
 | `Sources/ParrotFlow/Config.swift` | `TransformEntry` decoding (~74–110) for the mapping form; `assembled()` (~127–168); add the folder URL to `Transform` beside `directory` (~205–208); `notices()` (~1012) and `problems()` (~965–990) for the new lines; `exampleScript` (~1044) and the seeding around ~1059–1066 |
 | `Sources/ParrotFlow/CommandRunner.swift` | `parts(of:base:)` and `complaint(about:base:)` (~174–250) take the folder as `base`. `run` already sets `currentDirectoryURL = base` (~71), so the working-directory half is nearly free |
 | `Sources/ParrotFlow/CheckConfigCommand.swift` | the resolved-path line, and the old-location notice |
-| `config.example.yaml`, `docs/configuration.md`, `docs/pipelines.md`, `docs/authoring.md` | the layout, the rule, the `path:` form |
+| `built-in/config.example.yaml`, `docs/configuration.md`, `docs/pipelines.md`, `docs/authoring.md` | the layout, the rule, the `path:` form |
 | `scripts/check-default-config.sh` | reads the real file; will need the new shape |
 
 **[built]** Two things were added that the text above does not ask for, both

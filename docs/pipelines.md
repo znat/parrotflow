@@ -669,7 +669,7 @@ A chip that is missing, or a `key:` that was cut, is otherwise invisible: the
 pill fades out after a few seconds and a short offer looks like a normal one.
 
 Only the shipped `grammar` asks for a place. Everything else in
-config.example.yaml is left off.
+built-in/config.example.yaml is left off.
 
 ### `command:`, or: the app stops needing new primitives
 
@@ -874,8 +874,9 @@ its own voice, and nothing on screen says it happened — a pipeline stage runs
 on a transcript nobody has seen yet, so `confirm` does not apply to it.
 
 **8/10 and 3/3 on gemma4:e4b**, and the versions in between are written into
-config.example.yaml beside each prompt, because what they cost is the useful
-part. Four findings, all of them the prompt making things worse before better:
+built-in/config.example.yaml beside each prompt, because what they cost is the
+useful part. Four findings, all of them the prompt making things worse before
+better:
 
 | Wording | What it did |
 |---|---|

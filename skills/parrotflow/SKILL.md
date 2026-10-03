@@ -150,7 +150,8 @@ Say five things, briefly:
 - **Never edit `transforms/built-in/`.** The app replaces it at every launch.
   To change a shipped transform, copy its folder to `transforms/<name>/` and
   point `command:` at the file there.
-- **Never edit the app bundle**, including its `config.example.yaml`.
+- **Never edit the app bundle**, including its
+  `Contents/Resources/config.example.yaml`.
 - **A stage that calls a model needs a condition**: `when:`, `unless:` or
   `app:`. Otherwise it costs a second on every dictation.
 - **Fail open.** A stage whose model or program fails must leave the sentence

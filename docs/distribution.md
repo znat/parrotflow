@@ -274,12 +274,17 @@ would only produce an asset nobody can install.
 The version lands in `Info.plist` through release-please's `extra-files`
 annotation, so the bundle version and the tag cannot drift apart.
 
+The config, the manifest and the version file live in `.github/`.
+`release.yml` passes the first two as `config-file` and `manifest-file`. The
+config names the third as `version-file`. A wrong `version-file` path is
+skipped without an error, so check the release PR bumps `.github/version.txt`.
+
 The failure mode of this arrangement is silence. release-please reads the
 *subject line* and nothing else, so a commit written as prose has no type, no
 bump and no changelog entry — and nothing anywhere reports that it was skipped.
 The workflow runs green in 24 seconds and no release exists. That is how this
 repository reached fifteen commits and zero tags with the pipeline fully wired
-and working exactly as configured. `.githooks/commit-msg`, installed by
+and working exactly as configured. `scripts/githooks/commit-msg`, installed by
 `make hooks`, is the only thing that makes the omission visible, and it has to
 be visible at commit time because afterwards nothing looks wrong.
 

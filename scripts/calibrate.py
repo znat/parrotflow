@@ -40,7 +40,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # read. A term is only in danger from words its speaker says: `Praisy` collides
 # with the French `prises` and the English `praise`, and someone who dictates
 # only in English should not have their floor raised by the first.
-WORDS = ROOT / "data"
+WORDS = ROOT / "built-in/data"
 FALLBACK_WORDS = pathlib.Path("/usr/share/dict/words")
 
 

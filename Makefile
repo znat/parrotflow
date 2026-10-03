@@ -119,15 +119,15 @@ test:
 	if [ -n "$$failed" ]; then printf '\nFailed:%s\n' "$$failed"; exit 1; fi; \
 	printf '\nEvery check passed.\n'
 
-## Point git at .githooks, so commit subjects are checked before they land.
-## Once per clone: hooks are not cloned with the repository.
+## Point git at scripts/githooks, so commit subjects are checked before they
+## land. Once per clone: hooks are not cloned with the repository.
 hooks:
-	@git config core.hooksPath .githooks
+	@git config core.hooksPath scripts/githooks
 	@echo "==> Commit subjects are now checked against Conventional Commits."
 
 .PHONY: repo-settings
 
-## Compare GitHub's own settings for the repository with settings/repo.yml.
+## Compare GitHub's own settings for the repository with .github/repo.yml.
 ## Reads only. Writing them is `scripts/repo-settings.sh --apply`, kept out of
 ## here on purpose: a target that changes the live repository is one you can
 ## run by mistake.

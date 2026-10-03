@@ -62,8 +62,8 @@ repository:
   allow_merge_commit: false
   allow_rebase_merge: false
 
-  # COMMIT_OR_PR_TITLE is the whole reason .githooks/commit-msg is worth
-  # running. Read the comment at the top of .github/workflows/pr-title.yml: a
+  # COMMIT_OR_PR_TITLE is the whole reason scripts/githooks/commit-msg is
+  # worth running. Read the comment at the top of .github/workflows/pr-title.yml: a
   # single-commit pull request squashes to that commit's subject, which the
   # hook already checked on the contributor's machine, and only the
   # multi-commit case falls through to the workflow. Set this to PR_TITLE and
@@ -124,12 +124,13 @@ topics:
   - voice-to-text # 587
   - apple-silicon # 3969
   # The app does not link MLX. It is here because the model
-  # config.example.yaml ships with is an MLX build: `models: gemma: model:` is
-  # `gemma4:e4b-mlx`. That is the whole claim; drop the topic if it changes.
+  # built-in/config.example.yaml ships with is an MLX build: `models: gemma:
+  # model:` is `gemma4:e4b-mlx`. That is the whole claim; drop the topic if it
+  # changes.
   - mlx # 2152
 
-# SECURITY.md sends people to the advisory form. That form only exists when
-# this is on, so the link in SECURITY.md is dead without it.
+# .github/SECURITY.md sends people to the advisory form. That form only
+# exists when this is on, so the link in that file is dead without it.
 private_vulnerability_reporting: true
 
 # The bug form applies `bug` — see the `labels:` line in

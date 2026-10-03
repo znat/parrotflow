@@ -377,16 +377,17 @@ decoded word:
 | list | knows | misses |
 | --- | --- | --- |
 | `NSSpellChecker`, `en` then `fr` | `subtask`, `repo`, `rebase`, `Mathieu` | ordinary first names — `Sarah`, `Nathan`, `Frederick` |
-| `data/wordpiece.txt` | those first names | jargon — `subtask`, `repo`, `rebase` |
+| `built-in/data/wordpiece.txt` | those first names | jargon — `subtask`, `repo`, `rebase` |
 
 Each list has the other's blind spot, which is the whole reason there are two.
 The dictionary alone rewrote "Um not Peter, uh Frederick." to "…uh Redrock."
-without asking, because no dictionary has `Frederick` in it. `data/wordpiece.txt`
-is the whole-word half of `distilbert-base-uncased`'s tokenizer vocabulary
-(Apache-2.0, 23694 entries): a tokenizer keeps a word whole when it has seen it
-often and chops the rest into fragments, so membership is a frequency fact and
-not a lexicographer's. No model runs — the test is a set lookup, and the query
-is folded so `Chloé` is looked up as `chloe`.
+without asking, because no dictionary has `Frederick` in it.
+`built-in/data/wordpiece.txt` is the whole-word half of
+`distilbert-base-uncased`'s tokenizer vocabulary (Apache-2.0, 23694 entries): a
+tokenizer keeps a word whole when it has seen it often and chops the rest into
+fragments, so membership is a frequency fact and not a lexicographer's. No model
+runs — the test is a set lookup, and the query is folded so `Chloé` is looked up
+as `chloe`.
 
 Some words are missed by both and still auto-apply: `webhook`, `worktree`,
 `kubernetes`, and the first names `Priya` and `Siobhan`. Two lists remove most

@@ -168,8 +168,8 @@ that `install.sh` downloads.
 
 So the subject line is not housekeeping. A commit written without a type is
 invisible to all of this: no bump, no changelog entry, and no warning that it
-was skipped. `make hooks` points git at `.githooks/commit-msg`, which refuses
-one before it lands. Run it once per clone — hooks are not cloned.
+was skipped. `make hooks` points git at `scripts/githooks/commit-msg`, which
+refuses one before it lands. Run it once per clone — hooks are not cloned.
 
 ```
 feat:  a capability that was not there before   -> minor

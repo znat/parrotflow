@@ -59,9 +59,9 @@ print(schema.get("$schema"))' "$WORK/schema.json" 2>&1)" \
 # --- configs that use only real keys --------------------------------------------
 
 mkdir -p "$WORK/example"
-cp "$ROOT/config.example.yaml" "$WORK/example/config.yaml"
+cp "$ROOT/built-in/config.example.yaml" "$WORK/example/config.yaml"
 run_config example
-check "config.example.yaml has no unknown key" "$(warnings)" "0"
+check "built-in/config.example.yaml has no unknown key" "$(warnings)" "0"
 example_code=$code
 
 converted=0
@@ -102,7 +102,7 @@ check "the fixtures were read at all" "$([ "$converted" -gt 30 ] && echo yes)" "
 # --- two typos ------------------------------------------------------------------
 
 mkdir -p "$WORK/typos"
-python3 - "$ROOT/config.example.yaml" "$WORK/typos/config.yaml" <<'PY'
+python3 - "$ROOT/built-in/config.example.yaml" "$WORK/typos/config.yaml" <<'PY'
 import sys
 text = open(sys.argv[1]).read()
 assert "\nfeedback:\n" in text

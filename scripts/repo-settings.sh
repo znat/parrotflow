@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Whether GitHub's settings for this repository still match settings/repo.yml.
+# Whether GitHub's settings for this repository still match .github/repo.yml.
 #
 #   scripts/repo-settings.sh              # dry run: print the drift, write nothing
 #   scripts/repo-settings.sh --check      # the same, and exit 1 if anything differs
@@ -7,7 +7,7 @@
 #   scripts/repo-settings.sh --repo o/n   # act on another repository
 #
 # Dry run is the default, and --apply is the only way this writes anything. The
-# order matters more than it looks: settings/repo.yml is edited far more often
+# order matters more than it looks: .github/repo.yml is edited far more often
 # than it is applied, and a script that writes by default turns a typo into a
 # live repository change before anyone has read the diff.
 #
@@ -25,7 +25,7 @@
 # with pyyaml — the same pair the check scripts already use.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SETTINGS="$ROOT/settings/repo.yml"
+SETTINGS="$ROOT/.github/repo.yml"
 
 MODE=dry
 REPO=""
@@ -302,7 +302,7 @@ while i < len(text):
   cut -f1 "$TMP/live-labels.tsv" | tr '[:upper:]' '[:lower:]' | sort > "$TMP/live-names.txt"
   cut -f2 "$TMP/want-labels.tsv" | tr '[:upper:]' '[:lower:]' | sort > "$TMP/want-names.txt"
   unlisted="$(comm -13 "$TMP/want-names.txt" "$TMP/live-names.txt" | oneline)"
-  [ -n "$unlisted" ] && printf '    not in settings/repo.yml, left alone: %s\n' "$unlisted"
+  [ -n "$unlisted" ] && printf '    not in .github/repo.yml, left alone: %s\n' "$unlisted"
   return 0
 }
 
@@ -315,7 +315,7 @@ run_pass() {
 }
 
 printf '==> %s   (%s)\n' "$REPO" \
-  "$([ "$MODE" = apply ] && echo "applying settings/repo.yml" || echo "reading only, nothing is written")"
+  "$([ "$MODE" = apply ] && echo "applying .github/repo.yml" || echo "reading only, nothing is written")"
 run_pass
 
 if [ "$MODE" = apply ]; then
@@ -344,7 +344,7 @@ fi
 
 printf '\n'
 if [ "$drift" -eq 0 ]; then
-  printf '  Everything matches settings/repo.yml.\n'
+  printf '  Everything matches .github/repo.yml.\n'
 else
   printf '  %d setting(s) differ. Apply them with:\n\n      scripts/repo-settings.sh --apply\n' "$drift"
 fi
