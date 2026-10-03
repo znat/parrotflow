@@ -1,6 +1,6 @@
 name: repo-settings
 
-# Whether GitHub's settings for this repository still match settings/repo.yml.
+# Whether GitHub's settings for this repository still match .github/repo.yml.
 # Once a week, and on demand.
 #
 # It never writes, and it could not if it wanted to. Changing repository
@@ -45,7 +45,7 @@ jobs:
             || python3 -m pip install --quiet --break-system-packages pyyaml
 
       # `gh` is on the runner image already.
-      - name: Compare the live settings with settings/repo.yml
+      - name: Compare the live settings with .github/repo.yml
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/repo-settings.sh --check

@@ -1,7 +1,7 @@
 # The repository's own settings
 
 GitHub's settings for this repository are in
-[`settings/repo.yml`](../settings/repo.yml): the description, the topics, which
+[`.github/repo.yml`](../.github/repo.yml): the description, the topics, which
 merge buttons exist, the labels, private vulnerability reporting. The file is
 the record. The live repository is meant to match it.
 
@@ -9,7 +9,7 @@ Change one in the browser and the file is wrong. Change the file and nothing
 happens until someone applies it. So do it in this order.
 
 ```sh
-$EDITOR settings/repo.yml
+$EDITOR .github/repo.yml
 make repo-settings                  # dry run: prints what would change
 scripts/repo-settings.sh --apply    # writes it
 ```

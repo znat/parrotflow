@@ -127,7 +127,7 @@ hooks:
 
 .PHONY: repo-settings
 
-## Compare GitHub's own settings for the repository with settings/repo.yml.
+## Compare GitHub's own settings for the repository with .github/repo.yml.
 ## Reads only. Writing them is `scripts/repo-settings.sh --apply`, kept out of
 ## here on purpose: a target that changes the live repository is one you can
 ## run by mistake.
