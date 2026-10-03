@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.16.0](https://github.com/znat/parrotflow/compare/v0.15.0...v0.16.0) (2026-10-03)
+
+
+### Features
+
+* a dictated word can be spelled the way the screen writes it ([#335](https://github.com/znat/parrotflow/issues/335)) ([84d5e33](https://github.com/znat/parrotflow/commit/84d5e33ada8064836a3b84c52aca47cf9b04e75d))
+* an agent skill that customizes ParrotFlow without the repo ([#340](https://github.com/znat/parrotflow/issues/340)) ([7783a72](https://github.com/znat/parrotflow/commit/7783a728a48ce577cc8662cfac3c80a0b4573140))
+* the skill scopes rewrites to apps with steps, and offers vocabulary ([#341](https://github.com/znat/parrotflow/issues/341)) ([2a66c04](https://github.com/znat/parrotflow/commit/2a66c04a90803c87915df5bda65aba9437dd9801))
+* warn about unknown config keys, and print the config schema ([#339](https://github.com/znat/parrotflow/issues/339)) ([3286fa6](https://github.com/znat/parrotflow/commit/3286fa6759741a8cf8cd070c788af636d516850b))
+
+
+### Fixes
+
+* a second press edits only once the panel has fully opened ([#342](https://github.com/znat/parrotflow/issues/342)) ([cdf472c](https://github.com/znat/parrotflow/commit/cdf472cc6c0737411a3bd3201d8c47bedf60eb7e))
+* the Threads view reads the thread you are replying to ([#336](https://github.com/znat/parrotflow/issues/336)) ([83c4eea](https://github.com/znat/parrotflow/commit/83c4eea60221d990bf070e897f473d83e297cea5))
+
 ## [0.15.0](https://github.com/znat/parrotflow/compare/v0.14.0...v0.15.0) (2026-10-01)
 
 

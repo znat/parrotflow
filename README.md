@@ -173,7 +173,7 @@ the first release that ships the skill; v0.15.0 and older have none.
 
 <!-- x-release-please-start-version -->
 ```sh
-npx skills add 'znat/parrotflow#v0.15.0@parrotflow'
+npx skills add 'znat/parrotflow#v0.16.0@parrotflow'
 ```
 <!-- x-release-please-end -->
 
