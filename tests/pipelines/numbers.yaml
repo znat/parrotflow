@@ -1,6 +1,6 @@
-# The dates and numbers steps of config.example.yaml, plus a French numbers
-# step the default config does not ship. No step carries a language gate, as
-# in the default config, so every script sees every transcript.
+# The dates and numbers steps of built-in/config.example.yaml, plus a French
+# numbers step the default config does not ship. No step carries a language
+# gate, as in the default config, so every script sees every transcript.
 #
 # Two things only a whole pipeline shows:
 #

@@ -52,7 +52,7 @@ settings block.
 
 ## 2. The new shape
 
-`config.example.yaml`, in house comment style:
+`built-in/config.example.yaml`, in house comment style:
 
 ```yaml
 transcription:
@@ -234,8 +234,8 @@ Recommendation, in two parts:
   a `--check-config` line saying so.
 - No `pipeline:` at all: turn it on. The reason `isAutomatic` excluded it is
   stale — the comment says the stage "names a prompt file", and it has not for
-  some time. `config.example.yaml` turns it on, so a new install already gets
-  it. Say it once in `--check-config`.
+  some time. `built-in/config.example.yaml` turns it on, so a new install
+  already gets it. Say it once in `--check-config`.
 
 ---
 
@@ -248,7 +248,7 @@ Recommendation, in two parts:
 | `Transcriber.swift` | Where the two fixed passes run. |
 | `CheckConfigCommand.swift` | Reads the blocks; the "delete the `interpret` step" wording goes. |
 | `PipelineCommand.swift` | Fixture blocks; the interpret model gate. |
-| `config.example.yaml`, `docs/pipelines.md`, `docs/configuration.md` | The shape above. |
+| `built-in/config.example.yaml`, `docs/pipelines.md`, `docs/configuration.md` | The shape above. |
 | `tests/pipelines/*.yaml`, `scripts/check-pipeline-config.sh` | Options move up one level. |
 
 ---

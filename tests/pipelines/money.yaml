@@ -1,6 +1,6 @@
-# The numbers steps of config.example.yaml with the money steps below them,
-# plus the French scripts the default config does not ship. No step carries a
-# language gate, as in the default config, so every script sees every
+# The numbers steps of built-in/config.example.yaml with the money steps below
+# them, plus the French scripts the default config does not ship. No step
+# carries a language gate, as in the default config, so every script sees every
 # transcript.
 #
 # Two things only a whole pipeline shows:

@@ -1138,8 +1138,9 @@ scripts/validate-generic.py                  # free-form instructions
 scripts/validate-gate.py                     # what should never be treated as a command
 ```
 
-Several read their input out of `Config.defaultYAML` or `config.example.yaml`
-rather than a fixture, so what gets scored is what a new install actually gets.
+Several read their input out of `Config.defaultYAML` or
+`built-in/config.example.yaml` rather than a fixture, so what gets scored is
+what a new install actually gets.
 
 See [authoring.md](authoring.md) for the loop these belong to.
 
@@ -1393,8 +1394,9 @@ look at a chart.
 Not shipped, because a chip claims its letter from every dictation for the nine
 seconds the offer is up. Paste it into your own config if you want it:
 
-`config.example.yaml` ships this entry with `offer:` and `key:` commented out,
-so a fresh install can ask for a trace out loud and gains no chip:
+`built-in/config.example.yaml` ships this entry with `offer:` and `key:`
+commented out, so a fresh install can ask for a trace out loud and gains no
+chip:
 
 ```yaml
 transforms:

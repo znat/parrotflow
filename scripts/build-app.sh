@@ -87,7 +87,8 @@ cp "$ROOT/Resources/parrot.svg" "$APP/Contents/Resources/"
 # Config.configTemplateURL.
 cp -R "$ROOT/built-in" "$APP/Contents/Resources/built-in"
 find "$APP/Contents/Resources/built-in" -name __pycache__ -type d -exec rm -rf {} +
-cp "$ROOT/config.example.yaml" "$APP/Contents/Resources/config.example.yaml"
+# The app reads the default config at the top of Resources, not in built-in/.
+mv "$APP/Contents/Resources/built-in/config.example.yaml" "$APP/Contents/Resources/config.example.yaml"
 
 # The word list the auto-apply gate asks whether a name is a name. Named here
 # rather than copying the whole of data/: the other files in it are read by

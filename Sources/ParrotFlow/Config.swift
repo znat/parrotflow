@@ -1482,11 +1482,11 @@ struct Config: Decodable, Equatable {
         /// Negative never asks GitHub at all. Zero takes a release the day it
         /// is published. Anything else waits that many days.
         ///
-        /// Zero by default, which is what `config.example.yaml` has always
-        /// shipped — the two disagreed, so a config with no `updates:` block
-        /// waited a week and a config seeded from the example did not. Anyone
-        /// who wants the waiting period sets it; see the note above for what
-        /// it is for.
+        /// Zero by default, which is what `built-in/config.example.yaml` has
+        /// always shipped — the two disagreed, so a config with no `updates:`
+        /// block waited a week and a config seeded from the example did not.
+        /// Anyone who wants the waiting period sets it; see the note above for
+        /// what it is for.
         var afterDays: Int = 0
 
         enum CodingKeys: String, CodingKey, CaseIterable {
@@ -1983,7 +1983,8 @@ struct Config: Decodable, Equatable {
         ///
         /// The six switches below `enabled:` are not everyday settings. They
         /// exist so a bench can turn off one half of the pass and score the
-        /// other, which is why `config.example.yaml` does not write them out.
+        /// other, which is why `built-in/config.example.yaml` does not write
+        /// them out.
         struct Vocabulary: Decodable, Equatable {
             var enabled: Bool = true
             var nearMisses: Bool = true
@@ -3891,13 +3892,14 @@ enum ConfigStore {
         }
     }
 
-    /// `config.example.yaml` — the one copy of the default config's content,
-    /// same reasoning as `builtInTransformsDirectory` above: seeded from the
-    /// real file instead of a second, hand-synced copy in the binary. It was
-    /// a string here for a while, and it drifted — config.example.yaml
-    /// gained the vocabulary judge stage and app-scoped transforms that this
-    /// string never did, silently, because nothing compared the two beyond a
-    /// key-name check that could not see into a pipeline's steps.
+    /// `built-in/config.example.yaml` — the one copy of the default config's
+    /// content, same reasoning as `builtInTransformsDirectory` above: seeded
+    /// from the real file instead of a second, hand-synced copy in the binary.
+    /// It was a string here for a while, and it drifted —
+    /// built-in/config.example.yaml gained the vocabulary judge stage and
+    /// app-scoped transforms that this string never did, silently, because
+    /// nothing compared the two beyond a key-name check that could not see into
+    /// a pipeline's steps.
     static var configTemplateURL: URL {
         if !Permissions.isRunningFromBuildDirectory,
            let bundled = Bundle.main.resourceURL?.appendingPathComponent("config.example.yaml"),
@@ -3908,16 +3910,16 @@ enum ConfigStore {
             .deletingLastPathComponent()  // Config.swift -> Sources/ParrotFlow/
             .deletingLastPathComponent()  // -> Sources/
             .deletingLastPathComponent()  // -> repo root
-            .appendingPathComponent("config.example.yaml")
+            .appendingPathComponent("built-in/config.example.yaml")
     }
 
     /// What a new install's config.yaml is written with.
     ///
-    /// config.example.yaml itself, with the two lines that differ per
+    /// built-in/config.example.yaml itself, with the two lines that differ per
     /// variant swapped in. The release build needs no substitution at all —
     /// the file already reads as its own defaults — which is the point: a
-    /// release config.yaml and config.example.yaml can now be compared for
-    /// equality instead of trusted to have been kept in sync by hand.
+    /// release config.yaml and built-in/config.example.yaml can now be compared
+    /// for equality instead of trusted to have been kept in sync by hand.
     static var defaultYAML: String {
         guard let text = try? String(contentsOf: configTemplateURL, encoding: .utf8) else {
             Log.write("config: could not read \(configTemplateURL.path); writing nothing")

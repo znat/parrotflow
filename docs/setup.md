@@ -256,7 +256,8 @@ transcription:
 
 **Then write the filler words for those languages.** Do not skip this because
 the config looks like it handles it — the `fillers` transform in
-`config.example.yaml` is English only. A French speaker keeps every `euh`.
+`built-in/config.example.yaml` is English only. A French speaker keeps every
+`euh`.
 
 > When people talk they make sounds like "um" and "euh". Shall I remove those?
 

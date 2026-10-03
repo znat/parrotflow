@@ -133,7 +133,7 @@ enum ConfigWriter {
 
     /// The `microphones:` line inside the `audio:` block, or nil if the file
     /// does not carry one. A commented-out example is not one — it is what
-    /// `config.example.yaml` ships to explain the setting.
+    /// `built-in/config.example.yaml` ships to explain the setting.
     private static func microphonesKey(
         in lines: [String], within range: Range<Int>? = nil
     ) -> Int? {

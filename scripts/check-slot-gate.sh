@@ -28,7 +28,7 @@
 #
 # Runs against a scratch PARROTFLOW_CONFIG_DIR, so it says nothing about the
 # config on the machine. The language detector needs `languages: [en, fr]`,
-# which is what config.example.yaml gives a fresh directory.
+# which is what built-in/config.example.yaml gives a fresh directory.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"

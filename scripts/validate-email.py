@@ -12,9 +12,10 @@ for, and what it invents — a greeting, a closing word, a name — is exactly t
 part a sender does not re-read. So the set is scored in two halves and the
 restraint half is the one that decides a variant.
 
-`shipped` is read out of config.example.yaml rather than copied into this file,
-so the number always describes the prompt the app actually installs. Candidate
-variants live below, with their scores, including the ones that lost.
+`shipped` is read out of built-in/config.example.yaml rather than copied into
+this file, so the number always describes the prompt the app actually installs.
+Candidate variants live below, with their scores, including the ones that
+lost.
 
 The request is the one LocalLLM.complete makes — /api/generate, thinking off,
 temperature 0 — and `clean` is a port of PromptRunner.clean. A pipeline prompt
@@ -31,12 +32,12 @@ except ImportError:
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CASES = ROOT / "built-in" / "transforms" / "email" / "cases.yaml"
-EXAMPLE_CONFIG = ROOT / "config.example.yaml"
+EXAMPLE_CONFIG = ROOT / "built-in/config.example.yaml"
 
 # --- prompt variants -------------------------------------------------------
 #
 # Each is a candidate `prompt:` body for the `email` transform. `shipped` is
-# not here on purpose — it is read from config.example.yaml.
+# not here on purpose — it is read from built-in/config.example.yaml.
 
 VARIANTS = {}
 
@@ -240,12 +241,12 @@ def ask(model, system, user, budget, endpoint="http://localhost:11434"):
 
 
 def shipped_prompt():
-    """The `email` transform as config.example.yaml installs it."""
+    """The `email` transform as built-in/config.example.yaml installs it."""
     config = yaml.safe_load(EXAMPLE_CONFIG.read_text())
     for transform in config.get("transforms", []):
         if transform.get("name") == "email":
             return transform["prompt"]
-    sys.exit("no `email` transform in config.example.yaml")
+    sys.exit("no `email` transform in built-in/config.example.yaml")
 
 
 # --- scoring ---------------------------------------------------------------

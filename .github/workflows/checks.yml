@@ -289,8 +289,8 @@ jobs:
         run: scripts/check-landing.sh
 
       # Not a validation set: it checks that the file a new install is written
-      # with still teaches everything config.example.yaml documents. That has
-      # drifted twice, both times silently.
+      # with still teaches everything built-in/config.example.yaml documents.
+      # That has drifted twice, both times silently.
       - name: The config a new install gets
         run: scripts/check-default-config.sh
 
