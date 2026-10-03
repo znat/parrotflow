@@ -62,8 +62,8 @@ repository:
   allow_merge_commit: false
   allow_rebase_merge: false
 
-  # COMMIT_OR_PR_TITLE is the whole reason .githooks/commit-msg is worth
-  # running. Read the comment at the top of .github/workflows/pr-title.yml: a
+  # COMMIT_OR_PR_TITLE is the whole reason scripts/githooks/commit-msg is
+  # worth running. Read the comment at the top of .github/workflows/pr-title.yml: a
   # single-commit pull request squashes to that commit's subject, which the
   # hook already checked on the contributor's machine, and only the
   # multi-commit case falls through to the workflow. Set this to PR_TITLE and

@@ -284,7 +284,7 @@ The failure mode of this arrangement is silence. release-please reads the
 bump and no changelog entry — and nothing anywhere reports that it was skipped.
 The workflow runs green in 24 seconds and no release exists. That is how this
 repository reached fifteen commits and zero tags with the pipeline fully wired
-and working exactly as configured. `.githooks/commit-msg`, installed by
+and working exactly as configured. `scripts/githooks/commit-msg`, installed by
 `make hooks`, is the only thing that makes the omission visible, and it has to
 be visible at commit time because afterwards nothing looks wrong.
 

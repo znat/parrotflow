@@ -26,8 +26,8 @@ script prints what it cannot read as skipped and carries on.
 Two settings there are load-bearing, and both are invisible once set.
 
 **`squash_merge_commit_title: COMMIT_OR_PR_TITLE`** is what makes
-`.githooks/commit-msg` worth running. A single-commit pull request squashes to
-that commit's subject, which the hook already checked. Switch it to
+`scripts/githooks/commit-msg` worth running. A single-commit pull request
+squashes to that commit's subject, which the hook already checked. Switch it to
 `PR_TITLE` and every squash takes the title instead, so the hook stops
 protecting anything. The comment at the top of
 [`.github/workflows/pr-title.yml`](../.github/workflows/pr-title.yml) is the

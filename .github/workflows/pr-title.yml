@@ -1,6 +1,6 @@
 name: pr-title
 
-# The other half of .githooks/commit-msg, which cannot see this.
+# The other half of scripts/githooks/commit-msg, which cannot see this.
 #
 # A pull request merged in the browser takes its subject from the pull request
 # title, and the hook runs on your own machine at `git commit`. So a squash

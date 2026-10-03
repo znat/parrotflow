@@ -119,10 +119,10 @@ test:
 	if [ -n "$$failed" ]; then printf '\nFailed:%s\n' "$$failed"; exit 1; fi; \
 	printf '\nEvery check passed.\n'
 
-## Point git at .githooks, so commit subjects are checked before they land.
-## Once per clone: hooks are not cloned with the repository.
+## Point git at scripts/githooks, so commit subjects are checked before they
+## land. Once per clone: hooks are not cloned with the repository.
 hooks:
-	@git config core.hooksPath .githooks
+	@git config core.hooksPath scripts/githooks
 	@echo "==> Commit subjects are now checked against Conventional Commits."
 
 .PHONY: repo-settings
