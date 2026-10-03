@@ -123,7 +123,7 @@ enum ParsingInstall {
             .deletingLastPathComponent()  // ParsingInstall.swift -> Sources/ParrotFlow/
             .deletingLastPathComponent()  // -> Sources/
             .deletingLastPathComponent()  // -> repo root
-            .appendingPathComponent("data/parsing-requirements.txt")
+            .appendingPathComponent("built-in/data/parsing-requirements.txt")
     }
 
     /// What is missing, in the order it has to be installed.

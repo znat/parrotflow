@@ -3,7 +3,8 @@
 # Two lists decide, and both have to say "unknown" — `Vocabulary.autoApplies`.
 # `spell` is `Replacements.isRealWord`: NSSpellChecker, `en` then `fr`.
 # `wordpiece` is `WordPieces.knows`: the whole-word half of
-# distilbert-base-uncased's tokenizer vocabulary, in data/wordpiece.txt.
+# distilbert-base-uncased's tokenizer vocabulary, in
+# built-in/data/wordpiece.txt.
 #
 #   gate: open       something reads the sentence before the word is replaced
 #   gate: auto-apply  the word is replaced, and nothing reads the sentence
@@ -32,8 +33,8 @@
 cases:
 
   # --- names the dictionary has never heard of, which the tokenizer has ------
-  # These auto-applied before data/wordpiece.txt. "Um not Peter, uh Frederick."
-  # became "…uh Redrock." with nothing reading the sentence.
+  # These auto-applied before built-in/data/wordpiece.txt. "Um not Peter, uh
+  # Frederick." became "…uh Redrock." with nothing reading the sentence.
 
   - word: Frederick
     spell: unknown

@@ -146,10 +146,10 @@ nothing reading the sentence — `--word-gate Frederick` prints `open`,
 `--word-gate Versal` prints `auto-apply`. Two word lists decide and both have
 to say they have never seen the word: `NSSpellChecker`, which has no first
 names in it, and the whole-word half of a tokenizer vocabulary
-(`data/wordpiece.txt`), which has no rare compounds in it. Both verdicts are
-printed, because a word reaches `open` from either side. `open` is the route
-label for "this gate does not settle it"; nothing is asked, and a place nothing
-settles keeps what arrived. No model runs — it is a set lookup.
+(`built-in/data/wordpiece.txt`), which has no rare compounds in it. Both
+verdicts are printed, because a word reaches `open` from either side. `open` is
+the route label for "this gate does not settle it"; nothing is asked, and a
+place nothing settles keeps what arrived. No model runs — it is a set lookup.
 
 Name the term as well and the whole gate answers about that pair —
 `--word-gate "Mirza's" Mirza` prints `possessive dropped` and `open`. One
