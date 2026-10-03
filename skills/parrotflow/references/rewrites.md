@@ -175,7 +175,7 @@ Add `offer:` and `key:` to the transform's existing entry. Keep its body.
 ### Out loud
 
 Every transform with a `description:` can be reached by "hey parrot, …". See
-`spoken-commands.md`. `say: [tidy up, clean it]` adds words the tap-then-hold
+`spoken-commands.md`. `say: [tidy up, clean it]` adds words the open-panel hold
 path matches.
 
 ## Order

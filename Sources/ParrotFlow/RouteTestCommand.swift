@@ -7,11 +7,11 @@ import Foundation
 /// what happens, which conflates "routed wrong" with "the prompt is bad". This
 /// separates them, and it is what `scripts/check-routing.sh` drives.
 ///
-/// `--keyed` scores the other path — tap-and-hold, where a key said this was
-/// an instruction. There is no model router at all: a name anywhere in the
-/// sentence wins, and everything else is the catch-all. It answers a different
-/// question from the default, so it has a set of its own —
-/// `scripts/check-keyed.sh`.
+/// `--keyed` scores the other path — a hold on the open panel, where a key
+/// said this was an instruction. There is no model router at all: a name
+/// anywhere in the sentence wins, and everything else is the catch-all. It
+/// answers a different question from the default, so it has a set of its
+/// own — `scripts/check-keyed.sh`.
 enum RouteTestCommand {
 
     static func run(text: String, quiet: Bool = false, keyed: Bool = false) -> Int32 {

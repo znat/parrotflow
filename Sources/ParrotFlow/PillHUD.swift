@@ -45,10 +45,10 @@ enum PillState: Equatable {
     /// The mic is hot. Width depends on whether there is an app icon to show.
     ///
     /// The label is what this recording is *for*, and it is nil for the one
-    /// that needs no explaining: dictation. Tap-then-hold sets it, because a
-    /// hold that routes what you say instead of writing it down looks exactly
-    /// like one that writes it down, and the difference has to be readable
-    /// before you speak rather than after.
+    /// that needs no explaining: dictation. A hold on the open panel sets it,
+    /// because a hold that routes what you say instead of writing it down
+    /// looks exactly like one that writes it down, and the difference has to
+    /// be readable before you speak rather than after.
     case recording(String?)
     /// Work of no predictable length — decoding, a prompt, a download.
     case working(String)
@@ -661,6 +661,16 @@ final class PillHUD {
 
     /// Whether what is on screen is an offer, and whether it is unfolded.
     var isOpen: Bool { offerIsOpen }
+    private var openedAt: Date?
+
+    /// Whether the panel had finished unfolding by `time`.
+    ///
+    /// `isOpen` turns true when the morph starts. A press made during those
+    /// `motion` seconds was aimed at a pill that was still growing.
+    func wasFullyOpen(at time: Date) -> Bool {
+        guard offerIsOpen, let openedAt else { return false }
+        return time.timeIntervalSince(openedAt) >= Self.motion
+    }
     private var offerIsOpen: Bool {
         if case .offer(_, _, _, let open) = model.state { return open }
         return false
@@ -828,6 +838,11 @@ final class PillHUD {
     /// The first state fades in. Every state after it morphs, because by then
     /// there is already a pill there and the user is looking at it.
     func set(_ state: PillState, for duration: TimeInterval? = nil) {
+        if case .offer(_, _, _, true) = state {
+            if !offerIsOpen { openedAt = Date() }
+        } else {
+            openedAt = nil
+        }
         pendingHide?.cancel(); pendingHide = nil
         pendingDismiss?.cancel(); pendingDismiss = nil
         stopAlertClock()

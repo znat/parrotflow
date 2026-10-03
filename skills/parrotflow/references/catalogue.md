@@ -9,7 +9,7 @@ in the last column.
 | Area | What it does | Key | Cost | Default | A user might ask | More |
 |---|---|---|---|---|---|---|
 | Hotkey | The key held (or tapped) to dictate | `hotkey.key`, `hotkey.mode` | none | right ⌘, hold to talk | "Use F5 and toggle" | settings |
-| Tap gestures | Tap brings the pill back; tap then hold speaks an edit | `hotkey.press_delay_seconds` | none | on for bare modifiers | "How do I edit what I just said?" | settings |
+| Tap gestures | Tap brings the pill back; tap, wait for the panel, then hold to speak an edit | `hotkey.press_delay_seconds` | none | on for bare modifiers | "How do I edit what I just said?" | settings |
 | Microphone | Which mic records, best first | `audio.microphones` | none | the system input | "Always use my desk mic" | settings |
 | Languages | Which languages it detects between | `transcription.languages` | none | `[en, fr]` | "I only speak English" | settings |
 | Where text goes | Paste into the app, or copy only | `transcription.insert_mode` | none | paste | "Just put it on my clipboard" | settings |

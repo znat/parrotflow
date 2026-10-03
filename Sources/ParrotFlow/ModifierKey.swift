@@ -153,11 +153,9 @@ enum ModifierKey: String, CaseIterable {
 /// watch falls back to its modifier half there. Left as is: a modifier held
 /// alone is not what happens while somebody is typing a password.
 final class ModifierKeyMonitor {
-    /// The key is being held. `afterTap` is a hold that a tap led straight
-    /// into — tap, release, press again — which is a different request from a
-    /// plain hold and is delivered here rather than through a callback of its
-    /// own, so no caller can wire one and forget the other.
-    var onPress: ((_ afterTap: Bool) -> Void)?
+    /// The key is being held. `downAt` is when it physically went down, which
+    /// is `pressDelay` and up to one poll before this call.
+    var onPress: ((_ downAt: Date) -> Void)?
     var onRelease: (() -> Void)?
     /// A press that was already delivered turned out to be a shortcut. Whoever
     /// started a dictation on `onPress` has to drop it, silently: the user
@@ -172,8 +170,8 @@ final class ModifierKeyMonitor {
     /// untouched, because a hold is still delivered on its own timing.
     ///
     /// It costs the tap `tapGrace`. A tap is held back that long to see whether
-    /// a hold follows it, because tap-then-hold has to be told from a tap and
-    /// the only difference is what happens next. Nothing waits on a pill, so
+    /// a press follows it, because a double press has to be told from a tap
+    /// and the only difference is what happens next. Nothing waits on a pill, so
     /// this is the cheap side of the trade.
     ///
     /// Never fires at `pressDelay` of 0 — there the press goes out on the down
@@ -194,15 +192,17 @@ final class ModifierKeyMonitor {
     /// falls outside a 0.4 s window and starts an ordinary dictation. The
     /// poll's lag must not decide which gesture somebody made.
     private var tappedAt: Date?
-    /// This hold began inside `tapGrace` of a tap, so it is tap-then-hold.
+    /// This hold began inside `tapGrace` of a tap. It is still a dictation,
+    /// but the tap before it summons nothing.
     private var afterTap = false
+    private var downAt: Date?
 
     /// How long a tap waits for a hold to follow it.
     ///
-    /// Long enough to release the key and press it again deliberately, short
-    /// enough that a tap meant on its own does not feel ignored. It buys the
-    /// two gestures a shared prefix: the tap says "me", and what happens inside
-    /// this window says what.
+    /// Long enough to catch a double press, short enough that a tap meant on
+    /// its own does not feel ignored. A press inside this window cancels the
+    /// tap: two quick presses are a stutter before a dictation, not a request
+    /// for the pill.
     static let tapGrace: TimeInterval = 0.4
 
     /// How old the modifier's own down edge can be and still be this press.
@@ -302,6 +302,7 @@ final class ModifierKeyMonitor {
         // pending timer is cancelled rather than delivered either way:
         // summoning the pill and then opening the microphone over it is two
         // answers to one request.
+        downAt = Self.physicalEdge()
         afterTap = pressIsTheTapsSecondHalf()
         tappedAt = nil
         tapTimer?.invalidate()
@@ -331,7 +332,7 @@ final class ModifierKeyMonitor {
     private func deliverPress() {
         guard isDown, !isSpent, !pressDelivered else { return }
         pressDelivered = true
-        onPress?(afterTap)
+        onPress?(downAt ?? Date())
     }
 
     private func finishHold() {
@@ -341,8 +342,8 @@ final class ModifierKeyMonitor {
         // the hold, so it can never be read as a tap.
         //
         // A tap that followed a tap is not a second tap. Two of them in a row
-        // is somebody who meant to tap-and-hold and let go too early, and
-        // summoning twice for it would be answering a gesture nobody made.
+        // is a stutter, and summoning for it would be answering a gesture
+        // nobody made.
         let wasTap = !wasPressed && !isSpent && !afterTap
         // Read before `endHold`, which clears it.
         let isSpent = self.isSpent
@@ -351,7 +352,7 @@ final class ModifierKeyMonitor {
         guard wasTap else {
             // A key that went down and up and was neither a dictation nor a
             // tap. Both reasons are ordinary — a shortcut, or the second half
-            // of a tap-and-hold — and both look from outside like a press that
+            // of a double press — and both look from outside like a press that
             // did nothing, so the log has to be able to tell them apart.
             Log.write(
                 "key: neither press nor tap — "
@@ -365,9 +366,9 @@ final class ModifierKeyMonitor {
             self.tapTimer = nil
             // A press the poll has not caught up with can already own this
             // gesture. `beginHold` will classify it from the physical edges as
-            // tap-and-hold, and summoning the offer here as well would answer
-            // one gesture twice — the pill arriving and then the microphone
-            // opening over it.
+            // the tap's second half, and summoning the offer here as well would
+            // answer one gesture twice — the pill arriving and then the
+            // microphone opening over it.
             //
             // Both halves of the test matter. A key that is down but whose
             // press landed outside the window is an ordinary dictation, and the
@@ -375,7 +376,7 @@ final class ModifierKeyMonitor {
             // rather than of `isDown`, which is the poll's view and is exactly
             // what has not caught up yet.
             guard self.key?.isPressed != true || !self.pressIsTheTapsSecondHalf() else {
-                Log.write("key: the tap is the first half of a tap-and-hold")
+                Log.write("key: the tap is the first half of a double press")
                 return
             }
             self.onTap?()

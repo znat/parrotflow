@@ -49,10 +49,9 @@ final class HotKeyManager {
         }
     }
 
-    /// The key is being held. `afterTap` says a tap led straight into this
-    /// hold — see `ModifierKeyMonitor.onPress`. Always false on the Carbon
-    /// path, which has no tap to lead with.
-    var onPress: ((_ afterTap: Bool) -> Void)?
+    /// The key is being held. `downAt` is when it physically went down — see
+    /// `ModifierKeyMonitor.onPress`.
+    var onPress: ((_ downAt: Date) -> Void)?
     var onRelease: (() -> Void)?
     /// A press already delivered turned out to be part of a shortcut — see
     /// `ModifierKeyMonitor`. Never fires on the Carbon path: a combo is
@@ -73,7 +72,7 @@ final class HotKeyManager {
     private let signature: OSType = 0x50_46_4C_57  // 'PFLW'
 
     init() {
-        modifierMonitor.onPress = { [weak self] afterTap in self?.onPress?(afterTap) }
+        modifierMonitor.onPress = { [weak self] downAt in self?.onPress?(downAt) }
         modifierMonitor.onRelease = { [weak self] in self?.onRelease?() }
         modifierMonitor.onAbort = { [weak self] in self?.onAbort?() }
         modifierMonitor.onTap = { [weak self] in self?.onTap?() }
@@ -154,9 +153,10 @@ final class HotKeyManager {
                 guard let event, let userData else { return noErr }
                 let manager = Unmanaged<HotKeyManager>.fromOpaque(userData).takeUnretainedValue()
                 let kind = GetEventKind(event)
+                let downAt = Date()
                 DispatchQueue.main.async {
                     if kind == UInt32(kEventHotKeyPressed) {
-                        manager.onPress?(false)
+                        manager.onPress?(downAt)
                     } else if kind == UInt32(kEventHotKeyReleased) {
                         manager.onRelease?()
                     }

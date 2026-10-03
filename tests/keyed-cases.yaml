@@ -1,4 +1,5 @@
-# The keyed path: tap-and-hold, where a key said this was an instruction.
+# The keyed path: a hold on the open panel, where a key said this was an
+# instruction.
 #
 # Run with scripts/check-keyed.sh, which supplies its own catalogue — see
 # below. Unlike tests/routing-cases.yaml this needs no model and takes no time:

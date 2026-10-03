@@ -3,7 +3,7 @@
 When a user says "hey parrot, ..." or holds the key for an instruction, the app
 picks which transform the instruction reaches. `--route "<what you'd say>"`
 prints that choice without running the transform. `--keyed` scores the
-tap-and-hold path, which has no model: a transform named anywhere in the
+open-panel hold path, which has no model: a transform named anywhere in the
 sentence wins. Anything else goes to the catch-all `ANY`, or to `NONE` when
 the config turns the catch-all off (`commands.catch_all`).
 
@@ -16,7 +16,7 @@ the config turns the catch-all off (`commands.catch_all`).
 ## How to get to it (user POV)
 
 - Live: say "hey parrot, make that a bullet list" while holding the hotkey, or
-  tap-and-hold the hotkey and speak an instruction.
+  tap the hotkey, wait for the panel to open, then hold and speak an instruction.
 - From a terminal: `.build/release/ParrotFlow --route "<text>" [--keyed] [--quiet]`.
 - `scripts/check-keyed.sh` scores `--keyed` over `tests/keyed-cases.yaml`.
   `scripts/check-routing.sh` scores the model path, a round trip per case.
