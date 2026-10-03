@@ -153,7 +153,8 @@ final class HotKeyManager {
                 guard let event, let userData else { return noErr }
                 let manager = Unmanaged<HotKeyManager>.fromOpaque(userData).takeUnretainedValue()
                 let kind = GetEventKind(event)
-                let downAt = Date()
+                let age = GetCurrentEventTime() - GetEventTime(event)
+                let downAt = (0..<1).contains(age) ? Date().addingTimeInterval(-age) : Date()
                 DispatchQueue.main.async {
                     if kind == UInt32(kEventHotKeyPressed) {
                         manager.onPress?(downAt)

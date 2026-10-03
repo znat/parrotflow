@@ -497,6 +497,9 @@ final class PillHUD {
     /// which are two animations that have to look like one. They are only ever
     /// going to agree if they read the same constant.
     static let motion: TimeInterval = 0.18
+    private static var frameMotion: TimeInterval {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : motion
+    }
 
     // MARK: - The states
 
@@ -665,11 +668,11 @@ final class PillHUD {
 
     /// Whether the panel had finished unfolding by `time`.
     ///
-    /// `isOpen` turns true when the morph starts. A press made during those
-    /// `motion` seconds was aimed at a pill that was still growing.
+    /// `isOpen` turns true when the morph starts. A press made during the
+    /// morph was aimed at a pill that was still growing.
     func wasFullyOpen(at time: Date) -> Bool {
         guard offerIsOpen, let openedAt else { return false }
-        return time.timeIntervalSince(openedAt) >= Self.motion
+        return time.timeIntervalSince(openedAt) >= Self.frameMotion
     }
     private var offerIsOpen: Bool {
         if case .offer(_, _, _, let open) = model.state { return open }
@@ -1007,8 +1010,7 @@ final class PillHUD {
 
         isFading = true
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-                ? 0 : Self.motion
+            context.duration = Self.frameMotion
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
@@ -1047,8 +1049,7 @@ final class PillHUD {
         defer { logFrame("moved") }
 
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-                ? 0 : Self.motion
+            context.duration = Self.frameMotion
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             panel.animator().setFrame(frame, display: true)
         }
