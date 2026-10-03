@@ -16,4 +16,4 @@ change touches no prompt, table or pattern.
 
 - [ ] `make test` passes.
 - [ ] A prompt or pattern change is scored, and the numbers are above.
-- [ ] Every commit is signed off — `git commit -s`. See [CONTRIBUTING.md](https://github.com/znat/parrotflow/blob/main/.github/CONTRIBUTING.md).
+- [ ] Every commit is signed off — `git commit -s`. See [the contributing guide](https://github.com/znat/parrotflow/blob/main/.github/CONTRIBUTING.md).

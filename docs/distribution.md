@@ -274,7 +274,7 @@ would only produce an asset nobody can install.
 The version lands in `Info.plist` through release-please's `extra-files`
 annotation, so the bundle version and the tag cannot drift apart.
 
-The config, the manifest and `version.txt` live in `.github/`.
+The config, the manifest and the version file live in `.github/`.
 `release.yml` passes the first two as `config-file` and `manifest-file`. The
 config names the third as `version-file`. A wrong `version-file` path is
 skipped without an error, so check the release PR bumps `.github/version.txt`.

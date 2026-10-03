@@ -130,7 +130,7 @@ topics:
   - mlx # 2152
 
 # .github/SECURITY.md sends people to the advisory form. That form only
-# exists when this is on, so the link in SECURITY.md is dead without it.
+# exists when this is on, so the link in that file is dead without it.
 private_vulnerability_reporting: true
 
 # The bug form applies `bug` — see the `labels:` line in
