@@ -3,6 +3,7 @@
   "packages": {
     ".": {
       "release-type": "simple",
+      "version-file": ".github/version.txt",
       "package-name": "parrotflow",
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false,

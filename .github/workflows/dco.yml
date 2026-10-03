@@ -1,7 +1,7 @@
 name: dco
 
 # Every commit has to carry a Signed-off-by line matching its author. That line
-# is the contributor certifying the DCO in the repository root: the code is
+# is the contributor certifying the DCO in .github/DCO: the code is
 # theirs to give, under this project's license. It is one line at commit time
 # (`git commit -s`) and the only record of origin the project keeps.
 on:
@@ -85,8 +85,8 @@ jobs:
             cat missing.txt
             cat <<'EOF'
 
-          The sign-off certifies the DCO in the repository root — that the code
-          is yours to give, under this project's license. See CONTRIBUTING.md.
+          The sign-off certifies the DCO in .github/DCO — that the code
+          is yours to give, under this project's license. See .github/CONTRIBUTING.md.
 
           On the next commits:
 

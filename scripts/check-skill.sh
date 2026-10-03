@@ -227,12 +227,12 @@ done
 
 # --- 5. the version --------------------------------------------------------------
 
-release="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["."])' "$ROOT/.release-please-manifest.json")"
+release="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["."])' "$ROOT/.github/.release-please-manifest.json")"
 check "metadata.app_version is the released version" "$(value skill_version)" "$release"
 check "and carries the release-please marker" \
   "$(grep -c '^  app_version: .*x-release-please-version' "$SKILL/SKILL.md")" "1"
 check "release-please rewrites SKILL.md" \
-  "$(grep -c '"skills/parrotflow/SKILL.md"' "$ROOT/release-please-config.json")" "1"
+  "$(grep -c '"skills/parrotflow/SKILL.md"' "$ROOT/.github/release-please-config.json")" "1"
 
 # --- 6. references ----------------------------------------------------------------
 

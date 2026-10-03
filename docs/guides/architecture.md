@@ -84,4 +84,4 @@ insertion behavior, and timing measurements. The
 [development guide](../development.md) explains how to build a separate dev app
 without replacing the release you use.
 
-[Contribute](../../CONTRIBUTING.md) · [All guides](../README.md)
+[Contribute](../../.github/CONTRIBUTING.md) · [All guides](../README.md)

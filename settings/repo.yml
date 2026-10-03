@@ -128,8 +128,8 @@ topics:
   # `gemma4:e4b-mlx`. That is the whole claim; drop the topic if it changes.
   - mlx # 2152
 
-# SECURITY.md sends people to the advisory form. That form only exists when
-# this is on, so the link in SECURITY.md is dead without it.
+# .github/SECURITY.md sends people to the advisory form. That form only
+# exists when this is on, so the link in SECURITY.md is dead without it.
 private_vulnerability_reporting: true
 
 # The bug form applies `bug` — see the `labels:` line in

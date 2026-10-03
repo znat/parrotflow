@@ -8,10 +8,10 @@ ship.
 
 | You want to… | Start here |
 | --- | --- |
-| Share a replacement, script, or prompt | [Build a transform](docs/guides/transforms.md) |
-| Fix or extend the native app | [Development setup](docs/development.md) |
-| Understand where a behavior lives | [Architecture guide](docs/guides/architecture.md) |
-| Work with a coding agent | [Agent instructions](AGENTS.md) |
+| Share a replacement, script, or prompt | [Build a transform](../docs/guides/transforms.md) |
+| Fix or extend the native app | [Development setup](../docs/development.md) |
+| Understand where a behavior lives | [Architecture guide](../docs/guides/architecture.md) |
+| Work with a coding agent | [Agent instructions](../AGENTS.md) |
 | Ask about a workflow before implementing it | [Discussions](https://github.com/znat/parrotflow/discussions) |
 
 A transform with a focused case set makes a useful first contribution. Keep
@@ -36,7 +36,7 @@ make test
 password. It helps permission grants survive rebuilds. `make install` builds
 and installs the dev app; grant that app's permissions separately.
 
-Read [the development guide](docs/development.md) before using reset or
+Read [the development guide](../docs/development.md) before using reset or
 fresh-setup commands. They are not routine prerequisites.
 
 ## Test the behavior you changed
@@ -52,7 +52,7 @@ script errors, and timeouts: a failure must preserve the transcript.
 For UI changes, show the relevant states and transitions. For a bug fix, include
 a reproduction and a regression check where practical.
 
-[Authoring and evaluation procedure](docs/authoring.md) · [CLI guide](docs/guides/cli.md)
+[Authoring and evaluation procedure](../docs/authoring.md) · [CLI guide](../docs/guides/cli.md)
 
 ## Prepare the pull request
 
@@ -77,7 +77,7 @@ git commit -s -m "fix: describe the behavior being corrected"
 ```
 
 The sign-off certifies the [Developer Certificate of Origin](DCO). Contributions
-are made under the project's [GPL-3.0 license](LICENSE). The local hooks and PR
+are made under the project's [GPL-3.0 license](../LICENSE). The local hooks and PR
 checks enforce the commit conventions.
 
 ## Not ready to send code?
@@ -86,4 +86,4 @@ A minimal reproduction, a clearer guide, or a realistic keep case for a
 transform is useful work too. Use [Discussions](https://github.com/znat/parrotflow/discussions)
 for questions that are not bug reports.
 
-[Back to the documentation](docs/README.md)
+[Back to the documentation](../docs/README.md)

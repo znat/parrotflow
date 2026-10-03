@@ -5,7 +5,7 @@
 # Run by the release workflow after release-please cuts a tag, and by hand when
 # you want to see exactly what a user will download.
 #
-#   scripts/release.sh            # version from version.txt
+#   scripts/release.sh            # version from .github/version.txt
 #   scripts/release.sh 0.2.0      # explicit
 #
 # The archive is made with ditto rather than zip: a .app is a bundle, and zip
@@ -28,7 +28,7 @@ export VARIANT=release
 APP="$ROOT/.build/$APP_NAME.app"
 DIST="$ROOT/dist"
 
-VERSION="${1:-$(tr -d '[:space:]' < "$ROOT/version.txt")}"
+VERSION="${1:-$(tr -d '[:space:]' < "$ROOT/.github/version.txt")}"
 VERSION="${VERSION#v}"
 
 # A release wants the Developer ID: it is what Gatekeeper accepts and what
@@ -68,7 +68,7 @@ export CODESIGN_IDENTITY
 echo "==> Releasing $DISPLAY_NAME $VERSION"
 CONFIGURATION=release "$ROOT/scripts/build-app.sh"
 
-# Stamp the version in, so a hand-run build cannot disagree with version.txt.
+# Stamp the version in, so a hand-run build cannot disagree with .github/version.txt.
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
 

@@ -32,7 +32,7 @@ enabling it in everyday dictation.
 The development app has its own identity and configuration so you can keep
 using the release while changing the source.
 
-[Build the dev app](development.md) · [Contribute a change](../CONTRIBUTING.md) ·
+[Build the dev app](development.md) · [Contribute a change](../.github/CONTRIBUTING.md) ·
 [Ask a question](https://github.com/znat/parrotflow/discussions)
 
 ## Technical references
