@@ -3,8 +3,8 @@
 #
 #   scripts/check-keyed.sh
 #
-# Tap-and-hold: a key said this was an instruction, so there is no router in
-# the path. A name anywhere in the sentence wins; everything else is the
+# A hold on the open panel: a key said this was an instruction, so there is no
+# router in the path. A name anywhere in the sentence wins; everything else is the
 # catch-all. That is the whole decision, and it costs no model call — this runs
 # in under a second, unlike check-routing.sh, which is a round trip per case.
 #

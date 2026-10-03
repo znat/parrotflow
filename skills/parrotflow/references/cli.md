@@ -37,7 +37,7 @@ is in front. Without it, a step with an `app:` condition never runs. An empty
 
 ```sh
 "$PF" --route "hey parrot, make that a list"     # which transform a spoken command reaches
-"$PF" --route "use slack mentions" --keyed       # the tap-then-hold path, no model
+"$PF" --route "use slack mentions" --keyed       # the open-panel hold path, no model
 "$PF" --prompt <name> "<instruction>" "<text>"   # one prompt transform from the config
 ```
 

@@ -213,7 +213,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// would be delivered with the terminal's answer, and the reverse puts
         /// markup in front of an app that shows the tags.
         let paste: AppProfile.Paste
-        /// Tap-then-hold: a key said this would be an instruction, not text.
+        /// A hold on the open panel: a key said this would be an instruction,
+        /// not text.
         ///
         /// Decided at the press because that is where the gesture is known, and
         /// carried here for the same reason everything else is — a second press
@@ -252,7 +253,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ownership `offerPressRun` already asserts, carrying what it is about.
     private var offeredCorrection: (run: Int, target: Correction)?
 
-    /// The current press was tap-then-hold, so its words are an instruction.
+    /// The current press was a hold on the open panel, so its words are an
+    /// instruction.
     private var keyedAtPress = false
 
     /// Watches for the last dictation being selected again — see
@@ -984,7 +986,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { [weak self] in self?.askForMissingKeys() }
 
         hotkeyError = nil
-        hotKeys.onPress = { [weak self] afterTap in self?.handleHotKeyPress(afterTap: afterTap) }
+        hotKeys.onPress = { [weak self] downAt in self?.handleHotKeyPress(downAt: downAt) }
         hotKeys.onRelease = { [weak self] in self?.handleHotKeyRelease() }
         hotKeys.onAbort = { [weak self] in self?.cancelDictation(.notTheHotkey) }
         hotKeys.onTap = { [weak self] in self?.summonOffer() }
@@ -1298,7 +1300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Hotkey handling
 
-    private func handleHotKeyPress(afterTap: Bool = false) {
+    private func handleHotKeyPress(downAt: Date = Date()) {
         // First, before the selection snapshot and the caret read below. Those
         // run between the key going down and the microphone opening, and this
         // is the only measurement that can say what they cost the speaker.
@@ -1321,6 +1323,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the gesture, and holding after a sentence lands is how the next one
         // gets said — so a tab must never turn the next hold into an edit.
         //
+        // Nor is a panel still unfolding. Two quick presses are a stutter
+        // before a dictation, so the panel must be fully open when the key
+        // goes down.
+        //
         // This used to read `offerHeadline?.isSelection`, because the row was
         // drawn over a selection and nowhere else. The row is on every panel
         // now, and the rule has to be the one the pill is drawing or the two
@@ -1328,9 +1334,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // a selection honoured it, so holding after an ordinary dictation
         // started another dictation instead of taking an instruction.
         //
-        // `pill.isOpen` is that rule exactly. The row lives inside the panel,
-        // so it is visible precisely when the panel is open, and the promise
-        // and the behaviour cannot come apart again.
+        // `pill.isOpen` is that rule. The row lives inside the panel, so it is
+        // visible precisely when the panel is open, and the promise and the
+        // behaviour cannot come apart again.
         if !recorder.isRecording {
             // The selector is the one open panel that does not draw that row
             // — `PillMetrics.showsHold` refuses it — so a panel asking which
@@ -1338,18 +1344,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // the next hold as an instruction. Named here rather than asked of
             // `showsHold`, which also refuses a pill with no key registered:
             // that is a different case and not this PR's to change.
-            var promisesHold = pill.isOpen
+            var promisesHold = offerIsUp && pill.isOpen
             if case .choose = offerHeadline { promisesHold = false }
-            keyedAtPress = afterTap || (offerIsUp && promisesHold)
-            // Only when it is on, and it says which of the two put it there.
+            keyedAtPress = promisesHold && pill.wasFullyOpen(at: downAt)
             // This is the one decision at the press you cannot see from
             // outside: the same key, the same meter, and the words routed
             // instead of written down. A hold taken as an edit when you meant
             // to dictate left nothing in the log to name the reason.
             if keyedAtPress {
-                Log.write(
-                    "hold: an edit instruction — \(afterTap ? "the tap before it" : "the open panel")"
-                )
+                Log.write("hold: an edit instruction — the open panel")
+            } else if promisesHold {
+                Log.write("hold: a dictation — the panel was still opening")
             }
         }
         // Read before anything this press does, so an abort later can tell the
@@ -2632,7 +2637,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///   an edit at all". A key has already answered it. What is left is
     ///   "which tool", which the name match answers for free or the catch-all
     ///   answers by taking the whole instruction as its specification.
-    /// - **The preview.** Tap-then-hold has already named its target on the
+    /// - **The preview.** The open panel has already named its target on the
     ///   pill and offered ⎋ for the whole time you were speaking, and "hey
     ///   parrot, undo" puts the substitution back afterwards — so a preview is
     ///   a question that was answered twice before it was asked. It reaches
@@ -3077,7 +3082,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // `confirm: false` overrides the transform's own setting, the way the
         // offer's chips already do. A preview is for a command whose target you
-        // could have got wrong; tap-then-hold has already shown you the target
+        // could have got wrong; the open panel has already shown you the target
         // on the pill and given you ⎋ to take it back, and the undo phrase
         // survives the rewrite. Asking again after all that is a second answer
         // to a question already answered.
@@ -4532,7 +4537,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // offer's selection headline makes, and the same highlight draws it.
         //
         // A selection first, because it is what you are pointing at now. Then
-        // the last dictation, which is what a tap-then-hold with nothing
+        // the last dictation, which is what a hold on the panel with nothing
         // selected is about. The old phrase survives as the fallback for
         // neither, where there is nothing to show and the gesture still needs
         // saying.

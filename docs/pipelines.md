@@ -641,7 +641,7 @@ A name is written for a config file. Nobody says an underscore, and nobody
 calls a script `code_identifiers` when asking for it. `say:` is the words you
 would actually use, and one string is as good as a list.
 
-Only the tap-and-hold path reads them, and there it decides whether a tool is
+Only a hold on the open panel reads them, and there it decides whether a tool is
 reachable at all. That path has no router: a name anywhere in what you said
 wins, and everything else goes to the catch-all. The catch-all is a prompt, so
 it can stand in for another prompt and for nothing else — a script or a

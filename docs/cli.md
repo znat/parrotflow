@@ -321,8 +321,8 @@ $PF --picked <word> <term> --in "<sentence>" [--dry]
 matches your words against each transform's `description`, so this is how you
 find out that a description is too vague before a user does.
 
-`--route "…" --keyed` scores the other path: tap-and-hold, where a key said
-this was an instruction and there is no router at all. A name anywhere in the
+`--route "…" --keyed` scores the other path: a hold on the open panel, where a
+key said this was an instruction and there is no router at all. A name anywhere in the
 sentence wins, `say:` aliases included; everything else is `ANY`. No model, so
 it answers instantly. `scripts/check-keyed.sh` drives it against
 `tests/keyed-cases.yaml`, which supplies its own catalogue.

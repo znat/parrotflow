@@ -267,18 +267,19 @@ One key, three lengths. The tap means "me"; what you do next says what.
 |---|---|
 | **Hold** | Dictate. Unchanged. |
 | **Tap** | The pill comes back, with its commands on it |
-| **Tap, then hold** | Speak an instruction — any command, not just the chips |
+| **Tap, then hold once the panel is open** | Speak an instruction — any command, not just the chips |
 
-A tap is a press shorter than `press_delay_seconds`. Tap and hold again within
-0.4s and the hold is the second half of one gesture rather than a dictation.
+A tap is a press shorter than `press_delay_seconds`. The pill comes 0.4s after
+the tap and takes 0.18s to unfold. Hold before it has fully opened and you get
+a new dictation, not an edit, so a double press by mistake still dictates.
 
 | What is selected | What the gesture is about |
 |---|---|
 | A selection, anywhere | Those words, and the pill appears under them |
 | Nothing | The last dictation, and the pill stays where it was |
 
-**Tap-then-hold speaks the whole catalogue.** The chips are a short list; what
-you say is routed the way `"hey parrot, …"` is routed, so it reaches every
+**A hold on the open panel speaks the whole catalogue.** The chips are a short
+list; what you say is routed the way `"hey parrot, …"` is routed, so it reaches every
 transform and the catch-all besides — with no phrase to remember, because the
 key already said it was an instruction. The pill says **editing the selection**
 or **say an edit** while you hold, and ⎋ cancels.

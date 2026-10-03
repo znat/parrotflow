@@ -926,10 +926,10 @@ enum PanelsCommand {
         let listeningQuiet = pill(.recording(nil), level: 0, docked: .below)
         let listening = pill(.recording(nil), level: 0.45, docked: .below)
         let listeningStrong = pill(.recording(nil), level: 0.9, docked: .below)
-        // Tap-then-hold: the words about to be edited, shown rather than
-        // described. On the sheet because the highlight has to read at 12pt on
-        // a 27pt tab, and because a long selection has to truncate rather than
-        // widen the surface past the words it is pointing at.
+        // A hold on the open panel: the words about to be edited, shown rather
+        // than described. On the sheet because the highlight has to read at
+        // 12pt on a 27pt tab, and because a long selection has to truncate
+        // rather than widen the surface past the words it is pointing at.
         let editing = pill(
             .recording("things that turned out not to matter"),
             icon: sampleIcon(), level: 0.4, docked: .below
