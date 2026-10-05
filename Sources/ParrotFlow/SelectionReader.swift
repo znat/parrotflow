@@ -15,7 +15,12 @@ import ApplicationServices
 enum SelectionReader {
 
     struct Selection {
+        /// As the field shows it. What a rewrite reads and the pill shows.
         let text: String
+        /// As the app reads it at `range`, which is what a write-back confirms.
+        /// Chromium leaves the break between two paragraphs out of it; see
+        /// `AppOffsets`.
+        let appText: String
         /// The app the text came from, so focus can be handed back.
         let owner: NSRunningApplication?
         /// The text element and the exact character range that was selected.
@@ -33,12 +38,24 @@ enum SelectionReader {
     static func snapshot() -> Selection? {
         guard Permissions.accessibility == .granted else { return nil }
         guard let element = focusedElement() else { return nil }
+        return selection(in: element)
+    }
+
+    static func selection(in element: AXUIElement) -> Selection? {
         guard let text = selectedText(of: element), !text.isEmpty else { return nil }
+        let range = selectedRange(of: element)
+        var shown = text
+        if let range, let value = visibleText(of: element, within: nil) {
+            shown = AppOffsets.shown(text, at: range.location, in: value) {
+                range.location == 0 ? "" : string(of: element, at: 0, length: range.location)
+            }
+        }
         return Selection(
-            text: text,
+            text: shown,
+            appText: text,
             owner: NSWorkspace.shared.frontmostApplication,
             element: element,
-            range: selectedRange(of: element)
+            range: range
         )
     }
 
@@ -52,6 +69,7 @@ enum SelectionReader {
         guard let element = focusedElement(failure: &failure) else { return nil }
         return Selection(
             text: "",
+            appText: "",
             owner: NSWorkspace.shared.frontmostApplication,
             element: element,
             range: nil
@@ -287,11 +305,11 @@ enum SelectionReader {
 
         if let text = viaAccessibility(), !text.isEmpty {
             Log.write("selection via accessibility")
-            return Selection(text: text, owner: owner)
+            return Selection(text: text, appText: text, owner: owner)
         }
         if let text = viaCopy(), !text.isEmpty {
             Log.write("selection via synthetic copy")
-            return Selection(text: text, owner: owner)
+            return Selection(text: text, appText: text, owner: owner)
         }
         // Last resort: whatever the user copied themselves. Terminals in
         // particular drop their selection before we can read it, so "select,
@@ -300,7 +318,7 @@ enum SelectionReader {
            let text = NSPasteboard.general.string(forType: .string),
            !text.isEmpty, text.count <= 200 {
             Log.write("selection via clipboard")
-            return Selection(text: text, owner: owner)
+            return Selection(text: text, appText: text, owner: owner)
         }
         return nil
     }

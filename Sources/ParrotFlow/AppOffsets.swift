@@ -55,6 +55,13 @@ enum AppOffsets {
     static func shown(
         _ selected: String, at location: Int, in value: String, before: () -> String?
     ) -> String {
-        selected
+        if let range = Range(NSRange(location: location, length: selected.utf16.count), in: value),
+           value[range] == selected {
+            return selected
+        }
+        guard let before = before(),
+              let range = valueRange(before: before, selected: selected, in: value)
+        else { return selected }
+        return String(value[range])
     }
 }

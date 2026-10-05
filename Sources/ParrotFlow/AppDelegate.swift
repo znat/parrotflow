@@ -3216,7 +3216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ?? selection.element.flatMap { SelectionReader.isOurs($0) ? nil : $0 }
         guard let element,
               let surface = Surface.read(
-                  element: element, app: selection.owner, dictated: selection.text
+                  element: element, app: selection.owner, dictated: selection.appText
               )
         else { return .notAttempted }
 
@@ -3233,7 +3233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let recorded = selection.range, let found = surface.target(
             app: NSRange(location: recorded.location, length: recorded.length),
-            holding: selection.text
+            holding: selection.appText
         ) {
             return written(surface.replace(found, with: text, describedAs: label))
         }
@@ -3244,10 +3244,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            let range = Range(
                NSRange(location: recorded.location, length: recorded.length),
                in: surface.content
-           ), surface.content[range] == selection.text {
+           ), surface.content[range] == selection.appText {
             target = range
         } else {
-            let matches = surface.ranges(of: selection.text)
+            let matches = surface.ranges(of: selection.appText)
             if matches.count == 1 {
                 Log.write("transform: the recorded range moved; found the selection by its text")
                 target = matches[0]
@@ -3267,7 +3267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard let target else {
-            Log.write("transform: \"\(selection.text.prefix(40))\" is no longer in the field")
+            Log.write("transform: \"\(selection.appText.prefix(40))\" is no longer in the field")
             return .notAttempted
         }
         return written(surface.replace(target, with: text, describedAs: label))
