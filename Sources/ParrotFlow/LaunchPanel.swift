@@ -162,12 +162,11 @@ final class LaunchPanel {
         apply(countdown)
     }
 
-    /// The ready line stays up for 30 seconds, and for as long as the pointer
-    /// is over the panel.
+    /// The ready line stays up for 30 seconds, for as long as the pointer is
+    /// over the panel, or until the cross closes it.
     ///
-    /// It says which key to hold and how to adapt the app, and the moment the
-    /// models land is not the moment somebody is looking. A hover is the sign
-    /// that somebody is, so it holds the panel while they read or copy.
+    /// The models land when nobody may be looking. A hover says somebody is,
+    /// so it holds the panel while they read or copy.
     func dismiss() {
         watch = nil
         disarm()
@@ -439,6 +438,11 @@ struct LaunchView: View {
                 countdownBar.clipShape(surfaceShape)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if model.moment == .ready {
+                LaunchClose(theme: theme, action: onHide).padding(10)
+            }
+        }
         .overlay {
             surfaceShape.strokeBorder(theme.edge, lineWidth: 1 / scale)
         }
@@ -664,6 +668,30 @@ private struct SkillCommandBlock: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(command, forType: .string)
         copiedAt = Date()
+    }
+}
+
+/// The way out of the ready line before its countdown ends.
+private struct LaunchClose: View {
+    let theme: ContextTheme
+    let action: () -> Void
+    @State private var hot = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(hot ? theme.foreground : theme.muted)
+                .frame(width: 20, height: 20)
+                .background(
+                    hot ? theme.foreground.opacity(0.08) : .clear,
+                    in: RoundedRectangle(cornerRadius: 4)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hot = $0 }
+        .accessibilityLabel("Close")
     }
 }
 
