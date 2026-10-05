@@ -415,7 +415,7 @@ def paragraphs(text):
 
 
 def words(text):
-    return re.findall(r"[a-z0-9]+", text.lower().replace("’", "'"))
+    return re.findall(r"\w+", text.lower().replace("’", "'"))
 
 
 def rewrite_contract(case):
