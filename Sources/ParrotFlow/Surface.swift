@@ -565,7 +565,7 @@ struct Surface {
 
         // 1. Set the range, then write the text into it. Disturbs nothing, and
         //    is what a native field accepts.
-        if select(nsRange), setSelectedText(replacement), landed(fragment, needle: folded(fragment.text)) {
+        if select(nsRange), setSelectedText(replacement), landed(fragment, needle: readBack(fragment.text)) {
             Log.write("surface: wrote \(nsRange.length) chars via the accessibility range")
             return .replaced(undo)
         }
@@ -768,7 +768,7 @@ struct Surface {
         // that is busy laying the paste out, so a single read can eat most of
         // the old budget and only two or three ever happened.
         let deadline = Date().addingTimeInterval(2.5)
-        let needle = folded(fragment.text)
+        let needle = readBack(fragment.text)
         repeat {
             if landed(fragment, needle: needle) { return true }
             Thread.sleep(forTimeInterval: 0.05)
@@ -781,7 +781,7 @@ struct Surface {
         // wrong place.
         if let value = SelectionReader.visibleText(of: element) {
             let replacement = fragment.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            Log.write(folded(value).contains(folded(replacement))
+            Log.write(readBack(value).contains(readBack(replacement))
                 ? "surface: the text is there but not in the context expected;"
                     + " the read-back is stricter than the edit"
                 : "surface: the text has not appeared in the field")
@@ -820,8 +820,10 @@ struct Surface {
     ) -> Fragment {
         let before = content[..<range.lowerBound]
         let beforeCount = before.count
-        let trailing = String(content[range.upperBound...].prefix(12))
-        let target = folded(updated)
+        let after = content[range.upperBound...]
+        let atEnd = after.allSatisfy(\.isWhitespace)
+        let trailing = atEnd ? "" : String(after.prefix(12))
+        let target = readBack(updated)
 
         var context = 12
         while true {
@@ -831,10 +833,10 @@ struct Surface {
             // is no leading context at all and a contains would accept the same
             // words written anywhere further down.
             if context >= beforeCount {
-                return Fragment(text: leading + replacement + trailing, atStart: true)
+                return Fragment(text: leading + replacement + trailing, atStart: true, atEnd: atEnd)
             }
-            if standsAlone(folded(leading), in: target) {
-                return Fragment(text: leading + replacement + trailing, atStart: false)
+            if standsAlone(readBack(leading), in: target) {
+                return Fragment(text: leading + replacement + trailing, atStart: false, atEnd: atEnd)
             }
             context *= 2
         }
@@ -848,6 +850,10 @@ struct Surface {
         /// offset zero has nothing in front of it to be recognised by, and an
         /// identical run later in the field would answer for it.
         let atStart: Bool
+        /// Only whitespace follows the span, so the value has to *end* with
+        /// this. Quill dropped the empty paragraph after a select-all paste,
+        /// and with it the trailing "\n".
+        let atEnd: Bool
     }
 
     /// Whether `needle` stands in exactly one place in `text`.
@@ -858,12 +864,28 @@ struct Surface {
 
     private func landed(_ fragment: Fragment, needle: String) -> Bool {
         guard let value = SelectionReader.visibleText(of: element) else { return false }
-        let text = folded(value)
+        let text = readBack(value)
+        if fragment.atEnd {
+            let body = trimmedEnd(text), core = trimmedEnd(needle)
+            guard body.hasSuffix(core) else { return false }
+            return !fragment.atStart || body.drop(while: \.isWhitespace) == core.drop(while: \.isWhitespace)
+        }
         guard fragment.atStart else { return text.contains(needle) }
         // Leading whitespace on both sides, because a rich-text editor can put
         // a blank line above what it holds and that is not a failed write.
         return text.drop(while: \.isWhitespace)
             .starts(with: needle.drop(while: \.isWhitespace))
+    }
+
+    private func trimmedEnd(_ text: String) -> Substring {
+        text[..<(text.lastIndex { !$0.isWhitespace }.map(text.index(after:)) ?? text.startIndex)]
+    }
+
+    /// What the read-back compares: `folded`, with a run of line breaks read
+    /// as one. Chromium's AXValue shows a blank line between two paragraphs
+    /// as a single "\n", measured on a Quill composer.
+    private func readBack(_ text: String) -> String {
+        folded(text).replacingOccurrences(of: "\n+", with: "\n", options: .regularExpression)
     }
 
     /// Typographic substitution is not a failed write. Most apps turn a straight
