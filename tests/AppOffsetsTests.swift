@@ -78,6 +78,22 @@ enum AppOffsetsTests {
         precondition(app(0, 4, "Hi \u{FEFF}@channel", in: mixedValue) == nil,
                      "app text that is not the value's")
 
+        precondition(AppOffsets.shown(threeSelected, at: 0, in: threeValue) { "" } == threeValue,
+                     "three paragraphs, all selected, read with their breaks")
+        let mentionLine = "Hey \u{FEFF}@channel\u{FEFF}. Three weeks to the retreat."
+        precondition(AppOffsets.shown(
+            "Book travel this week.\nArrival dates go in the sheet.\nDietary needs too.Questions? Ask",
+            at: mentionLine.utf16.count, in: mixedValue
+        ) { mentionLine } == "Book travel this week.\nArrival dates go in the sheet.\nDietary needs too.\nQuestions? Ask",
+                     "a selection that starts after a paragraph break, read with its breaks")
+        var asked = false
+        precondition(AppOffsets.shown("Three weeks.\nBook", at: 14, in: native) { asked = true; return nil }
+            == "Three weeks.\nBook" && !asked, "a field whose offsets already address its value")
+        precondition(AppOffsets.shown("Dietary needs too.Questions? Ask", at: 110, in: mixedValue) { nil }
+            == "Dietary needs too.Questions? Ask", "the app will not say what comes before")
+        precondition(AppOffsets.shown("Four weeks", at: 0, in: mixedValue) { "" } == "Four weeks",
+                     "text that is no longer there")
+
         print("app offsets: every case passed")
     }
 }

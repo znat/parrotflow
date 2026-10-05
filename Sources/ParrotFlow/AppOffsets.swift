@@ -49,4 +49,12 @@ enum AppOffsets {
         found.append(at)
         return found
     }
+
+    /// `selected`, which the app reads at `location` in its own offsets, as
+    /// `value` shows it. `before` is the app's text from 0 to `location`.
+    static func shown(
+        _ selected: String, at location: Int, in value: String, before: () -> String?
+    ) -> String {
+        selected
+    }
 }
