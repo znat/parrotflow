@@ -12,9 +12,9 @@ import SwiftUI
 /// stages that read it stand aside meanwhile with nothing on screen to say so.
 ///
 /// It is deliberately not the setup window. That screen is a list of everything
-/// the app needs and a place to fix what is missing; this one asks nothing and
-/// offers nothing but the door. It says what the app is doing, in the app's own
-/// face, and goes.
+/// the app needs and a place to fix what is missing; this one asks nothing. It
+/// says what the app is doing, in the app's own face, points at the skill that
+/// adapts the app, and goes.
 ///
 /// Revision 08 uses the same adaptive Context surface as the pill: a six-point
 /// rounded box, one fine outline, and a crisp three-point hard shadow.
@@ -22,11 +22,13 @@ final class LaunchPanel {
 
     private var panel: NSPanel?
     private var watch: AnyCancellable?
-    /// Which of the two heights the window is currently built at.
-    private var listing = false
     private var model: LaunchModel?
+    private var expiry: DispatchWorkItem?
+    private var poll: Timer?
 
     private let downloads: ModelDownloads
+
+    private static let readySeconds: TimeInterval = 30
 
     /// What the ready line tells you to hold. Nil when nothing bound, and then
     /// the line is left out rather than naming a key that does nothing.
@@ -44,6 +46,16 @@ final class LaunchPanel {
         self.downloads = downloads
     }
 
+    var isShowing: Bool { panel?.isVisible ?? false }
+
+    /// Asked, not remembered from the last hover: SwiftUI's `onHover` can miss
+    /// the exit. Same reasoning as `PillHUD.pointerIsOver`.
+    var pointerIsOver: Bool {
+        guard let panel, panel.isVisible else { return false }
+        return panel.frame.insetBy(dx: LaunchMetrics.bleed, dy: LaunchMetrics.bleed)
+            .contains(NSEvent.mouseLocation)
+    }
+
     /// Shows it only if this launch has something to wait for.
     ///
     /// Asked after `warmModels` has declared its rows. A launch with everything
@@ -57,18 +69,35 @@ final class LaunchPanel {
 
     func show() {
         if panel == nil { build() }
+        // Sized before the rise: `riseIntoView` animates the origin, and a
+        // resize during it re-centres on a frame that is still moving.
+        panel?.setContentSize(LaunchMetrics.windowSize(for: LaunchModel.moment(of: downloads.rows)))
         position()
         // Never key, and never `NSApp.activate`. This opens on its own at
         // login, while somebody is typing into something else.
         panel?.riseIntoView(makeKey: false)
 
-        // The rows come and go, so the panel is two heights and has to be
-        // resized between them. Debounced: a fetch reports every percent, and
-        // a layout pass per percent to find the height has not changed is the
-        // trap `PermissionsWindowController.resizeToContent` fell into first.
+        // Debounced: a fetch reports every percent, and a layout pass per
+        // percent to find the height has not changed is the trap
+        // `PermissionsWindowController.resizeToContent` fell into first.
         watch = downloads.objectWillChange
             .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in self?.resize() }
+            .sink { [weak self] _ in self?.follow() }
+        follow()
+    }
+
+    /// Takes the height of the moment, and starts or drops the ready countdown.
+    private func follow() {
+        guard let model, isShowing else { return }
+        resize()
+        let ready = model.moment == .ready
+        if ready, model.countdown == nil {
+            // Not paused when it opens under a still pointer: at login nobody
+            // may be there, and a paused panel would stay up until they were.
+            apply(Countdown(duration: Self.readySeconds, start: Date()))
+        } else if !ready, model.countdown != nil {
+            apply(nil)
+        }
     }
 
     /// Takes the height this state needs, keeping the panel where it is.
@@ -78,35 +107,83 @@ final class LaunchPanel {
     /// the old centre keeps it still.
     private func resize() {
         guard let panel, panel.isVisible else { return }
-        let wanted = LaunchModel.moment(of: downloads.rows) == .downloading
-        guard wanted != listing else { return }
-        listing = wanted
+        let size = LaunchMetrics.windowSize(for: LaunchModel.moment(of: downloads.rows))
+        guard panel.frame.size != size else { return }
         let centre = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
-        let size = LaunchMetrics.windowSize(listing: wanted)
         panel.setContentSize(size)
         panel.setFrameOrigin(NSPoint(
             x: centre.x - size.width / 2, y: centre.y - size.height / 2
         ))
     }
 
-    /// It waits to be dismissed. Nothing takes it down on a timer.
+    /// Publishes the countdown and arms what its state needs: the expiry while
+    /// it runs, the pointer poll while a hover holds it.
+    private func apply(_ countdown: Countdown?) {
+        disarm()
+        model?.countdown = countdown
+        switch countdown?.state {
+        case .running?:
+            guard let deadline = countdown?.deadline else { return }
+            let expiry = DispatchWorkItem { [weak self] in self?.dismiss() }
+            self.expiry = expiry
+            // Wall time, like the bar: uptime stops while the Mac sleeps.
+            DispatchQueue.main.asyncAfter(
+                wallDeadline: .now() + max(0, deadline.timeIntervalSinceNow), execute: expiry
+            )
+        case .paused?:
+            poll = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                guard let self, !self.pointerIsOver else { return }
+                self.hovering(false)
+            }
+        case .expired?:
+            dismiss()
+        case nil:
+            break
+        }
+    }
+
+    private func disarm() {
+        expiry?.cancel()
+        expiry = nil
+        poll?.invalidate()
+        poll = nil
+    }
+
+    /// Nothing armed means no countdown, or a panel already fading out.
+    private func hovering(_ inside: Bool) {
+        guard expiry != nil || poll != nil, var countdown = model?.countdown else { return }
+        let before = countdown
+        if inside {
+            countdown.pause(at: Date())
+        } else {
+            countdown.resume(at: Date())
+        }
+        guard countdown != before else { return }
+        apply(countdown)
+    }
+
+    /// The ready line stays up for 30 seconds, and for as long as the pointer
+    /// is over the panel.
     ///
-    /// The last thing it says is which key to hold, and that is the one
-    /// sentence a first launch exists to deliver. A panel that reached it and
-    /// then faded on its own would deliver it to an empty chair — the moment
-    /// the models land is not the moment somebody is looking. So the end of
-    /// this panel is a person pressing a button, and the button is the receipt
-    /// that they read the line above it.
+    /// It says which key to hold and how to adapt the app, and the moment the
+    /// models land is not the moment somebody is looking. A hover is the sign
+    /// that somebody is, so it holds the panel while they read or copy.
     func dismiss() {
         watch = nil
-        guard let panel, panel.isVisible else { return }
+        disarm()
+        guard let panel, panel.isVisible else {
+            model?.countdown = nil
+            return
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
                 ? 0 : 0.22
             panel.animator().alphaValue = 0
-        } completionHandler: {
+        } completionHandler: { [weak self] in
             panel.orderOut(nil)
             panel.alphaValue = 1
+            // Cleared after the fade: a nil countdown draws the bar full.
+            self?.model?.countdown = nil
         }
     }
 
@@ -116,11 +193,13 @@ final class LaunchPanel {
             theme: theme
         )
         self.model = model
-        let hosting = NSHostingView(rootView: LaunchView(onHide: { [weak self] in
-            self?.dismiss()
-        }).environmentObject(model))
-        listing = LaunchModel.moment(of: downloads.rows) == .downloading
-        hosting.frame = NSRect(origin: .zero, size: LaunchMetrics.windowSize(listing: listing))
+        let hosting = NSHostingView(rootView: LaunchView(
+            onHide: { [weak self] in self?.dismiss() },
+            onHover: { [weak self] in self?.hovering($0) }
+        ).environmentObject(model))
+        hosting.frame = NSRect(
+            origin: .zero, size: LaunchMetrics.windowSize(for: model.moment)
+        )
         hosting.autoresizingMask = [.width, .height]
 
         let panel = NSPanel(
@@ -162,25 +241,27 @@ enum LaunchMetrics {
     /// Taking these as the content's size instead put the view 60 points
     /// outside its own window, which drew the edge around the margin rather
     /// than around the glass.
-    static let width: CGFloat = 440
+    ///
+    /// 500 because the ready line's skill command is 347 points at 11-point
+    /// monospaced, and its block with the Copy button is about 428.
+    static let width: CGFloat = 500
     static let padding: CGFloat = 30
 
-    /// A list, and a line. The panel is two heights, and the window is resized
-    /// between them.
-    ///
-    /// One fixed height does not work. It was fixed, at what three rows need,
-    /// and a first install declares six: the sentence and the button were
-    /// pushed out of the panel. The list is capped now — see `LaunchModel.shown`
-    /// — and the short states would sit in a mostly empty panel if they were
-    /// held at the tall one.
-    static let listed: CGFloat = 440
-    static let plain: CGFloat = 280
-
-    static func height(listing: Bool) -> CGFloat { listing ? listed : plain }
+    /// A height per moment, and the window is resized between them. The list
+    /// is capped at three rows (see `LaunchModel.shown`), the ready line
+    /// carries the skill command, and the short states would sit in a mostly
+    /// empty panel at either of those heights.
+    static func height(for moment: LaunchModel.Moment) -> CGFloat {
+        switch moment {
+        case .downloading: return 440
+        case .ready: return 380
+        case .loading, .stuck: return 280
+        }
+    }
 
     /// The window: the surface, plus the margin the material's shadow lands in.
-    static func windowSize(listing: Bool) -> NSSize {
-        NSSize(width: width + bleed * 2, height: height(listing: listing) + bleed * 2)
+    static func windowSize(for moment: LaunchModel.Moment) -> NSSize {
+        NSSize(width: width + bleed * 2, height: height(for: moment) + bleed * 2)
     }
     /// Transparent room for the three-point shadow and one-point outline.
     static let bleed: CGFloat = 7
@@ -211,6 +292,8 @@ final class LaunchModel: ObservableObject {
     let hotkey: String?
     @Published var primaryColor: String
     @Published var theme: ContextAppearance
+    /// Set by `LaunchPanel` while the ready line is up. Nil on the panel sheet.
+    @Published var countdown: Countdown?
     private var watch: AnyCancellable?
 
     init(
@@ -228,6 +311,16 @@ final class LaunchModel: ObservableObject {
     }
 
     var moment: Moment { Self.moment(of: downloads.rows) }
+
+    /// Pinned to the tag of the running build, so the skill matches the app
+    /// it configures. Outside a bundle there is no version, and the default
+    /// branch is the closest thing.
+    static func skillCommand(version: String?) -> String {
+        guard let version else { return "npx skills add znat/parrotflow --skill parrotflow" }
+        return "npx skills add 'znat/parrotflow#v\(version)@parrotflow'"
+    }
+
+    var skillCommand: String { Self.skillCommand(version: Updates.current) }
 
     static func moment(of rows: [ModelDownload]) -> Moment {
         if let stuck = rows.first(where: { $0.blocking && $0.state.hasFailed }) {
@@ -290,6 +383,7 @@ struct LaunchView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var scale
     let onHide: () -> Void
+    var onHover: (Bool) -> Void = { _ in }
 
     private var theme: ContextTheme {
         ContextTheme(scheme: effectiveColorScheme, primaryHex: model.primaryColor)
@@ -332,36 +426,70 @@ struct LaunchView: View {
         }
         .frame(
             width: LaunchMetrics.width - LaunchMetrics.padding * 2,
-            height: LaunchMetrics.height(listing: model.moment == .downloading)
-                - LaunchMetrics.padding * 2
+            height: LaunchMetrics.height(for: model.moment) - LaunchMetrics.padding * 2
         )
         .padding(LaunchMetrics.padding)
         .background {
-            let shape = RoundedRectangle(
-                cornerRadius: ContextIdentity.radius, style: .continuous
-            )
-            shape.fill(theme.hardShadow)
+            surfaceShape.fill(theme.hardShadow)
                 .offset(x: ContextIdentity.shadowOffset, y: ContextIdentity.shadowOffset)
-            shape.fill(theme.surface)
+            surfaceShape.fill(theme.surface)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: ContextIdentity.radius, style: .continuous)
-                .strokeBorder(theme.edge, lineWidth: 1 / scale)
+            if model.moment == .ready {
+                countdownBar.clipShape(surfaceShape)
+            }
         }
+        .overlay {
+            surfaceShape.strokeBorder(theme.edge, lineWidth: 1 / scale)
+        }
+        .onHover(perform: onHover)
         .padding(LaunchMetrics.bleed)
         .foregroundStyle(theme.foreground)
         .environment(\.contextPrimaryColor, model.primaryColor)
         .environment(\.colorScheme, effectiveColorScheme)
     }
 
+    private var surfaceShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: ContextIdentity.radius, style: .continuous)
+    }
+
+    /// How long the ready line has left, draining toward the right edge.
+    private var countdownBar: some View {
+        let countdown = model.countdown
+        let paused = countdown?.isPaused ?? true
+        return TimelineView(.animation(minimumInterval: nil, paused: paused)) { context in
+            GeometryReader { geometry in
+                theme.accent
+                    .frame(
+                        width: geometry.size.width * (countdown?.fraction(at: context.date) ?? 1),
+                        height: 3
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
+        }
+        .opacity(countdown?.isPaused == true ? 0.45 : 1)
+        .allowsHitTesting(false)
+    }
+
+    private var ready: some View {
+        VStack(spacing: 0) {
+            readyLine
+            Rectangle()
+                .fill(theme.controlEdge)
+                .frame(height: 1 / scale)
+                .padding(.vertical, 20)
+            skillOffer
+        }
+        .padding(.top, 15)
+    }
+
     /// Without a bound key there is nothing to hold, so the line goes rather
     /// than naming one that does nothing. See `SetupPane.unregisteredHotkey`.
     @ViewBuilder
-    private var ready: some View {
+    private var readyLine: some View {
         if let hotkey = model.hotkey {
-            VStack(spacing: 18) {
-                HStack(spacing: 7) {
-                    Text("Hold")
+            HStack(spacing: 7) {
+                Text("Hold")
                 Text(hotkey)
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundStyle(theme.foreground)
@@ -374,24 +502,27 @@ struct LaunchView: View {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .strokeBorder(theme.accent.opacity(0.65), lineWidth: 1)
                     }
-                    Text("to dictate")
-                }
+                Text("to dictate")
+            }
+            .font(.system(size: 14))
+            .foregroundStyle(theme.muted)
+        } else {
+            Text("Ready")
                 .font(.system(size: 14))
                 .foregroundStyle(theme.muted)
+        }
+    }
 
-                Button("Got it", action: onHide)
-                    .buttonStyle(ContextLaunchButton(primary: true))
-            }
-            .padding(.top, 15)
-        } else {
-            VStack(spacing: 18) {
-                Text("Ready")
-                    .font(.system(size: 14))
-                    .foregroundStyle(theme.muted)
-                Button("Got it", action: onHide)
-                    .buttonStyle(ContextLaunchButton(primary: true))
-            }
-            .padding(.top, 15)
+    private var skillOffer: some View {
+        VStack(spacing: 12) {
+            (Text("Adapt ParrotFlow to your work in minutes")
+                .fontWeight(.medium)
+                .foregroundStyle(theme.foreground)
+             + Text(" with the skill:").foregroundStyle(theme.muted))
+                .font(.system(size: 13))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            SkillCommandBlock(command: model.skillCommand, theme: theme)
         }
     }
 
@@ -484,6 +615,55 @@ private struct LaunchRow: View {
         case .loading, .installed: return 1
         case .waiting, .off, .failed: return 0
         }
+    }
+}
+
+/// The skill command on one line, and a button that copies it.
+private struct SkillCommandBlock: View {
+    let command: String
+    let theme: ContextTheme
+    @State private var copiedAt: Date?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(command)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(theme.foreground)
+                .lineLimit(1)
+                .fixedSize()
+            Button(action: copy) {
+                HStack(spacing: 4) {
+                    Image(systemName: "doc.on.doc")
+                    // Held at the width of "Copied" so the block does not
+                    // reflow on a click.
+                    ZStack(alignment: .leading) {
+                        Text("Copied").hidden()
+                        Text(copiedAt == nil ? "Copy" : "Copied")
+                    }
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(copiedAt == nil ? theme.muted : theme.accent)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(theme.controlFill, in: RoundedRectangle(cornerRadius: 4))
+        .overlay {
+            RoundedRectangle(cornerRadius: 4).strokeBorder(theme.controlEdge, lineWidth: 1)
+        }
+        .task(id: copiedAt) {
+            guard copiedAt != nil else { return }
+            guard (try? await Task.sleep(for: .seconds(1.5))) != nil else { return }
+            copiedAt = nil
+        }
+    }
+
+    private func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+        copiedAt = Date()
     }
 }
 

@@ -1124,13 +1124,13 @@ enum PanelsCommand {
             (vadPane, setupSize(vadPane), .dark, false),
             (openingPane, setupSize(openingPane), .light, false),
             (AnyView(LaunchView(onHide: {}).environmentObject(launchDownloading)),
-             LaunchMetrics.windowSize(listing: true), nil, true),
+             LaunchMetrics.windowSize(for: launchDownloading.moment), nil, true),
             (AnyView(LaunchView(onHide: {}).environmentObject(launchLoading)),
-             LaunchMetrics.windowSize(listing: false), nil, true),
+             LaunchMetrics.windowSize(for: launchLoading.moment), nil, true),
             (AnyView(LaunchView(onHide: {}).environmentObject(launchReady)),
-             LaunchMetrics.windowSize(listing: false), nil, true),
+             LaunchMetrics.windowSize(for: launchReady.moment), nil, true),
             (AnyView(LaunchView(onHide: {}).environmentObject(launchStuck)),
-             LaunchMetrics.windowSize(listing: false), nil, true),
+             LaunchMetrics.windowSize(for: launchStuck.moment), nil, true),
             (AnyView(ContextStatusMarkPreview(primaryHex: ContextIdentity.defaultPrimary)),
              NSSize(width: 290, height: 64), nil, true),
             (AnyView(PillView().environmentObject(notice)),
@@ -1650,7 +1650,9 @@ enum PanelsCommand {
         // download with a number on it, the load after it, and the end. It has
         // no still worth looking at — the whole point of it is that it moves —
         // so the preview runs the sequence on a loop rather than parking on one
-        // state. Same reasoning as `sequence` below.
+        // state. Same reasoning as `sequence` below. The loop waits on the
+        // ready line, so its countdown and hover can be tried; when the
+        // countdown takes the panel down, the downloads start again.
         case "launch":
             // All six, which is what a first install declares. Three of them
             // are drawn — see `LaunchModel.shown` — and the panel has to be
@@ -1670,13 +1672,14 @@ enum PanelsCommand {
             panel.showIfNeeded(hotkey: "Right ⌥")
             var percent = 0
             ticker = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { _ in
-                percent += 1
-                if percent > 190 {
+                if LaunchModel.moment(of: downloads.rows) == .ready {
+                    guard !panel.isShowing else { return }
                     percent = 0
                     for id in coming { downloads.update(id, to: .waiting) }
                     panel.showIfNeeded(hotkey: "Right ⌥")
                     return
                 }
+                percent += 1
                 // Staggered, the way they really arrive: they start together
                 // and the smallest lands first.
                 for (index, id) in coming.enumerated() {
