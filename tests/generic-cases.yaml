@@ -387,7 +387,8 @@ cases:
   #            than it had, at a length between a quarter and one and a half
   #            times the input (`min_ratio` and `max_ratio` override). Every
   #            string in `contains` must be there and none in `absent`,
-  #            ignoring case.
+  #            ignoring case. `contains` names the facts the message must
+  #            keep, so a fluent rewrite that drops them fails.
   #
   # A narrow edit over a long text is still a `change` with an exact answer:
   # the rest of the message must come back as it was.
@@ -441,6 +442,9 @@ cases:
     input: the thing with the build is that it is slow and that is a thing that we should look at doing something about soon
     absent:
       - is a thing that
+    contains:
+      - build
+      - slow
 
   - name: fix the typos
     kind: rewrite
@@ -465,6 +469,10 @@ cases:
     absent:
       - gonna
       - cuz
+    contains:
+      - launch
+      - next week
+      - doc
 
   - name: friendlier
     kind: rewrite
@@ -472,6 +480,9 @@ cases:
     instruction: Could you make it a bit friendlier?
     input: Send me the slides by 5. Late slides will not be shown.
     max_ratio: 2.0
+    contains:
+      - slides
+      - "5"
 
   - name: shorter
     kind: rewrite
@@ -481,6 +492,7 @@ cases:
     min_ratio: 0.15
     max_ratio: 0.85
     contains:
+      - next week
       - Priya
       - billing
 
@@ -496,6 +508,9 @@ cases:
     absent:
       - warning
       - is a thing that
+    contains:
+      - build
+      - slow
 
   - name: fix the grandma, meaning grammar
     kind: change
@@ -519,6 +534,7 @@ cases:
     min_ratio: 0.15
     max_ratio: 0.9
     contains:
+      - next week
       - Priya
       - billing
 
@@ -575,6 +591,11 @@ cases:
       Thanks everyone.
     absent:
       - and it starts on monday and it goes
+    contains:
+      - Monday
+      - Thursday
+      - main
+      - release
 
   - name: paragraphs, wording and typos as a question
     kind: rewrite
@@ -587,6 +608,9 @@ cases:
 
       See you their!
     contains:
+      - 14th
+      - Elm
+      - Friday
       - allergies
       - "you there"
     absent:
@@ -607,6 +631,11 @@ cases:
     absent:
       - warning
       - and it starts on monday and it goes
+    contains:
+      - Monday
+      - Thursday
+      - main
+      - release
 
   - name: paragraphs, a question about the message
     kind: keep

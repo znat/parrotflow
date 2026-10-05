@@ -266,6 +266,14 @@ VARIANTS["v10"] = VARIANTS["v8"].replace(
     "  The rest comes back as written, with its own capitals and full stops.\n",
 )
 
+# v11 — v8 with the layout rule giving way to a request that changes the
+# layout ("put that on one line"). Suggested in review on #350.
+VARIANTS["v11"] = VARIANTS["v8"].replace(
+    "- Keep the paragraphs and line breaks of the text.\n",
+    "- Keep the paragraphs and line breaks of the text unless the instruction\n"
+    "  asks to change them.\n",
+)
+
 # --- the pipeline, ported from PromptRunner --------------------------------
 
 
@@ -394,7 +402,9 @@ def run_shipped(name, instruction, text):
         [str(BIN), "--prompt", name, instruction, text, "--quiet"],
         capture_output=True, text=True,
     )
-    return result.stdout.strip().split("\n")[-1] if result.stdout.strip() else ""
+    # `--quiet` prints the result and nothing else, and a result can span
+    # paragraphs.
+    return result.stdout.strip()
 
 
 # --- scoring ---------------------------------------------------------------
@@ -735,23 +745,36 @@ if __name__ == "__main__":
 # model the release config runs: the request LLM.openAI sends with reasoning
 # off and no temperature, so gpt passes move by two or three cases.
 #
-# Final passes, run alternately, gemma alone in memory:
+# First round, run alternately, gemma alone in memory:
 #
 #                          old 44     new 23     overall
 #     gemma4:e4b-mlx v6    39, 39     20, 20     59, 59
-#     gemma4:e4b-mlx v8    38, 38     22, 22     60, 60   <- ships
+#     gemma4:e4b-mlx v8    38, 38     22, 22     60, 60
 #     gpt-6-luna v6        36, 33     16, 18     52, 51
-#     gpt-6-luna v8        39, 37     20, 20     59, 57   <- ships
+#     gpt-6-luna v8        39, 37     20, 20     59, 57
 #     (no model)           13         5          18
 #
 # Earlier gpt passes on v8 (scorer one bound looser on "more formal"): 38, 38,
 # 38 old and 21, 21, 21 new. v7 on gpt: 36-39 old, 19-20 new.
 #
+# Review on #350 then added the facts each rewrite must keep to `contains`
+# (days, names, "build", "slow"), and proposed v11: the layout rule gives way
+# to "put that on one line". Same set, run alternately:
+#
+#     gemma4:e4b-mlx v8    38, 38     22, 22     60, 60
+#     gemma4:e4b-mlx v11   38, 38     22, 22     60, 60   <- ships
+#     gpt-6-luna v8        38, 40     21, 19     59, 59
+#     gpt-6-luna v11       40, 38,    21, 18,    61, 56,  <- ships
+#                          39, 39     21, 21     60, 60
+#
+# Equal within noise, and v11 does not contradict a layout request, so it
+# ships. No rewrite failed a fact check on gemma.
+#
 # What v6 did on gpt-6-luna: "did nothing" on "make that all caps", "Improve
 # the wording.", "make it a bit friendlier", "round the amounts" and every
-# misheard case. What v8 costs: on gemma, "no money in the text" now comes back
-# as "we should ship it on $0.00" on every pass; on gpt, a trailing full stop
-# on two or three lowercase fragments, keeps included.
+# misheard case. What v8 and v11 cost: on gemma, "no money in the text" now
+# comes back as "we should ship it on $0.00" on every pass; on gpt, a trailing
+# full stop on lowercase fragments, keeps included on some passes.
 #
 # Measured and not shipped, all on gemma unless said:
 #

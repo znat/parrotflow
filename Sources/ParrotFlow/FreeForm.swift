@@ -17,10 +17,10 @@ import Foundation
 ///
 /// Scored by tests/generic-cases.yaml — 67 cases: 39 edits with one right
 /// answer, 10 open rewrites ("improve the wording") and 18 that must come back
-/// untouched. On gemma4:e4b-mlx, 60/67 on two passes; on gpt-6-luna, 57 and
-/// 59. A control that returns the text unchanged scores 18/67. A point either
-/// way is noise. The full scoreboard is at the bottom of
-/// scripts/validate-generic.py.
+/// untouched. On gemma4:e4b-mlx, 60/67 on two passes; on gpt-6-luna, 56 to 61
+/// over four, because it runs at its default temperature. A control that
+/// returns the text unchanged scores 18/67. The full scoreboard is at the
+/// bottom of scripts/validate-generic.py.
 ///
 /// The prompt lists how to read a request: a polite question is an edit, a
 /// broad request covers the whole text, a misheard word means the word that
@@ -79,7 +79,8 @@ enum FreeForm {
         - A narrow request changes what it names: the numbers, the dates, one word.
         - A word in the instruction can be misheard. When it does not fit the text
           and a word that sounds like it does, follow the word that fits.
-        - Keep the paragraphs and line breaks of the text.
+        - Keep the paragraphs and line breaks of the text unless the instruction
+          asks to change them.
 
         Return the text unchanged when the instruction is not a change to it: a
         question about the text or the world, a remark, a change the text already
