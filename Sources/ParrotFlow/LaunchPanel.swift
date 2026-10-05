@@ -52,7 +52,8 @@ final class LaunchPanel {
     /// the exit. Same reasoning as `PillHUD.pointerIsOver`.
     var pointerIsOver: Bool {
         guard let panel, panel.isVisible else { return false }
-        return panel.frame.contains(NSEvent.mouseLocation)
+        return panel.frame.insetBy(dx: LaunchMetrics.bleed, dy: LaunchMetrics.bleed)
+            .contains(NSEvent.mouseLocation)
     }
 
     /// Shows it only if this launch has something to wait for.
@@ -91,11 +92,9 @@ final class LaunchPanel {
         resize()
         let ready = model.moment == .ready
         if ready, model.countdown == nil {
-            let now = Date()
-            var countdown = Countdown(duration: Self.readySeconds, start: now)
-            // A panel that appears under a still pointer gets no enter event.
-            if pointerIsOver { countdown.pause(at: now) }
-            apply(countdown)
+            // Not paused when it opens under a still pointer: at login nobody
+            // may be there, and a paused panel would stay up until they were.
+            apply(Countdown(duration: Self.readySeconds, start: Date()))
         } else if !ready, model.countdown != nil {
             apply(nil)
         }
@@ -127,8 +126,9 @@ final class LaunchPanel {
             guard let deadline = countdown?.deadline else { return }
             let expiry = DispatchWorkItem { [weak self] in self?.dismiss() }
             self.expiry = expiry
+            // Wall time, like the bar: uptime stops while the Mac sleeps.
             DispatchQueue.main.asyncAfter(
-                deadline: .now() + max(0, deadline.timeIntervalSinceNow), execute: expiry
+                wallDeadline: .now() + max(0, deadline.timeIntervalSinceNow), execute: expiry
             )
         case .paused?:
             poll = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
