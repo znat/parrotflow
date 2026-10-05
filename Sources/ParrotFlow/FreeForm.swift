@@ -15,11 +15,17 @@ import Foundation
 /// the wrong narrow tool. The router needs a separate answer, not another line
 /// in the list. See `Router.prompt(for:freeForm:)`.
 ///
-/// Scored by tests/generic-cases.yaml — 44 cases, 31 that ask for an edit and
-/// 13 that must come back untouched. On gemma4:e4b-mlx, 40/44, against 11/38
-/// for a control that returns the text unchanged. A point either way is noise:
-/// the same prompt scored 37 and then 36 across two passes. The full scoreboard is at the
-/// bottom of scripts/validate-generic.py.
+/// Scored by tests/generic-cases.yaml — 67 cases: 39 edits with one right
+/// answer, 10 open rewrites ("improve the wording") and 18 that must come back
+/// untouched. On gemma4:e4b-mlx, 60/67 on two passes; on gpt-6-luna, 57 and
+/// 59. A control that returns the text unchanged scores 18/67. A point either
+/// way is noise. The full scoreboard is at the bottom of
+/// scripts/validate-generic.py.
+///
+/// The prompt lists how to read a request: a polite question is an edit, a
+/// broad request covers the whole text, a misheard word means the word that
+/// fits. The version before it said "make exactly the change and no other",
+/// and gpt-6-luna then returned "Can you improve the warning?" unchanged.
 ///
 /// The last two examples are a *correction* — an instruction with the
 /// imperative taken out. "make it Tuesday" and "I meant Tuesday" ask for the
@@ -63,19 +69,36 @@ enum FreeForm {
         content: """
         Apply the instruction to the text.
 
-        Make exactly the change the instruction asks for, and no other. Every word
-        the instruction does not mention comes back as it was — same wording, same
-        order, same capitalisation, same punctuation.
+        The instruction is a change the speaker wants made to the text. It was spoken
+        and then transcribed by speech recognition. Read it this way:
 
-        The instruction is an edit to make, never a question to answer and never a
-        remark to reply to. Return the text unchanged when the instruction asks for
-        something the text does not contain, when the text is already in the form it
-        asks for, and when it is not an instruction at all.
+        - A question that asks for a change is a request to make it. "Can you make
+          it shorter?" means make it shorter.
+        - A broad request applies to the whole text: improve the wording, fix the
+          typos and grammar, make it friendlier, shorter or more formal.
+        - A narrow request changes what it names: the numbers, the dates, one word.
+        - A word in the instruction can be misheard. When it does not fit the text
+          and a word that sounds like it does, follow the word that fits.
+        - Keep the paragraphs and line breaks of the text.
+
+        Return the text unchanged when the instruction is not a change to it: a
+        question about the text or the world, a remark, a change the text already
+        has, or a change to something the text does not contain.
 
         instruction: write the numbers as digits
         text:
         we saw about forty of them
         we saw about 40 of them
+
+        instruction: could you make it more polite
+        text:
+        send me the report today
+        please send me the report today
+
+        instruction: remove the commerce
+        text:
+        so, we can ship it, today
+        so we can ship it today
 
         instruction: make the dates ISO
         text:
