@@ -445,6 +445,28 @@ struct Surface {
         }
     }
 
+    /// A range of `content`, with the offsets and text the app itself uses for
+    /// it. Selecting and confirming talk to the app, so they use `app` and
+    /// `appText`. The two differ in Chromium; see `AppOffsets`.
+    struct Target {
+        let range: Range<String.Index>
+        let app: NSRange
+        let appText: String
+    }
+
+    /// The characters at `app`, in the app's own offsets, placed in `content`.
+    /// Nil when the app no longer holds `text` there, or will not say.
+    func target(app: NSRange, holding text: String) -> Target? {
+        guard kind == .editable, app.location >= 0, app.length > 0,
+              let said = SelectionReader.string(of: element, at: app.location, length: app.length),
+              said == text,
+              let before = app.location == 0
+                  ? "" : SelectionReader.string(of: element, at: 0, length: app.location),
+              let range = AppOffsets.valueRange(before: before, selected: said, in: content)
+        else { return nil }
+        return Target(range: range, app: app, appText: said)
+    }
+
     /// Substitutes one range of `content`, and nothing else.
     ///
     /// Every branch below either changes exactly those characters or changes
@@ -455,7 +477,17 @@ struct Surface {
     func replace(
         _ range: Range<String.Index>, with replacement: String, describedAs label: String = "edit"
     ) -> Outcome {
-        let updated = content.replacingCharacters(in: range, with: replacement)
+        replace(
+            Target(range: range, app: NSRange(range, in: content), appText: String(content[range])),
+            with: replacement, describedAs: label
+        )
+    }
+
+    @discardableResult
+    func replace(
+        _ target: Target, with replacement: String, describedAs label: String = "edit"
+    ) -> Outcome {
+        let updated = content.replacingCharacters(in: target.range, with: replacement)
         guard updated != content else {
             return .refused("the text already reads that way")
         }
@@ -466,7 +498,7 @@ struct Surface {
 
         switch kind {
         case .editable:
-            return writeEditable(range, replacement: replacement, updated: updated, undo: undo)
+            return writeEditable(target, replacement: replacement, updated: updated, undo: undo)
         case .screen:
             return writeScreen(updated: updated, undo: undo)
         }
@@ -510,9 +542,10 @@ struct Surface {
     /// that then ignore it entirely, which is the single fact that has caused
     /// every corrupted line this code has ever produced.
     private func writeEditable(
-        _ range: Range<String.Index>, replacement: String, updated: String, undo: Undo
+        _ target: Target, replacement: String, updated: String, undo: Undo
     ) -> Outcome {
-        let nsRange = NSRange(range, in: content)
+        let range = target.range
+        let nsRange = target.app
         // The replacement in the company it is meant to keep. Checking for the
         // replacement alone would accept an append — "…the storethey're"
         // contains "they're" quite happily — so the surrounding characters are
@@ -542,7 +575,7 @@ struct Surface {
         //    web — and the read-back is what makes it safe. Skipping the
         //    question is what turns a paste into an append.
         if select(nsRange),
-           confirmedSelection(matches: String(content[range]), range: nsRange) {
+           confirmedSelection(matches: target.appText, range: nsRange) {
             Log.write("surface: the range write was ignored; pasting over a confirmed selection")
             TextInserter.insert(replacement, mode: .paste, paste: paste)
             if settled(on: pasted) {
@@ -569,7 +602,7 @@ struct Surface {
         //    it is to where the span starts, and every step of that walk can be
         //    checked against the app's own account before anything is typed.
         if let outcome = writeByWalkingTheCaret(
-            nsRange, replacement: replacement, fragment: pasted, undo: undo
+            target, replacement: replacement, fragment: pasted, undo: undo
         ) {
             return outcome
         }
@@ -593,8 +626,9 @@ struct Surface {
     /// Nil rather than a refusal when the walk is too long to be worth taking,
     /// so the caller can fall through to its own last resort.
     private func writeByWalkingTheCaret(
-        _ target: NSRange, replacement: String, fragment: Fragment, undo: Undo
+        _ span: Target, replacement: String, fragment: Fragment, undo: Undo
     ) -> Outcome? {
+        let target = span.app
         guard var caret = caretOffset() else {
             Log.write("surface: the app will not say where the caret is; cannot walk to the span")
             return nil
@@ -633,8 +667,7 @@ struct Surface {
         // this pasted over the wrong 25 characters. `confirmedSelection` asks
         // what is selected first and falls back to the numbers only where the app
         // will not say, which is every Chromium contenteditable.
-        guard let text = Range(target, in: content).map({ String(content[$0]) }),
-              confirmedSelection(matches: text, range: target) else {
+        guard confirmedSelection(matches: span.appText, range: target) else {
             return nil
         }
 
