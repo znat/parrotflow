@@ -1652,7 +1652,8 @@ enum PanelsCommand {
         // so the preview runs the sequence on a loop rather than parking on one
         // state. Same reasoning as `sequence` below. The loop waits on the
         // ready line, so its countdown and hover can be tried; when the
-        // countdown takes the panel down, the downloads start again.
+        // countdown or the cross takes the panel down, the downloads start
+        // again.
         case "launch":
             // All six, which is what a first install declares. Three of them
             // are drawn — see `LaunchModel.shown` — and the panel has to be
