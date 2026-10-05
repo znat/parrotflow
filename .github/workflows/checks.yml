@@ -288,6 +288,10 @@ jobs:
       - name: Where a late field takes the words
         run: scripts/check-landing.sh
 
+      # How long the launch panel's ready line stays up, and how a hover holds it.
+      - name: The launch panel's countdown
+        run: scripts/check-countdown.sh
+
       # Not a validation set: it checks that the file a new install is written
       # with still teaches everything built-in/config.example.yaml documents.
       # That has drifted twice, both times silently.
