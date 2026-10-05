@@ -23,7 +23,7 @@ this design either survives or does not.
 
 Scoreboard and what it decided: the notes at the bottom of this file.
 """
-import argparse, json, os, subprocess, sys, time, urllib.request, pathlib
+import argparse, json, os, re, subprocess, sys, time, urllib.request, pathlib
 
 try:
     import yaml
@@ -364,7 +364,7 @@ def ask_openai(model, system, user, budget, endpoint="https://api.openai.com/v1"
             with urllib.request.urlopen(request, timeout=60) as response:
                 payload = json.load(response)
             return payload["choices"][0]["message"]["content"] or ""
-        except TimeoutError:
+        except (TimeoutError, urllib.error.URLError):
             if attempt == 2:
                 raise
 
@@ -414,6 +414,10 @@ def paragraphs(text):
     return [block for block in text.strip().split("\n\n") if block.strip()]
 
 
+def words(text):
+    return re.findall(r"[a-z0-9]+", text.lower().replace("’", "'"))
+
+
 def rewrite_contract(case):
     parts = ["length {}-{}".format(case.get("min_ratio", 0.25), case.get("max_ratio", 1.5))]
     if case.get("contains"):
@@ -428,6 +432,8 @@ def rewrite_broken(case, got):
     text = case["input"]
     if got.strip() == text.strip():
         return "did nothing"
+    if words(got) == words(text):
+        return "changed only punctuation or case"
     if len(paragraphs(got)) < len(paragraphs(text)):
         return "{} paragraphs, wanted {}".format(len(paragraphs(got)), len(paragraphs(text)))
     ratio = len(got.strip()) / max(1, len(text.strip()))

@@ -383,7 +383,8 @@ cases:
   # Broad edits ("improve the wording") have no one right answer, so they use a
   # third kind:
   #
-  #   rewrite  the text must come back changed, with no fewer paragraphs
+  #   rewrite  the text must come back with at least one word changed (not
+  #            only punctuation or case), with no fewer paragraphs
   #            than it had, at a length between a quarter and one and a half
   #            times the input (`min_ratio` and `max_ratio` override). Every
   #            string in `contains` must be there and none in `absent`,
