@@ -597,7 +597,7 @@ struct Surface {
 
         // 1. Set the range, then write the text into it. Disturbs nothing, and
         //    is what a native field accepts.
-        if select(nsRange), setSelectedText(replacement), landed(fragment, needle: readBack(fragment.text)) {
+        if select(nsRange), setSelectedText(replacement), landed(fragment, needle: needle(of: fragment)) {
             Log.write("surface: wrote \(nsRange.length) chars via the accessibility range")
             return .replaced(undo)
         }
@@ -800,7 +800,7 @@ struct Surface {
         // that is busy laying the paste out, so a single read can eat most of
         // the old budget and only two or three ever happened.
         let deadline = Date().addingTimeInterval(2.5)
-        let needle = readBack(fragment.text)
+        let needle = needle(of: fragment)
         repeat {
             if landed(fragment, needle: needle) { return true }
             Thread.sleep(forTimeInterval: 0.05)
@@ -855,7 +855,9 @@ struct Surface {
         let after = content[range.upperBound...]
         let atEnd = after.allSatisfy(\.isWhitespace)
         let trailing = atEnd ? "" : String(after.prefix(12))
-        let target = readBack(updated)
+        let exact = readBack(updated) == readBack(content)
+        let compared: (String) -> String = exact ? folded : readBack
+        let target = compared(updated)
 
         var context = 12
         while true {
@@ -865,10 +867,14 @@ struct Surface {
             // is no leading context at all and a contains would accept the same
             // words written anywhere further down.
             if context >= beforeCount {
-                return Fragment(text: leading + replacement + trailing, atStart: true, atEnd: atEnd)
+                return Fragment(
+                    text: leading + replacement + trailing, atStart: true, atEnd: atEnd, exact: exact
+                )
             }
-            if standsAlone(readBack(leading), in: target) {
-                return Fragment(text: leading + replacement + trailing, atStart: false, atEnd: atEnd)
+            if standsAlone(compared(leading), in: target) {
+                return Fragment(
+                    text: leading + replacement + trailing, atStart: false, atEnd: atEnd, exact: exact
+                )
             }
             context *= 2
         }
@@ -886,6 +892,10 @@ struct Surface {
         /// this. Quill dropped the empty paragraph after a select-all paste,
         /// and with it the trailing "\n".
         let atEnd: Bool
+        /// The edit changes nothing but line breaks, so `readBack` would read
+        /// the old value as the new one. Compared folded, with no whitespace
+        /// tolerance.
+        let exact: Bool
     }
 
     /// Whether `needle` stands in exactly one place in `text`.
@@ -896,6 +906,11 @@ struct Surface {
 
     private func landed(_ fragment: Fragment, needle: String) -> Bool {
         guard let value = SelectionReader.visibleText(of: element) else { return false }
+        if fragment.exact {
+            let text = folded(value)
+            if fragment.atEnd { return fragment.atStart ? text == needle : text.hasSuffix(needle) }
+            return fragment.atStart ? text.hasPrefix(needle) : text.contains(needle)
+        }
         let text = readBack(value)
         if fragment.atEnd {
             let body = trimmedEnd(text), core = trimmedEnd(needle)
@@ -907,6 +922,10 @@ struct Surface {
         // a blank line above what it holds and that is not a failed write.
         return text.drop(while: \.isWhitespace)
             .starts(with: needle.drop(while: \.isWhitespace))
+    }
+
+    private func needle(of fragment: Fragment) -> String {
+        fragment.exact ? folded(fragment.text) : readBack(fragment.text)
     }
 
     private func trimmedEnd(_ text: String) -> Substring {
