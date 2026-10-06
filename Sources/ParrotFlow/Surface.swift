@@ -445,6 +445,28 @@ struct Surface {
         }
     }
 
+    /// A range of `content`, with the offsets and text the app itself uses for
+    /// it. Selecting and confirming talk to the app, so they use `app` and
+    /// `appText`. The two differ in Chromium; see `AppOffsets`.
+    struct Target {
+        let range: Range<String.Index>
+        let app: NSRange
+        let appText: String
+    }
+
+    /// The characters at `app`, in the app's own offsets, placed in `content`.
+    /// Nil when the app no longer holds `text` there, or will not say.
+    func target(app: NSRange, holding text: String) -> Target? {
+        guard kind == .editable, app.location >= 0, app.length > 0,
+              let said = SelectionReader.string(of: element, at: app.location, length: app.length),
+              said == text,
+              let before = app.location == 0
+                  ? "" : SelectionReader.string(of: element, at: 0, length: app.location),
+              let range = AppOffsets.valueRange(before: before, selected: said, in: content)
+        else { return nil }
+        return Target(range: range, app: app, appText: said)
+    }
+
     /// Substitutes one range of `content`, and nothing else.
     ///
     /// Every branch below either changes exactly those characters or changes
@@ -455,7 +477,49 @@ struct Surface {
     func replace(
         _ range: Range<String.Index>, with replacement: String, describedAs label: String = "edit"
     ) -> Outcome {
-        let updated = content.replacingCharacters(in: range, with: replacement)
+        guard let target = target(for: range) else {
+            Log.write("surface: the app's own text does not line up with its value; not writing")
+            return .refused("could not find those characters in the app's own offsets")
+        }
+        return replace(target, with: replacement, describedAs: label)
+    }
+
+    /// `range` with the app's own offsets for it. The value's offsets when the
+    /// app will not say, which is how every write was addressed before.
+    private func target(for range: Range<String.Index>) -> Target? {
+        let value = NSRange(range, in: content)
+        let same = Target(range: range, app: value, appText: String(content[range]))
+        guard kind == .editable, let text = appText(reaching: NSMaxRange(value)) else { return same }
+        guard let app = AppOffsets.appRange(of: value, app: text, in: content) else { return nil }
+        return Target(range: range, app: app, appText: (text as NSString).substring(with: app))
+    }
+
+    /// The app's own text from its offset 0, through value offset `end`. Its
+    /// offsets run short of the value's by up to one per "\n", and a read past
+    /// its end fails, so the longest read that succeeds is all of it.
+    private func appText(reaching end: Int) -> String? {
+        guard end > 0 else { return nil }
+        if let text = SelectionReader.string(of: element, at: 0, length: end) { return text }
+        var low = end - content.utf16.prefix(end).filter { $0 == 0x0A }.count
+        var high = end - 1
+        guard var longest = SelectionReader.string(of: element, at: 0, length: low) else { return nil }
+        while low < high {
+            let middle = (low + high + 1) / 2
+            if let text = SelectionReader.string(of: element, at: 0, length: middle) {
+                longest = text
+                low = middle
+            } else {
+                high = middle - 1
+            }
+        }
+        return longest
+    }
+
+    @discardableResult
+    func replace(
+        _ target: Target, with replacement: String, describedAs label: String = "edit"
+    ) -> Outcome {
+        let updated = content.replacingCharacters(in: target.range, with: replacement)
         guard updated != content else {
             return .refused("the text already reads that way")
         }
@@ -466,7 +530,7 @@ struct Surface {
 
         switch kind {
         case .editable:
-            return writeEditable(range, replacement: replacement, updated: updated, undo: undo)
+            return writeEditable(target, replacement: replacement, updated: updated, undo: undo)
         case .screen:
             return writeScreen(updated: updated, undo: undo)
         }
@@ -510,9 +574,10 @@ struct Surface {
     /// that then ignore it entirely, which is the single fact that has caused
     /// every corrupted line this code has ever produced.
     private func writeEditable(
-        _ range: Range<String.Index>, replacement: String, updated: String, undo: Undo
+        _ target: Target, replacement: String, updated: String, undo: Undo
     ) -> Outcome {
-        let nsRange = NSRange(range, in: content)
+        let range = target.range
+        let nsRange = target.app
         // The replacement in the company it is meant to keep. Checking for the
         // replacement alone would accept an append — "…the storethey're"
         // contains "they're" quite happily — so the surrounding characters are
@@ -532,7 +597,7 @@ struct Surface {
 
         // 1. Set the range, then write the text into it. Disturbs nothing, and
         //    is what a native field accepts.
-        if select(nsRange), setSelectedText(replacement), landed(fragment, needle: folded(fragment.text)) {
+        if select(nsRange), setSelectedText(replacement), landed(fragment, needle: needle(of: fragment)) {
             Log.write("surface: wrote \(nsRange.length) chars via the accessibility range")
             return .replaced(undo)
         }
@@ -542,7 +607,7 @@ struct Surface {
         //    web — and the read-back is what makes it safe. Skipping the
         //    question is what turns a paste into an append.
         if select(nsRange),
-           confirmedSelection(matches: String(content[range]), range: nsRange) {
+           confirmedSelection(matches: target.appText, range: nsRange) {
             Log.write("surface: the range write was ignored; pasting over a confirmed selection")
             TextInserter.insert(replacement, mode: .paste, paste: paste)
             if settled(on: pasted) {
@@ -569,7 +634,7 @@ struct Surface {
         //    it is to where the span starts, and every step of that walk can be
         //    checked against the app's own account before anything is typed.
         if let outcome = writeByWalkingTheCaret(
-            nsRange, replacement: replacement, fragment: pasted, undo: undo
+            target, replacement: replacement, fragment: pasted, undo: undo
         ) {
             return outcome
         }
@@ -593,8 +658,9 @@ struct Surface {
     /// Nil rather than a refusal when the walk is too long to be worth taking,
     /// so the caller can fall through to its own last resort.
     private func writeByWalkingTheCaret(
-        _ target: NSRange, replacement: String, fragment: Fragment, undo: Undo
+        _ span: Target, replacement: String, fragment: Fragment, undo: Undo
     ) -> Outcome? {
+        let target = span.app
         guard var caret = caretOffset() else {
             Log.write("surface: the app will not say where the caret is; cannot walk to the span")
             return nil
@@ -633,8 +699,7 @@ struct Surface {
         // this pasted over the wrong 25 characters. `confirmedSelection` asks
         // what is selected first and falls back to the numbers only where the app
         // will not say, which is every Chromium contenteditable.
-        guard let text = Range(target, in: content).map({ String(content[$0]) }),
-              confirmedSelection(matches: text, range: target) else {
+        guard confirmedSelection(matches: span.appText, range: target) else {
             return nil
         }
 
@@ -735,7 +800,7 @@ struct Surface {
         // that is busy laying the paste out, so a single read can eat most of
         // the old budget and only two or three ever happened.
         let deadline = Date().addingTimeInterval(2.5)
-        let needle = folded(fragment.text)
+        let needle = needle(of: fragment)
         repeat {
             if landed(fragment, needle: needle) { return true }
             Thread.sleep(forTimeInterval: 0.05)
@@ -748,7 +813,7 @@ struct Surface {
         // wrong place.
         if let value = SelectionReader.visibleText(of: element) {
             let replacement = fragment.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            Log.write(folded(value).contains(folded(replacement))
+            Log.write(readBack(value).contains(readBack(replacement))
                 ? "surface: the text is there but not in the context expected;"
                     + " the read-back is stricter than the edit"
                 : "surface: the text has not appeared in the field")
@@ -787,8 +852,12 @@ struct Surface {
     ) -> Fragment {
         let before = content[..<range.lowerBound]
         let beforeCount = before.count
-        let trailing = String(content[range.upperBound...].prefix(12))
-        let target = folded(updated)
+        let after = content[range.upperBound...]
+        let atEnd = after.allSatisfy(\.isWhitespace)
+        let trailing = atEnd ? "" : String(after.prefix(12))
+        let exact = readBack(updated) == readBack(content)
+        let compared: (String) -> String = exact ? folded : readBack
+        let target = compared(updated)
 
         var context = 12
         while true {
@@ -798,10 +867,14 @@ struct Surface {
             // is no leading context at all and a contains would accept the same
             // words written anywhere further down.
             if context >= beforeCount {
-                return Fragment(text: leading + replacement + trailing, atStart: true)
+                return Fragment(
+                    text: leading + replacement + trailing, atStart: true, atEnd: atEnd, exact: exact
+                )
             }
-            if standsAlone(folded(leading), in: target) {
-                return Fragment(text: leading + replacement + trailing, atStart: false)
+            if standsAlone(compared(leading), in: target) {
+                return Fragment(
+                    text: leading + replacement + trailing, atStart: false, atEnd: atEnd, exact: exact
+                )
             }
             context *= 2
         }
@@ -815,6 +888,14 @@ struct Surface {
         /// offset zero has nothing in front of it to be recognised by, and an
         /// identical run later in the field would answer for it.
         let atStart: Bool
+        /// Only whitespace follows the span, so the value has to *end* with
+        /// this. Quill dropped the empty paragraph after a select-all paste,
+        /// and with it the trailing "\n".
+        let atEnd: Bool
+        /// The edit changes nothing but line breaks, so `readBack` would read
+        /// the old value as the new one. Compared folded, with no whitespace
+        /// tolerance.
+        let exact: Bool
     }
 
     /// Whether `needle` stands in exactly one place in `text`.
@@ -825,12 +906,37 @@ struct Surface {
 
     private func landed(_ fragment: Fragment, needle: String) -> Bool {
         guard let value = SelectionReader.visibleText(of: element) else { return false }
-        let text = folded(value)
+        if fragment.exact {
+            let text = folded(value)
+            if fragment.atEnd { return fragment.atStart ? text == needle : text.hasSuffix(needle) }
+            return fragment.atStart ? text.hasPrefix(needle) : text.contains(needle)
+        }
+        let text = readBack(value)
+        if fragment.atEnd {
+            let body = trimmedEnd(text), core = trimmedEnd(needle)
+            guard body.hasSuffix(core) else { return false }
+            return !fragment.atStart || body.drop(while: \.isWhitespace) == core.drop(while: \.isWhitespace)
+        }
         guard fragment.atStart else { return text.contains(needle) }
         // Leading whitespace on both sides, because a rich-text editor can put
         // a blank line above what it holds and that is not a failed write.
         return text.drop(while: \.isWhitespace)
             .starts(with: needle.drop(while: \.isWhitespace))
+    }
+
+    private func needle(of fragment: Fragment) -> String {
+        fragment.exact ? folded(fragment.text) : readBack(fragment.text)
+    }
+
+    private func trimmedEnd(_ text: String) -> Substring {
+        text[..<(text.lastIndex { !$0.isWhitespace }.map(text.index(after:)) ?? text.startIndex)]
+    }
+
+    /// What the read-back compares: `folded`, with a run of line breaks read
+    /// as one. Chromium's AXValue shows a blank line between two paragraphs
+    /// as a single "\n", measured on a Quill composer.
+    private func readBack(_ text: String) -> String {
+        folded(text).replacingOccurrences(of: "\n+", with: "\n", options: .regularExpression)
     }
 
     /// Typographic substitution is not a failed write. Most apps turn a straight

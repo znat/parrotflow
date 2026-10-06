@@ -3220,6 +3220,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               )
         else { return .notAttempted }
 
+        func written(_ outcome: Surface.Outcome) -> InPlace {
+            switch outcome {
+            case .replaced(let undo):
+                lastSubstitution = undo
+                return .replaced
+            case .refused(let why):
+                Log.write("transform: refused — \(why)")
+                return .failed
+            }
+        }
+
+        if let recorded = selection.range, let found = surface.target(
+            app: NSRange(location: recorded.location, length: recorded.length),
+            holding: selection.text
+        ) {
+            return written(surface.replace(found, with: text, describedAs: label))
+        }
+
         var target: Range<String.Index>?
         if let recorded = selection.range,
            recorded.location >= 0, recorded.length > 0,
@@ -3252,14 +3270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("transform: \"\(selection.text.prefix(40))\" is no longer in the field")
             return .notAttempted
         }
-        switch surface.replace(target, with: text, describedAs: label) {
-        case .replaced(let undo):
-            lastSubstitution = undo
-            return .replaced
-        case .refused(let why):
-            Log.write("transform: refused — \(why)")
-            return .failed
-        }
+        return written(surface.replace(target, with: text, describedAs: label))
     }
 
     private func offset(of range: Range<String.Index>, in text: String) -> Int {
