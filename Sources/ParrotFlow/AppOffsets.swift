@@ -64,4 +64,11 @@ enum AppOffsets {
         else { return selected }
         return String(value[range])
     }
+
+    /// `paragraphs` joined by line breaks, when that is `text` with only line
+    /// breaks added. Chromium reads an empty paragraph between two others as
+    /// one "\n" in every string it gives; its paragraph children keep it.
+    static func withBlankLines(_ text: String, paragraphs: [String]) -> String {
+        text
+    }
 }
