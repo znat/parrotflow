@@ -15,7 +15,12 @@ import ApplicationServices
 enum SelectionReader {
 
     struct Selection {
+        /// As the field shows it. What a rewrite reads and the pill shows.
         let text: String
+        /// As the app reads it at `range`, which is what a write-back confirms.
+        /// Chromium leaves the break between two paragraphs out of it; see
+        /// `AppOffsets`.
+        let appText: String
         /// The app the text came from, so focus can be handed back.
         let owner: NSRunningApplication?
         /// The text element and the exact character range that was selected.
@@ -33,13 +38,99 @@ enum SelectionReader {
     static func snapshot() -> Selection? {
         guard Permissions.accessibility == .granted else { return nil }
         guard let element = focusedElement() else { return nil }
+        return selection(in: element).map(shown)
+    }
+
+    /// What is selected, as the app reads it. `text` and `appText` are the same
+    /// until `shown` places it in the value.
+    static func selection(in element: AXUIElement) -> Selection? {
         guard let text = selectedText(of: element), !text.isEmpty else { return nil }
         return Selection(
             text: text,
+            appText: text,
             owner: NSWorkspace.shared.frontmostApplication,
             element: element,
             range: selectedRange(of: element)
         )
+    }
+
+    /// `selection` with `text` as the field shows it. Reads the whole AXValue:
+    /// 10 ms median and 43 ms on the first call for a 400 KB Chrome field.
+    static func shown(_ selection: Selection) -> Selection {
+        guard let element = selection.element, let range = selection.range,
+              let value = visibleText(of: element, within: nil) else { return selection }
+        var text = AppOffsets.shown(selection.appText, at: range.location, in: value) {
+            range.location == 0 ? "" : string(of: element, at: 0, length: range.location)
+        }
+        if text.contains("\n"), let paragraphs = selectedParagraphs(in: element) {
+            text = AppOffsets.withBlankLines(text, paragraphs: paragraphs)
+        }
+        return Selection(
+            text: text, appText: selection.appText, owner: selection.owner,
+            element: element, range: range
+        )
+    }
+
+    /// The selection cut at the field's paragraphs, an empty one as "".
+    /// Chromium gives a text area one AXGroup per paragraph, and an empty one
+    /// has no children. Nil past 200 paragraphs: each costs about 0.15 ms.
+    private static func selectedParagraphs(in element: AXUIElement) -> [String]? {
+        func read(_ node: AXUIElement, _ name: String, _ parameter: CFTypeRef? = nil) -> CFTypeRef? {
+            AXUIElementSetMessagingTimeout(node, 0.25)
+            var value: CFTypeRef?
+            let error = parameter.map {
+                AXUIElementCopyParameterizedAttributeValue(node, name as CFString, $0, &value)
+            } ?? AXUIElementCopyAttributeValue(node, name as CFString, &value)
+            return error == .success ? value : nil
+        }
+        func string(_ from: AXTextMarker, _ to: AXTextMarker) -> String? {
+            read(element, "AXStringForTextMarkerRange", AXTextMarkerRangeCreate(nil, from, to)) as? String
+        }
+        guard let marked = read(element, "AXSelectedTextMarkerRange"),
+              CFGetTypeID(marked) == AXTextMarkerRangeGetTypeID(),
+              let children = read(element, kAXChildrenAttribute) as? [AXUIElement], !children.isEmpty
+        else { return nil }
+        let selection = marked as! AXTextMarkerRange
+        let start = AXTextMarkerRangeCopyStartMarker(selection)
+        let end = AXTextMarkerRangeCopyEndMarker(selection)
+
+        // A selection made with the DOM's selectNodeContents ends on the text
+        // area itself rather than in a paragraph.
+        func paragraph(holding marker: AXTextMarker, onTheField fallback: Int) -> Int? {
+            guard let hit = read(element, "AXUIElementForTextMarker", marker),
+                  CFGetTypeID(hit) == AXUIElementGetTypeID() else { return nil }
+            var node = hit as! AXUIElement
+            if CFEqual(node, element) { return fallback }
+            for _ in 0..<8 {
+                if let index = children.firstIndex(where: { CFEqual($0, node) }) { return index }
+                guard let parent = read(node, kAXParentAttribute),
+                      CFGetTypeID(parent) == AXUIElementGetTypeID() else { return nil }
+                node = parent as! AXUIElement
+            }
+            return nil
+        }
+        guard let first = paragraph(holding: start, onTheField: 0),
+              let last = paragraph(holding: end, onTheField: children.count - 1),
+              first <= last, last - first < 200 else { return nil }
+
+        var paragraphs: [String] = []
+        for index in first...last {
+            let child = children[index]
+            guard let inside = read(child, kAXChildrenAttribute) as? [AXUIElement] else { return nil }
+            if inside.isEmpty {
+                paragraphs.append("")
+                continue
+            }
+            guard let own = read(element, "AXTextMarkerRangeForUIElement", child),
+                  CFGetTypeID(own) == AXTextMarkerRangeGetTypeID() else { return nil }
+            let range = own as! AXTextMarkerRange
+            guard let text = string(
+                index == first ? start : AXTextMarkerRangeCopyStartMarker(range),
+                index == last ? end : AXTextMarkerRangeCopyEndMarker(range)
+            ) else { return nil }
+            paragraphs.append(text)
+        }
+        return paragraphs
     }
 
     /// The focused text element and its owning app, with no selection needed.
@@ -52,6 +143,7 @@ enum SelectionReader {
         guard let element = focusedElement(failure: &failure) else { return nil }
         return Selection(
             text: "",
+            appText: "",
             owner: NSWorkspace.shared.frontmostApplication,
             element: element,
             range: nil
@@ -287,11 +379,11 @@ enum SelectionReader {
 
         if let text = viaAccessibility(), !text.isEmpty {
             Log.write("selection via accessibility")
-            return Selection(text: text, owner: owner)
+            return Selection(text: text, appText: text, owner: owner)
         }
         if let text = viaCopy(), !text.isEmpty {
             Log.write("selection via synthetic copy")
-            return Selection(text: text, owner: owner)
+            return Selection(text: text, appText: text, owner: owner)
         }
         // Last resort: whatever the user copied themselves. Terminals in
         // particular drop their selection before we can read it, so "select,
@@ -300,7 +392,7 @@ enum SelectionReader {
            let text = NSPasteboard.general.string(forType: .string),
            !text.isEmpty, text.count <= 200 {
             Log.write("selection via clipboard")
-            return Selection(text: text, owner: owner)
+            return Selection(text: text, appText: text, owner: owner)
         }
         return nil
     }

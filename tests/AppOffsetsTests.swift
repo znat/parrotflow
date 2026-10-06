@@ -78,6 +78,41 @@ enum AppOffsetsTests {
         precondition(app(0, 4, "Hi \u{FEFF}@channel", in: mixedValue) == nil,
                      "app text that is not the value's")
 
+        precondition(AppOffsets.shown(threeSelected, at: 0, in: threeValue) { "" } == threeValue,
+                     "three paragraphs, all selected, read with their breaks")
+        let mentionLine = "Hey \u{FEFF}@channel\u{FEFF}. Three weeks to the retreat."
+        precondition(AppOffsets.shown(
+            "Book travel this week.\nArrival dates go in the sheet.\nDietary needs too.Questions? Ask",
+            at: mentionLine.utf16.count, in: mixedValue
+        ) { mentionLine } == "Book travel this week.\nArrival dates go in the sheet.\nDietary needs too.\nQuestions? Ask",
+                     "a selection that starts after a paragraph break, read with its breaks")
+        var asked = false
+        precondition(AppOffsets.shown("Three weeks.\nBook", at: 14, in: native) { asked = true; return nil }
+            == "Three weeks.\nBook" && !asked, "a field whose offsets already address its value")
+        precondition(AppOffsets.shown("Dietary needs too.Questions? Ask", at: 110, in: mixedValue) { nil }
+            == "Dietary needs too.Questions? Ask", "the app will not say what comes before")
+        precondition(AppOffsets.shown("Four weeks", at: 0, in: mixedValue) { "" } == "Four weeks",
+                     "text that is no longer there")
+
+        precondition(AppOffsets.withBlankLines("do it.\nBut I also", paragraphs: ["do it.", "", "But I also"])
+            == "do it.\n\nBut I also", "a blank line Quill reads as one break")
+        precondition(AppOffsets.withBlankLines("\nI really wa", paragraphs: ["", "I really wa"])
+            == "\nI really wa", "a selection that starts in an empty paragraph")
+        precondition(AppOffsets.withBlankLines("na do this.\n", paragraphs: ["na do this.", "", ""])
+            == "na do this.\n\n", "a selection that ends in an empty paragraph")
+        precondition(AppOffsets.withBlankLines(mixedValue, paragraphs: [
+            mentionLine, "Book travel this week.", "", "Arrival dates go in the sheet.\nDietary needs too.",
+            "Questions? Ask in \u{FEFF}#retreat-planning\u{FEFF}.", "", "",
+        ]) == "Hey \u{FEFF}@channel\u{FEFF}. Three weeks to the retreat.\nBook travel this week.\n\nArrival dates "
+            + "go in the sheet.\nDietary needs too.\nQuestions? Ask in \u{FEFF}#retreat-planning\u{FEFF}.\n\n",
+            "a blank line, a soft break and two trailing empty lines")
+        precondition(AppOffsets.withBlankLines(threeValue, paragraphs: threeValue.components(separatedBy: "\n"))
+            == threeValue, "paragraphs with no empty one between them")
+        precondition(AppOffsets.withBlankLines("do it.\nBut I also", paragraphs: ["do it.", "", "But you also"])
+            == "do it.\nBut I also", "paragraphs that no longer hold the text")
+        precondition(AppOffsets.withBlankLines("do it.\nBut I also", paragraphs: ["do it", "", "But I also"])
+            == "do it.\nBut I also", "paragraphs that leave a character out")
+
         print("app offsets: every case passed")
     }
 }

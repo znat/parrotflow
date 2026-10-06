@@ -49,4 +49,32 @@ enum AppOffsets {
         found.append(at)
         return found
     }
+
+    /// `selected`, which the app reads at `location` in its own offsets, as
+    /// `value` shows it. `before` is the app's text from 0 to `location`.
+    static func shown(
+        _ selected: String, at location: Int, in value: String, before: () -> String?
+    ) -> String {
+        if let range = Range(NSRange(location: location, length: selected.utf16.count), in: value),
+           value[range] == selected {
+            return selected
+        }
+        guard let before = before(),
+              let range = valueRange(before: before, selected: selected, in: value)
+        else { return selected }
+        return String(value[range])
+    }
+
+    /// `paragraphs` joined by line breaks, when that is `text` with only line
+    /// breaks added. Chromium reads an empty paragraph between two others as
+    /// one "\n" in every string it gives; its paragraph children keep it.
+    static func withBlankLines(_ text: String, paragraphs: [String]) -> String {
+        let joined = paragraphs.joined(separator: "\n")
+        guard !text.isEmpty, let at = positions(of: text, in: joined) else { return text }
+        let units = Array(joined.utf16)
+        let newline: UInt16 = 0x0A
+        guard units[..<at[0]].allSatisfy({ $0 == newline }),
+              units[at[at.count - 1]...].allSatisfy({ $0 == newline }) else { return text }
+        return joined
+    }
 }
