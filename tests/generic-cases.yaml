@@ -373,3 +373,285 @@ cases:
     category: correction
     instruction: I meant what I said in the review
     input: the config file is at ~/.config/parrotflow
+
+  # --- 2026-10-05: requests, not only commands ----------------------------
+  #
+  # People talk to the open panel the way they talk to a colleague: "can you
+  # improve the wording?". The recogniser hears that, sometimes with a word
+  # wrong, and the text is often a whole message of several paragraphs.
+  #
+  # Broad edits ("improve the wording") have no one right answer, so they use a
+  # third kind:
+  #
+  #   rewrite  the text must come back with at least one word changed (not
+  #            only punctuation or case), with no fewer paragraphs
+  #            than it had, at a length between a quarter and one and a half
+  #            times the input (`min_ratio` and `max_ratio` override). Every
+  #            string in `contains` must be there and none in `absent`,
+  #            ignoring case. `contains` names the facts the message must
+  #            keep, so a fluent rewrite that drops them fails.
+  #
+  # A narrow edit over a long text is still a `change` with an exact answer:
+  # the rest of the message must come back as it was.
+
+  # --- a polite question is a request -------------------------------------
+  - name: can you, digits
+    kind: change
+    category: polite
+    instruction: Can you write the numbers as digits?
+    input: we booked nine rooms for the team
+    expect: we booked 9 rooms for the team
+
+  - name: could you, all caps
+    kind: change
+    category: polite
+    instruction: Could you make that all caps?
+    input: do not merge before friday
+    expect: DO NOT MERGE BEFORE FRIDAY
+
+  - name: would you mind, remove the brackets
+    kind: change
+    category: polite
+    instruction: Would you mind removing the brackets?
+    input: the demo (the short one) is at noon
+    expect: the demo the short one is at noon
+
+  - name: can you, fix the grammar and punctuation
+    kind: change
+    category: polite
+    instruction: Can you fix the grammar and punctuation?
+    input: the logs doesnt say why it failed
+    expect: The logs don't say why it failed.
+
+  - name: can you tell me, a question about the text
+    kind: keep
+    category: polite
+    instruction: Can you tell me what this means?
+    input: the cache is warmed on first launch
+
+  - name: can you remind me, not an edit
+    kind: keep
+    category: polite
+    instruction: Can you remind me to call the vendor tomorrow?
+    input: the invoice is due at the end of the month
+
+  # --- broad requests apply to the whole text ------------------------------
+  - name: improve the wording
+    kind: rewrite
+    category: style
+    instruction: Improve the wording.
+    input: the thing with the build is that it is slow and that is a thing that we should look at doing something about soon
+    absent:
+      - is a thing that
+    contains:
+      - build
+      - slow
+
+  - name: fix the typos
+    kind: rewrite
+    category: style
+    instruction: fix any typos
+    input: I definately recieve the report every morning, but teh numbers are off.
+    contains:
+      - definitely
+      - receive
+      - the numbers
+    absent:
+      - definately
+      - recieve
+      - teh
+
+  - name: more formal
+    kind: rewrite
+    category: style
+    instruction: make it more formal
+    input: hey folks, we're gonna push the launch to next week cuz the docs aren't ready
+    max_ratio: 2.0
+    absent:
+      - gonna
+      - cuz
+    contains:
+      - launch
+      - next week
+      - doc
+
+  - name: friendlier
+    kind: rewrite
+    category: style
+    instruction: Could you make it a bit friendlier?
+    input: Send me the slides by 5. Late slides will not be shown.
+    max_ratio: 2.0
+    contains:
+      - slides
+      - "5"
+
+  - name: shorter
+    kind: rewrite
+    category: style
+    instruction: make it shorter
+    input: I just wanted to let you all know that I am going to be out of the office for the whole of next week, and that during that time Priya will be the person to ask about anything to do with the billing project.
+    min_ratio: 0.15
+    max_ratio: 0.85
+    contains:
+      - next week
+      - Priya
+      - billing
+
+  # --- the instruction was misheard ----------------------------------------
+  # The recogniser swaps a word for one that sounds like it. When the heard
+  # word does not fit the text and a near-sounding one does, the near one is
+  # what was said.
+  - name: improve the warning, meaning wording
+    kind: rewrite
+    category: misheard
+    instruction: Can you improve the warning?
+    input: the thing with the build is that it is slow and that is a thing that we should look at doing something about soon
+    absent:
+      - warning
+      - is a thing that
+    contains:
+      - build
+      - slow
+
+  - name: fix the grandma, meaning grammar
+    kind: change
+    category: misheard
+    instruction: fix the grandma and punctuation
+    input: the tests dont pass on main
+    expect: The tests don't pass on main.
+
+  - name: numbers as dishes, meaning digits
+    kind: change
+    category: misheard
+    instruction: write the numbers as dishes
+    input: we need twelve chairs and three tables
+    expect: we need 12 chairs and 3 tables
+
+  - name: less worthy, meaning wordy
+    kind: rewrite
+    category: misheard
+    instruction: make it less worthy
+    input: I just wanted to let you all know that I am going to be out of the office for the whole of next week, and that during that time Priya will be the person to ask about anything to do with the billing project.
+    min_ratio: 0.15
+    max_ratio: 0.9
+    contains:
+      - next week
+      - Priya
+      - billing
+
+  - name: a remark that sounds like a request
+    kind: keep
+    category: misheard
+    instruction: I'm warning you, friday is going to be busy
+    input: the retro moved to thursday afternoon
+
+  # --- a message of several paragraphs -------------------------------------
+  - name: paragraphs, digits only
+    kind: change
+    category: paragraphs
+    instruction: write the numbers as digits
+    input: |-
+      Hi all, the spring hackathon is three weeks out and the sign-up sheet is open.
+
+      Teams can be up to five people. Bring your own idea or pick one from the board in the kitchen.
+
+      Demos are on the Friday afternoon, and each team gets ten minutes.
+    expect: |-
+      Hi all, the spring hackathon is 3 weeks out and the sign-up sheet is open.
+
+      Teams can be up to 5 people. Bring your own idea or pick one from the board in the kitchen.
+
+      Demos are on the Friday afternoon, and each team gets 10 minutes.
+
+  - name: paragraphs, I meant
+    kind: change
+    category: paragraphs
+    instruction: I meant Thursday
+    input: |-
+      Quick update on the library move.
+
+      The movers come on Wednesday, so please box up your desk the evening before. Label every box with your name and floor.
+
+      Thanks for your patience while we settle in.
+    expect: |-
+      Quick update on the library move.
+
+      The movers come on Thursday, so please box up your desk the evening before. Label every box with your name and floor.
+
+      Thanks for your patience while we settle in.
+
+  - name: paragraphs, improve the wording
+    kind: rewrite
+    category: paragraphs
+    instruction: Improve the wording.
+    input: |-
+      Hi team, so the release freeze is happening next week and it starts on Monday and it goes until the Thursday after.
+
+      During the freeze nothing gets merged to main unless it is a fix for something that is broken, and if you are not sure, ask in the release channel first before you merge it.
+
+      Thanks everyone.
+    absent:
+      - and it starts on monday and it goes
+    contains:
+      - Monday
+      - Thursday
+      - main
+      - release
+
+  - name: paragraphs, wording and typos as a question
+    kind: rewrite
+    category: paragraphs
+    instruction: Can you improve the wording and fix any typo or grammatical error?
+    input: |-
+      Hi everyone, the team dinner is on the 14th and we has booked the back room at the noodle place on Elm street.
+
+      Please let me know by friday if you can come, and tell me about any alergies so the kitchen can plan for it.
+
+      See you their!
+    contains:
+      - 14th
+      - Elm
+      - Friday
+      - allergies
+      - "you there"
+    absent:
+      - we has
+      - alergies
+      - you their
+
+  - name: paragraphs, misheard as warning
+    kind: rewrite
+    category: paragraphs
+    instruction: Can you improve the warning?
+    input: |-
+      Hi team, so the release freeze is happening next week and it starts on Monday and it goes until the Thursday after.
+
+      During the freeze nothing gets merged to main unless it is a fix for something that is broken, and if you are not sure, ask in the release channel first before you merge it.
+
+      Thanks everyone.
+    absent:
+      - warning
+      - and it starts on monday and it goes
+    contains:
+      - Monday
+      - Thursday
+      - main
+      - release
+
+  - name: paragraphs, a question about the message
+    kind: keep
+    category: paragraphs
+    instruction: what time does the dinner start
+    input: |-
+      Hi everyone, the team dinner is on the 14th and we have booked the back room at the noodle place on Elm Street.
+
+      Please let me know by Friday if you can come.
+
+  - name: paragraphs, a remark
+    kind: keep
+    category: paragraphs
+    instruction: thanks, that looks good
+    input: |-
+      Quick update on the library move.
+
+      The movers come on Wednesday, so please box up your desk by the end of Tuesday.

@@ -5,6 +5,7 @@
     scripts/validate-generic.py gemma4:e4b --variant v3 --verbose
     scripts/validate-generic.py none --code-only      # the no-model control
     scripts/validate-generic.py gemma4:e4b --shipped  # today's narrow prompts
+    scripts/validate-generic.py gpt-6-luna --api openai --variant v8
 
 The question: if the router matches nothing, can one prompt be handed the
 whole instruction and trusted to do it? Nothing is implemented yet — this is
@@ -22,7 +23,7 @@ this design either survives or does not.
 
 Scoreboard and what it decided: the notes at the bottom of this file.
 """
-import argparse, json, subprocess, sys, time, urllib.request, pathlib
+import argparse, json, os, re, subprocess, sys, time, urllib.request, pathlib
 
 try:
     import yaml
@@ -178,6 +179,101 @@ VARIANTS["v5"] = VARIANTS["v3"].replace(
     "We saw about forty of them.\nWe saw about 40 of them.",
 )
 
+# v7 — v6 with the restraint rules replaced by what to do. Live on 2026-10-05,
+# "Can you improve the warning?" over a long message came back unchanged: v6
+# reads a polite question as a question, a misheard word as "something the
+# text does not contain", and "no other change" as a reason to do nothing.
+VARIANTS["v7"] = """\
+Apply the instruction to the text.
+
+The instruction is a change the speaker wants made to the text. It was spoken
+and then transcribed by speech recognition. Read it this way:
+
+- A question that asks for a change is a request to make it. "Can you make
+  it shorter?" means make it shorter.
+- A broad request applies to the whole text: improve the wording, fix the
+  typos and grammar, make it friendlier, shorter or more formal.
+- A narrow request changes what it names: the numbers, the dates, one word.
+- A word in the instruction can be misheard. When it does not fit the text
+  and a word that sounds like it does, follow the word that fits.
+- Keep the paragraphs and line breaks of the text.
+
+Return the text unchanged when the instruction is not a change to it: a
+question about the text or the world, a remark, a change the text already
+has, or a change to something the text does not contain.
+
+instruction: write the numbers as digits
+text:
+we saw about forty of them
+we saw about 40 of them
+
+instruction: make the dates ISO
+text:
+the release is 2026-02-01
+the release is 2026-02-01
+
+instruction: how long is that going to take
+text:
+the migration runs on friday
+the migration runs on friday
+
+instruction: I meant Tuesday
+text:
+the meeting is on Monday
+the meeting is on Tuesday
+
+instruction: this is not what I had in mind
+text:
+the migration runs on friday
+the migration runs on friday
+
+Return only the text."""
+
+# v8 — v7 plus two examples: a polite question that is an edit, and a misheard
+# word ("commerce" for commas).
+VARIANTS["v8"] = VARIANTS["v7"].replace(
+    """instruction: make the dates ISO""",
+    """instruction: could you make it more polite
+text:
+send me the report today
+please send me the report today
+
+instruction: remove the commerce
+text:
+so, we can ship it, today
+so we can ship it today
+
+instruction: make the dates ISO""",
+)
+
+# v9 — v8 plus an example of a request for something the text does not
+# contain. v7 and v8 lost "no money in the text" on gemma ($0.00 again).
+VARIANTS["v9"] = VARIANTS["v8"].replace(
+    """instruction: how long is that going to take""",
+    """instruction: put the prices in euros
+text:
+the team meets on thursday
+the team meets on thursday
+
+instruction: how long is that going to take""",
+)
+
+# v10 — v8 with the rest of the text named on the narrow bullet. Lost: see the
+# 2026-10-05 notes at the bottom.
+VARIANTS["v10"] = VARIANTS["v8"].replace(
+    "- A narrow request changes what it names: the numbers, the dates, one word.\n",
+    "- A narrow request changes what it names: the numbers, the dates, one word.\n"
+    "  The rest comes back as written, with its own capitals and full stops.\n",
+)
+
+# v11 — v8 with the layout rule giving way to a request that changes the
+# layout ("put that on one line"). Suggested in review on #350.
+VARIANTS["v11"] = VARIANTS["v8"].replace(
+    "- Keep the paragraphs and line breaks of the text.\n",
+    "- Keep the paragraphs and line breaks of the text unless the instruction\n"
+    "  asks to change them.\n",
+)
+
 # --- the pipeline, ported from PromptRunner --------------------------------
 
 
@@ -205,7 +301,10 @@ def clean(raw):
     if "\n" in text:
         first, rest = text.split("\n", 1)
         first = first.strip()
-        if first.endswith(":") and len(first) < 60 and not first.startswith("-"):
+        following = rest.split("\n", 1)[0].strip()
+        opens_list = following.startswith(("- ", "* ", "• "))
+        if (first.endswith(":") and len(first) < 60 and not first.startswith("-")
+                and not opens_list):
             text = rest.strip()
 
     if len(text) >= 2 and text.startswith('"') and text.endswith('"'):
@@ -238,6 +337,36 @@ def ask(model, system, user, budget, endpoint="http://localhost:11434"):
     with urllib.request.urlopen(request, timeout=120) as response:
         payload = json.load(response)
     return payload["response"]
+
+
+def ask_openai(model, system, user, budget, endpoint="https://api.openai.com/v1"):
+    """The request LLM.openAI makes with `reasoning: off` and no temperature."""
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        sys.exit("OPENAI_API_KEY is not set")
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "max_completion_tokens": budget,
+        "reasoning_effort": "none",
+    }
+    request = urllib.request.Request(
+        endpoint + "/chat/completions",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json",
+                 "Authorization": "Bearer " + key},
+    )
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                payload = json.load(response)
+            return payload["choices"][0]["message"]["content"] or ""
+        except (TimeoutError, urllib.error.URLError):
+            if attempt == 2:
+                raise
 
 
 def shipped_content():
@@ -273,10 +402,51 @@ def run_shipped(name, instruction, text):
         [str(BIN), "--prompt", name, instruction, text, "--quiet"],
         capture_output=True, text=True,
     )
-    return result.stdout.strip().split("\n")[-1] if result.stdout.strip() else ""
+    # `--quiet` prints the result and nothing else, and a result can span
+    # paragraphs.
+    return result.stdout.strip()
 
 
 # --- scoring ---------------------------------------------------------------
+
+
+def paragraphs(text):
+    return [block for block in text.strip().split("\n\n") if block.strip()]
+
+
+def words(text):
+    return re.findall(r"[^\W_]+", text.lower().replace("’", "'"))
+
+
+def rewrite_contract(case):
+    parts = ["length {}-{}".format(case.get("min_ratio", 0.25), case.get("max_ratio", 1.5))]
+    if case.get("contains"):
+        parts.append("contains " + ", ".join(case["contains"]))
+    if case.get("absent"):
+        parts.append("absent " + ", ".join(case["absent"]))
+    return "; ".join(parts)
+
+
+def rewrite_broken(case, got):
+    """What a `rewrite` answer breaks, or None. See the case file's header."""
+    text = case["input"]
+    if got.strip() == text.strip():
+        return "did nothing"
+    if words(got) == words(text):
+        return "changed only punctuation or case"
+    if len(paragraphs(got)) < len(paragraphs(text)):
+        return "{} paragraphs, wanted {}".format(len(paragraphs(got)), len(paragraphs(text)))
+    ratio = len(got.strip()) / max(1, len(text.strip()))
+    if not case.get("min_ratio", 0.25) <= ratio <= case.get("max_ratio", 1.5):
+        return "length {:.2f} of the input".format(ratio)
+    lowered = got.lower()
+    missing = [s for s in case.get("contains", []) if s.lower() not in lowered]
+    if missing:
+        return "missing " + ", ".join(missing)
+    kept = [s for s in case.get("absent", []) if s.lower() in lowered]
+    if kept:
+        return "still has " + ", ".join(kept)
+    return None
 
 
 def main():
@@ -291,6 +461,8 @@ def main():
     parser.add_argument("--app", action="store_true",
                         help="run the built-in through the binary, not this file's port")
     parser.add_argument("--only", default=None, help="one category")
+    parser.add_argument("--api", choices=["ollama", "openai"], default="ollama",
+                        help="openai reads OPENAI_API_KEY")
     args = parser.parse_args()
 
     cases = yaml.safe_load(CASES.read_text())["cases"]
@@ -327,6 +499,8 @@ def main():
         text = case["input"]
         want = [case["expect"]] if case["kind"] == "change" else [text]
         want += case.get("accept", [])
+        if case["kind"] == "rewrite":
+            want = ["(changed: {})".format(rewrite_contract(case))]
 
         started = time.time()
         if args.code_only:
@@ -342,7 +516,8 @@ def main():
                               case["instruction"], text)
         else:
             system, user = compose(content, case["instruction"], text)
-            got = clean(ask(args.model, system, user, token_budget(text)))
+            call = ask_openai if args.api == "openai" else ask
+            got = clean(call(args.model, system, user, token_budget(text)))
             # The sentinel is the app's job to resolve, not the model's: it
             # means "nothing here changes", and the text it stands for is the
             # text we already have. Parsed loosely — a model that answers
@@ -351,12 +526,18 @@ def main():
                 got = text
         elapsed += time.time() - started
 
-        ok = any(got.strip() == w.strip() for w in want)
+        if case["kind"] == "rewrite":
+            broken = rewrite_broken(case, got)
+            ok = not broken
+        else:
+            ok = any(got.strip() == w.strip() for w in want)
         results.append((case, got, ok))
 
         if ok:
             if args.verbose:
                 print("  ✓ {:<34} {}".format(case["name"], case["category"]))
+                if case["kind"] == "rewrite":
+                    print("      got   {}".format(got.replace("\n", " ⏎ ")))
         else:
             if case["kind"] == "keep":
                 # Two ways to fail a keep, and they are not equally bad. Text
@@ -367,6 +548,8 @@ def main():
                         else "touched text that needed nothing")
             elif got.strip() == text.strip():
                 mark = "did nothing"
+            elif case["kind"] == "rewrite":
+                mark = broken
             else:
                 mark = "wrong edit"
             print("  ✗ {:<34} ({})".format(case["name"], mark))
@@ -380,6 +563,7 @@ def main():
 
     changes = [r for r in results if r[0]["kind"] == "change"]
     keeps = [r for r in results if r[0]["kind"] == "keep"]
+    rewrites = [r for r in results if r[0]["kind"] == "rewrite"]
 
     label = ("control (no model)" if args.code_only
              else "the built-in, through the app" if args.app
@@ -387,8 +571,8 @@ def main():
              else "{} {}".format(args.model, args.variant))
     print()
     print("  {}".format(label))
-    print("  {}/{} overall   {}/{} change   {}/{} keep   {:.2f}s/case".format(
-        *tally(results), *tally(changes), *tally(keeps),
+    print("  {}/{} overall   {}/{} change   {}/{} rewrite   {}/{} keep   {:.2f}s/case".format(
+        *tally(results), *tally(changes), *tally(rewrites), *tally(keeps),
         elapsed / max(1, len(results))))
 
     by_category = {}
@@ -553,3 +737,64 @@ if __name__ == "__main__":
 # The runner's default is v1, which has never been what ships. v3 was the
 # shipped prompt before this and v6 is now; check which one matches
 # FreeForm.swift before reading any number here as a statement about the app.
+
+# --- 2026-10-05: requests, misheard words, whole messages ---------------------
+#
+# Live, on release 0.16.0 with gpt-6-luna: "Can you improve the warning?" over
+# a ~440-character Slack message came back unchanged. v6 told the model to make
+# "exactly the change … and no other", to treat a question as a question, and
+# to leave the text alone when it "does not contain" what was asked for. A
+# misheard "warning" hit all three.
+#
+# 23 cases added (polite, style, misheard, paragraphs), and a third kind,
+# `rewrite`, for edits with no one right answer. `--api openai` scores the
+# model the release config runs: the request LLM.openAI sends with reasoning
+# off and no temperature, so gpt passes move by two or three cases.
+#
+# First round, run alternately, gemma alone in memory:
+#
+#                          old 44     new 23     overall
+#     gemma4:e4b-mlx v6    39, 39     20, 20     59, 59
+#     gemma4:e4b-mlx v8    38, 38     22, 22     60, 60
+#     gpt-6-luna v6        36, 33     16, 18     52, 51
+#     gpt-6-luna v8        39, 37     20, 20     59, 57
+#     (no model)           13         5          18
+#
+# Earlier gpt passes on v8 (scorer one bound looser on "more formal"): 38, 38,
+# 38 old and 21, 21, 21 new. v7 on gpt: 36-39 old, 19-20 new.
+#
+# Review on #350 then added the facts each rewrite must keep to `contains`
+# (days, names, "build", "slow"), and proposed v11: the layout rule gives way
+# to "put that on one line". Same set, run alternately:
+#
+#     gemma4:e4b-mlx v8    38, 38     22, 22     60, 60
+#     gemma4:e4b-mlx v11   38, 38     22, 22     60, 60   <- ships
+#     gpt-6-luna v8        38, 40     21, 19     59, 59
+#     gpt-6-luna v11       40, 38,    21, 18,    61, 56,  <- ships
+#                          39, 39     21, 21     60, 60
+#
+# Equal within noise, and v11 does not contradict a layout request, so it
+# ships. No rewrite failed a fact check on gemma.
+#
+# What v6 did on gpt-6-luna: "did nothing" on "make that all caps", "Improve
+# the wording.", "make it a bit friendlier", "round the amounts" and every
+# misheard case. What v8 and v11 cost: on gemma, "no money in the text" now
+# comes back as "we should ship it on $0.00" on every pass; on gpt, a trailing
+# full stop on lowercase fragments, keeps included on some passes.
+#
+# Measured and not shipped, all on gemma unless said:
+#
+#   - v7 without the misheard bullet, without the polite bullet, without the
+#     "not contain" clause: each the same as v7. The broad-request bullet is
+#     the one that moves cases (-2 without it), and the paragraphs bullet (-2:
+#     gemma joins paragraphs without it).
+#   - v7 with v6's "make exactly the change" paragraph put back: same score.
+#     It did not bring back the money keep either. Nothing tried did.
+#   - v9, v8 plus a "prices in euros" over text with no prices example: same.
+#   - v10, v8 with "The rest comes back as written, with its own capitals and
+#     full stops" on the narrow bullet. gpt old 40, 40 but new 19, 20, and the
+#     misheard "improve the warning" went back to "did nothing". Restraint
+#     wording costs the edits it was meant to protect.
+#
+# Still failing everywhere: "write the numbers as dishes" (digits). Both
+# models leave the text as it is.
