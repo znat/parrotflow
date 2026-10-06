@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.17.0](https://github.com/znat/parrotflow/compare/v0.16.0...v0.17.0) (2026-10-06)
+
+
+### Features
+
+* the launch splash can be closed before its countdown ends ([#348](https://github.com/znat/parrotflow/issues/348)) ([81823a4](https://github.com/znat/parrotflow/commit/81823a405811dc4eaffb46892cd3ba2e7306d545))
+* the launch splash counts down and offers the skill ([#346](https://github.com/znat/parrotflow/issues/346)) ([decb1f5](https://github.com/znat/parrotflow/commit/decb1f539e74e81214e9e2630e4fc82a2e4a638a))
+
+
+### Fixes
+
+* a rewrite reads a Chromium selection with its paragraph breaks ([#351](https://github.com/znat/parrotflow/issues/351)) ([5eb5253](https://github.com/znat/parrotflow/commit/5eb525347df291ac2192fed45f87ed442a444d3f))
+* a rewrite replaces a selection that spans paragraphs in Chromium apps ([#349](https://github.com/znat/parrotflow/issues/349)) ([f0104f8](https://github.com/znat/parrotflow/commit/f0104f898f978d98732e5bb437a87b6063bc54fa))
+
 ## [0.16.0](https://github.com/znat/parrotflow/compare/v0.15.0...v0.16.0) (2026-10-04)
 
 
