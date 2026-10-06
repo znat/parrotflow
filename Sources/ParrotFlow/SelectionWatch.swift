@@ -120,8 +120,8 @@ final class SelectionWatch {
         // term, clicking off it, and selecting it again did nothing at all. The
         // rule it was written for is narrower than that: the pill must not come
         // back while a selection it has already answered is still sitting there.
-        guard let selection = SelectionReader.snapshot(),
-              let field, let element = selection.element, CFEqual(field, element)
+        guard let field, let element = SelectionReader.focusedElement(), CFEqual(field, element),
+              let selection = SelectionReader.selection(in: element)
         else {
             offered = nil
             return
@@ -140,7 +140,7 @@ final class SelectionWatch {
 
         offered = text
         Log.write("reselect: \"\(text.prefix(60))\" is part of the last dictation")
-        onSelection?(selection)
+        onSelection?(SelectionReader.shown(selection))
     }
 
     /// One letter is somebody part-way through a selection, or fixing a typo

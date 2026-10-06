@@ -38,24 +38,33 @@ enum SelectionReader {
     static func snapshot() -> Selection? {
         guard Permissions.accessibility == .granted else { return nil }
         guard let element = focusedElement() else { return nil }
-        return selection(in: element)
+        return selection(in: element).map(shown)
     }
 
+    /// What is selected, as the app reads it. `text` and `appText` are the same
+    /// until `shown` places it in the value.
     static func selection(in element: AXUIElement) -> Selection? {
         guard let text = selectedText(of: element), !text.isEmpty else { return nil }
-        let range = selectedRange(of: element)
-        var shown = text
-        if let range, let value = visibleText(of: element, within: nil) {
-            shown = AppOffsets.shown(text, at: range.location, in: value) {
-                range.location == 0 ? "" : string(of: element, at: 0, length: range.location)
-            }
-        }
         return Selection(
-            text: shown,
+            text: text,
             appText: text,
             owner: NSWorkspace.shared.frontmostApplication,
             element: element,
-            range: range
+            range: selectedRange(of: element)
+        )
+    }
+
+    /// `selection` with `text` as the field shows it. Reads the whole AXValue:
+    /// 10 ms median and 43 ms on the first call for a 400 KB Chrome field.
+    static func shown(_ selection: Selection) -> Selection {
+        guard let element = selection.element, let range = selection.range,
+              let value = visibleText(of: element, within: nil) else { return selection }
+        let text = AppOffsets.shown(selection.appText, at: range.location, in: value) {
+            range.location == 0 ? "" : string(of: element, at: 0, length: range.location)
+        }
+        return Selection(
+            text: text, appText: selection.appText, owner: selection.owner,
+            element: element, range: range
         )
     }
 
