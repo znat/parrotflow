@@ -58,6 +58,26 @@ enum AppOffsetsTests {
         precondition(AppOffsets.valueRange(before: "Jerry and ", selected: "Jerry", in: "Jerry and Jerry")
             .map { NSRange($0, in: "Jerry and Jerry").location } == 10, "the second copy")
 
+        func app(_ location: Int, _ length: Int, _ app: String, in value: String) -> NSRange? {
+            AppOffsets.appRange(of: NSRange(location: location, length: length), app: app, in: value)
+        }
+        precondition(app(0, 342, threeSelected, in: threeValue) == NSRange(location: 0, length: 340),
+                     "the whole value is the whole app text")
+        precondition(app(116, 31, threeSelected, in: threeValue) == NSRange(location: 115, length: 31),
+                     "a span below one paragraph break moves back by one")
+        precondition(app(116, 31, String(threeSelected.prefix(146)), in: threeValue)
+            == NSRange(location: 115, length: 31), "app text read only as far as the span")
+        precondition(app(242, 4, threeSelected, in: threeValue) == NSRange(location: 240, length: 4),
+                     "a span below two paragraph breaks moves back by two")
+        precondition(app(43, 5, mixedSelected, in: mixedValue) == NSRange(location: 43, length: 4),
+                     "a span that starts on the break the app does not count")
+        precondition(app(44, 0, mixedSelected, in: mixedValue) == NSRange(location: 43, length: 0),
+                     "an insertion point after a break")
+        precondition(app(14, 17, native, in: native) == NSRange(location: 14, length: 17),
+                     "a field whose offsets already address its value")
+        precondition(app(0, 4, "Hi \u{FEFF}@channel", in: mixedValue) == nil,
+                     "app text that is not the value's")
+
         print("app offsets: every case passed")
     }
 }

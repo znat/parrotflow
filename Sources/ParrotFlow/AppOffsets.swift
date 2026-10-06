@@ -35,4 +35,8 @@ enum AppOffsets {
         guard consume(before) != nil, let start = consume(selected) else { return nil }
         return Range(NSRange(location: start, length: at - start), in: value)
     }
+
+    static func appRange(of range: NSRange, app: String, in value: String) -> NSRange? {
+        nil
+    }
 }
