@@ -477,10 +477,42 @@ struct Surface {
     func replace(
         _ range: Range<String.Index>, with replacement: String, describedAs label: String = "edit"
     ) -> Outcome {
-        replace(
-            Target(range: range, app: NSRange(range, in: content), appText: String(content[range])),
-            with: replacement, describedAs: label
-        )
+        guard let target = target(for: range) else {
+            Log.write("surface: the app's own text does not line up with its value; not writing")
+            return .refused("could not find those characters in the app's own offsets")
+        }
+        return replace(target, with: replacement, describedAs: label)
+    }
+
+    /// `range` with the app's own offsets for it. The value's offsets when the
+    /// app will not say, which is how every write was addressed before.
+    private func target(for range: Range<String.Index>) -> Target? {
+        let value = NSRange(range, in: content)
+        let same = Target(range: range, app: value, appText: String(content[range]))
+        guard kind == .editable, let text = appText(reaching: NSMaxRange(value)) else { return same }
+        guard let app = AppOffsets.appRange(of: value, app: text, in: content) else { return nil }
+        return Target(range: range, app: app, appText: (text as NSString).substring(with: app))
+    }
+
+    /// The app's own text from its offset 0, through value offset `end`. Its
+    /// offsets run short of the value's by up to one per "\n", and a read past
+    /// its end fails, so the longest read that succeeds is all of it.
+    private func appText(reaching end: Int) -> String? {
+        guard end > 0 else { return nil }
+        if let text = SelectionReader.string(of: element, at: 0, length: end) { return text }
+        var low = end - content.utf16.prefix(end).filter { $0 == 0x0A }.count
+        var high = end - 1
+        guard var longest = SelectionReader.string(of: element, at: 0, length: low) else { return nil }
+        while low < high {
+            let middle = (low + high + 1) / 2
+            if let text = SelectionReader.string(of: element, at: 0, length: middle) {
+                longest = text
+                low = middle
+            } else {
+                high = middle - 1
+            }
+        }
+        return longest
     }
 
     @discardableResult
