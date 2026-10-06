@@ -69,6 +69,12 @@ enum AppOffsets {
     /// breaks added. Chromium reads an empty paragraph between two others as
     /// one "\n" in every string it gives; its paragraph children keep it.
     static func withBlankLines(_ text: String, paragraphs: [String]) -> String {
-        text
+        let joined = paragraphs.joined(separator: "\n")
+        guard !text.isEmpty, let at = positions(of: text, in: joined) else { return text }
+        let units = Array(joined.utf16)
+        let newline: UInt16 = 0x0A
+        guard units[..<at[0]].allSatisfy({ $0 == newline }),
+              units[at[at.count - 1]...].allSatisfy({ $0 == newline }) else { return text }
+        return joined
     }
 }
