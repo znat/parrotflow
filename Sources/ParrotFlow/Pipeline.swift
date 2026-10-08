@@ -1392,7 +1392,7 @@ struct Pipeline: Equatable, Codable {
         }
         switch transform.body {
         case .prompt:
-            return await runPrompt(transform, on: text, config: config, scope: scope)
+            return await runPrompt(transform, named: name, on: text, config: config, scope: scope)
         case .replace:
             // Exact and free, so there is nothing to guard — the log line is
             // the same one `replacements` writes, with the name that asked for
@@ -1441,9 +1441,9 @@ struct Pipeline: Equatable, Codable {
     /// after belong in the log whether or not anything went wrong, because
     /// nothing on screen will ever show you it happened.
     private func runPrompt(
-        _ transform: Config.Transform, on text: String, config: Config, scope: Scope
+        _ transform: Config.Transform, named name: String, on text: String, config: Config,
+        scope: Scope
     ) async -> StageResult {
-        let name = transform.name
         guard config.llmEnabled else {
             Log.write("pipeline: skipped prompt \(name) — `models:` defines no model")
             return StageResult(text: text, vars: ["ok": .bool(false)])
