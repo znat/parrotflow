@@ -34,6 +34,8 @@ USAGE
     esac
 done
 
+# set -u lets an empty HOME through, and every path below would then be under /.
+: "${HOME:?HOME must be set and non-empty}"
 SUPPORT="$HOME/Library/Application Support/$DISPLAY_NAME"
 # Not under $SUPPORT: the parsing venv has no variant suffix, because both
 # builds read the one copy. So a reset that only cleared $SUPPORT left it, and
