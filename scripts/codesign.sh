@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # How a bundle gets signed. Sourced, not executed.
 #
 # One copy because there are two callers. build-app.sh signs the bundle it

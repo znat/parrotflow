@@ -26,7 +26,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="/Applications/ParrotFlowDev.app"
 TARGET="${1:-fixture}"
 FIXTURE="$ROOT/tests/fixtures/composer.html"
-LOG="$HOME/Library/Logs/ParrotFlow-Dev.log"
 
 [ -d "$APP" ] || { echo "install the dev app first: make install"; exit 1; }
 
@@ -146,6 +145,7 @@ print(i, len(target))
   got="$($READ)"
   # Curly quotes are not a failed write — most composers substitute them on the
   # way in, and the app folds them for exactly this reason.
+  # shellcheck disable=SC1111  # the curly quotes are what it folds
   norm() { printf '%s' "$1" | sed "s/[’‘]/'/g; s/[“”]/\"/g"; }
   if [ "$(norm "$got")" = "$(norm "$want")" ]; then
     pass=$((pass + 1)); printf '  ✓ %s\n' "$name"

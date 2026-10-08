@@ -19,7 +19,7 @@ Scored per slot, and separately on the slots whose answer is the heard word
 (most of them) against the slots where a term is right — a judge that keeps
 every word scores well on the first and nothing on the second.
 """
-import argparse, json, os, pathlib, re, sys, time, urllib.request
+import argparse, json, pathlib, re, sys, time, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ENDPOINT = "http://localhost:11434/api/chat"

@@ -36,6 +36,7 @@ find_app() {
 # True when $1 >= $2, comparing dotted numbers.
 version_ge() {
   local IFS=. i
+  # shellcheck disable=SC2206  # splitting on IFS=. is the point
   local -a a=($1) b=($2)
   for i in 0 1 2; do
     [ "${a[i]:-0}" -gt "${b[i]:-0}" ] && return 0

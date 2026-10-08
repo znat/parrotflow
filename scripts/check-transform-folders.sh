@@ -273,7 +273,7 @@ check "and takes only its own transform with it" \
 # nothing to — the one on this machine.
 FRESH="$WORK/fresh"
 mkdir -p "$FRESH"
-seeded="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
+PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config >/dev/null 2>&1
 
 # What is expected is read from `built-in/transforms/` itself rather than
 # spelled out here, so a folder gaining a file — or the tree gaining a

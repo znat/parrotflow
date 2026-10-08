@@ -367,7 +367,7 @@ def main():
 
     if failures and not args.verbose:
         print(f"\n  failures ({len(failures)}):")
-        for case, got, raw in failures[:14]:
+        for case, got, _raw in failures[:14]:
             print(f"    {case['heard']!r} -> {case['term']!r}"
                   f"  want {want[case['expect']]}, got {got}")
             print(f"      {case['said'][:96]}")

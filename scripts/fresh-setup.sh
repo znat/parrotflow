@@ -89,7 +89,7 @@ echo "==> Removed this build's own models."
 # for a while and the copies were never read: a reset is run to see a first
 # run, and a first run fetches them again anyway.
 for name in parakeet-tdt-0.6b-v3 silero-vad; do
-    rm -rf "$SHARED/$name"
+    rm -rf "${SHARED:?}/$name"
 done
 rm -rf "$G2P"
 echo "==> Shared speech models deleted."

@@ -95,7 +95,7 @@ if [ "$swept" -eq 0 ]; then
 fi
 if [ -n "$wrong" ]; then
   printf '    ✗ fired on a sentence with no spelling lesson in it:'
-  printf "$wrong\n"
+  printf '%b\n' "$wrong"
   overfired=$((overfired + 1))
 fi
 if [ "$fired" -ne 4 ]; then
