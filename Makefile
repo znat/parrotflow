@@ -107,6 +107,16 @@ test:
 	else \
 	  echo "==> swiftlint is not installed, lint skipped"; \
 	fi
+	@if command -v ruff >/dev/null; then \
+	  git ls-files -z '*.py' | xargs -0 ruff check --quiet; \
+	else \
+	  echo "==> ruff is not installed, lint skipped"; \
+	fi
+	@if command -v shellcheck >/dev/null; then \
+	  git ls-files -z '*.sh' scripts/githooks/commit-msg | xargs -0 shellcheck; \
+	else \
+	  echo "==> shellcheck is not installed, lint skipped"; \
+	fi
 	@failed=""; \
 	for c in $(CHECKS); do \
 	  printf '\n==> %s\n' "$$c"; \
