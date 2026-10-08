@@ -1,3 +1,4 @@
+# shellcheck shell=sh disable=SC2034  # sourced: the caller reads these
 # Resolves a build variant to its identity. Sourced, not executed.
 #
 #   VARIANT=dev      the build you are working on   (default)
@@ -30,6 +31,7 @@ case "$VARIANT" in
         ;;
     *)
         echo "error: VARIANT must be 'dev' or 'release' (got '$VARIANT')" >&2
+        # shellcheck disable=SC2317  # exit is for when it is run, not sourced
         return 1 2>/dev/null || exit 1
         ;;
 esac

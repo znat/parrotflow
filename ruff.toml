@@ -1,0 +1,22 @@
+# Rules that catch a mistake, not a style. Line length is off: 154 lines run
+# past 88 today, and the longest is a 374-column prompt string.
+
+# The python3 macOS ships. Transforms run on it, and without a pin newer ruff
+# assumes 3.10 and flags code that is correct on 3.9.
+target-version = "py39"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "W", "B", "PLE"]
+ignore = [
+  # `import json, os, sys` is the shape the scripts use.
+  "E401",
+  # Two counters bumped on one line, `total += 1; ok += ok`.
+  "E702",
+  # A one-line lambda bound to a name reads fine.
+  "E731",
+]
+
+[lint.per-file-ignores]
+# The stopword set lists English and French apart, and `on`, `me` and `as` are
+# words in both.
+"**/disfluency/disfluency.py" = ["B033"]

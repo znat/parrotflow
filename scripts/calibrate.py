@@ -27,7 +27,7 @@ uncritical. A band that closes means no floor exists and the term needs a rule
 or the judge. That difference is the point: it is the measurement that tells a
 non-native speaker which of their terms will never be safe acoustically.
 """
-import argparse, datetime, json, os, pathlib, re, subprocess, sys, tempfile
+import argparse, datetime, json, os, pathlib, re, subprocess, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # The words a person is plausibly going to say, by usage frequency — not every
@@ -132,7 +132,7 @@ def transcribe(app, path):
     out = subprocess.run([app, "--transcribe", str(path), "--no-vocab"],
                          capture_output=True, text=True, timeout=300).stdout
     plain = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", out)
-    lines = [l.strip() for l in plain.replace("\r", "\n").splitlines()]
+    lines = [s.strip() for s in plain.replace("\r", "\n").splitlines()]
     for i, line in enumerate(lines):
         if "── transcript" in line:
             return lines[i + 1] if i + 1 < len(lines) else ""
@@ -248,11 +248,11 @@ def score_manifest(manifest_path, app, directory):
         if floor is None:
             heard = sorted({got for _, _, got in landings[term]["term"]})
             print(f"    {term}:")
-            print(f"      floor: off")
-            print(f"      pronunciations:")
+            print("      floor: off")
+            print("      pronunciations:")
             for rendering in heard:
                 print(f"        - heard: {rendering}")
-                print(f"          from: calibration")
+                print("          from: calibration")
         else:
             print(f"    {term}: {floor}")
 

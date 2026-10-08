@@ -274,7 +274,7 @@ def main():
     print(f"  {len(multi)} of them sit in a case that holds more than one span.")
 
     if args.spans:
-        print(f"\n\n  ══ every span\n")
+        print("\n\n  ══ every span\n")
         print(f"  {'clip':<10}{'gap':<7}{'best':<8}{'decoded':<20}{'true':<20}"
               f"{'argmax':<8}{'keep':<6}")
         for row in sorted(rows, key=lambda r: (not r["scored"], -r.get("gap", 0))):

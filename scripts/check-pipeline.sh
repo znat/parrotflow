@@ -43,6 +43,7 @@ while IFS='|' read -r name fixture app noprompts input expect vars; do
   # `--vars` prints `var <path> = <value>` for the whole scope before the output
   # line, so the text comparison below is still `tail -1` and a case that says
   # nothing about variables costs nothing to run.
+  # shellcheck disable=SC2086  # $off is empty or one flag
   full="$("$BIN" --pipeline "$path" "$input" --app "$app" $off --quiet --vars 2>/dev/null)"
   got="$(printf '%s' "$full" | tail -1)"
 
@@ -74,6 +75,7 @@ while IFS='|' read -r name fixture app noprompts input expect vars; do
       printf '  ✗ %s  [%s]\n      in    %s\n      variables not as expected:%s\n' \
         "$name" "$fixture" "$input" "$missing"
     fi
+    # shellcheck disable=SC2086  # $off is empty or one flag
     "$BIN" --pipeline "$path" "$input" --app "$app" $off --vars 2>/dev/null | sed 's/^/        /'
   fi
 done < <(python3 -c '

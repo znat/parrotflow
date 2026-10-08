@@ -256,6 +256,7 @@ if ! command -v ollama >/dev/null 2>&1; then
         printf '    ParrotFlow is already running and dictation already works — this\n'
         printf '    download only unlocks spoken commands and prompt transforms.\n\n'
         say "Installing Ollama"
+        # shellcheck disable=SC2015  # die when either step fails
         brew install ollama && brew services start ollama \
             || die "could not install or start Ollama"
     else

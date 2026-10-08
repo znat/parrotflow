@@ -31,6 +31,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,7 +41,6 @@ CLIPS = Path.home() / "Recordings/ParrotFlow Dev"
 ENDPOINT = os.environ.get("PARROTFLOW_LLM_ENDPOINT", "http://localhost:11434") + "/api/chat"
 
 sys.path.insert(0, str(ROOT / "scripts"))
-from importlib.machinery import SourceFileLoader
 
 recall = SourceFileLoader("recall", str(ROOT / "scripts/menu-recall.py")).load_module()
 # The freshly built app, resolved the same way `menu-recall.py` resolves it.

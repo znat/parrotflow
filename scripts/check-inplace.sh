@@ -25,7 +25,6 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMUX="$(command -v tmux || echo /opt/homebrew/bin/tmux)"
 APP="/Applications/ParrotFlowDev.app"
-BIN="$APP/Contents/MacOS/ParrotFlow"
 SESSION="${PF_CHECK_SESSION:-pfcheck-$$}"
 CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
 # Which terminal hosts the fixture. Terminal.app by default because it is on
@@ -207,7 +206,6 @@ focus_viewport() {
 }
 
 LOG="$HOME/Library/Logs/ParrotFlow-Dev.log"
-REPEATS="${PF_REPEATS:-1}"
 pass=0; total=0; refused=0; corrupted=0; skipped=0; wrongpath=0
 
 # Closes the window as well as the session. `open -na` starts a whole instance
@@ -272,6 +270,7 @@ print(i, len(heard))
     open -g -na ParrotFlowDev --args \
       --span-test "$start" "$length" "$corrected" --find "$id" --dictated "$dictated" --after 3
   else
+    # shellcheck disable=SC2086  # $literal is empty or one flag
     open -g -na ParrotFlowDev --args \
       --edit-test "$heard" "$corrected" --find "$id" --dictated "$dictated" $literal --after 3
   fi

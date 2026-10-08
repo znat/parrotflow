@@ -34,6 +34,8 @@ USAGE
     esac
 done
 
+# set -u lets an empty HOME through, and every path below would then be under /.
+: "${HOME:?HOME must be set and non-empty}"
 SUPPORT="$HOME/Library/Application Support/$DISPLAY_NAME"
 # Not under $SUPPORT: the parsing venv has no variant suffix, because both
 # builds read the one copy. So a reset that only cleared $SUPPORT left it, and
@@ -89,7 +91,7 @@ echo "==> Removed this build's own models."
 # for a while and the copies were never read: a reset is run to see a first
 # run, and a first run fetches them again anyway.
 for name in parakeet-tdt-0.6b-v3 silero-vad; do
-    rm -rf "$SHARED/$name"
+    rm -rf "${SHARED:?}/$name"
 done
 rm -rf "$G2P"
 echo "==> Shared speech models deleted."

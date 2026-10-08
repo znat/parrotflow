@@ -1,0 +1,2 @@
+# Backticks in messages and `python3 -c` code are single-quoted on purpose.
+disable=SC2016

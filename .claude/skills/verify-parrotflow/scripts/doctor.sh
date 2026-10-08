@@ -33,7 +33,9 @@ fi
 echo "  HEAD $(git -C "$ROOT" rev-parse --short HEAD)$( [ -n "$(git -C "$ROOT" status --porcelain -- Sources Package.swift Package.resolved)" ] && echo ", Sources/ has uncommitted changes")"
 
 echo "## live instances (never signal these)"
+# shellcheck disable=SC2009  # pgrep cannot print lstart
 ps -axo pid=,lstart=,command= | grep -E '/Contents/MacOS/ParrotFlow( |$)' | grep -v grep | while read -r pid rest; do
+  # shellcheck disable=SC2088  # printed for a human, not opened
   case "$rest" in
     */ParrotFlowDev.app/*) log="~/Library/Logs/ParrotFlow-Dev.log  hotkey default right_option" ;;
     */ParrotFlow.app/*)    log="~/Library/Logs/ParrotFlow.log  hotkey default right_command" ;;
@@ -45,6 +47,7 @@ ps -axo pid=,lstart=,command= | grep -E '/Contents/MacOS/ParrotFlow( |$)' | grep
     echo "      child pid $child  $(ps -o command= -p "$child")"
   done
 done
+# shellcheck disable=SC2009  # pgrep -f would read the path as a regex
 stray="$(ps -axo pid=,command= | grep -F "$BIN" | grep -v grep)"
 if [ -n "$stray" ]; then
   echo "  ✗ a tree binary is running. If it has no flag it is a menu bar app this run started by mistake:"

@@ -32,6 +32,7 @@ case "$ok" in
       if [ -d "$CFG/recordings" ]; then
         for f in "$CFG"/recordings/*.jsonl; do
           [ -e "$f" ] || continue
+          # shellcheck disable=SC2015  # the block runs when either step fails
           mkdir -p "$RUN/scratch-recordings" && cp "$f" "$RUN/scratch-recordings/" || {
             echo "could not copy $f; kept scratch config $CFG" | tee "$RUN/cleanup.txt"
             exit 1

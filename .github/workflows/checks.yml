@@ -126,6 +126,18 @@ jobs:
           command -v swiftlint >/dev/null || brew install swiftlint
           swiftlint lint --reporter github-actions-logging
 
+      # Tracked files only, so the run matches what review sees. Each rule left
+      # off is named with its reason in ruff.toml and .shellcheckrc.
+      - name: Lint Python
+        run: |
+          command -v ruff >/dev/null || brew install ruff
+          git ls-files -z '*.py' | xargs -0 ruff check --output-format github
+
+      - name: Lint shell
+        run: |
+          command -v shellcheck >/dev/null || brew install shellcheck
+          git ls-files -z '*.sh' scripts/githooks/commit-msg | xargs -0 shellcheck -f gcc
+
       # Each on its own step, so a red run says which set broke in the summary
       # rather than in the middle of a log.
       - name: Numbers
