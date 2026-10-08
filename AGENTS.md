@@ -1,6 +1,6 @@
 # Notes for agents
 
-You are most likely here for one of three jobs. Each has a page written for it;
+You are most likely here for one of four jobs. Each has a page written for it;
 this file is the router.
 
 | Job | Read | Then |
@@ -8,6 +8,7 @@ this file is the router.
 | Install ParrotFlow on someone's Mac | [docs/setup.md](docs/setup.md) | Follow it in order. It expects to be followed, not summarised. |
 | Configure it — hotkey, languages, replacements, updates | [docs/configuration.md](docs/configuration.md) | Verify with `--check-config` before saying it is done. |
 | Write or improve a rewrite — a prompt, a pipeline stage, a substitution table, a script | [docs/authoring.md](docs/authoring.md) | Score it against the case set for the thing you touched. |
+| Say what ParrotFlow can do | [the feature map](skills/parrotflow/references/catalogue.md) | One row per area, with its key and default. `scripts/check-catalogue.sh` fails when a key in it stops existing. |
 
 The full map is [docs/README.md](docs/README.md).
 
@@ -18,7 +19,7 @@ flags; `scripts/check-skill.sh` fails when one of them stops existing, so
 rename a key or a flag there too. Skills under `.claude/skills/` are for work
 in this repository and are marked `metadata.internal`.
 
-## Rules that hold across all three
+## Rules that hold for every job
 
 **Validate with the binary, not by reading the file.**
 

@@ -189,6 +189,12 @@ jobs:
       - name: The parrotflow skill
         run: scripts/check-skill.sh
 
+      # The skill's feature map. Each key in its Key column is a config key, a
+      # transform, or a shipped script, including the bare names the step above
+      # does not read.
+      - name: The skill's feature map
+        run: scripts/check-catalogue.sh
+
       # Where the wake phrase ends and the instruction begins. Deterministic,
       # unlike the routing that follows it, so it runs here.
       - name: Wake phrase
