@@ -63,24 +63,6 @@ struct Pipeline: Equatable, Codable {
         case transform
 
         var name: String { rawValue }
-
-        /// Whether it can be in a default nobody wrote.
-        ///
-        /// `transform` cannot: it needs a name, and there is no transform every
-        /// install is guaranteed to have.
-        ///
-        /// `context` cannot, for a different and stronger reason. It reads the
-        /// screen. Turning that on for everybody who never wrote a `pipeline:`
-        /// block would be a silent change to what the app looks at, which is the
-        /// one kind of change that has to be asked for by name.
-        ///
-        /// `interpret` and `vocabulary` are not in the list at all any more —
-        /// `Pipeline.resolved(config:)` puts them at the head from their own
-        /// settings blocks.
-        var isAutomatic: Bool {
-            self != .transform && self != .context && self != .input
-                && self != .sentenceRepair && self != .vocabulary && self != .contextSpelling
-        }
     }
 
     /// The app a transcript is on its way into, for `Step.app`.
@@ -330,27 +312,6 @@ struct Pipeline: Equatable, Codable {
 
     var stages: [Stage] { steps.map(\.stage) }
 
-    /// Every stage, in declaration order, which is the canonical order.
-    ///
-    /// This is the only default there is. A config that names no pipeline gets
-    /// all of it, and a new install is written with the same list spelled out.
-    /// Putting a stage in a pipeline is the only way to turn it on, so the way
-    /// to turn one off is to delete a line you can already see — rather than to
-    /// discover a setting you cannot.
-    ///
-    /// Derived from `allCases` on purpose: a stage added later is in the
-    /// default the moment it exists, which is what keeps that promise true
-    /// without anyone having to remember this line.
-    ///
-    /// An empty list is not the same as no list. `pipeline: []` is a choice and
-    /// runs nothing; a missing `pipeline:` is silence and runs everything.
-    ///
-    /// `interpret` and `vocabulary` are not here. They are not ordered, so they
-    /// are not in the list a person orders — `resolved` puts them in front.
-    static let everything = Pipeline(
-        steps: Stage.allCases.filter(\.isAutomatic).map { Step(stage: $0) }
-    )
-
     /// What actually runs: the two fixed passes, then the list.
     ///
     /// `interpret` reads the decoder's own word timings and `vocabulary` is
@@ -364,8 +325,7 @@ struct Pipeline: Equatable, Codable {
     /// bug it used to be warned about. `Transcription.retiredStages` is the
     /// notice that says so.
     static func resolved(config: Config) -> Pipeline {
-        let listed = config.transcription.pipeline ?? everything
-        let carried = listed.steps
+        let carried = config.transcription.pipeline?.steps ?? []
         var steps: [Step] = []
         if config.transcription.sentenceRepair.enabled {
             steps.append(sentenceRepairStep(
@@ -451,11 +411,6 @@ struct Pipeline: Equatable, Codable {
     /// Complaints about a pipeline that would run but not do what it looks
     /// like it does. Returned rather than thrown: one bad line should be
     /// reported, not cost you the other stages.
-    ///
-    /// `fuzzy` before `replacements` is the one that matters. It reads the same
-    /// table and depends on the exact pass having already run — by then
-    /// "Superbase" is "Supabase", and without that "on Supabase" scores high
-    /// enough against "Supabase" to swallow the preceding word.
     func validate() -> [String] {
         var problems: [String] = []
         for step in steps where step.stage == .transform && (step.transform ?? "").isEmpty {
@@ -527,21 +482,6 @@ struct Pipeline: Equatable, Codable {
         return problems
     }
 
-    /// Stages that move the words `vocabulary` is about to talk about.
-    ///
-    /// The pass is handed spans the acoustic pass measured on the transcript
-    /// as the decoder produced it. A stage that rewrites text moves them, and
-    /// the stage then has to re-anchor by searching for the words — which is
-    /// the mechanism that put the menu on the wrong `Versailles` (F3, F10).
-    ///
-    /// Nothing that rewrites the transcript may run above it, except
-    /// `interpret` — see below.
-    ///
-    /// The stage reads spans the acoustic pass measured before the pipeline
-    /// started, and any edit above it moves them (F10). The exact pass used to
-    /// be an exception too, because it ran as a separate `replacements` stage
-    /// and the pass needs the rules to have fired; it is inside this stage
-    /// now.
     /// What is wrong with an expression, before a transcript ever reaches it.
     ///
     /// Two kinds of thing, and the second is the one worth having. A parse error
@@ -549,8 +489,7 @@ struct Pipeline: Equatable, Codable {
     /// later** would not, because at run time "the stage below has not published
     /// anything yet" and "the stage published nothing" are the same absence.
     /// Only the pipeline as a whole knows the order, so only here can the
-    /// difference be seen — which is the same argument that already refuses
-    /// `fuzzy` before `replacements`.
+    /// difference be seen.
     private func expressionProblems(
         _ condition: String, label: String, step: Step, available: Set<String>
     ) -> [String] {
@@ -606,19 +545,6 @@ struct Pipeline: Equatable, Codable {
         return problems
     }
 
-    /// Asynchronous because one stage calls a model.
-    ///
-    /// The alternative was a semaphore inside the prompt stage, and this runs
-    /// on a cooperative thread after transcription — blocking one there for up
-    /// to the LLM timeout is how a thread pool stops being a thread pool. The
-    /// deterministic stages suspend nowhere, so the cost of this is a keyword.
-    /// Why a step would not run, or nil if it would.
-    ///
-    /// One copy, because there were two: `run` decided, and the stage-by-stage
-    /// viewer in `--pipeline` decided again from `shouldRun` alone — which knew
-    /// nothing about the wake-phrase guard, so a prompt the pipeline had
-    /// skipped was reported as having "ran, changed nothing". A diagnostic that
-    /// disagrees with the thing it is diagnosing is worse than none.
     /// Why a stage did not run, in both registers.
     ///
     /// `described` names the actual pattern, which is what you need to fix a
@@ -630,48 +556,27 @@ struct Pipeline: Equatable, Codable {
         let described: String
     }
 
+    /// Why a step would not run, or nil if it would.
     static func skipReason(
         for step: Step, text: String, config: Config, allowPrompts: Bool, app: App? = nil,
         scope: Scope = Scope()
     ) -> Skip? {
-        if step.stage == .vocabulary {
-            // It costs a model call, so it answers to the same two guards a
-            // prompt does: `--replace` must stay off the network, and a spoken
-            // instruction is not a dictation whose names want checking.
-            if !allowPrompts {
-                return Skip(code: "prompts_off", described: "prompts are off on this path")
-            }
-            let phrases = config.transcription.activationPhrases
-            if VoiceCommand.commandAfterWakePhrase(text, phrases: phrases) != nil {
-                return Skip(code: "spoken_command", described: "this is a spoken command")
-            }
-            if VoiceCommand.inlineInstruction(text, phrases: phrases) != nil {
-                return Skip(
-                    code: "inline_instruction",
-                    described: "this carries an instruction of its own"
-                )
-            }
-        }
-        if step.stage == .transform {
-            // Only the prompt-bodied ones. `allowPrompts` is there to keep
-            // `--replace` off the network, and a `replace:` transform is a
-            // table — blocking it would make the flag mean "no transforms",
-            // which is not what any caller asked for.
-            //
-            // A name that resolves to nothing counts as a prompt, which is the
-            // conservative reading: the stage is about to be skipped anyway,
-            // and the one thing this must not do is let an unresolved name
-            // become a way onto the network.
-            let named = step.transform.flatMap { config.transform(named: $0) }
-            if !allowPrompts, named?.isPrompt ?? true {
+        if step.stage == .vocabulary || step.stage == .transform {
+            // `allowPrompts` keeps `--replace` off the network. The vocabulary
+            // pass answers to it whole. A transform answers only when its body
+            // is a prompt: a `replace:` table is not a network call. A name that
+            // resolves to nothing counts as a prompt, so an unresolved name never
+            // becomes a way onto the network.
+            let needsPrompts = step.stage == .vocabulary
+                || (step.transform.flatMap { config.transform(named: $0) }?.isPrompt ?? true)
+            if !allowPrompts, needsPrompts {
                 return Skip(code: "prompts_off", described: "prompts are off on this path")
             }
             // Either position. A phrase at the front means the whole utterance
             // is an instruction; one in the middle means the instruction is
             // about the words before it. Both are read after this runs, and a
-            // transform that rewrote the sentence first could eat the phrase
-            // and leave what should have been a command to be typed into the
-            // document.
+            // stage that rewrote the sentence first could eat the phrase and
+            // leave a command to be typed into the document.
             let phrases = config.transcription.activationPhrases
             if VoiceCommand.commandAfterWakePhrase(text, phrases: phrases) != nil {
                 return Skip(code: "spoken_command", described: "this is a spoken command")
@@ -1451,11 +1356,7 @@ struct Pipeline: Equatable, Codable {
         let reverted = zip(writing, decided).filter { $0.1 == false }.map {
             "\($0.0.now) -> \($0.0.was)"
         }
-        if chosen != text {
-            Log.write("pipeline: vocabulary rewrote the transcript")
-            Log.write("    before: \(text)")
-            Log.write("    after:  \(chosen)")
-        }
+        Pipeline.logRewrite(by: "vocabulary", from: text, to: chosen)
         return result(chosen, [
             "slots": .int(slots.count),
             "reverted": .string(reverted.joined(separator: "; ")),
@@ -1481,7 +1382,7 @@ struct Pipeline: Equatable, Codable {
         }
         switch transform.body {
         case .prompt:
-            return await runPrompt(step, named: name, on: text, config: config, scope: scope)
+            return await runPrompt(transform, on: text, config: config, scope: scope)
         case .replace:
             // Exact and free, so there is nothing to guard — the log line is
             // the same one `replacements` writes, with the name that asked for
@@ -1492,11 +1393,7 @@ struct Pipeline: Equatable, Codable {
             // decoder invented.
             let done = Replacements.exact(to: text, rules: transform.rules,
                                           expand: config.expanded)
-            if done.text != text {
-                Log.write("pipeline: transform \(name) rewrote the transcript")
-                Log.write("    before: \(text)")
-                Log.write("    after:  \(done.text)")
-            }
+            Pipeline.logRewrite(by: "transform \(name)", from: text, to: done.text)
             return StageResult(text: done.text, vars: [
                 "count": .int(done.count),
                 "protected": .string(done.protected),
@@ -1520,11 +1417,7 @@ struct Pipeline: Equatable, Codable {
             // string — but it lands in the same place, and `changed` is derived
             // from the comparison either way.
             let after = result.text ?? text
-            if after != text {
-                Log.write("pipeline: transform \(name) rewrote the transcript")
-                Log.write("    before: \(text)")
-                Log.write("    after:  \(after)")
-            }
+            Pipeline.logRewrite(by: "transform \(name)", from: text, to: after)
             return StageResult(text: after, vars: result.vars)
         }
     }
@@ -1538,13 +1431,14 @@ struct Pipeline: Equatable, Codable {
     /// after belong in the log whether or not anything went wrong, because
     /// nothing on screen will ever show you it happened.
     private func runPrompt(
-        _ step: Step, named name: String, on text: String, config: Config, scope: Scope
+        _ transform: Config.Transform, on text: String, config: Config, scope: Scope
     ) async -> StageResult {
+        let name = transform.name
         guard config.llmEnabled else {
             Log.write("pipeline: skipped prompt \(name) — `models:` defines no model")
             return StageResult(text: text, vars: ["ok": .bool(false)])
         }
-        guard let transform = config.transform(named: name), let prompt = transform.asPrompt else {
+        guard let prompt = transform.asPrompt else {
             Log.write("pipeline: no prompt named \"\(name)\"; skipped")
             return StageResult(text: text, vars: ["ok": .bool(false)])
         }
@@ -1568,11 +1462,7 @@ struct Pipeline: Equatable, Codable {
                 Log.write("pipeline: prompt \(name) returned nothing; kept the transcript")
                 return StageResult(text: text, vars: ["ok": .bool(false)])
             }
-            if result != text {
-                Log.write("pipeline: prompt \(name) rewrote the transcript")
-                Log.write("    before: \(text)")
-                Log.write("    after:  \(result)")
-            }
+            Pipeline.logRewrite(by: "prompt \(name)", from: text, to: result)
             // Which model wrote this. A prompt stage is the one whose output
             // nobody sees happen, and "was that the model I think it was" is
             // the first question when its answers change shape between two
@@ -1583,5 +1473,13 @@ struct Pipeline: Equatable, Codable {
                 + " kept the transcript")
             return StageResult(text: text, vars: ["ok": .bool(false)])
         }
+    }
+
+    /// One record per stage that changed the words, with both versions.
+    static func logRewrite(by stage: String, from before: String, to after: String) {
+        guard after != before else { return }
+        Log.write("pipeline: \(stage) rewrote the transcript")
+        Log.write("    before: \(before)")
+        Log.write("    after:  \(after)")
     }
 }

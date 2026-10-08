@@ -169,7 +169,7 @@ enum CheckConfigCommand {
         }
         unknownKeys().forEach(emit)
         if !transcription.retired.isEmpty {
-            emit("      pipeline: [\(Pipeline.everything.stages.map(\.name).joined(separator: ", "))]")
+            emit("      pipeline: []")
         }
 
         // What `voice/` has piled up, per term. Printed because it is the one

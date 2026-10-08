@@ -2084,13 +2084,6 @@ struct Config: Decodable, Equatable {
         }
 
         static var legacyKeys: [String] { LegacyKeys.allCases.map(\.stringValue) }
-        /// Grouped by the word you want written, since one name accumulates
-        /// several mishearings — eleven rules had built up for four names
-        /// before this was grouped.
-        ///
-        ///     replacements:
-        ///       Tasmeen: [Tasmid, Tasmin, Tasmine]
-        var replacements: [String: [String]] = [:]
         /// What a finished transcript goes through, in order — see `Pipeline`.
         ///
         /// Nil here means the config said nothing, not that nothing should
@@ -2141,10 +2134,6 @@ struct Config: Decodable, Equatable {
         var retiredReview: [String] = []
 
         /// One rule per mishearing, flattened for the substitution pass.
-        var rules: [Rule] { Self.rules(from: replacements) }
-
-        /// Shared with `Transform.replace`, which is the same table in another
-        /// place — one flattening, so the two cannot drift.
         static func rules(from table: [String: [String]]) -> [Rule] {
             table.flatMap { target, sources in
                 sources.map { Rule(source: $0, replacement: target) }
@@ -3042,9 +3031,8 @@ struct Config: Decodable, Equatable {
     /// that deliberately do not exist, and "no transform named" is a case those
     /// sets test rather than a complaint they want raised.
     ///
-    /// Covers every table there is, `transcription.replacements` and each
-    /// `replace:` transform, because a template is wrong in the same way
-    /// wherever it is written.
+    /// Covers every `replace:` transform, because a template is wrong in the
+    /// same way wherever it is written.
     func replacementProblems() -> [String] {
         var found: [String] = []
         // A pattern naming a list that is not there, or is there and empty.
@@ -3052,7 +3040,7 @@ struct Config: Decodable, Equatable {
         // everywhere — so the rule simply never fires, and this is the only
         // place that says so.
         let defined = lists.keys.sorted()
-        for rule in transcription.rules + transforms.flatMap(\.rules) {
+        for rule in transforms.flatMap(\.rules) {
             for name in Config.listNames(in: rule.pattern) {
                 guard let words = lists[name] else {
                     found.append("lists: \"\(rule.source)\" names {{\(name)}}, which nothing"
@@ -3071,7 +3059,7 @@ struct Config: Decodable, Equatable {
         // A template referring to a group the pattern never captures is
         // written as nothing at all — the rule fires, the output is quietly
         // short, and the log shows a substitution that looks like it worked.
-        for rule in transcription.rules + transforms.flatMap(\.rules) {
+        for rule in transforms.flatMap(\.rules) {
             let referenced = Set(rule.referencedGroups).sorted()
             guard !referenced.isEmpty,
                   let expression = try? NSRegularExpression(pattern: rule.pattern)
