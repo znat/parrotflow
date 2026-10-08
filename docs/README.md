@@ -17,6 +17,7 @@ complete contract, an edge case, or the implementation details.
 
 | Your next task | Guide |
 | --- | --- |
+| See what it can do, with the setting for each feature | [Feature map](../skills/parrotflow/references/catalogue.md) |
 | Change a hotkey, language, model, or logging setting | [Configuration](guides/configuration.md) |
 | Write a replacement, script, or prompt | [Build your first transform](guides/transforms.md) |
 | Choose when transforms run and in what order | [Compose a pipeline](guides/pipelines.md) |
