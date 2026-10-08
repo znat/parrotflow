@@ -9,12 +9,14 @@ in the last column.
 | Area | What it does | Key | Cost | Default | A user might ask | More |
 |---|---|---|---|---|---|---|
 | Hotkey | The key held (or tapped) to dictate | `hotkey.key`, `hotkey.mode` | none | right ⌘, hold to talk | "Use F5 and toggle" | settings |
-| Tap gestures | Tap brings the pill back; tap, wait for the panel, then hold to speak an edit | `hotkey.press_delay_seconds` | none | on for bare modifiers | "How do I edit what I just said?" | settings |
+| Tap gestures | Tap brings the pill back; tap, wait for the panel, then hold to speak an edit | `hotkey.press_delay_seconds` | none | 0.18 s, bare modifiers only | "How do I edit what I just said?" | settings |
 | Microphone | Which mic records, best first | `audio.microphones` | none | the system input | "Always use my desk mic" | settings |
 | Languages | Which languages it detects between | `transcription.languages` | none | `[en, fr]` | "I only speak English" | settings |
 | Where text goes | Paste into the app, or copy only | `transcription.insert_mode` | none | paste | "Just put it on my clipboard" | settings |
 | Second decode | Recovers words a decode skipped | `audio.second_opinion` | ~100 ms | on | "Make it a bit faster" | settings |
 | Cancel | ⎋ while recording stops it, nothing written | — | none | on | "I said the wrong thing" | settings |
+| Sounds | A chime when the mic opens and when text lands | `feedback.sound`, `feedback.sound_volume` | none | on, volume 0.3 | "Turn the sounds off" | settings |
+| Listening pill | The pill on screen while the mic is open | `feedback.overlay` | none | on | "Hide the pill while I talk" | settings |
 
 ## What it writes
 
@@ -38,7 +40,7 @@ in the last column.
 |---|---|---|---|---|---|---|
 | The pill's chips | A letter runs a transform on what was just said, in any app | `feedback.correct_offer`, `offer:`, `key:` | only when pressed | `V` vocabulary, `G` grammar, `S` Slack | "Add a chip to shorten text" | rewrites |
 | Grammar | Fixes grammar on `G` | `transforms` `grammar` | ~1.5 s, needs a model | on the pill | "Fix my grammar" | models |
-| Slack mentions | Names → @handles on `S` | `transforms/slack_mentions/slack_mentions.py` | 30–100 ms | roster empty | "Tag people in Slack" | rewrites |
+| Slack mentions | Names → @handles on `S`. The roster is in `transforms/slack_mentions/slack_mentions.py` | `slack_mentions` | 30–100 ms | roster empty | "Tag people in Slack" | rewrites |
 | PR links | "PR 123" → a link to your repository | `github_refs` | none | defined, not on | "Link my pull requests" | rewrites |
 | Confidence colours | Colours each word by how sure the decoder was | `feedback.confidence` | none | off | "Which words does it struggle with?" | settings |
 | Low-confidence warning | An amber pill, and a reflex Return held | `feedback.low_confidence` | none | on | "Stop holding my Enter key" | settings |
@@ -48,7 +50,7 @@ in the last column.
 | Area | What it does | Key | Cost | Default | A user might ask | More |
 |---|---|---|---|---|---|---|
 | Spoken commands | "hey parrot, make that a list" | `transcription.activation_phrases` | ~1.5 s, needs a model | `[hey parrot]` | "Change the wake phrase" | spoken-commands |
-| Mid-sentence commands | "… by the way parrot, format that name" | `activation_phrases` | ~1.5 s | needs a second phrase | "Edit while I talk" | spoken-commands |
+| Mid-sentence commands | "… by the way parrot, format that name" | `transcription.activation_phrases` | ~1.5 s | needs a second phrase | "Edit while I talk" | spoken-commands |
 | Catch-all | Any instruction no transform covers | `commands.catch_all` | ~1.5 s | the default model | "Only allow my own commands" | spoken-commands |
 | Undo | "hey parrot, undo" | — | none | on | "How do I take that back?" | spoken-commands |
 | Spelling a name | "hey parrot, Tasmin spells T A S M E E N" | `commands.spelling` | ~1.5 s | the default model | "Teach it a name by voice" | spoken-commands |
@@ -66,7 +68,7 @@ in the last column.
 | Area | What it does | Key | Cost | Default | A user might ask | More |
 |---|---|---|---|---|---|---|
 | Log | Every skipped step and every model rewrite | `logging.text` | none | on | "Why did that not run?" | diagnose |
-| Trace | One JSON line per dictation, words and timings | always on | none | on | "What does each step cost?" | diagnose |
+| Trace | One JSON line per dictation, words and timings | — | none | always on | "What does each step cost?" | diagnose |
 | Timeline | Where each dictation spent its time | `logging.spans` | none | on | "Why was that slow?" | diagnose |
 | Recordings | Keep each clip on disk | `logging.audio` | disk | off | "Keep my recordings" | settings |
 | Updates | Offers a new release, and how long to wait first | `updates.after_days` | a request to GitHub | 0 days | "Wait a week before updating" | settings |
