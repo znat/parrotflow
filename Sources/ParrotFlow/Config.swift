@@ -1814,7 +1814,7 @@ struct Config: Decodable, Equatable {
         /// answers where it names the language, and a language it does not
         /// name keeps the built-in value.
         func slotFloor(for language: String, on step: Pipeline.Step? = nil) -> Double {
-            step?.slotFloor?.value(for: language)
+            step?.vocabulary.slotFloor?.value(for: language)
                 ?? Language.builtIn[language]?.slotFloor
                 ?? Language.defaultSlotFloor
         }
@@ -1923,13 +1923,7 @@ struct Config: Decodable, Equatable {
         /// false` is the only way off.
         struct SentenceRepair: Decodable, Equatable {
             var enabled: Bool = true
-            /// What a boundary may be written with. Left out, the built-in set
-            /// for the language — see `Transcription.marks(for:)`.
-            var marks: [String]?
-            /// Read a capital with no mark in front of it as a boundary too.
-            var capitals: Bool = true
-            /// Seconds of silence a bare capital needs first. 0 reads every one.
-            var pause: Double?
+            var options = Pipeline.RepairOptions()
 
             enum CodingKeys: String, CodingKey, CaseIterable {
                 case enabled, marks, capitals, pause
@@ -1948,12 +1942,12 @@ struct Config: Decodable, Equatable {
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
                 if let written = try c.decodeIfPresent([String].self, forKey: .marks) {
-                    marks = try Language.checked(
+                    options.marks = try Language.checked(
                         marks: written, key: "transcription.sentence_repair.marks"
                     )
                 }
-                if let v = try c.decodeIfPresent(Bool.self, forKey: .capitals) { capitals = v }
-                if let v = try c.decodeIfPresent(Double.self, forKey: .pause) { pause = v }
+                options.capitals = try c.decodeIfPresent(Bool.self, forKey: .capitals)
+                options.pause = try c.decodeIfPresent(Double.self, forKey: .pause)
             }
         }
 
@@ -1981,20 +1975,12 @@ struct Config: Decodable, Equatable {
         /// spans measured on the transcript as the decoder wrote it, and any
         /// edit above it moves them (F10). It runs second, always.
         ///
-        /// The six switches below `enabled:` are not everyday settings. They
-        /// exist so a bench can turn off one half of the pass and score the
-        /// other, which is why `built-in/config.example.yaml` does not write
-        /// them out.
+        /// The switches in `options` are not everyday settings. They exist so
+        /// a bench can turn off one half of the pass and score the other, which
+        /// is why `built-in/config.example.yaml` does not write them out.
         struct Vocabulary: Decodable, Equatable {
             var enabled: Bool = true
-            var nearMisses: Bool = true
-            var bySound: Bool = true
-            var gate: Bool = true
-            var slotGate: Bool = true
-            var portrait: Bool = true
-            var lowercaseRefused: Bool = true
-            var slotFloor: Pipeline.Step.SlotFloor?
-            var caps: VocabularyPass.Caps?
+            var options = Pipeline.VocabularyOptions()
 
             /// How close a run of words must sound to a term to be worth a
             /// reading. Moved here from `vocabulary.yaml`, which the app writes
@@ -2027,18 +2013,18 @@ struct Config: Decodable, Equatable {
             init(from decoder: Decoder) throws {
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
-                if let v = try c.decodeIfPresent(Bool.self, forKey: .nearMisses) { nearMisses = v }
-                if let v = try c.decodeIfPresent(Bool.self, forKey: .bySound) { bySound = v }
-                if let v = try c.decodeIfPresent(Bool.self, forKey: .gate) { gate = v }
-                if let v = try c.decodeIfPresent(Bool.self, forKey: .slotGate) { slotGate = v }
-                if let v = try c.decodeIfPresent(Bool.self, forKey: .portrait) { portrait = v }
-                if let v = try c.decodeIfPresent(Bool.self, forKey: .lowercaseRefused) {
-                    lowercaseRefused = v
-                }
-                slotFloor = try PipelineEntry.slotFloor(
+                options.nearMisses = try c.decodeIfPresent(Bool.self, forKey: .nearMisses)
+                options.bySound = try c.decodeIfPresent(Bool.self, forKey: .bySound)
+                options.gate = try c.decodeIfPresent(Bool.self, forKey: .gate)
+                options.slotGate = try c.decodeIfPresent(Bool.self, forKey: .slotGate)
+                options.portrait = try c.decodeIfPresent(Bool.self, forKey: .portrait)
+                options.lowercaseRefused = try c.decodeIfPresent(
+                    Bool.self, forKey: .lowercaseRefused
+                )
+                options.slotFloor = try PipelineEntry.slotFloor(
                     from: c, at: .slotFloor, named: "transcription.vocabulary.slot_floor"
                 )
-                caps = try c.decodeIfPresent(VocabularyPass.Caps.self, forKey: .caps)
+                options.caps = try c.decodeIfPresent(VocabularyPass.Caps.self, forKey: .caps)
                 // Same range and the same refusal as the old home: a sound
                 // floor outside 0 to 1 silences the sound path on every
                 // dictation and looks like the feature not working.
@@ -2191,20 +2177,11 @@ struct Config: Decodable, Equatable {
             let name: String
             var transform: String?
             var prompt: String?
-            var caps: VocabularyPass.Caps?
-            var nearMisses: Bool?
-            var bySound: Bool?
-            var gate: Bool?
-            var slotGate: Bool?
-            var portrait: Bool?
-            var lowercaseRefused: Bool?
-            var slotFloor: Pipeline.Step.SlotFloor?
+            var vocabulary = Pipeline.VocabularyOptions()
+            var repair = Pipeline.RepairOptions()
             /// What `review:` said, for `Transcription.retiredReview`. Read so
             /// it can be reported, never used.
             var review: String?
-            var marks: [String]?
-            var capitals: Bool?
-            var pause: Double?
             var when: String?
             var unless: String?
             var app: String?
@@ -2274,16 +2251,16 @@ struct Config: Decodable, Equatable {
                     // Read only so `Caps.problems` can refuse them by name.
                     caps.readings = try c.decodeIfPresent(Int.self, forKey: .maxReadings)
                     caps.slots = try c.decodeIfPresent(Int.self, forKey: .maxSlots)
-                    self.caps = caps
-                    nearMisses = try c.decodeIfPresent(Bool.self, forKey: .nearMisses)
-                    bySound = try c.decodeIfPresent(Bool.self, forKey: .bySound)
-                    gate = try c.decodeIfPresent(Bool.self, forKey: .gate)
-                    slotGate = try c.decodeIfPresent(Bool.self, forKey: .slotGate)
-                    portrait = try c.decodeIfPresent(Bool.self, forKey: .portrait)
-                    lowercaseRefused = try c.decodeIfPresent(
+                    vocabulary.caps = caps
+                    vocabulary.nearMisses = try c.decodeIfPresent(Bool.self, forKey: .nearMisses)
+                    vocabulary.bySound = try c.decodeIfPresent(Bool.self, forKey: .bySound)
+                    vocabulary.gate = try c.decodeIfPresent(Bool.self, forKey: .gate)
+                    vocabulary.slotGate = try c.decodeIfPresent(Bool.self, forKey: .slotGate)
+                    vocabulary.portrait = try c.decodeIfPresent(Bool.self, forKey: .portrait)
+                    vocabulary.lowercaseRefused = try c.decodeIfPresent(
                         Bool.self, forKey: .lowercaseRefused
                     )
-                    slotFloor = try Self.slotFloor(
+                    vocabulary.slotFloor = try Self.slotFloor(
                         from: c, at: .slotFloor,
                         named: "pipeline.vocabulary.slot_floor")
                     // Two spellings, `review: false` and `review: <model>`,
@@ -2299,12 +2276,12 @@ struct Config: Decodable, Equatable {
                 // are: turning the capitals off must not restate the marks.
                 if Pipeline.stage(named: name) == .sentenceRepair {
                     if let written = try c.decodeIfPresent([String].self, forKey: .marks) {
-                        marks = try Language.checked(
+                        repair.marks = try Language.checked(
                             marks: written, key: "sentence_repair.marks"
                         )
                     }
-                    capitals = try c.decodeIfPresent(Bool.self, forKey: .capitals)
-                    pause = try c.decodeIfPresent(Double.self, forKey: .pause)
+                    repair.capitals = try c.decodeIfPresent(Bool.self, forKey: .capitals)
+                    repair.pause = try c.decodeIfPresent(Double.self, forKey: .pause)
                 }
                 let mine = Pipeline.stage(named: name)
                 for (owner, keys) in Self.stageKeys
@@ -2342,9 +2319,9 @@ struct Config: Decodable, Equatable {
             /// — and both have to refuse the same values.
             static func slotFloor<K: CodingKey>(
                 from c: KeyedDecodingContainer<K>, at coded: K, named key: String
-            ) throws -> Pipeline.Step.SlotFloor? {
+            ) throws -> Pipeline.VocabularyOptions.SlotFloor? {
                 if let every = (try? c.decodeIfPresent(Double.self, forKey: coded)) ?? nil {
-                    return Pipeline.Step.SlotFloor(
+                    return Pipeline.VocabularyOptions.SlotFloor(
                         everyLanguage: try Language.checked(slotFloor: every, key: key)
                     )
                 }
@@ -2376,7 +2353,7 @@ struct Config: Decodable, Equatable {
                         slotFloor: floor, key: "\(key).\(language)"
                     )
                 }
-                return Pipeline.Step.SlotFloor(byLanguage: floors)
+                return Pipeline.VocabularyOptions.SlotFloor(byLanguage: floors)
             }
         }
 
@@ -2525,18 +2502,7 @@ struct Config: Decodable, Equatable {
                             retiredReview.append(named)
                         }
                         misplacedOptions += entry.misplaced.map { "`\(entry.name)`: \($0)" }
-                        return Pipeline.Step(
-                            stage: stage, transform: entry.transform,
-                            prompt: entry.prompt, caps: entry.caps,
-                            nearMisses: entry.nearMisses, bySound: entry.bySound,
-                            gate: entry.gate, slotGate: entry.slotGate,
-                            portrait: entry.portrait,
-                            lowercaseRefused: entry.lowercaseRefused,
-                            slotFloor: entry.slotFloor,
-                            marks: entry.marks,
-                            capitals: entry.capitals, pause: entry.pause,
-                            when: entry.when, unless: entry.unless, app: entry.app
-                        )
+                        return Pipeline.Step(stage: stage, entry: entry)
                     }
                     pipeline = Pipeline(steps: steps)
                 }
@@ -3370,7 +3336,7 @@ struct Config: Decodable, Equatable {
         // is a real setting for a real language, and `languages:` is the
         // narrower list, changed far more often than the floors are.
         for step in Pipeline.resolved(config: self).steps where step.stage == .vocabulary {
-            let idle = (step.slotFloor?.byLanguage.keys.sorted() ?? [])
+            let idle = (step.vocabulary.slotFloor?.byLanguage.keys.sorted() ?? [])
                 .filter { !transcription.languages.contains($0) }
             guard !idle.isEmpty else { continue }
             said.append("pipeline: `slot_floor:` names"
@@ -3432,20 +3398,22 @@ struct Config: Decodable, Equatable {
     /// places warm this model, and a warm that disagrees with the step
     /// downloads weights nothing will read.
     var readsSlots: Bool {
-        vocabularySteps.contains { $0.slotGate ?? true }
+        vocabularySteps.contains { $0.vocabulary.isOn(\.slotGate) }
     }
 
     /// Whether anything will read the 400 MB word vectors. Both tests that
     /// read the sentence need them, so either switch keeps them.
     var readsSentenceGate: Bool {
         gatesSentence
-            && vocabularySteps.contains { ($0.slotGate ?? true) || ($0.portrait ?? true) }
+            && vocabularySteps.contains {
+                $0.vocabulary.isOn(\.slotGate) || $0.vocabulary.isOn(\.portrait)
+            }
     }
 
     /// Whether a term's portrait is worth building — see
     /// `AppDelegate.rebuildPortrait`.
     var readsPortraits: Bool {
-        gatesSentence && vocabularySteps.contains { $0.portrait ?? true }
+        gatesSentence && vocabularySteps.contains { $0.vocabulary.isOn(\.portrait) }
     }
 
     var resolvedOutputDir: URL {

@@ -115,17 +115,7 @@ enum PipelineCommand {
                 unknown.append(entry.name)
                 return nil
             }
-            return Pipeline.Step(
-                stage: stage, transform: entry.transform, prompt: entry.prompt,
-                caps: entry.caps, nearMisses: entry.nearMisses,
-                bySound: entry.bySound, gate: entry.gate, slotGate: entry.slotGate,
-                portrait: entry.portrait,
-                lowercaseRefused: entry.lowercaseRefused,
-                slotFloor: entry.slotFloor,
-                marks: entry.marks,
-                capitals: entry.capitals, pause: entry.pause, when: entry.when,
-                unless: entry.unless, app: entry.app
-            )
+            return Pipeline.Step(stage: stage, entry: entry)
         }
         for name in unknown {
             if let advice = Config.retiredStageAdvice(name) {

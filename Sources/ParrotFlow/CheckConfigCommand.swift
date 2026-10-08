@@ -136,9 +136,9 @@ enum CheckConfigCommand {
             // The set the step runs with. Silent when the pipeline holds no
             // step at all, which is also what says nothing is downloaded for it.
             if let step = pipeline.steps.first(where: { $0.stage == .sentenceRepair }) {
-                let marks = step.marks ?? transcription.marks(for: "en")
+                let marks = step.repair.marks ?? transcription.marks(for: "en")
                 emit("  · sentence marks    \(marks.joined(separator: " "))"
-                    + (step.capitals == false ? "  (bare capitals off)" : ""))
+                    + (step.repair.isOn(\.capitals) ? "" : "  (bare capitals off)"))
             }
             // An empty pipeline is a choice, not a blank: printing nothing
             // there reads as a display fault rather than as the answer to "why
@@ -491,11 +491,11 @@ enum CheckConfigCommand {
     /// The slot half is not gated by `gate_sentence:`, because the slot is also
     /// read by the lexical gate, which that key has never touched.
     private static func gates(of step: Pipeline.Step, config: Config) -> String {
-        let slot = step.slotGate ?? true
-        let portrait = (step.portrait ?? true) && config.gatesSentence
+        let slot = step.vocabulary.isOn(\.slotGate)
+        let portrait = step.vocabulary.isOn(\.portrait) && config.gatesSentence
         // Named only when it is off, as `(bare capitals off)` is on the
         // `interpret` line. On is the default and the line is long already.
-        let lowercase = step.lowercaseRefused == false ? "  (lowercase refused off)" : ""
+        let lowercase = step.vocabulary.isOn(\.lowercaseRefused) ? "" : "  (lowercase refused off)"
         return "slot \(slot ? "on" : "off"), portrait \(portrait ? "on" : "off")\(lowercase)"
     }
 
