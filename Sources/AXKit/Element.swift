@@ -50,7 +50,31 @@ public struct Element: Hashable, @unchecked Sendable {
     }
 
     public var role: String? { string(kAXRoleAttribute) }
-    public var subrole: String? { string(kAXSubroleAttribute) }
+    public var subrole: String? { readSubrole().subrole }
+
+    /// The subrole, and the result of reading it.
+    func readSubrole() -> (subrole: String?, result: AXError) {
+        var value: AnyObject?
+        let result = AXUIElementCopyAttributeValue(ref, kAXSubroleAttribute as CFString, &value)
+        return (result == .success ? value.map(Element.text(of:)) : nil, result)
+    }
+
+    /// False for a password field, and when the subrole cannot be read.
+    public var valueIsReadable: Bool {
+        let (subrole, result) = readSubrole()
+        return Element.valueIsReadable(role: role, subrole: subrole, subroleRead: result)
+    }
+
+    /// Fails closed: a subrole read that fails for any reason but "the element
+    /// has none" may hide a password field, so its value is not read.
+    public static func valueIsReadable(role: String?, subrole: String?, subroleRead: AXError) -> Bool {
+        guard role != "AXSecureTextField" else { return false }
+        switch subroleRead {
+        case .success: return subrole != kAXSecureTextFieldSubrole
+        case .noValue, .attributeUnsupported: return true
+        default: return false
+        }
+    }
     public var roleDescription: String? { string(kAXRoleDescriptionAttribute) }
     public var title: String? { string(kAXTitleAttribute) }
     public var help: String? { string(kAXHelpAttribute) }
@@ -178,9 +202,11 @@ public struct Element: Hashable, @unchecked Sendable {
 
     /// What the element shows: its value, else its title, else its first static text's value.
     public var shownText: String? {
-        if let text = valueText, !text.isEmpty { return text }
+        let readable = valueIsReadable
+        if readable, let text = valueText, !text.isEmpty { return text }
         if let title, !title.isEmpty { return title }
-        return first(budget: 50) { $0.role == kAXStaticTextRole }?.valueText
+        guard readable else { return nil }
+        return first(budget: 50) { $0.role == kAXStaticTextRole && $0.valueIsReadable }?.valueText
     }
 
     /// What the control writes on screen, in its own locale: its value
@@ -188,6 +214,7 @@ public struct Element: Hashable, @unchecked Sendable {
     /// NSDatePicker, whose parts are not in the tree: there the region's
     /// order is all there is.
     public var displayedText: String {
+        guard valueIsReadable else { return "" }
         if let described = string("AXValueDescription"), !described.isEmpty { return described }
         var parts: [(CGFloat, CGFloat, String)] = []
         var queue = children.map { ($0, 0) }
@@ -198,6 +225,7 @@ public struct Element: Hashable, @unchecked Sendable {
             // A picker's stepper arrows hold 0.5, not a part: measured 09-28.
             // A page's date parts are steppers too, but named ("Day …").
             if part.role == kAXIncrementorRole && part.name == nil { continue }
+            guard part.valueIsReadable else { continue }
             if let text = part.valueText, !text.isEmpty, let box = part.frame {
                 parts.append((box.midY, box.minX, text))
             } else if depth < 3 {

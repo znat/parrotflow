@@ -131,8 +131,10 @@ private struct Walker {
         let seen = twins[key, default: 0] + 1
         twins[key] = seen
         if seen > 1 { key += ".\(seen)" }
+        let (subrole, subroleRead) = element.readSubrole()
+        let readable = Element.valueIsReadable(role: role, subrole: subrole, subroleRead: subroleRead)
         let node = Node(
-            role: role, subrole: element.subrole, name: name, value: value(of: element, role: role),
+            role: role, subrole: subrole, name: name, value: readable ? value(of: element) : nil,
             identifier: element.identifier, dom: element.domIdentifier,
             frame: element.frame.map(Rect.init), actions: element.actions,
             states: states(of: element, role: role), depth: depth, parent: parent, key: key)
@@ -144,9 +146,8 @@ private struct Walker {
         }
     }
 
-    private func value(of element: Element, role: String) -> String? {
-        guard element.subrole != kAXSecureTextFieldSubrole, let text = element.valueText,
-              !text.isEmpty else { return nil }
+    private func value(of element: Element) -> String? {
+        guard let text = element.valueText, !text.isEmpty else { return nil }
         return text.count > options.valueLimit ? String(text.prefix(options.valueLimit)) + "…" : text
     }
 

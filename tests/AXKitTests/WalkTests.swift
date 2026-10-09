@@ -46,6 +46,18 @@ final class WalkTests: XCTestCase {
                        "launch com.apple.Calculator: timed out")
     }
 
+    func testValueIsReadableFailsClosed() {
+        XCTAssertTrue(Element.valueIsReadable(role: "AXTextField", subrole: nil, subroleRead: .noValue))
+        XCTAssertTrue(Element.valueIsReadable(role: "AXTextField", subrole: nil, subroleRead: .attributeUnsupported))
+        XCTAssertTrue(Element.valueIsReadable(role: "AXTextField", subrole: "AXSearchField", subroleRead: .success))
+        XCTAssertFalse(Element.valueIsReadable(role: "AXTextField", subrole: "AXSecureTextField", subroleRead: .success))
+        XCTAssertFalse(Element.valueIsReadable(role: "AXSecureTextField", subrole: nil, subroleRead: .noValue))
+        XCTAssertFalse(Element.valueIsReadable(role: "AXSecureTextField", subrole: "AXSearchField", subroleRead: .success))
+        XCTAssertFalse(Element.valueIsReadable(role: "AXTextField", subrole: nil, subroleRead: .cannotComplete))
+        XCTAssertFalse(Element.valueIsReadable(role: nil, subrole: nil, subroleRead: .apiDisabled))
+        XCTAssertFalse(Element.valueIsReadable(role: "AXTextField", subrole: nil, subroleRead: .failure))
+    }
+
     func testSettledIsFalseWhenNothingCanBeWatched() {
         XCTAssertFalse(Wait.settled(App(pid: -1), quiet: 0.05, timeout: 0.5))
     }
