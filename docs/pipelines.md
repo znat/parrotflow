@@ -1322,6 +1322,15 @@ transcription:
     after_release_seconds: 0.5 # how long the read may run on after the key comes up
 ```
 
+**How long the read may run.** From the press until
+`after_release_seconds` after the key comes up, 0.5 s by default; 0 stops it
+at the release. At that deadline a reader publishes what it found, and the log
+says `stopped: deadline`. The generic reader walks at most 4000 elements, 40
+levels deep, and waits at most 0.1 s for each call. The stage waits for a read
+still running, up to the same deadline, instead of declining with `nothing was
+captured`. If the read has still not ended, it declines with `the screen read
+had not ended by its deadline`.
+
 **The screen is read when the hotkey goes down, not when the stage runs.** The
 press is the last moment the pane is known. By the time the pipeline reaches
 this stage there has been a transcription and possibly a model call, and focus

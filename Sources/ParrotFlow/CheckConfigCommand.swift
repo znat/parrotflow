@@ -103,8 +103,10 @@ enum CheckConfigCommand {
             emit("  · wake phrase       \(listed.isEmpty ? "none — spoken commands are off" : listed)")
             emit("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
             if Context.isConfigured(in: config) {
-                emit("  · screen read       "
-                    + (transcription.context.everyApp ? "every app" : "terminals and Slack"))
+                let read = transcription.context
+                emit("  · screen read       " + (read.everyApp ? "every app" : "terminals and Slack")
+                    + (read.afterReleaseSeconds > 0
+                        ? ", up to \(read.afterReleaseSeconds)s after the key comes up" : ", until the key comes up"))
             }
             // The pipeline, because "why was this not converted" is a question
             // about the order and not about a setting any more.

@@ -605,7 +605,8 @@ if arguments.contains("--tree-test") {
     let labels = SlackLabelTest.run()
     let reader = SlackReaderTest.run()
     let generic = GenericReaderTest.run()
-    exit(labels == 0 && reader == 0 && generic == 0 ? 0 : 1)
+    let press = PressReadTest.run()
+    exit(labels == 0 && reader == 0 && generic == 0 && press == 0 ? 0 : 1)
 }
 
 if let index = arguments.firstIndex(of: "--context-test") {

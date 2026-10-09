@@ -91,7 +91,7 @@ enum ContextSpelling {
         let unchanged = StageResult(text: text, vars: ["count": .int(0)])
         var language = "en"
         if case .string(let named)? = scope["language"] { language = named }
-        let screen = captured(scope: scope)
+        let screen = await captured(scope: scope)
         guard !clean(screen.text).isEmpty else {
             Log.write("context spelling: no screen and no text above the caret")
             return unchanged
@@ -142,10 +142,10 @@ enum ContextSpelling {
     /// the screen is blank. Read here rather than from `context.*`, so the
     /// switch works without the `context` stage. A newer press has replaced
     /// the screen when the runs differ, and that screen is not this one's.
-    static func captured(scope: Scope) -> Screen {
+    static func captured(scope: Scope) async -> Screen {
         var screen = Screen(text: "")
         guard case .int(let run)? = scope["press.run"] else { return screen }
-        if let press = Context.pressCapture, press.run == run,
+        if let press = await Context.settledPress(run: run).press, press.run == run,
            case .success(let capture) = press.outcome {
             screen = Screen(text: capture.text, code: capture.code, place: capture.place,
                             people: capture.people, roster: capture.roster)

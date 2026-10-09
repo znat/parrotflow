@@ -36,8 +36,11 @@ enum GenericReader {
 
     static let options = ReadOptions(budget: 4000, depth: 40, seconds: 2, callTimeout: 0.1)
 
-    static func read(from focused: Element, app: Pipeline.App) -> Result<Context.Capture, Context.Declined> {
-        let (screen, walk) = screen(from: focused, app: app)
+    static func read(from focused: Element, app: Pipeline.App, stop: (@Sendable () -> Bool)? = nil)
+        -> Result<Context.Capture, Context.Declined> {
+        var options = options
+        options.stop = stop
+        let (screen, walk) = screen(from: focused, app: app, options: options)
         return interpret(screen).map { capture in
             var capture = capture
             capture.walked?.records = walk?.records.count ?? 0

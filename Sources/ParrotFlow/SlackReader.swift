@@ -34,11 +34,14 @@ enum SlackReader {
     /// ones: a Slack window had 725 elements on 10-09. No value is cut.
     static let options = ReadOptions(budget: 20_000, depth: 64, seconds: 2, valueLimit: .max)
 
-    static func read(from focused: Element) -> Result<Context.Capture, Context.Declined> {
-        interpret(screen(from: focused).screen)
+    static func read(from focused: Element, stop: (@Sendable () -> Bool)? = nil)
+        -> Result<Context.Capture, Context.Declined> {
+        var options = options
+        options.stop = stop
+        return interpret(screen(from: focused, options: options).screen)
     }
 
-    static func screen(from focused: Element) -> (screen: Screen, walk: ReadResult?) {
+    static func screen(from focused: Element, options: ReadOptions = options) -> (screen: Screen, walk: ReadResult?) {
         let started = Date()
         let chain = Read.climb(from: focused, options: options)
         let name = [kAXTitleAttribute, kAXDescriptionAttribute, "AXPlaceholderValue"].lazy

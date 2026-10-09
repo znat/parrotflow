@@ -70,6 +70,7 @@ enum Context {
         case unreadable = "the focused element publishes no value"
         case empty = "the screen has nothing on it above the input box"
         case noPress = "nothing was captured when the hotkey went down"
+        case late = "the screen read had not ended by its deadline"
         case cutShort = "the window was too big or too slow to read whole"
         case blank = "the window has no text to read around the focused field"
         case denied = "this app is never read: it holds passwords or system settings"
@@ -125,6 +126,8 @@ enum Context {
     /// unrepresentable: a read that is no longer the newest simply does not
     /// store its answer.
     nonisolated(unsafe) private static var pressGeneration = 0
+    /// The read still running, if any.
+    nonisolated(unsafe) private static var pending: PressRead?
 
     static var pressCapture: Press? {
         pressLock.lock()
@@ -157,38 +160,77 @@ enum Context {
     /// generation taken here is checked before storing, so a read that has been
     /// overtaken cannot put the stale one back. See `pressGeneration`.
     static func capturePress(run: Int, app: Pipeline.App?, element: AXUIElement?, settings: Settings) {
-        pressLock.lock()
-        pressGeneration += 1
-        let mine = pressGeneration
-        press = nil
-        pressLock.unlock()
+        let reading = PressRead(run: run, afterRelease: settings.afterReleaseSeconds)
+        let mine = begin(element == nil ? nil : reading)
         guard let element else { return }
 
         let started = CFAbsoluteTimeGetCurrent()
-        let outcome = read(app: app, from: element, settings: settings)
+        let outcome = read(app: app, from: element, settings: settings, stop: { reading.mustStop })
         let ms = (CFAbsoluteTimeGetCurrent() - started) * 1000
+        store(Press(element: element, outcome: outcome, ms: ms, run: run), reading: reading, generation: mine)
+    }
 
-        pressLock.lock()
-        let newest = mine == pressGeneration
-        if newest { press = Press(element: element, outcome: outcome, ms: ms, run: run) }
-        pressLock.unlock()
-
-        guard newest else {
-            Log.write(String(
-                format: "context: a %.0fms read was overtaken by a newer press; dropped", ms
-            ))
-            return
+    /// Clears the last press, and marks this one's read as running. Its generation.
+    static func begin(_ reading: PressRead?) -> Int {
+        pressLock.withLock {
+            pressGeneration += 1
+            press = nil
+            pending = reading
+            return pressGeneration
         }
-        switch outcome {
+    }
+
+    /// Keeps a finished read, unless a newer press began or the stage stopped
+    /// waiting for it.
+    @discardableResult
+    static func store(_ done: Press, reading: PressRead, generation: Int, logs: Bool = true) -> Bool {
+        let kept = reading.finish()
+        let newest = pressLock.withLock {
+            let newest = generation == pressGeneration
+            if newest, kept { press = done }
+            if pending === reading { pending = nil }
+            return newest
+        }
+        guard newest else {
+            if logs { Log.write(String(
+                format: "context: a %.0fms read was overtaken by a newer press; dropped", done.ms
+            )) }
+            return false
+        }
+        guard kept else {
+            if logs { Log.write(String(
+                format: "context: a %.0fms read ended after the stage stopped waiting; dropped", done.ms
+            )) }
+            return false
+        }
+        guard logs else { return true }
+        let stopped = reading.mustStop ? "; stopped: deadline" : ""
+        switch done.outcome {
         case .success(let capture):
             Log.write(String(
-                format: "context: captured %d chars at press in %.0fms", capture.chars, ms
-            ))
+                format: "context: captured %d chars at press in %.0fms", capture.chars, done.ms
+            ) + stopped)
         case .failure(let why):
             Log.write(String(
-                format: "context: nothing captured at press (%@) in %.0fms", why.rawValue, ms
-            ))
+                format: "context: nothing captured at press (%@) in %.0fms", why.rawValue, done.ms
+            ) + stopped)
         }
+        return true
+    }
+
+    /// The key came up, or the second press of a toggle: the running read
+    /// gets `after_release_seconds` more.
+    static func released() {
+        pressLock.withLock { pending }?.release()
+    }
+
+    /// This run's press, once its read is done. A read still running is
+    /// waited for, up to its deadline. `late` when the deadline passed first.
+    static func settledPress(run: Int?) async -> (press: Press?, late: Bool) {
+        if let run, let reading = pressLock.withLock({ pending }), reading.run == run {
+            if await !reading.wait() { return (nil, true) }
+        }
+        return (pressCapture, false)
     }
 
     /// How much of the screen a later stage is allowed to see.
@@ -254,7 +296,8 @@ enum Context {
     /// Until it exists, a capture from the pane you dictated into is still the
     /// right one to publish. It is the pane you meant, whatever the paste does.
     static func read(
-        app: Pipeline.App?, from element: AXUIElement, settings: Settings
+        app: Pipeline.App?, from element: AXUIElement, settings: Settings,
+        stop: (@Sendable () -> Bool)? = nil
     ) -> Result<Capture, Declined> {
         guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard let app else { return .failure(.noApp) }
@@ -271,8 +314,8 @@ enum Context {
         let outcome: Result<Capture, Declined>
         switch reader {
         case .terminal: outcome = TerminalReader.read(from: element)
-        case .slack: outcome = SlackReader.read(from: Element(element))
-        case .generic: outcome = GenericReader.read(from: Element(element), app: app)
+        case .slack: outcome = SlackReader.read(from: Element(element), stop: stop)
+        case .generic: outcome = GenericReader.read(from: Element(element), app: app, stop: stop)
         }
         return outcome.map { capture in
             var capture = capture

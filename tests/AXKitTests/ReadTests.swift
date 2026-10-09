@@ -98,6 +98,16 @@ final class ReadTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(result.calls, result.records.count)
     }
 
+    /// Needs the Accessibility permission.
+    func testStopEndsTheReadAsTheDeadlineDoesWhenTrusted() throws {
+        try XCTSkipUnless(App.isTrusted, "no Accessibility permission")
+        let app = try XCTUnwrap(App.named("com.apple.finder"))
+        let result = Read.walk(from: app.element, options: ReadOptions(stop: { true }))
+        XCTAssertEqual(result.records.count, 0)
+        XCTAssertEqual(result.stopped, .deadline)
+        XCTAssertTrue(Read.climb(from: app.element, options: ReadOptions(stop: { true })).isEmpty)
+    }
+
     /// Needs the Accessibility permission, and a Finder with one child.
     func testAncestorsEndAtTheParentWhenTrusted() throws {
         try XCTSkipUnless(App.isTrusted, "no Accessibility permission")

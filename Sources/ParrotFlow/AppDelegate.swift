@@ -1729,6 +1729,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// on the release as before.
     private func stopRecordingAfterTail() {
         guard recorder.isRecording else { return }
+        Context.released()
 
         let tail = config.hotkey.releaseTailSeconds
         guard tail > 0 else {
@@ -2091,6 +2092,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func stopRecording(reason: String? = nil) {
         guard recorder.isRecording else { return }
+        Context.released()
 
         let recording = recorder.stop(config: config)
 

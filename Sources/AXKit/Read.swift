@@ -49,11 +49,14 @@ public struct ReadOptions: Sendable {
     public var callTimeout: Float = 0.1
     /// Outlook's message body is an AXTextArea of 395,489 characters.
     public var valueLimit = 4000
+    /// Asked between elements, beside `seconds`: true stops the read as its
+    /// deadline does. For a deadline set while the read runs.
+    public var stop: (@Sendable () -> Bool)?
 
     public init(budget: Int = 4000, depth: Int = 64, seconds: Double = 1, callTimeout: Float = 0.1,
-                valueLimit: Int = 4000) {
+                valueLimit: Int = 4000, stop: (@Sendable () -> Bool)? = nil) {
         (self.budget, self.depth, self.seconds) = (budget, depth, seconds)
-        (self.callTimeout, self.valueLimit) = (callTimeout, valueLimit)
+        (self.callTimeout, self.valueLimit, self.stop) = (callTimeout, valueLimit, stop)
     }
 }
 
@@ -94,7 +97,7 @@ public enum Read {
         var stack: [(ref: AXUIElement, depth: Int, parent: Int?)] = [(root.ref, 0, nil)]
         while let (ref, depth, parent) = stack.popLast() {
             guard records.count < options.budget else { stopped = .budget; break }
-            guard Date() < deadline else { stopped = .deadline; break }
+            guard Date() < deadline, options.stop?() != true else { stopped = .deadline; break }
             AXUIElementSetMessagingTimeout(ref, options.callTimeout)
             guard let (fetched, raw) = fetch(ref, names: attributes, valueLimit: options.valueLimit,
                                              calls: &calls) else {
@@ -125,7 +128,7 @@ public enum Read {
         var chain: [(Element, Record)] = []
         var current: AXUIElement? = element.ref
         var calls = 0
-        while let ref = current, chain.count < options.depth, Date() < deadline {
+        while let ref = current, chain.count < options.depth, Date() < deadline, options.stop?() != true {
             AXUIElementSetMessagingTimeout(ref, options.callTimeout)
             guard let (record, up) = fetch(ref, names: upward, valueLimit: options.valueLimit,
                                            calls: &calls) else { break }

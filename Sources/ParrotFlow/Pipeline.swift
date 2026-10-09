@@ -841,7 +841,7 @@ struct Pipeline: Equatable, Codable {
         case .sentenceRepair:
             return await repairSentence(step, on: text, config: config, words: words)
         case .context:
-            return await readContext(on: text)
+            return await readContext(on: text, scope: scope)
         case .input:
             return readInputBox(on: text, scope: scope)
         case .vocabulary:
@@ -862,7 +862,8 @@ struct Pipeline: Equatable, Codable {
     /// a stage that could paste somebody's terminal into their chat message.
     ///
     /// The screen is not read here. It was read when the hotkey went down, and
-    /// this hands on what `Context.capturePress` stored.
+    /// this hands on what `Context.capturePress` stored. A read still running
+    /// is waited for, up to its deadline.
     ///
     /// That is the whole point of the stage's shape. By the time this runs there
     /// has been a transcription and possibly a model call, and focus may be in
@@ -882,8 +883,11 @@ struct Pipeline: Equatable, Codable {
     /// hotkey. Each publishes `ok: false` and the reason, because "read nothing"
     /// and "was not allowed to look" are different answers and a condition
     /// should be able to tell them apart.
-    private func readContext(on text: String) async -> StageResult {
-        switch Context.pressCapture?.outcome ?? .failure(.noPress) {
+    private func readContext(on text: String, scope: Scope) async -> StageResult {
+        var run: Int?
+        if case .int(let pressed)? = scope["press.run"] { run = pressed }
+        let (press, late) = await Context.settledPress(run: run)
+        switch late ? .failure(.late) : press?.outcome ?? .failure(.noPress) {
         case .failure(let why):
             Log.write("pipeline: context declined — \(why.rawValue)")
             // The same keys a successful read publishes, emptied, plus the
