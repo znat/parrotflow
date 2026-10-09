@@ -62,6 +62,7 @@ enum Context {
         case unreadable = "the focused element publishes no value"
         case empty = "the screen has nothing on it above the input box"
         case noPress = "nothing was captured when the hotkey went down"
+        case cutShort = "the window was too big or too slow to read whole"
     }
 
     // MARK: - The capture, which happens when the hotkey goes down

@@ -13,7 +13,7 @@ import Foundation
 /// conversation is kept in the repository.
 enum TreeContextCommand {
 
-    private typealias Node = TreeContext.Node
+    typealias Node = TreeContext.Node
 
     /// A channel, its header, its furniture, and two messages.
     private static let channel: [Node] = [
@@ -90,7 +90,7 @@ enum TreeContextCommand {
              frame: nil, inMessage: true),
     ]
 
-    private struct Case {
+    struct Case {
         let name: String
         let nodes: [Node]
         let title: String?
@@ -100,7 +100,7 @@ enum TreeContextCommand {
         var code: [String] = []
     }
 
-    private static let cases: [Case] = [
+    static let cases: [Case] = [
         Case(name: "channel", nodes: channel, title: "#sws-engineering - Swoop - 21 new items - Slack",
              place: "#sws-engineering",
              // The header is read before the messages, so its three members
@@ -130,7 +130,7 @@ enum TreeContextCommand {
     ]
 
     /// A capture as one line, so a reading can pin it.
-    private static func published(_ outcome: Result<Context.Capture, Context.Declined>) -> String {
+    static func published(_ outcome: Result<Context.Capture, Context.Declined>) -> String {
         switch outcome {
         case .failure(let why): return "declined: \(why.rawValue)"
         case .success(let got):
@@ -141,7 +141,7 @@ enum TreeContextCommand {
 
     /// The readings the cases above depend on, pinned one at a time so a
     /// failure says which one moved rather than "the text differs".
-    private static let readings: [(what: String, got: String?, want: String?)] = [
+    static let readings: [(what: String, got: String?, want: String?)] = [
         ("place, channel", TreeContext.place(in: "sws-engineering (private channel)"), "#sws-engineering"),
         ("place, dm", TreeContext.place(in: "Tasmeen Kathuria (direct message, away)"), "Tasmeen Kathuria"),
         ("place, group dm", TreeContext.place(in: "Mik Okun, Mirza Baig (group direct message)"),

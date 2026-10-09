@@ -782,6 +782,33 @@ are visible. `scripts/check-input.sh` scores it against
 accessibility grant, so it is not faked here — see
 [pipelines.md](pipelines.md#input-what-is-already-in-the-field).
 
+## Reading Slack's tree
+
+```sh
+$PF --tree-test
+$PF --tree-read com.tinyspeck.slackmacgap
+$PF --tree-read com.tinyspeck.slackmacgap --compare [--runs N]
+```
+
+`--tree-test` scores the Slack reader on built-in fixtures. No app, no
+accessibility. It scores two readers. `TreeContext` is the one the app runs.
+`SlackReader` is its rebuild on AXKit. Both must pass the same 51 checks. The
+new one also turns the fixtures into records and reads whole windows built by
+hand.
+
+`--tree-read` prints what the `context` stage would publish for that app's
+window, from its focused element. With nothing focused, it reads from each
+composer. It needs the accessibility grant. It sets `AXManualAccessibility` on
+the app, as the app itself does when you switch to it.
+
+`--compare` runs both readers on the same element, `N` times (default 3), and
+alternates which goes first. It prints no message text and no names. Per key
+(`place`, `people`, `code`, `roster`, `text`, `chars`, `lines`, `truncated`,
+`declined`) it says `same` or `differs`, with sizes only: lengths, list sizes,
+the first differing line or item. Each run line gives both times, the new
+reader's records, calls and failures, and whether it found the focused element
+in its walk. It exits `1` on any difference.
+
 ## Text insertion, which is the risky path
 
 ```sh

@@ -15,7 +15,7 @@ import ApplicationServices
 /// into.
 enum TreeReadCommand {
 
-    static func run(bundleID: String) -> Int32 {
+    static func run(bundleID: String, compare runs: Int? = nil) -> Int32 {
         guard Permissions.accessibility == .granted else {
             print("✗ accessibility is not granted")
             return 1
@@ -43,6 +43,9 @@ enum TreeReadCommand {
         guard !starts.isEmpty else {
             print("✗ nothing is focused and the window has no composer")
             return 1
+        }
+        if let runs {
+            return compare(app.localizedName ?? bundleID, starts: starts, runs: runs)
         }
 
         var read = false

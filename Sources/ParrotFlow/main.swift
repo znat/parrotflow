@@ -595,14 +595,27 @@ if let index = arguments.firstIndex(of: "--peek") {
 
 if let index = arguments.firstIndex(of: "--tree-read") {
     guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
-        print("usage: ParrotFlow --tree-read <bundle-id>")
+        print("usage: ParrotFlow --tree-read <bundle-id> [--compare [--runs N]]")
         exit(2)
     }
-    exit(TreeReadCommand.run(bundleID: arguments[index + 1]))
+    var runs: Int?
+    if arguments.contains("--compare") {
+        runs = 3
+        if let at = arguments.firstIndex(of: "--runs") {
+            guard arguments.indices.contains(at + 1), let count = Int(arguments[at + 1]), count > 0 else {
+                print("usage: --runs takes a whole number above zero")
+                exit(2)
+            }
+            runs = count
+        }
+    }
+    exit(TreeReadCommand.run(bundleID: arguments[index + 1], compare: runs))
 }
 
 if arguments.contains("--tree-test") {
-    exit(TreeContextCommand.run())
+    let old = TreeContextCommand.run()
+    let new = SlackReaderTest.run()
+    exit(old == 0 && new == 0 ? 0 : 1)
 }
 
 if let index = arguments.firstIndex(of: "--context-test") {
