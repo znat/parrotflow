@@ -158,12 +158,14 @@ enum SlackReaderTest {
         Tree("AXOutline", nil, (0..<(TreeContext.maxRoster + 10)).map { Tree(kAXRowRole, "channel-\($0)") }),
     ])
 
-    private static func published(_ tree: Tree, lost: Bool = false, unfocused: Bool = false,
-                                  hidden: Bool = false, cutShort: Bool = false) -> String {
+    private static func published(_ tree: Tree, lost: Bool = false, renamed: Bool = false,
+                                  unfocused: Bool = false, hidden: Bool = false,
+                                  cutShort: Bool = false) -> String {
         var window = records(tree)
         var trail = path(in: window)
         let name = trail.last.flatMap { $0.title ?? $0.description }
         if lost { trail[trail.count - 1].description = "Message to nobody" }
+        if renamed, let at = window.firstIndex(where: \.focused) { window[at].description = "Message to sws" }
         if unfocused { window = window.map { var record = $0; record.focused = false; return record } }
         if hidden { trail.insert(Record(role: kAXScrollAreaRole), at: 1) }
         return TreeContextCommand.published(SlackReader.interpret(
@@ -190,6 +192,13 @@ enum SlackReaderTest {
         ("twin composers, the focused one",
          published(twinComposers),
          "text=Martin Alix: the deploy hook fired.; place=#sws-engineering; people=Martin Alix; code=; roster="),
+        ("twin composers, the focused one renamed between the reads",
+         published(twinComposers, renamed: true),
+         "text=Martin Alix: the deploy hook fired.; place=#sws-engineering; people=Martin Alix; code=; roster="),
+        ("twin composers renamed, no focus flags",
+         published(twinComposers, renamed: true, unfocused: true),
+         "text=Tasmeen Kathuria: can we talk Monday?; place=Tasmeen Kathuria; people=Tasmeen Kathuria;"
+            + " code=; roster="),
         ("a walk cut short",
          published(twoPanes, cutShort: true),
          "declined: \(Context.Declined.cutShort.rawValue)"),
