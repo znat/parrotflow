@@ -595,10 +595,21 @@ if let index = arguments.firstIndex(of: "--peek") {
 
 if let index = arguments.firstIndex(of: "--tree-read") {
     guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
-        print("usage: ParrotFlow --tree-read <bundle-id>")
+        print("usage: ParrotFlow --tree-read <bundle-id> [--compare [--runs N]]")
         exit(2)
     }
-    exit(TreeReadCommand.run(bundleID: arguments[index + 1]))
+    var runs: Int?
+    if arguments.contains("--compare") {
+        let given = arguments.firstIndex(of: "--runs").map { at in
+            arguments.indices.contains(at + 1) ? Int(arguments[at + 1]) : nil
+        }
+        guard let count = given ?? 3, count > 0 else {
+            print("usage: --runs takes a whole number above zero")
+            exit(2)
+        }
+        runs = count
+    }
+    exit(TreeReadCommand.run(bundleID: arguments[index + 1], compare: runs))
 }
 
 if arguments.contains("--tree-test") {
