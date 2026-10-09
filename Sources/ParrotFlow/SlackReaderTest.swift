@@ -158,12 +158,13 @@ enum SlackReaderTest {
         Tree("AXOutline", nil, (0..<(TreeContext.maxRoster + 10)).map { Tree(kAXRowRole, "channel-\($0)") }),
     ])
 
-    private static func published(_ tree: Tree, lost: Bool = false, hidden: Bool = false,
-                                  cutShort: Bool = false) -> String {
-        let window = records(tree)
+    private static func published(_ tree: Tree, lost: Bool = false, unfocused: Bool = false,
+                                  hidden: Bool = false, cutShort: Bool = false) -> String {
+        var window = records(tree)
         var trail = path(in: window)
         let name = trail.last.flatMap { $0.title ?? $0.description }
         if lost { trail[trail.count - 1].description = "Message to nobody" }
+        if unfocused { window = window.map { var record = $0; record.focused = false; return record } }
         if hidden { trail.insert(Record(role: kAXScrollAreaRole), at: 1) }
         return TreeContextCommand.published(SlackReader.interpret(
             SlackReader.Screen(window: window, path: trail, focusedName: name, cutShort: cutShort)))
@@ -195,8 +196,12 @@ enum SlackReaderTest {
         ("no conversation, the sidebar still",
          published(noPane),
          "text=; place=; people=; code=; roster=Mik Okun,#sws-engineering"),
-        ("a caret the walk cannot find",
+        ("a caret relabelled between the reads",
          published(twoPanes, lost: true),
+         "text=Martin Alix: the deploy hook fired.; place=#sws-engineering; people=Martin Alix; code=;"
+            + " roster=Mik Okun,#sws-engineering"),
+        ("a caret the walk cannot find",
+         published(twoPanes, lost: true, unfocused: true),
          "text=; place=; people=; code=; roster=Mik Okun,#sws-engineering"),
         ("the node limit", "\(labels(under: longPane).count)", "\(SlackReader.nodeLimit)"),
         ("the depth limit",

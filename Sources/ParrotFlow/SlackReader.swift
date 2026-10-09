@@ -79,7 +79,9 @@ enum SlackReader {
     ///
     /// A step no child matches is skipped. Slack's web area has an
     /// AXScrollArea for a parent, and that scroll area is nobody's child (10-09).
-    /// Twins that match the whole path are told apart by the focus flag.
+    /// Twins that match the whole path are told apart by the focus flag. A
+    /// focused element whose frame or label changed between the two reads is
+    /// found by its role and that flag.
     static func locate(_ path: [Record], in records: [Record]) -> Int? {
         guard let window = path.first, let root = records.first, same(root, window) else { return nil }
         var children: [Int: [Int]] = [:]
@@ -88,8 +90,13 @@ enum SlackReader {
         }
         var frontier = [0]
         for (step, record) in path.enumerated().dropFirst() {
-            let next = frontier.flatMap { children[$0] ?? [] }.filter { same(records[$0], record) }
-            if !next.isEmpty { frontier = next } else if step == path.count - 1 { return nil }
+            let below = frontier.flatMap { children[$0] ?? [] }
+            let next = below.filter { same(records[$0], record) }
+            if !next.isEmpty {
+                frontier = next
+            } else if step == path.count - 1 {
+                return below.first { records[$0].focused && records[$0].role == record.role }
+            }
         }
         return frontier.first { records[$0].focused } ?? frontier.first
     }
