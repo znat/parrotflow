@@ -1,29 +1,22 @@
+import AXKit
 import AppKit
 import ApplicationServices
 
 /// What is on screen around the field you are dictating into.
 ///
-/// The `context` pipeline stage is the only caller. It publishes what this
-/// returns as `context.*`, so a later stage — a `command:` script, a prompt —
-/// can read the conversation the transcript is about to join.
+/// The `context` pipeline stage publishes what this returns as `context.*`, so
+/// a later stage — a `command:` script, a prompt — can read the conversation
+/// the transcript is about to join. `context_spelling` reads the same capture.
 ///
-/// ## Two kinds of screen
+/// One reader per app, chosen by `ContextReader`: a terminal's value is its
+/// screen, Slack's conversation is walked out of its tree by `SlackReader`, and
+/// `GenericReader` reads any other app when `transcription.context.every_app`
+/// is on. An app no reader takes is declined, out loud, rather than
+/// half-served.
 ///
-/// A terminal is the cheap one. Its accessibility value *is* the visible screen
-/// — `Surface.Kind.screen` exists for exactly that reason — so the whole
-/// context is one AX call, the same call the app already makes to edit a line
-/// in place, and it costs about 1ms.
-///
-/// Slack is the other kind. The composer publishes its own contents and nothing
-/// above it, so the messages come from walking the window's children: 973 nodes
-/// for one window and 130–150ms, against 1ms for a terminal. `TreeContext` does
-/// that walk, and it also returns what the flat screen of a terminal cannot —
-/// which conversation this is and who is in it.
-///
-/// Both run where `capturePress` runs, off the main thread once recording has
-/// started, so neither is on the path that makes the hotkey feel fast.
-///
-/// An app that is neither is declined, out loud, rather than half-served.
+/// All of them run where `capturePress` runs, off the main thread once
+/// recording has started, so none is on the path that makes the hotkey feel
+/// fast.
 enum Context {
 
     /// One read of the screen.
@@ -45,6 +38,8 @@ enum Context {
         /// Every channel and person the window offers, from Slack's sidebar.
         /// Not who is in this conversation — who exists to be named.
         var roster: [String] = []
+        /// Which reader read it: "terminal", "slack" or "generic".
+        var source = ""
 
         var chars: Int { text.count }
         var lines: Int { text.isEmpty ? 0 : text.components(separatedBy: "\n").count }
@@ -94,6 +89,10 @@ enum Context {
         let run: Int
     }
 
+    /// `transcription.context`: whether every app is read, and how long a
+    /// read may run on after the key comes up.
+    typealias Settings = Config.Transcription.ContextRead
+
     private static let pressLock = NSLock()
     nonisolated(unsafe) private static var press: Press?
 
@@ -142,7 +141,7 @@ enum Context {
     /// dictation can never be published as if it were this one — and the
     /// generation taken here is checked before storing, so a read that has been
     /// overtaken cannot put the stale one back. See `pressGeneration`.
-    static func capturePress(run: Int, app: Pipeline.App?, element: AXUIElement?) {
+    static func capturePress(run: Int, app: Pipeline.App?, element: AXUIElement?, settings: Settings) {
         pressLock.lock()
         pressGeneration += 1
         let mine = pressGeneration
@@ -151,7 +150,7 @@ enum Context {
         guard let element else { return }
 
         let started = CFAbsoluteTimeGetCurrent()
-        let outcome = read(app: app, from: element)
+        let outcome = read(app: app, from: element, settings: settings)
         let ms = (CFAbsoluteTimeGetCurrent() - started) * 1000
 
         pressLock.lock()
@@ -197,11 +196,12 @@ enum Context {
     /// window in front is not reliably the window that was dictated into, and
     /// reading the wrong window is worse than reading none — it would hand a
     /// prompt somebody else's screen.
-    static func read(app: Pipeline.App?) -> Result<Capture, Declined> {
+    static func read(app: Pipeline.App?, settings: Settings) -> Result<Capture, Declined> {
         guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard let app else { return .failure(.noApp) }
-        let profile = AppProfile.of(app)
-        guard profile.readsPane || profile.readsTree else { return .failure(.notReadable) }
+        guard ContextReader.choose(for: app, everyApp: settings.everyApp) != nil else {
+            return .failure(.notReadable)
+        }
 
         let front = NSWorkspace.shared.frontmostApplication
         let frontID = front?.bundleIdentifier ?? ""
@@ -215,7 +215,7 @@ enum Context {
         guard AXUIElementGetPid(element, &pid) == .success,
               NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == app.bundleID
         else { return .failure(.appChanged) }
-        return read(app: app, from: element)
+        return read(app: app, from: element, settings: settings)
     }
 
     /// The same read, of an element the caller already has.
@@ -239,48 +239,25 @@ enum Context {
     /// Until it exists, a capture from the pane you dictated into is still the
     /// right one to publish. It is the pane you meant, whatever the paste does.
     static func read(
-        app: Pipeline.App?, from element: AXUIElement
+        app: Pipeline.App?, from element: AXUIElement, settings: Settings
     ) -> Result<Capture, Declined> {
         guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard let app else { return .failure(.noApp) }
-        let profile = AppProfile.of(app)
-        guard profile.readsPane || profile.readsTree else { return .failure(.notReadable) }
+        guard let reader = ContextReader.choose(for: app, everyApp: settings.everyApp) else {
+            return .failure(.notReadable)
+        }
         guard !SelectionReader.isOurs(element) else { return .failure(.nothingFocused) }
-        if profile.readsTree { return readTree(from: element) }
-        guard let value = SelectionReader.visibleText(of: element) else {
-            return .failure(.unreadable)
+        let outcome: Result<Capture, Declined>
+        switch reader {
+        case .terminal: outcome = TerminalReader.read(from: element)
+        case .slack: outcome = SlackReader.read(from: Element(element))
+        case .generic: outcome = GenericReader.read(from: Element(element), app: app)
         }
-
-        let above = aboveInputBox(in: value)
-        guard !above.isEmpty else { return .failure(.empty) }
-
-        let (text, truncated) = tail(of: above, limit: maxChars)
-        return .success(Capture(text: text, truncated: truncated))
-    }
-
-    /// The conversation around the box, for an app whose screen is a tree.
-    ///
-    /// The subtree is climbed from the focused composer rather than chosen by
-    /// geometry: the Slack window measured on 2026-09-18 held two composers and
-    /// two conversations at once, and a rule about which side of the window the
-    /// sidebar ends on would have had to guess between them.
-    ///
-    /// Only that pane is read. A short conversation is a short pane, not a wrong
-    /// one. On 2026-09-28, with one DM open, a whole-window read took its place
-    /// from a sidebar row, added a line from outside the pane, and lost 7 of the
-    /// pane's 36 lines.
-    static func readTree(from element: AXUIElement) -> Result<Capture, Declined> {
-        let window = TreeContext.window(of: element)
-        let title = window.flatMap(TreeContext.title(of:))
-        let conversation = TreeContext.conversation(around: element).map {
-            TreeContext.assemble(TreeContext.nodes(under: $0), title: title)
-        } ?? TreeContext.threadRun(around: element).map { run in
-            // The reply box names the place. The window title would say "Threads".
-            let found = TreeContext.assemble(TreeContext.nodes(under: run.items), title: nil)
-            return TreeContext.Assembled(
-                place: run.place, people: found.people, text: found.text, code: found.code)
+        return outcome.map { capture in
+            var capture = capture
+            capture.source = reader.rawValue
+            return capture
         }
-        return treeCapture(conversation, roster: window.map(TreeContext.roster(in:)) ?? [])
     }
 
     /// What a tree app publishes: the conversation when the climb found one,

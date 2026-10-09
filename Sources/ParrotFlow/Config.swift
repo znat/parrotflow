@@ -1799,6 +1799,9 @@ struct Config: Decodable, Equatable {
         /// A span respelled the way the screen writes it, after the last step
         /// — see `ContextSpelling`.
         var contextSpelling = ContextSpelling()
+        /// How the screen is read at the press, for `context` and
+        /// `context_spelling` alike — see `Context`.
+        var context = ContextRead()
 
         /// The marks the `interpret` step tries beside removing the period,
         /// where the step names none of its own. English only — that stage has
@@ -1968,6 +1971,37 @@ struct Config: Decodable, Equatable {
             }
         }
 
+        /// Off by default: with `every_app` off, only terminals and Slack are
+        /// read, as before.
+        struct ContextRead: Decodable, Equatable {
+            var everyApp = false
+            /// How long the press read may run on after the key comes up. 0
+            /// stops it at the release.
+            var afterReleaseSeconds: Double = 0.5
+
+            enum CodingKeys: String, CodingKey, CaseIterable {
+                case everyApp = "every_app"
+                case afterReleaseSeconds = "after_release_seconds"
+            }
+
+            init() {}
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                if let v = try c.decodeIfPresent(Bool.self, forKey: .everyApp) { everyApp = v }
+                if let v = try c.decodeIfPresent(Double.self, forKey: .afterReleaseSeconds) {
+                    guard v >= 0, v <= 5 else {
+                        throw ConfigError.invalidValue(
+                            key: "transcription.context.after_release_seconds",
+                            value: String(v),
+                            expected: "a delay between 0 and 5 seconds"
+                        )
+                    }
+                    afterReleaseSeconds = v
+                }
+            }
+        }
+
         /// Names from `vocabulary.yaml`, matched and then settled against the
         /// sentence they stand in.
         ///
@@ -2045,7 +2079,7 @@ struct Config: Decodable, Equatable {
         }
 
         enum CodingKeys: String, CodingKey, CaseIterable {
-            case enabled, replacements, pipeline, languages, vocabulary
+            case enabled, replacements, pipeline, languages, vocabulary, context
             case sentenceRepair = "sentence_repair"
             case contextSpelling = "context_spelling"
             case insertMode = "insert_mode"
@@ -2466,6 +2500,7 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(ContextSpelling.self, forKey: .contextSpelling) {
                 contextSpelling = v
             }
+            if let v = try c.decodeIfPresent(ContextRead.self, forKey: .context) { context = v }
             if let v = try c.decodeIfPresent([String].self, forKey: .languages) {
                 let known = v.map { $0.lowercased() }
                     .filter { DictationLanguage.supported.contains($0) }

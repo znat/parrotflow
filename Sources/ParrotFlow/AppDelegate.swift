@@ -1464,8 +1464,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let app = front?.app
             let element = focusAtPress?.element
             let run = pressRun
+            let settings = config.transcription.context
             DispatchQueue.global(qos: .userInitiated).async {
-                Context.capturePress(run: run, app: app, element: element)
+                Context.capturePress(run: run, app: app, element: element, settings: settings)
             }
         }
 

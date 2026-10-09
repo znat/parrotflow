@@ -75,6 +75,20 @@ enum TreeContext {
         let code: [String]
     }
 
+    /// The old Slack read, kept only for `--tree-read --compare`.
+    static func read(from element: AXUIElement) -> Result<Context.Capture, Context.Declined> {
+        let window = window(of: element)
+        let title = window.flatMap(title(of:))
+        let conversation = conversation(around: element).map {
+            assemble(nodes(under: $0), title: title)
+        } ?? threadRun(around: element).map { run in
+            // The reply box names the place. The window title would say "Threads".
+            let found = assemble(nodes(under: run.items), title: nil)
+            return Assembled(place: run.place, people: found.people, text: found.text, code: found.code)
+        }
+        return Context.treeCapture(conversation, roster: window.map(roster(in:)) ?? [])
+    }
+
     // MARK: - The sidebar
 
     /// Rows that organise the sidebar rather than name anything in it.

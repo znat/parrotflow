@@ -102,6 +102,10 @@ enum CheckConfigCommand {
                 .map { "\"\($0)\"" }.joined(separator: ", ")
             emit("  · wake phrase       \(listed.isEmpty ? "none — spoken commands are off" : listed)")
             emit("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
+            if Context.isConfigured(in: config) {
+                emit("  · screen read       "
+                    + (transcription.context.everyApp ? "every app" : "terminals and Slack"))
+            }
             // The pipeline, because "why was this not converted" is a question
             // about the order and not about a setting any more.
             let pipeline = Pipeline.resolved(config: config)

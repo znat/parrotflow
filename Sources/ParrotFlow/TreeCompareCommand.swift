@@ -2,9 +2,10 @@ import AXKit
 import ApplicationServices
 import Foundation
 
-/// `--tree-read <bundle-id> --compare [--runs N]` — `TreeContext` and
-/// `SlackReader` on the same element, N times. It prints counts only, never
-/// message text or names: it runs on somebody's real Slack.
+/// `--tree-read <bundle-id> --compare [--runs N]` — `TreeContext` and the
+/// reader `Context.read` picks for Slack, on the same element, N times. It
+/// prints counts only, never message text or names: it runs on somebody's real
+/// Slack.
 extension TreeReadCommand {
 
     /// One reader's output, cut into the keys the `context` stage publishes.
@@ -33,6 +34,7 @@ extension TreeReadCommand {
     static let keys = ["place", "people", "code", "roster", "text", "chars", "lines", "truncated", "declined"]
 
     static func compare(_ name: String, starts: [AXUIElement], runs: Int) -> Int32 {
+        let slack = Pipeline.App(name: name, bundleID: ContextReader.slackBundleID)
         var anyDiffers = false
         for (number, start) in starts.enumerated() {
             print("\(name) — start \(number + 1) of \(starts.count), \(runs) runs")
@@ -42,11 +44,11 @@ extension TreeReadCommand {
             for run in 1...runs {
                 var old: (Published, Double)?
                 var new: (Published, Double, ReadResult?, Bool)?
-                let readOld = { old = timed { Published(Context.readTree(from: start)) } }
+                let readOld = { old = timed { Published(TreeContext.read(from: start)) } }
                 let readNew = {
-                    let ((screen, walk), ms) = timed { SlackReader.screen(from: Element(start)) }
-                    let (got, interpretMs) = timed { Published(SlackReader.interpret(screen)) }
-                    new = (got, ms + interpretMs, walk, SlackReader.locate(screen.path, in: screen.window) != nil)
+                    let (got, ms) = timed { Published(Context.read(app: slack, from: start, settings: Context.Settings())) }
+                    let (screen, walk) = SlackReader.screen(from: Element(start))
+                    new = (got, ms, walk, SlackReader.locate(screen.path, in: screen.window) != nil)
                 }
                 // Alternated, so neither reader always gets the tree the other warmed.
                 if run % 2 == 1 { readOld(); readNew() } else { readNew(); readOld() }

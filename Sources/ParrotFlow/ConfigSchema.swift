@@ -209,6 +209,8 @@ enum ConfigSchema {
                     + " Runs second, always."),
             key("context_spelling", .object(contextSpelling),
                 "Spells a dictated word the way the screen writes it. Runs last."),
+            key("context", .object(contextRead),
+                "How the screen is read at the press, for context and context_spelling."),
             key("pipeline", .list(step),
                 "What a transcript runs through, in order. Left out, every stage runs."),
             key("activation_phrase", phrases, "The older name for activation_phrases.",
@@ -256,6 +258,21 @@ enum ConfigSchema {
                 fields: [
             key("enabled", .bool, "Reads the screen and the field at every press.",
                 default: true),
+        ])
+    }
+
+    static var contextRead: Section {
+        Section(source: "Config.Transcription.ContextRead",
+                keys: Config.Transcription.ContextRead.CodingKeys.allCases.map(\.stringValue),
+                fields: [
+            key("every_app", .bool,
+                "Read every app's window, not only terminals and Slack. Password managers"
+                    + " and System Settings are never read.",
+                default: false),
+            key("after_release_seconds", .range(Bounds(min: 0, max: 5)),
+                "How long the read may run on after the key comes up. 0 stops it at the"
+                    + " release.",
+                default: 0.5),
         ])
     }
 

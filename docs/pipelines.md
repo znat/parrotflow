@@ -1260,7 +1260,7 @@ pipeline:
     when: context.ok && context.chars > 200
 ```
 
-It publishes nine things, on top of the four every stage gets:
+It publishes ten things, on top of the four every stage gets:
 
 | | |
 |---|---|
@@ -1273,6 +1273,7 @@ It publishes nine things, on top of the four every stage gets:
 | `context.code` | what was written as code, joined on `; ` — a backticked run in Slack, empty in a terminal |
 | `context.roster` | every channel and person the window offers, joined on `; ` — Slack's sidebar, empty in a terminal |
 | `context.declined` | why nothing was read, when nothing was |
+| `context.source` | which reader read it: `terminal`, `slack` or `generic`; empty when nothing was read |
 
 **It never changes the transcript.** `context.changed` is false on every run and
 means it — the stage returns its input by construction, not by outcome. A stage
@@ -1309,9 +1310,17 @@ label is the boundary, and everything under it is language rather than the app
 talking about itself. The sidebar is kept out of `context.text` too, and is
 published on its own as `context.roster`: every channel and person it lists.
 
-An app that is neither is declined out loud. Adding one means measuring it and
-naming it in `AppProfile.treeBundleIDs`, because the walk picks its subtree by
-the labels that app writes.
+An app that is neither is declined out loud, unless
+`transcription.context.every_app` is on. That switch is off by default. With it
+on, a generic reader reads any other app's window. The Slack and terminal
+readers still read their own apps, and their output does not change.
+
+```yaml
+transcription:
+  context:
+    every_app: false           # read every app, not only terminals and Slack
+    after_release_seconds: 0.5 # how long the read may run on after the key comes up
+```
 
 **The screen is read when the hotkey goes down, not when the stage runs.** The
 press is the last moment the pane is known. By the time the pipeline reaches

@@ -9,10 +9,10 @@ import ApplicationServices
 /// app's tree: bringing the app forward to look at it is a race against
 /// anything else that wants focus, and an overlay window wins it.
 ///
-/// This reads by process id instead, through the same `Context.readTree` the
-/// stage uses. It starts from the app's focused element, so it answers for the
-/// conversation that app is showing rather than for the one you are dictating
-/// into.
+/// This reads by process id instead, through the same `Context.read` the press
+/// uses, with every app on. It starts from the app's focused element, so it
+/// answers for the pane that app is showing rather than for the one you are
+/// dictating into.
 enum TreeReadCommand {
 
     static func run(bundleID: String, compare runs: Int? = nil) -> Int32 {
@@ -37,23 +37,25 @@ enum TreeReadCommand {
             print("✗ no window")
             return 1
         }
-        // An app in the background reports nothing focused. Each composer is
-        // then read as if the caret were in it.
-        let starts = focused.map { [$0] } ?? TreeContext.composers(in: window)
-        guard !starts.isEmpty else {
-            print("✗ nothing is focused and the window has no composer")
-            return 1
-        }
+        let named = Pipeline.App(name: app.localizedName ?? "", bundleID: bundleID)
+        let reader = ContextReader.choose(for: named, everyApp: true)
+        // An app in the background reports nothing focused. In Slack each
+        // composer is then read as if the caret were in it; elsewhere the window.
+        let composers = reader == .slack ? TreeContext.composers(in: window) : []
+        let starts = focused.map { [$0] } ?? (composers.isEmpty ? [window] : composers)
         if let runs {
             return compare(app.localizedName ?? bundleID, starts: starts, runs: runs)
         }
 
+        var settings = Context.Settings()
+        settings.everyApp = true
         var read = false
         for start in starts {
             let started = Date()
-            let outcome = Context.readTree(from: start)
+            let outcome = Context.read(app: named, from: start, settings: settings)
             let ms = Date().timeIntervalSince(started) * 1000
-            print(String(format: "%@ — %.0fms", app.localizedName ?? bundleID, ms))
+            print(String(format: "%@ — %.0fms", app.localizedName ?? bundleID, ms)
+                + " (\(reader?.rawValue ?? "no reader"))")
             // The description, not the value: a composer's value is the draft.
             if focused == nil { print("from    \(description(of: start))") }
             switch outcome {

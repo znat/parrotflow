@@ -43,7 +43,8 @@ struct Pipeline: Equatable, Codable {
         /// spelling is still read — see `Pipeline.stage(named:)`.
         case sentenceRepair = "sentence_repair"
         /// What is on screen around the field, published as `context.*` and
-        /// never written into the transcript. Terminals only — see `Context`.
+        /// never written into the transcript. Terminals and Slack, and every
+        /// app with `transcription.context.every_app` — see `Context`.
         case context
         /// What is already *in* the field, and where the caret is, published as
         /// `input.*` and never written into the transcript. Works in every
@@ -905,6 +906,7 @@ struct Pipeline: Equatable, Codable {
                 "people": .string(""),
                 "code": .string(""),
                 "roster": .string(""),
+                "source": .string(""),
             ])
         case .success(let capture):
             // The whole capture goes to the log, not a count of it. The point of
@@ -936,6 +938,8 @@ struct Pipeline: Equatable, Codable {
                 // is in this conversation: a sidebar names every channel you
                 // are in and everyone you message.
                 "roster": .string(capture.roster.joined(separator: "; ")),
+                // Which reader read it: "terminal", "slack" or "generic".
+                "source": .string(capture.source),
             ])
         }
     }
