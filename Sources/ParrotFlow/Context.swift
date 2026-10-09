@@ -10,9 +10,9 @@ import ApplicationServices
 ///
 /// One reader per app, chosen by `ContextReader`: a terminal's value is its
 /// screen, Slack's conversation is walked out of its tree by `SlackReader`, and
-/// `GenericReader` reads any other app when `transcription.context.every_app`
-/// is on. An app no reader takes is declined, out loud, rather than
-/// half-served.
+/// when `transcription.context.every_app` is on, `TeamsReader` and
+/// `OutlookReader` read their apps and `GenericReader` any other. An app no
+/// reader takes is declined, out loud, rather than half-served.
 ///
 /// All of them run where `capturePress` runs, off the main thread once
 /// recording has started, so none is on the path that makes the hotkey feel

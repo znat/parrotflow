@@ -1324,7 +1324,8 @@ mentions, never names guessed from the text. The place is the chat header. A
 chat with no message yet gives the place only. In Outlook
 (`com.microsoft.Outlook`) the reader reads the mail in the reading pane, and
 its subject is the place, without email addresses. It never reads the message
-list, whose rows hold previews. A draft gives only its subject.
+list, whose rows hold previews. A draft gives only its subject. Any other
+window gives only its title.
 
 ```yaml
 transcription:

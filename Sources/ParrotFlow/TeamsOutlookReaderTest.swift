@@ -99,6 +99,9 @@ enum TeamsReaderTest {
          published(chat([])), "text=; place=Design review; people=; code=; pane=empty chat"),
         ("the focus outside any chat: the generic reader",
          published(chat([], focus: false, focusSidebar: true)), published(chat([], focus: false, focusSidebar: true), generic: true)),
+        ("the focus in the sidebar beside a chat: the generic reader",
+         published(chat(first + second, focus: false, focusSidebar: true)),
+         published(chat(first + second, focus: false, focusSidebar: true), generic: true)),
         ("a message with no visible part: its title",
          published(chat([summary("Meeting started"),
                           Tree(kAXGroupRole, nil, subrole: "AXApplicationGroup", title: "Meeting started")])),
@@ -145,10 +148,10 @@ enum OutlookReaderTest {
     }
 
     private static func published(_ parts: [Tree], title: String? = "Inbox • nathan@example.com",
-                                  focusedIdentifier: String? = nil) -> String {
+                                  focusedIdentifier: String? = nil, branch: String = "reading pane") -> String {
         let screen = OutlookReader.Screen(
             records: GenericReaderTest.records(Tree(kAXGroupRole, nil, parts)), app: "Microsoft Outlook",
-            title: title, focusedIdentifier: focusedIdentifier, branch: "reading pane")
+            title: title, focusedIdentifier: focusedIdentifier, branch: branch)
         switch OutlookReader.interpret(screen) {
         case .failure(let why): return "declined: \(why.rawValue)"
         case .success(let got):
@@ -184,6 +187,9 @@ enum OutlookReaderTest {
         ("the caret in the subject: the window title instead",
          published(draft(subject: "Lunch plans"), focusedIdentifier: OutlookReader.subjectFieldID),
          "text=; place=Inbox; code=; pane=compose"),
+        ("no reading pane: the window title only",
+         published([], title: "Q3 numbers — ana@example.com", branch: "window"),
+         "text=; place=Q3 numbers; code=; pane=window"),
         ("no mail and no title", published([], title: nil), "declined: \(Context.Declined.blank.rawValue)"),
     ]
 

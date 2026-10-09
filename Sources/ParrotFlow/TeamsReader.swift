@@ -65,7 +65,8 @@ enum TeamsReader {
 
     /// A record whose children are messages: an AXHeading and an
     /// AXApplicationGroup among them. The nearest to the focus, or with
-    /// nothing focused the one holding the most messages.
+    /// nothing focused the one holding the most messages. The climb stops at
+    /// the sidebar, so a focus there is not taken for the chat beside it.
     static func messageList(around focused: Int?, in records: [Record]) -> Int? {
         var children: [Int: [Int]] = [:]
         for (index, record) in records.enumerated() {
@@ -77,12 +78,20 @@ enum TeamsReader {
             return under.contains { records[$0].role == kAXHeadingRole } && count(index) > 0
         }
         guard let focused else { return lists.max { count($0) < count($1) } }
-        for up in RecordTree.ancestors(of: focused, in: records).prefix(GenericReader.paneClimb) {
+        for up in ([focused] + RecordTree.ancestors(of: focused, in: records)).prefix(GenericReader.paneClimb) {
             if let list = lists.first(where: { RecordTree.ancestors(of: $0, in: records).contains(up) }) {
                 return list
             }
+            if holdsSidebar(up, in: records) { return nil }
         }
         return nil
+    }
+
+    /// The chat list is an AXOutline beside the app rail's navigation landmark.
+    static func holdsSidebar(_ index: Int, in records: [Record]) -> Bool {
+        RecordTree.below(index, in: records, depth: .max).contains { inner in
+            records[inner].role == kAXOutlineRole || records[inner].subrole == Landmark.Kind.navigation.rawValue
+        }
     }
 
     /// One message's visible words in order, with the names Teams marks as

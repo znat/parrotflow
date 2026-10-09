@@ -46,8 +46,9 @@ enum OutlookReader {
         screen.title = chain[top].record.title
         let parts = readingParts(of: window, timeout: options.callTimeout)
         if !parts.isEmpty { screen.branch = "reading pane" }
+        // No reading pane found: the title alone, since a window walk meets the list and the search field.
         var records = [Record(role: kAXGroupRole)]
-        for part in parts.isEmpty ? [window] : parts {
+        for part in parts {
             var rest = options
             rest.seconds = max(0, options.seconds - Date().timeIntervalSince(started))
             rest.budget = options.budget - records.count + 1
@@ -67,7 +68,7 @@ enum OutlookReader {
 
     /// The children of the innermost split group under the window's first
     /// split group, less splitters and the message list. Empty outside the
-    /// main window.
+    /// main window, so another window gives its title only.
     static func readingParts(of window: Element, timeout: Float) -> [Element] {
         func peek(_ element: Element) -> String {
             element.setMessagingTimeout(timeout)
