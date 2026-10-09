@@ -74,9 +74,11 @@ public struct App: Sendable {
             (launched, failure) = (app, error)
             done.signal()
         }
-        guard done.wait(timeout: .now() + timeout) == .success, let launched else {
-            throw failure ?? AXKitError.appNotFound(bundle)
+        // On a timeout the handler may still write to these, so they are read only after it signalled.
+        guard done.wait(timeout: .now() + timeout) == .success else {
+            throw AXKitError.timedOut("launch \(bundle)")
         }
+        guard let launched else { throw failure ?? AXKitError.appNotFound(bundle) }
         return App(pid: launched.processIdentifier)
     }
 

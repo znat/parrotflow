@@ -11,6 +11,7 @@ public enum AXKitError: Error, CustomStringConvertible, Equatable {
     /// The state cannot be read, so the operation would be blind: a second
     /// press would undo the first. Material's checkbox and switch.
     case unreadable(String)
+    case timedOut(String)
 
     public var description: String {
         switch self {
@@ -19,6 +20,7 @@ public enum AXKitError: Error, CustomStringConvertible, Equatable {
         case .appNotFound(let name): return "no running app \"\(name)\""
         case .notApplied(let what): return "\(what): the call succeeded but the value did not change"
         case .unreadable(let what): return "\(what): its state cannot be read, so it was left alone"
+        case .timedOut(let what): return "\(what): timed out"
         }
     }
 

@@ -42,6 +42,8 @@ final class WalkTests: XCTestCase {
     func testErrorNamesTheCall() {
         XCTAssertEqual(AXKitError.ax(.illegalArgument, "set AXValue").description,
                        "set AXValue: illegal argument (-25201)")
+        XCTAssertEqual(AXKitError.timedOut("launch com.apple.Calculator").description,
+                       "launch com.apple.Calculator: timed out")
     }
 
     /// Needs the Accessibility permission for the process running the tests.

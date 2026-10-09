@@ -38,7 +38,10 @@ func printJSON<T: Encodable>(_ thing: T) {
 }
 
 func target() -> App? {
-    if let pid = value("--pid").flatMap(Int32.init) { return App(pid: pid) }
+    if let raw = value("--pid") {
+        guard let pid = Int32(raw) else { fail("--pid takes a process number, not \"\(raw)\"", 2) }
+        return App(pid: pid)
+    }
     if let name = value("--app") {
         guard let app = App.named(name) else { fail(AXKitError.appNotFound(name).description) }
         return app
