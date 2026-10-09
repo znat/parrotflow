@@ -101,7 +101,10 @@ enum GenericReader {
             : self.pane(around: focused, in: records, kept: kept)
         let lines = self.lines(under: pane, in: records, kept: kept)
         let code = self.code(in: lines, records: records)
-        let place = self.place(screen)
+        // With nothing focused the path ends at the window; the page the walk found names the place.
+        var named = screen
+        if let web, !screen.path.contains(where: { $0.role == "AXWebArea" }) { named.path.append(records[web]) }
+        let place = self.place(named)
         let text = lines.map(\.text).joined(separator: "\n")
         guard !text.isEmpty || !place.isEmpty else { return .failure(.blank) }
         let (tail, truncated) = Context.tail(of: text, limit: Context.maxChars)

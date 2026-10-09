@@ -159,9 +159,17 @@ enum Context {
     /// dictation can never be published as if it were this one — and the
     /// generation taken here is checked before storing, so a read that has been
     /// overtaken cannot put the stale one back. See `pressGeneration`.
-    static func capturePress(run: Int, app: Pipeline.App?, element: AXUIElement?, settings: Settings) {
+    /// Call on the press's own thread, before the read is dispatched: a key
+    /// that comes up before the read starts must still find it.
+    static func reservePress(run: Int, hasElement: Bool, settings: Settings) -> (reading: PressRead, generation: Int) {
         let reading = PressRead(run: run, afterRelease: settings.afterReleaseSeconds)
-        let mine = begin(element == nil ? nil : reading)
+        return (reading, begin(hasElement ? reading : nil))
+    }
+
+    static func capturePress(_ reserved: (reading: PressRead, generation: Int), app: Pipeline.App?,
+                             element: AXUIElement?, settings: Settings) {
+        let (reading, mine) = reserved
+        let run = reading.run
         guard let element else { return }
 
         let started = CFAbsoluteTimeGetCurrent()
@@ -230,7 +238,8 @@ enum Context {
         if let run, let reading = pressLock.withLock({ pending }), reading.run == run {
             if await !reading.wait() { return (nil, true) }
         }
-        return (pressCapture, false)
+        // A newer press may hold the slot: its screen is not this dictation's.
+        return (pressCapture.flatMap { run == nil || $0.run == run ? $0 : nil }, false)
     }
 
     /// How much of the screen a later stage is allowed to see.

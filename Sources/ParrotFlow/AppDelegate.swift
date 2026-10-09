@@ -1463,10 +1463,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if startsDictation, Context.isConfigured(in: config) {
             let app = front?.app
             let element = focusAtPress?.element
-            let run = pressRun
             let settings = config.transcription.context
+            let reserved = Context.reservePress(run: pressRun, hasElement: element != nil, settings: settings)
             DispatchQueue.global(qos: .userInitiated).async {
-                Context.capturePress(run: run, app: app, element: element, settings: settings)
+                Context.capturePress(reserved, app: app, element: element, settings: settings)
             }
         }
 

@@ -88,6 +88,32 @@ enum PressReadTest {
         return "\(described(got)) at \(String(format: "%.2f", fake.now)), \(stored), slot \(after)"
     }
 
+    /// The key comes up before the read has started: the reservation made at
+    /// the press still takes the release.
+    static func earlyRelease() -> String {
+        let fake = FakeClock()
+        let reading = PressRead(run: 9, afterRelease: 0.5, clock: fake.clock)
+        _ = Context.begin(reading)
+        Context.released()
+        fake.advance(0.49)
+        let before = reading.mustStop
+        fake.advance(0.01)
+        _ = Context.begin(nil)
+        return "\(before) then \(reading.mustStop)"
+    }
+
+    /// Dictation 4's stage settles after press 5 stored its screen.
+    static func newerPressHoldsTheSlot() -> String {
+        let fake = FakeClock()
+        let reading = PressRead(run: 5, afterRelease: 0.5, clock: fake.clock)
+        let generation = Context.begin(reading)
+        Context.store(press(5, chars: 42), reading: reading, generation: generation, logs: false)
+        let older = described(blocking { await Context.settledPress(run: 4) })
+        let newer = described(blocking { await Context.settledPress(run: 5) })
+        _ = Context.begin(nil)
+        return "\(older), \(newer)"
+    }
+
     /// No read at all: `--pipeline`, or a press with nothing focused.
     static func noRead() -> String {
         _ = Context.begin(nil)
@@ -119,6 +145,8 @@ enum PressReadTest {
              "late at 0.75, not stored, slot empty"),
             ("a read that ends after that is dropped", stage(endsAt: 2.0), "late at 2.00, dropped, slot empty"),
             ("no read running: noPress at once", noRead(), "noPress"),
+            ("a release before the read starts still counts", earlyRelease(), "false then true"),
+            ("a newer press's screen is not an older dictation's", newerPressHoldsTheSlot(), "noPress, 42 chars"),
         ]
         let failed = checks.filter { $0.got != $0.want }
         print(failed.isEmpty ? "✓ press read: \(checks.count) of \(checks.count)"

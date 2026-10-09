@@ -196,6 +196,13 @@ enum GenericReaderTest {
         ("not chromium: the side panel is read",
          published(screen(chat(main: false), app: "Chat")),
          "text=Details\ngeneral\nAna: lunch at noon?\nBen: sure\na second log; place=general; code=; pane=web area"),
+        ("nothing focused: the page the walk found names the place",
+         published(screen(Tree(kAXWindowRole, title: "Docs - Google Chrome", [
+            Tree("AXWebArea", nil, title: "Pull requests", url: "https://github.com/znat", [
+                Tree(kAXStaticTextRole, "Open"),
+            ]),
+         ]), app: "Google Chrome", browser: true, chromium: true)),
+         "text=Open; place=Pull requests — github.com; code=; pane=window"),
         ("a focused page is not a field",
          published(screen(chat(focusPage: true), app: "Chat", chromium: true)),
          "text=Ana: lunch at noon?\nBen: sure; place=general; code=; pane=log"),
