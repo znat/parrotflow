@@ -191,8 +191,10 @@ public struct Element: Hashable, @unchecked Sendable {
         if let described = string("AXValueDescription"), !described.isEmpty { return described }
         var parts: [(CGFloat, CGFloat, String)] = []
         var queue = children.map { ($0, 0) }
-        while !queue.isEmpty, parts.count < 12 {
-            let (part, depth) = queue.removeFirst()
+        var next = 0
+        while next < queue.count, next < 200, parts.count < 12 {
+            let (part, depth) = queue[next]
+            next += 1
             // A picker's stepper arrows hold 0.5, not a part: measured 09-28.
             // A page's date parts are steppers too, but named ("Day …").
             if part.role == kAXIncrementorRole && part.name == nil { continue }

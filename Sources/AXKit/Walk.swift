@@ -67,12 +67,20 @@ public enum Walk {
     /// Elements whose role, name (a glob) and DOM id match, in reading order.
     public static func find(in root: Element, role: String? = nil, name: String? = nil,
                             dom: String? = nil, options: WalkOptions = WalkOptions()) -> [(Element, Node)] {
-        var walker = Walker(options: options, focused: nil)
+        var walker = Walker(options: options, focused: root.pid.flatMap { App(pid: $0).focusedElement })
         walker.visit(root, depth: 0, parent: nil, path: "")
-        return walker.nodes.filter { _, node in
-            (role == nil || node.role == role)
+        let kept = walker.nodes.indices.filter { index in
+            let node = walker.nodes[index].1
+            return (role == nil || node.role == role)
                 && (name.map { Glob.matches($0, node.name ?? "") } ?? true)
                 && (dom == nil || node.dom == dom)
+        }
+        // A parent index points into the result, or is nil when the parent did not match.
+        let position = Dictionary(uniqueKeysWithValues: kept.enumerated().map { ($1, $0) })
+        return kept.map { index in
+            var (element, node) = walker.nodes[index]
+            node.parent = node.parent.flatMap { position[$0] }
+            return (element, node)
         }
     }
 

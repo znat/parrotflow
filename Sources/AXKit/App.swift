@@ -164,11 +164,11 @@ public struct App: Sendable {
                 && abs(frame.width - box.width) <= tolerance && abs(frame.height - box.height) <= tolerance
         }
         var queue = windows
-        var left = budget
+        var next = 0
         var first: Element?
-        while !queue.isEmpty, left > 0 {
-            let element = queue.removeFirst()
-            left -= 1
+        while next < queue.count, next < budget {
+            let element = queue[next]
+            next += 1
             let frame = element.frame
             if let frame, same(frame) {
                 if prefer(element) { return element }

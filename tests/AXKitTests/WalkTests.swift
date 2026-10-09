@@ -58,3 +58,18 @@ final class WalkTests: XCTestCase {
         XCTAssertEqual(result.nodes.first?.role, "AXApplication")
     }
 }
+
+final class FindTests: XCTestCase {
+    /// Needs the Accessibility permission for the process running the tests.
+    func testParentsPointIntoTheResult() throws {
+        try XCTSkipUnless(App.isTrusted, "no Accessibility permission")
+        let app = try XCTUnwrap(App.named("com.apple.finder"))
+        try XCTSkipIf(app.windows.isEmpty, "the Finder has no window open")
+        let options = WalkOptions(depth: 3, budget: 50)
+        let everything = Walk.find(in: app.element, options: options).map(\.1.parent)
+        XCTAssertEqual(everything, Walk.run(from: app.element, options: options).nodes.map(\.parent))
+        let windows = Walk.find(in: app.element, role: kAXWindowRole, options: options)
+        XCTAssertFalse(windows.isEmpty)
+        XCTAssertEqual(windows.map(\.1.parent), windows.map { _ in nil })
+    }
+}

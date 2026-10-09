@@ -28,6 +28,14 @@ func value(_ flag: String) -> String? {
 
 func has(_ flag: String) -> Bool { arguments.contains(flag) }
 
+func count(_ flag: String) -> Int? {
+    guard has(flag) else { return nil }
+    guard let raw = value(flag), let number = Int(raw), number >= 0 else {
+        fail("\(flag) takes a whole number of zero or more", 2)
+    }
+    return number
+}
+
 func printJSON<T: Encodable>(_ thing: T) {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -52,8 +60,8 @@ func target() -> App? {
 
 func options() -> WalkOptions {
     var options = WalkOptions()
-    if let depth = value("--depth").flatMap(Int.init) { options.depth = depth }
-    if let budget = value("--budget").flatMap(Int.init) { options.budget = budget }
+    if let depth = count("--depth") { options.depth = depth }
+    if let budget = count("--budget") { options.budget = budget }
     return options
 }
 
