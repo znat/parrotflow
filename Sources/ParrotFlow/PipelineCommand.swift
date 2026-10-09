@@ -10,15 +10,12 @@ import Yams
 /// configured, and the expectations then only meant anything on one laptop.
 ///
 /// So a fixture carries everything the pipeline needs — the stages, the
-/// languages, and its own replacement table — and running it touches no config
-/// at all. `pipeline:` is the same key a config writes:
+/// languages, its own transforms and vocabulary — and running it touches no
+/// config at all. `pipeline:` is the same key a config writes:
 ///
 ///     languages: [fr, en]
-///     replacements:
-///       Supabase: [super base]
 ///     pipeline:
-///       - replacements
-///       - stage: numbers
+///       - transform: numbers_fr
 ///         unless: /```/
 ///
 /// Without `--quiet` it prints each stage's before and after, and names the
@@ -29,7 +26,6 @@ enum PipelineCommand {
     /// A fixture is a config with everything irrelevant left out.
     private struct Fixture: Decodable {
         var languages: [String] = ["en"]
-        var replacements: [String: [String]] = [:]
         var pipeline: [Config.Transcription.PipelineEntry] = []
         /// Its own `transforms:`, decoded by `Config` rather than re-read here,
         /// so a fixture cannot disagree with a config about what a transform is.
@@ -49,15 +45,12 @@ enum PipelineCommand {
         var models: [String: ModelSpec] = [:]
 
         enum CodingKeys: String, CodingKey {
-            case languages, replacements, pipeline, transforms, vocabulary, lists, models
+            case languages, pipeline, transforms, vocabulary, lists, models
         }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             if let v = try c.decodeIfPresent([String].self, forKey: .languages) { languages = v }
-            if let v = try c.decodeIfPresent([String: [String]].self, forKey: .replacements) {
-                replacements = v
-            }
             pipeline = try c.decodeIfPresent(
                 [Config.Transcription.PipelineEntry].self, forKey: .pipeline
             ) ?? []
@@ -122,17 +115,7 @@ enum PipelineCommand {
                 unknown.append(entry.name)
                 return nil
             }
-            return Pipeline.Step(
-                stage: stage, transform: entry.transform, prompt: entry.prompt,
-                caps: entry.caps, nearMisses: entry.nearMisses,
-                bySound: entry.bySound, gate: entry.gate, slotGate: entry.slotGate,
-                portrait: entry.portrait,
-                lowercaseRefused: entry.lowercaseRefused,
-                slotFloor: entry.slotFloor,
-                marks: entry.marks,
-                capitals: entry.capitals, pause: entry.pause, when: entry.when,
-                unless: entry.unless, app: entry.app
-            )
+            return Pipeline.Step(stage: stage, entry: entry)
         }
         for name in unknown {
             if let advice = Config.retiredStageAdvice(name) {
@@ -146,7 +129,6 @@ enum PipelineCommand {
         let pipeline = Pipeline(steps: steps)
         var config = Config()
         config.transcription.languages = fixture.languages
-        config.transcription.replacements = fixture.replacements
         config.transcription.pipeline = pipeline
         config.transforms = fixture.transforms
         config.lists = fixture.lists

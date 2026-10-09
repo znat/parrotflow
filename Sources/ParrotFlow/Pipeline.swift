@@ -63,24 +63,6 @@ struct Pipeline: Equatable, Codable {
         case transform
 
         var name: String { rawValue }
-
-        /// Whether it can be in a default nobody wrote.
-        ///
-        /// `transform` cannot: it needs a name, and there is no transform every
-        /// install is guaranteed to have.
-        ///
-        /// `context` cannot, for a different and stronger reason. It reads the
-        /// screen. Turning that on for everybody who never wrote a `pipeline:`
-        /// block would be a silent change to what the app looks at, which is the
-        /// one kind of change that has to be asked for by name.
-        ///
-        /// `interpret` and `vocabulary` are not in the list at all any more —
-        /// `Pipeline.resolved(config:)` puts them at the head from their own
-        /// settings blocks.
-        var isAutomatic: Bool {
-            self != .transform && self != .context && self != .input
-                && self != .sentenceRepair && self != .vocabulary && self != .contextSpelling
-        }
     }
 
     /// The app a transcript is on its way into, for `Step.app`.
@@ -109,6 +91,143 @@ struct Pipeline: Equatable, Codable {
         var described: String { name.isEmpty ? bundleID : name }
     }
 
+    /// The vocabulary pass's options. The `transcription.vocabulary:` block, a
+    /// `- stage: vocabulary` line and the step each hold one.
+    ///
+    /// Nil is "not written", so a line can set some options and leave the rest
+    /// to the block — see `over(_:)`. Read a switch through `isOn(_:)`.
+    struct VocabularyOptions: Equatable, Codable {
+        /// Written `near_misses:`. Whether a `heard:` rendering also matches one
+        /// edit away.
+        ///
+        /// It was `fuzzy:`, beside a *stage* also called `fuzzy` that did
+        /// something else entirely — that one matched the text against the rule
+        /// table and rewrote it, and never saw a vocabulary rendering at all.
+        /// One word, two mechanisms, and the stage is gone now.
+        var nearMisses: Bool?
+        /// Written `by_sound:`. Whether words that *sound* like a term are
+        /// offered as well as words spelled like one — see
+        /// `VocabularyPass.phonemeParts`.
+        ///
+        /// Its own switch rather than part of `near_misses:`. The two reach
+        /// different words (`pressed` by sound, `Praise's` by spelling), they
+        /// have separate floors, and this one needs espeak-ng on the machine
+        /// while the other needs nothing. Turning one off to measure the other
+        /// is the first thing anybody will want.
+        var bySound: Bool?
+        /// Written `gate:`. Whether the two word lists and the slot's part of
+        /// speech may settle a proposal — see `VocabularyPass.settle`.
+        ///
+        /// `gate: false` leaves every proposal to the sentence gate and to
+        /// whatever arrived, which is what the gate was measured against and
+        /// the only way to measure it again.
+        var gate: Bool?
+        /// Written `slot_gate:`. Whether anything reads the mmBERT slot — the
+        /// part of speech the spot wants, in `SlotGate`, and the ten words it
+        /// expects there, in `SlotReference`.
+        ///
+        /// One switch for both because they are one model, and the promise the
+        /// switch makes is that `false` downloads nothing. Each half takes the
+        /// path it already has on a machine the 269 MB is not on: the lexical
+        /// gate settles what the word lists settle and asks nothing more, and
+        /// the sentence gate is left to the portrait alone.
+        var slotGate: Bool?
+        /// Written `portrait:`. Whether a term's own sentences and its
+        /// counter-examples may settle a proposal — see `TermPortrait`.
+        ///
+        /// `false` takes the path a term with too few uses already has: the
+        /// portrait says nothing, and the slot's refusal is all that can speak.
+        var portrait: Bool?
+        /// Written `lowercase_refused:`. Whether a glued span the sentence
+        /// refuses is written back in lowercase instead of as heard.
+        ///
+        /// `false` puts the span back exactly as the decoder wrote it, which
+        /// is what every other refusal in this stage does.
+        var lowercaseRefused: Bool?
+        /// Written `slot_floor:`. How far the heard word must win by before
+        /// `SlotReference` refuses the rewrite. A language it does not name
+        /// keeps the built-in value for that language — see
+        /// `Transcription.slotFloor(for:on:)`.
+        var slotFloor: SlotFloor?
+        /// How many places one sentence may offer — see `VocabularyPass.Caps`.
+        var caps: VocabularyPass.Caps?
+
+        /// What `slot_floor:` said, in either spelling.
+        ///
+        ///     slot_floor: 0.20                 every language
+        ///     slot_floor: {en: 0.20, fr: 0.30} one at a time
+        ///
+        /// A language the map does not name keeps its built-in floor.
+        struct SlotFloor: Equatable, Codable {
+            var everyLanguage: Double?
+            var byLanguage: [String: Double] = [:]
+
+            func value(for language: String) -> Double? {
+                byLanguage[language] ?? everyLanguage
+            }
+        }
+
+        /// Every switch is on until it is written false.
+        func isOn(_ option: KeyPath<VocabularyOptions, Bool?>) -> Bool {
+            self[keyPath: option] ?? true
+        }
+
+        /// These options, with `base` filling each one not written here.
+        func over(_ base: VocabularyOptions) -> VocabularyOptions {
+            VocabularyOptions(
+                nearMisses: nearMisses ?? base.nearMisses,
+                bySound: bySound ?? base.bySound,
+                gate: gate ?? base.gate,
+                slotGate: slotGate ?? base.slotGate,
+                portrait: portrait ?? base.portrait,
+                lowercaseRefused: lowercaseRefused ?? base.lowercaseRefused,
+                slotFloor: slotFloor ?? base.slotFloor,
+                caps: caps ?? base.caps
+            )
+        }
+    }
+
+    /// The sentence repair's options. The `transcription.sentence_repair:`
+    /// block, a `- stage: sentence_repair` line and the step each hold one.
+    ///
+    /// Nil is "not written", as in `VocabularyOptions`.
+    struct RepairOptions: Equatable, Codable {
+        /// Written `marks:`. What a boundary can be written with. Absent takes
+        /// the built-in set for the language.
+        ///
+        /// One list, two jobs. The sentence enders in it — `.` and `?` — are
+        /// where a boundary is looked for. Everything else in it — the comma —
+        /// is a reading tried at every boundary. So a boundary is read three
+        /// ways: the mark it carries, the comma, and no mark at all. Drop `?`
+        /// from the list and question marks stop being scanned.
+        ///
+        /// There is no threshold; the reading the model scores highest is the
+        /// one that is written. `;` and `:` were measured and never changed a
+        /// decision in English, so they are not in the default.
+        var marks: [String]?
+        /// Written `capitals:`. Whether a capital with no mark in front of it
+        /// is read as a boundary too.
+        var capitals: Bool?
+        /// Written `pause:`. Seconds of silence a bare capital needs in front
+        /// of it before it is read. Zero or less reads every one. Absent means
+        /// `SentenceJoin.paused`.
+        var pause: Double?
+
+        /// Every switch is on until it is written false.
+        func isOn(_ option: KeyPath<RepairOptions, Bool?>) -> Bool {
+            self[keyPath: option] ?? true
+        }
+
+        /// These options, with `base` filling each one not written here.
+        func over(_ base: RepairOptions) -> RepairOptions {
+            RepairOptions(
+                marks: marks ?? base.marks,
+                capitals: capitals ?? base.capitals,
+                pause: pause ?? base.pause
+            )
+        }
+    }
+
     /// A stage plus when it runs. The condition is the whole reason a pipeline
     /// beats a list: a stage that costs a second is affordable exactly when it
     /// can be skipped on the transcripts that do not need it.
@@ -124,95 +243,10 @@ struct Pipeline: Equatable, Codable {
         /// Read only so `validate` can refuse it by name. There is no prompt
         /// and no model in that stage, and nothing else looks at this.
         var prompt: String?
-        /// How many places one sentence may offer — see `VocabularyPass.Caps`.
-        /// Absent on every other stage.
-        var caps: VocabularyPass.Caps?
-        /// Whether a `heard:` rendering also matches one edit away. Absent
-        /// means true.
-        ///
-        /// Written `near_misses:`. It was `fuzzy:`, beside a *stage* also
-        /// called `fuzzy` that did something else entirely — that one matched
-        /// the text against the rule table and rewrote it, and never saw a
-        /// vocabulary rendering at all. One word, two mechanisms, and the
-        /// stage is gone now.
-        ///
-        /// Optional rather than defaulted so that "not written" and "written
-        /// false" stay tellable apart — the seeded config writes the key only
-        /// when it is off.
-        ///
-        /// Not the `fuzzy` *stage*, which is a different mechanism: that one
-        /// matches the text against rule replacements after the exact pass,
-        /// and never sees a vocabulary rendering at all.
-        var nearMisses: Bool?
-        /// Written `by_sound:`. Whether words that *sound* like a term are
-        /// offered as well as words spelled like one — see
-        /// `VocabularyPass.phonemeParts`.
-        ///
-        /// Its own switch rather than part of `near_misses:`. The two reach
-        /// different words (`pressed` by sound, `Praise's` by spelling), they
-        /// have separate floors, and this one needs espeak-ng on the machine
-        /// while the other needs nothing. Turning one off to measure the other
-        /// is the first thing anybody will want.
-        ///
-        /// Optional for the reason `nearMisses` is: "not written" and "written
-        /// false" have to stay tellable apart.
-        var bySound: Bool?
-        /// Written `gate:`. Whether the two word lists and the slot's part of
-        /// speech may settle a proposal — see `VocabularyPass.settle`.
-        ///
-        /// `gate: false` leaves every proposal to the sentence gate and to
-        /// whatever arrived, which is what the gate was measured against and
-        /// the only way to measure it again.
-        var gate: Bool?
-        /// Written `slot_gate:`. Whether anything reads the mmBERT slot — the
-        /// part of speech the spot wants, in `SlotGate`, and the ten words it
-        /// expects there, in `SlotReference`. Absent means true.
-        ///
-        /// One switch for both because they are one model, and the promise the
-        /// switch makes is that `false` downloads nothing. Each half takes the
-        /// path it already has on a machine the 269 MB is not on: the lexical
-        /// gate settles what the word lists settle and asks nothing more, and
-        /// the sentence gate is left to the portrait alone.
-        var slotGate: Bool?
-        /// Written `portrait:`. Whether a term's own sentences and its
-        /// counter-examples may settle a proposal — see `TermPortrait`. Absent
-        /// means true.
-        ///
-        /// `false` takes the path a term with too few uses already has: the
-        /// portrait says nothing, and the slot's refusal is all that can speak.
-        var portrait: Bool?
-        /// Written `lowercase_refused:`. Whether a glued span the sentence
-        /// refuses is written back in lowercase instead of as heard. Absent
-        /// means true.
-        ///
-        /// `false` puts the span back exactly as the decoder wrote it, which
-        /// is what every other refusal in this stage does.
-        var lowercaseRefused: Bool?
-        /// Written `slot_floor:`. How far the heard word must win by before
-        /// `SlotReference` refuses the rewrite. A language it does not name
-        /// keeps the built-in value for that language — see
-        /// `Transcription.slotFloor(for:on:)`.
-        var slotFloor: SlotFloor?
-        /// `marks:` on an `interpret` step. What a boundary can be written
-        /// with. Absent takes the built-in set for the language.
-        ///
-        /// One list, two jobs. The sentence enders in it — `.` and `?` — are
-        /// where a boundary is looked for. Everything else in it — the comma —
-        /// is a reading tried at every boundary. So a boundary is read three
-        /// ways: the mark it carries, the comma, and no mark at all. Drop `?`
-        /// from the list and question marks stop being scanned.
-        ///
-        /// There is no threshold; the reading the model scores highest is the
-        /// one that is written. `;` and `:` were measured and never changed a
-        /// decision in English, so they are not in the default.
-        var marks: [String]?
-        /// `capitals:` on an `interpret` step. Whether a capital with no mark
-        /// in front of it is read as a boundary too. Absent means true.
-        var capitals: Bool?
-        /// `pause:` on an `interpret` step. Seconds of silence a bare capital
-        /// needs in front of it before it is read. Zero or less reads every
-        /// one. Absent means `SentenceJoin.paused`.
-        var pause: Double?
+        /// Read on a `vocabulary` step only.
+        var vocabulary = VocabularyOptions()
+        /// Read on a `sentence_repair` step only.
+        var repair = RepairOptions()
         /// Run only when this matches the text as it stands *at this point* —
         /// after the stages before it, not on the original. That ordering is
         /// what lets a cheap deterministic stage make an expensive one
@@ -229,21 +263,6 @@ struct Pipeline: Equatable, Codable {
         /// the cost of an anchor people forget — which `validate` refuses
         /// rather than leaving to run everywhere in silence.
         var app: String?
-
-        /// What `slot_floor:` said, in either spelling.
-        ///
-        ///     slot_floor: 0.20                 every language
-        ///     slot_floor: {en: 0.20, fr: 0.30} one at a time
-        ///
-        /// A language the map does not name keeps its built-in floor.
-        struct SlotFloor: Equatable, Codable {
-            var everyLanguage: Double?
-            var byLanguage: [String: Double] = [:]
-
-            func value(for language: String) -> Double? {
-                byLanguage[language] ?? everyLanguage
-            }
-        }
 
         /// Whether a condition is a pattern rather than an expression.
         ///
@@ -330,27 +349,6 @@ struct Pipeline: Equatable, Codable {
 
     var stages: [Stage] { steps.map(\.stage) }
 
-    /// Every stage, in declaration order, which is the canonical order.
-    ///
-    /// This is the only default there is. A config that names no pipeline gets
-    /// all of it, and a new install is written with the same list spelled out.
-    /// Putting a stage in a pipeline is the only way to turn it on, so the way
-    /// to turn one off is to delete a line you can already see — rather than to
-    /// discover a setting you cannot.
-    ///
-    /// Derived from `allCases` on purpose: a stage added later is in the
-    /// default the moment it exists, which is what keeps that promise true
-    /// without anyone having to remember this line.
-    ///
-    /// An empty list is not the same as no list. `pipeline: []` is a choice and
-    /// runs nothing; a missing `pipeline:` is silence and runs everything.
-    ///
-    /// `interpret` and `vocabulary` are not here. They are not ordered, so they
-    /// are not in the list a person orders — `resolved` puts them in front.
-    static let everything = Pipeline(
-        steps: Stage.allCases.filter(\.isAutomatic).map { Step(stage: $0) }
-    )
-
     /// What actually runs: the two fixed passes, then the list.
     ///
     /// `interpret` reads the decoder's own word timings and `vocabulary` is
@@ -363,61 +361,33 @@ struct Pipeline: Equatable, Codable {
     /// block, so an old config keeps working and cannot reintroduce the order
     /// bug it used to be warned about. `Transcription.retiredStages` is the
     /// notice that says so.
+    ///
+    /// Only the first such line's options come across, and each one it writes
+    /// wins over the block: a config that writes `slot_floor:` on the line has
+    /// said the number exactly once, and moving the key should not silently
+    /// drop it. The position does not come across, which is the whole point.
     static func resolved(config: Config) -> Pipeline {
-        let listed = config.transcription.pipeline ?? everything
-        let carried = listed.steps
+        let carried = config.transcription.pipeline?.steps ?? []
+        func line(_ stage: Stage) -> Step? { carried.first { $0.stage == stage } }
+        let blocks = config.transcription
         var steps: [Step] = []
-        if config.transcription.sentenceRepair.enabled {
-            steps.append(sentenceRepairStep(
-                config.transcription.sentenceRepair,
-                carrying: carried.first { $0.stage == .sentenceRepair }))
+        if blocks.sentenceRepair.enabled {
+            let written = line(.sentenceRepair)?.repair ?? RepairOptions()
+            steps.append(Step(
+                stage: .sentenceRepair, repair: written.over(blocks.sentenceRepair.options)))
         }
-        if config.transcription.vocabulary.enabled {
-            steps.append(vocabularyStep(
-                config.transcription.vocabulary,
-                carrying: carried.first { $0.stage == .vocabulary }))
+        if blocks.vocabulary.enabled {
+            let written = line(.vocabulary)?.vocabulary ?? VocabularyOptions()
+            steps.append(Step(
+                stage: .vocabulary, vocabulary: written.over(blocks.vocabulary.options)))
         }
         steps += carried.filter {
             $0.stage != .sentenceRepair && $0.stage != .vocabulary && $0.stage != .contextSpelling
         }
-        if config.transcription.contextSpelling.enabled {
+        if blocks.contextSpelling.enabled {
             steps.append(Step(stage: .contextSpelling))
         }
         return Pipeline(steps: steps)
-    }
-
-    /// The block, as the step the stage body still expects.
-    ///
-    /// The two passes kept their `Step` shape rather than growing a second way
-    /// to be configured. The block is the only thing a person writes; this is
-    /// where it becomes what `apply` reads.
-    ///
-    /// `carrying:` is the step an old `pipeline:` still spells out. Its options
-    /// win over the block, because a config that writes `slot_floor:` on the
-    /// line has said the number exactly once and moving the key should not
-    /// silently drop it. `notices()` names the ones it found. Only the options
-    /// come across — the position does not, which is the whole point.
-    static func sentenceRepairStep(
-        _ settings: Config.Transcription.SentenceRepair, carrying old: Step? = nil
-    ) -> Step {
-        Step(stage: .sentenceRepair,
-             marks: old?.marks ?? settings.marks,
-             capitals: old?.capitals ?? settings.capitals,
-             pause: old?.pause ?? settings.pause)
-    }
-
-    static func vocabularyStep(
-        _ settings: Config.Transcription.Vocabulary, carrying old: Step? = nil
-    ) -> Step {
-        Step(stage: .vocabulary,
-             caps: old?.caps ?? settings.caps,
-             nearMisses: old?.nearMisses ?? settings.nearMisses,
-             bySound: old?.bySound ?? settings.bySound,
-             gate: old?.gate ?? settings.gate,
-             slotGate: old?.slotGate ?? settings.slotGate,
-             portrait: old?.portrait ?? settings.portrait,
-             lowercaseRefused: old?.lowercaseRefused ?? settings.lowercaseRefused,
-             slotFloor: old?.slotFloor ?? settings.slotFloor)
     }
 
     /// The language this text was judged to be in.
@@ -451,11 +421,6 @@ struct Pipeline: Equatable, Codable {
     /// Complaints about a pipeline that would run but not do what it looks
     /// like it does. Returned rather than thrown: one bad line should be
     /// reported, not cost you the other stages.
-    ///
-    /// `fuzzy` before `replacements` is the one that matters. It reads the same
-    /// table and depends on the exact pass having already run — by then
-    /// "Superbase" is "Supabase", and without that "on Supabase" scores high
-    /// enough against "Supabase" to swallow the preceding word.
     func validate() -> [String] {
         var problems: [String] = []
         for step in steps where step.stage == .transform && (step.transform ?? "").isEmpty {
@@ -473,7 +438,7 @@ struct Pipeline: Equatable, Codable {
                     + " against a measurement, not a matter of taste. Delete the line:"
                     + " the pass is `transcription.vocabulary:` and runs either way")
             }
-            problems += step.caps?.problems ?? []
+            problems += step.vocabulary.caps?.problems ?? []
         }
         // Which namespaces a condition on this step is allowed to read: the
         // seeds, plus every stage *above* it. Built as the list is walked, which
@@ -527,21 +492,6 @@ struct Pipeline: Equatable, Codable {
         return problems
     }
 
-    /// Stages that move the words `vocabulary` is about to talk about.
-    ///
-    /// The pass is handed spans the acoustic pass measured on the transcript
-    /// as the decoder produced it. A stage that rewrites text moves them, and
-    /// the stage then has to re-anchor by searching for the words — which is
-    /// the mechanism that put the menu on the wrong `Versailles` (F3, F10).
-    ///
-    /// Nothing that rewrites the transcript may run above it, except
-    /// `interpret` — see below.
-    ///
-    /// The stage reads spans the acoustic pass measured before the pipeline
-    /// started, and any edit above it moves them (F10). The exact pass used to
-    /// be an exception too, because it ran as a separate `replacements` stage
-    /// and the pass needs the rules to have fired; it is inside this stage
-    /// now.
     /// What is wrong with an expression, before a transcript ever reaches it.
     ///
     /// Two kinds of thing, and the second is the one worth having. A parse error
@@ -549,8 +499,7 @@ struct Pipeline: Equatable, Codable {
     /// later** would not, because at run time "the stage below has not published
     /// anything yet" and "the stage published nothing" are the same absence.
     /// Only the pipeline as a whole knows the order, so only here can the
-    /// difference be seen — which is the same argument that already refuses
-    /// `fuzzy` before `replacements`.
+    /// difference be seen.
     private func expressionProblems(
         _ condition: String, label: String, step: Step, available: Set<String>
     ) -> [String] {
@@ -606,19 +555,6 @@ struct Pipeline: Equatable, Codable {
         return problems
     }
 
-    /// Asynchronous because one stage calls a model.
-    ///
-    /// The alternative was a semaphore inside the prompt stage, and this runs
-    /// on a cooperative thread after transcription — blocking one there for up
-    /// to the LLM timeout is how a thread pool stops being a thread pool. The
-    /// deterministic stages suspend nowhere, so the cost of this is a keyword.
-    /// Why a step would not run, or nil if it would.
-    ///
-    /// One copy, because there were two: `run` decided, and the stage-by-stage
-    /// viewer in `--pipeline` decided again from `shouldRun` alone — which knew
-    /// nothing about the wake-phrase guard, so a prompt the pipeline had
-    /// skipped was reported as having "ran, changed nothing". A diagnostic that
-    /// disagrees with the thing it is diagnosing is worse than none.
     /// Why a stage did not run, in both registers.
     ///
     /// `described` names the actual pattern, which is what you need to fix a
@@ -630,48 +566,27 @@ struct Pipeline: Equatable, Codable {
         let described: String
     }
 
+    /// Why a step would not run, or nil if it would.
     static func skipReason(
         for step: Step, text: String, config: Config, allowPrompts: Bool, app: App? = nil,
         scope: Scope = Scope()
     ) -> Skip? {
-        if step.stage == .vocabulary {
-            // It costs a model call, so it answers to the same two guards a
-            // prompt does: `--replace` must stay off the network, and a spoken
-            // instruction is not a dictation whose names want checking.
-            if !allowPrompts {
-                return Skip(code: "prompts_off", described: "prompts are off on this path")
-            }
-            let phrases = config.transcription.activationPhrases
-            if VoiceCommand.commandAfterWakePhrase(text, phrases: phrases) != nil {
-                return Skip(code: "spoken_command", described: "this is a spoken command")
-            }
-            if VoiceCommand.inlineInstruction(text, phrases: phrases) != nil {
-                return Skip(
-                    code: "inline_instruction",
-                    described: "this carries an instruction of its own"
-                )
-            }
-        }
-        if step.stage == .transform {
-            // Only the prompt-bodied ones. `allowPrompts` is there to keep
-            // `--replace` off the network, and a `replace:` transform is a
-            // table — blocking it would make the flag mean "no transforms",
-            // which is not what any caller asked for.
-            //
-            // A name that resolves to nothing counts as a prompt, which is the
-            // conservative reading: the stage is about to be skipped anyway,
-            // and the one thing this must not do is let an unresolved name
-            // become a way onto the network.
-            let named = step.transform.flatMap { config.transform(named: $0) }
-            if !allowPrompts, named?.isPrompt ?? true {
+        if step.stage == .vocabulary || step.stage == .transform {
+            // `allowPrompts` keeps `--replace` off the network. The vocabulary
+            // pass answers to it whole. A transform answers only when its body
+            // is a prompt: a `replace:` table is not a network call. A name that
+            // resolves to nothing counts as a prompt, so an unresolved name never
+            // becomes a way onto the network.
+            let needsPrompts = step.stage == .vocabulary
+                || (step.transform.flatMap { config.transform(named: $0) }?.isPrompt ?? true)
+            if !allowPrompts, needsPrompts {
                 return Skip(code: "prompts_off", described: "prompts are off on this path")
             }
             // Either position. A phrase at the front means the whole utterance
             // is an instruction; one in the middle means the instruction is
             // about the words before it. Both are read after this runs, and a
-            // transform that rewrote the sentence first could eat the phrase
-            // and leave what should have been a command to be typed into the
-            // document.
+            // stage that rewrote the sentence first could eat the phrase and
+            // leave a command to be typed into the document.
             let phrases = config.transcription.activationPhrases
             if VoiceCommand.commandAfterWakePhrase(text, phrases: phrases) != nil {
                 return Skip(code: "spoken_command", described: "this is a spoken command")
@@ -1110,9 +1025,9 @@ struct Pipeline: Equatable, Codable {
         let language = Pipeline.language(of: text, config: config)
         let outcome = await SentenceJoin.shared.apply(
             to: text, config: config,
-            marks: step.marks ?? config.transcription.marks(for: language),
-            capitals: step.capitals ?? true,
-            pause: step.pause ?? SentenceJoin.paused,
+            marks: step.repair.marks ?? config.transcription.marks(for: language),
+            capitals: step.repair.isOn(\.capitals),
+            pause: step.repair.pause ?? SentenceJoin.paused,
             words: words
         )
         return StageResult(text: outcome.text, vars: ["count": .int(outcome.count(.join))])
@@ -1204,7 +1119,7 @@ struct Pipeline: Equatable, Codable {
             return StageResult(text: text, vars: wrote.merging(vars) { _, new in new })
         }
 
-        let caps = step.caps ?? VocabularyPass.Caps.standard
+        let caps = step.vocabulary.caps ?? VocabularyPass.Caps.standard
         // Both sources. The acoustic pass proposes with positions; a
         // `replacements` rule publishes none, so its substitutions are found by
         // searching for the term and told apart from the terms the decoder
@@ -1227,7 +1142,7 @@ struct Pipeline: Equatable, Codable {
         // gates to settle, and a place none of them settles keeps the word
         // that was heard — see `VocabularyPass.fuzzyEdits` for what it fires
         // on and what that cost over this speaker's archive.
-        if step.nearMisses ?? true {
+        if step.vocabulary.isOn(\.nearMisses) {
             let reached = VocabularyPass.fuzzyParts(
                 in: text, rules: config.vocabularyRules, claimed: parts
             )
@@ -1249,7 +1164,7 @@ struct Pipeline: Equatable, Codable {
         // Nothing is written here either. The floor is 0.85 and it was
         // measured over 20891 dictations — see `phonemeParts` for what fires
         // and what it costs.
-        if step.bySound ?? true {
+        if step.vocabulary.isOn(\.bySound) {
             let spoken = Pipeline.language(of: text, config: config)
             let sounds = config.vocabularySounds(in: spoken)
             let askedAt = Date()
@@ -1296,7 +1211,7 @@ struct Pipeline: Equatable, Codable {
         // Which of the two halves is on, not just that the gate is: a place
         // decided by the portrait alone reads nothing like one both tests saw.
         let reading = [
-            (step.slotGate ?? true) ? "slot" : nil, (step.portrait ?? true) ? "portrait" : nil,
+            step.vocabulary.isOn(\.slotGate) ? "slot" : nil, step.vocabulary.isOn(\.portrait) ? "portrait" : nil,
         ].compactMap { $0 }
         if config.gatesSentence, !reading.isEmpty {
             census += ", sentence gate on (\(reading.joined(separator: " + ")))"
@@ -1324,13 +1239,13 @@ struct Pipeline: Equatable, Codable {
         // a rule that is 4/4 where the models measured were 0/4.
         let gatedAt = Date()
         let settled: [Bool?]
-        if step.gate ?? true {
+        if step.vocabulary.isOn(\.gate) {
             // `slot_gate: false` passes no gate at all, which is the path a
             // machine without the 269 MB model already takes: the word lists
             // settle what they settle and the slot is never asked. Read inside
             // the branch so `gate: false` does not load it either.
             let span = Trace.current?.open("slot_gate", kind: .part)
-            let slot = (step.slotGate ?? true) ? await Vocabulary.shared.slotGate() : nil
+            let slot = step.vocabulary.isOn(\.slotGate) ? await Vocabulary.shared.slotGate() : nil
             settled = VocabularyPass.settle(
                 changes, in: text, by: [.sound: .full, .rule: .lists], gate: slot)
             span?.close("\(changes.count) change(s)")
@@ -1349,7 +1264,7 @@ struct Pipeline: Equatable, Codable {
                 floor: config.transcription.slotFloor(
                     for: Pipeline.language(of: text, config: config), on: step
                 ),
-                slot: step.slotGate ?? true, portrait: step.portrait ?? true,
+                slot: step.vocabulary.isOn(\.slotGate), portrait: step.vocabulary.isOn(\.portrait),
                 terms: config.vocabulary.terms
             )
             decided = settledBySentence.decided
@@ -1418,7 +1333,7 @@ struct Pipeline: Equatable, Codable {
         // capitals go with it — see `VocabularyPass.lowercased`. A spelling
         // lesson is exempt: it writes back exactly what was typed.
         var writing = changes
-        if step.lowercaseRefused ?? true {
+        if step.vocabulary.isOn(\.lowercaseRefused) {
             let terms = Array(config.vocabulary.terms.keys)
             for index in changes.indices where decided[index] == false {
                 guard !(index < taught.count && taught[index]) else { continue }
@@ -1451,11 +1366,7 @@ struct Pipeline: Equatable, Codable {
         let reverted = zip(writing, decided).filter { $0.1 == false }.map {
             "\($0.0.now) -> \($0.0.was)"
         }
-        if chosen != text {
-            Log.write("pipeline: vocabulary rewrote the transcript")
-            Log.write("    before: \(text)")
-            Log.write("    after:  \(chosen)")
-        }
+        Pipeline.logRewrite(by: "vocabulary", from: text, to: chosen)
         return result(chosen, [
             "slots": .int(slots.count),
             "reverted": .string(reverted.joined(separator: "; ")),
@@ -1481,7 +1392,7 @@ struct Pipeline: Equatable, Codable {
         }
         switch transform.body {
         case .prompt:
-            return await runPrompt(step, named: name, on: text, config: config, scope: scope)
+            return await runPrompt(transform, named: name, on: text, config: config, scope: scope)
         case .replace:
             // Exact and free, so there is nothing to guard — the log line is
             // the same one `replacements` writes, with the name that asked for
@@ -1492,11 +1403,7 @@ struct Pipeline: Equatable, Codable {
             // decoder invented.
             let done = Replacements.exact(to: text, rules: transform.rules,
                                           expand: config.expanded)
-            if done.text != text {
-                Log.write("pipeline: transform \(name) rewrote the transcript")
-                Log.write("    before: \(text)")
-                Log.write("    after:  \(done.text)")
-            }
+            Pipeline.logRewrite(by: "transform \(name)", from: text, to: done.text)
             return StageResult(text: done.text, vars: [
                 "count": .int(done.count),
                 "protected": .string(done.protected),
@@ -1520,11 +1427,7 @@ struct Pipeline: Equatable, Codable {
             // string — but it lands in the same place, and `changed` is derived
             // from the comparison either way.
             let after = result.text ?? text
-            if after != text {
-                Log.write("pipeline: transform \(name) rewrote the transcript")
-                Log.write("    before: \(text)")
-                Log.write("    after:  \(after)")
-            }
+            Pipeline.logRewrite(by: "transform \(name)", from: text, to: after)
             return StageResult(text: after, vars: result.vars)
         }
     }
@@ -1538,13 +1441,14 @@ struct Pipeline: Equatable, Codable {
     /// after belong in the log whether or not anything went wrong, because
     /// nothing on screen will ever show you it happened.
     private func runPrompt(
-        _ step: Step, named name: String, on text: String, config: Config, scope: Scope
+        _ transform: Config.Transform, named name: String, on text: String, config: Config,
+        scope: Scope
     ) async -> StageResult {
         guard config.llmEnabled else {
             Log.write("pipeline: skipped prompt \(name) — `models:` defines no model")
             return StageResult(text: text, vars: ["ok": .bool(false)])
         }
-        guard let transform = config.transform(named: name), let prompt = transform.asPrompt else {
+        guard let prompt = transform.asPrompt else {
             Log.write("pipeline: no prompt named \"\(name)\"; skipped")
             return StageResult(text: text, vars: ["ok": .bool(false)])
         }
@@ -1568,11 +1472,7 @@ struct Pipeline: Equatable, Codable {
                 Log.write("pipeline: prompt \(name) returned nothing; kept the transcript")
                 return StageResult(text: text, vars: ["ok": .bool(false)])
             }
-            if result != text {
-                Log.write("pipeline: prompt \(name) rewrote the transcript")
-                Log.write("    before: \(text)")
-                Log.write("    after:  \(result)")
-            }
+            Pipeline.logRewrite(by: "prompt \(name)", from: text, to: result)
             // Which model wrote this. A prompt stage is the one whose output
             // nobody sees happen, and "was that the model I think it was" is
             // the first question when its answers change shape between two
@@ -1583,5 +1483,24 @@ struct Pipeline: Equatable, Codable {
                 + " kept the transcript")
             return StageResult(text: text, vars: ["ok": .bool(false)])
         }
+    }
+
+    /// One record per stage that changed the words, with both versions.
+    static func logRewrite(by stage: String, from before: String, to after: String) {
+        guard after != before else { return }
+        Log.write("pipeline: \(stage) rewrote the transcript")
+        Log.write("    before: \(before)")
+        Log.write("    after:  \(after)")
+    }
+}
+
+extension Pipeline.Step {
+    /// The step a `pipeline:` line asks for, once its name has resolved to `stage`.
+    init(stage: Pipeline.Stage, entry: Config.Transcription.PipelineEntry) {
+        self.init(
+            stage: stage, transform: entry.transform, prompt: entry.prompt,
+            vocabulary: entry.vocabulary, repair: entry.repair,
+            when: entry.when, unless: entry.unless, app: entry.app
+        )
     }
 }
