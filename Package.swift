@@ -8,7 +8,7 @@ let package = Package(
     platforms: [.macOS("15.0")],
     dependencies: [
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.1.0"),
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.7"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.17.4"),
         // Qwen3-Embedding, for the vectors the vocabulary stage compares. MLX
         // is the only local path that returns per-token states: Ollama's embed
         // endpoint returns one pooled vector per text, and pooling loses the
