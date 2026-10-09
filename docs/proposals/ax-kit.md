@@ -68,8 +68,9 @@ live Outlook and Teams.
 
 - Pure logic in unit tests: the key hash, the path a key is built from, glob
   matching, rounding, snapshot encoding, error text.
-- Anything that touches accessibility needs the grant. Live tests check
-  `AXIsProcessTrusted()` and skip otherwise, so they skip in CI.
+- Anything that touches accessibility needs the grant. Live tests read the
+  Finder, check `AXIsProcessTrusted()` and skip without it. The hosted CI
+  runner has the grant, so they run there too.
 
 ```sh
 swift test --filter AXKitTests

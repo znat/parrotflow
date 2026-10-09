@@ -111,8 +111,8 @@ jobs:
           lipo -info "$BIN/ParrotFlow"
 
       # The test target alone: a bare `swift test` builds the whole package in
-      # debug, MLX included (57 s against 12 s on a laptop). The one live test
-      # needs the Accessibility grant and skips here.
+      # debug, MLX included (57 s against 12 s on a laptop). The runner has the
+      # Accessibility grant, so the live tests read its Finder too.
       - name: The accessibility kit
         run: |
           swift build --build-system swiftbuild --target AXKitTests
