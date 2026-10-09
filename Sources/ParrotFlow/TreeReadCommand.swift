@@ -1,3 +1,4 @@
+import AXKit
 import AppKit
 import ApplicationServices
 
@@ -15,49 +16,44 @@ import ApplicationServices
 /// dictating into.
 enum TreeReadCommand {
 
-    static func run(bundleID: String, compare runs: Int? = nil) -> Int32 {
+    static func run(bundleID: String) -> Int32 {
         guard Permissions.accessibility == .granted else {
             print("✗ accessibility is not granted")
             return 1
         }
-        guard let app = NSRunningApplication
+        guard let running = NSRunningApplication
             .runningApplications(withBundleIdentifier: bundleID).first else {
             print("✗ not running: \(bundleID)")
             return 1
         }
-        ChromiumAccessibility.askIfNeeded(app)
+        ChromiumAccessibility.askIfNeeded(running)
 
-        let root = AXUIElementCreateApplication(app.processIdentifier)
-        let focused = element(root, kAXFocusedUIElementAttribute)
+        let app = App(pid: running.processIdentifier)
+        let focused = app.focusedElement
         // `kAXWindowsAttribute` has no guaranteed order, so its first entry can
         // be a different window from the one holding the pane.
-        guard let window = focused.flatMap(TreeContext.window(of:))
-                ?? element(root, kAXFocusedWindowAttribute)
-                ?? element(root, kAXWindowsAttribute) else {
+        guard let window = focused?.window ?? app.focusedWindow ?? app.windows.first else {
             print("✗ no window")
             return 1
         }
-        let named = Pipeline.App(name: app.localizedName ?? "", bundleID: bundleID)
+        let named = Pipeline.App(name: running.localizedName ?? "", bundleID: bundleID)
         let reader = ContextReader.choose(for: named, everyApp: true)
         // An app in the background reports nothing focused. In Slack each
         // composer is then read as if the caret were in it; elsewhere the window.
-        let composers = reader == .slack ? TreeContext.composers(in: window) : []
+        let composers = reader == .slack ? self.composers(in: window) : []
         let starts = focused.map { [$0] } ?? (composers.isEmpty ? [window] : composers)
-        if let runs {
-            return compare(app.localizedName ?? bundleID, starts: starts, runs: runs)
-        }
 
         var settings = Context.Settings()
         settings.everyApp = true
         var read = false
         for start in starts {
             let started = Date()
-            let outcome = Context.read(app: named, from: start, settings: settings)
+            let outcome = Context.read(app: named, from: start.ref, settings: settings)
             let ms = Date().timeIntervalSince(started) * 1000
-            print(String(format: "%@ — %.0fms", app.localizedName ?? bundleID, ms)
+            print(String(format: "%@ — %.0fms", running.localizedName ?? bundleID, ms)
                 + " (\(reader?.rawValue ?? "no reader"))")
             // The description, not the value: a composer's value is the draft.
-            if focused == nil { print("from    \(description(of: start))") }
+            if focused == nil { print("from    \(start.accessibilityDescription ?? start.role ?? "?")") }
             switch outcome {
             case .failure(let why):
                 print("✗ \(why.rawValue)")
@@ -77,18 +73,10 @@ enum TreeReadCommand {
         return read ? 0 : 1
     }
 
-    private static func description(of element: AXUIElement) -> String {
-        var value: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXDescriptionAttribute as CFString, &value)
-        return value as? String ?? "a composer"
-    }
-
-    /// One element, or the first of a list of them.
-    private static func element(_ root: AXUIElement, _ name: String) -> AXUIElement? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(root, name as CFString, &value) == .success,
-              let value else { return nil }
-        if CFGetTypeID(value) == AXUIElementGetTypeID() { return (value as! AXUIElement) }
-        return (value as? [AXUIElement])?.first
+    /// The boxes a message is typed into, depth first, at most 26 levels down.
+    private static func composers(in element: Element, depth: Int = 0) -> [Element] {
+        guard depth < 26 else { return [] }
+        if element.role == kAXTextAreaRole { return [element] }
+        return element.children.flatMap { composers(in: $0, depth: depth + 1) }
     }
 }

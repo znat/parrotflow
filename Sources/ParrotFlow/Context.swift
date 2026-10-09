@@ -265,10 +265,10 @@ enum Context {
     ///
     /// Pure, so `--tree-test` scores it.
     static func treeCapture(
-        _ conversation: TreeContext.Assembled?, roster: [String]
+        _ conversation: SlackReader.Assembled?, roster: [String]
     ) -> Result<Capture, Declined> {
         let found = conversation
-            ?? TreeContext.Assembled(place: "", people: [], text: "", code: [])
+            ?? SlackReader.Assembled(place: "", people: [], text: "", code: [])
         let nothing = found.text.isEmpty && found.place.isEmpty && found.people.isEmpty
             && found.code.isEmpty && roster.isEmpty
         guard !nothing else { return .failure(.empty) }

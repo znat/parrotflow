@@ -2,13 +2,11 @@ import AXKit
 import ApplicationServices
 import Foundation
 
-/// `--tree-test`, second half: `SlackReader` on the fixtures `TreeContext` is
-/// scored on, turned into records, then on whole windows built as records.
-///
-/// The label readings are rules both readers call, so they count for both.
+/// `--tree-test`, second half: `SlackReader` on the label fixtures, turned
+/// into records, then on whole windows built as records.
 enum SlackReaderTest {
 
-    typealias Node = TreeContext.Node
+    typealias Node = SlackReader.Node
 
     /// An element and what is under it, for building a window by hand.
     struct Tree {
@@ -57,7 +55,7 @@ enum SlackReaderTest {
         for node in nodes {
             let child = Tree(node.role, node.label, subrole: node.code ? "AXCodeStyleGroup" : nil,
                              frame: node.frame)
-            let opens = node.inMessage && TreeContext.speaker(in: node.label) != nil
+            let opens = node.inMessage && SlackReader.speaker(in: node.label) != nil
             if node.inMessage && !opens, !pane.isEmpty {
                 pane[pane.count - 1].children.append(child)
             } else {
@@ -155,7 +153,7 @@ enum SlackReaderTest {
     }()
 
     private static let longSidebar = Tree(kAXWindowRole, nil, [
-        Tree("AXOutline", nil, (0..<(TreeContext.maxRoster + 10)).map { Tree(kAXRowRole, "channel-\($0)") }),
+        Tree("AXOutline", nil, (0..<(SlackReader.maxRoster + 10)).map { Tree(kAXRowRole, "channel-\($0)") }),
     ])
 
     private static func published(_ tree: Tree, lost: Bool = false, renamed: Bool = false,
@@ -168,7 +166,7 @@ enum SlackReaderTest {
         if renamed, let at = window.firstIndex(where: \.focused) { window[at].description = "Message to sws" }
         if unfocused { window = window.map { var record = $0; record.focused = false; return record } }
         if hidden { trail.insert(Record(role: kAXScrollAreaRole), at: 1) }
-        return TreeContextCommand.published(SlackReader.interpret(
+        return SlackLabelTest.published(SlackReader.interpret(
             SlackReader.Screen(window: window, path: trail, focusedName: name, cutShort: cutShort)))
     }
 
@@ -217,20 +215,20 @@ enum SlackReaderTest {
          labels(under: deepPane).filter { $0.hasPrefix("deep") || $0.hasPrefix("too") }.joined(separator: ","),
          "deep enough"),
         ("the roster limit",
-         "\(SlackReader.roster(in: records(longSidebar)).count)", "\(TreeContext.maxRoster)"),
+         "\(SlackReader.roster(in: records(longSidebar)).count)", "\(SlackReader.maxRoster)"),
     ]
 
     static func run() -> Int32 {
         var failed: [String] = []
-        for reading in TreeContextCommand.readings where reading.got != reading.want {
+        for reading in SlackLabelTest.readings where reading.got != reading.want {
             failed.append("  \(reading.what): want \(reading.want ?? "nil"), got \(reading.got ?? "nil")")
         }
         var extra: [String] = []
-        for one in TreeContextCommand.cases {
+        for one in SlackLabelTest.cases {
             let window = records(tree(one.nodes, title: one.title))
             let nodes = SlackReader.nodes(under: [1], in: window)
             if nodes != one.nodes { extra.append("  \(one.name) nodes: \(nodes.count) read, \(one.nodes.count) drawn") }
-            let got = TreeContext.assemble(nodes, title: window[0].title)
+            let got = SlackReader.assemble(nodes, title: window[0].title)
             if got.place != one.place { failed.append("  \(one.name) place: want \(one.place), got \(got.place)") }
             if got.people != one.people { failed.append("  \(one.name) people: want \(one.people), got \(got.people)") }
             if got.code != one.code { failed.append("  \(one.name) code: want \(one.code), got \(got.code)") }
@@ -244,8 +242,8 @@ enum SlackReaderTest {
                 + " got \(window.got.replacingOccurrences(of: "\n", with: " | "))")
         }
 
-        let total = TreeContextCommand.readings.count + TreeContextCommand.cases.count * 4
-        let extras = TreeContextCommand.cases.count + windows.count
+        let total = SlackLabelTest.readings.count + SlackLabelTest.cases.count * 4
+        let extras = SlackLabelTest.cases.count + windows.count
         print(failed.isEmpty ? "✓ slack reader: \(total) of \(total)" : "✗ slack reader: \(failed.count) of \(total)")
         failed.forEach { print($0) }
         print(extra.isEmpty ? "✓ slack reader, records and whole windows: \(extras) of \(extras)"

@@ -1,19 +1,14 @@
 import Foundation
 
-/// `--tree-test` — scores `TreeContext.assemble` and the label readings under
-/// it against labels a real Slack window produced.
-///
-/// Only the pure half is here. The walk itself depends on a running Slack and
-/// on what is on screen, and a fixture that stubbed the tree would be scoring
-/// the stub — the same split `--context-test` makes for terminals. The walk is
-/// checked with `--peek` against a real window.
+/// `--tree-test`, first half — scores `SlackReader.assemble` and the label
+/// readings under it against labels a real Slack window produced.
 ///
 /// The labels below are shapes, not a transcript: names are the ones already in
 /// `SoundCommand`'s table or invented, and no message text from a real
 /// conversation is kept in the repository.
-enum TreeContextCommand {
+enum SlackLabelTest {
 
-    typealias Node = TreeContext.Node
+    typealias Node = SlackReader.Node
 
     /// A channel, its header, its furniture, and two messages.
     private static let channel: [Node] = [
@@ -142,62 +137,62 @@ enum TreeContextCommand {
     /// The readings the cases above depend on, pinned one at a time so a
     /// failure says which one moved rather than "the text differs".
     static let readings: [(what: String, got: String?, want: String?)] = [
-        ("place, channel", TreeContext.place(in: "sws-engineering (private channel)"), "#sws-engineering"),
-        ("place, dm", TreeContext.place(in: "Tasmeen Kathuria (direct message, away)"), "Tasmeen Kathuria"),
-        ("place, group dm", TreeContext.place(in: "Mik Okun, Mirza Baig (group direct message)"),
+        ("place, channel", SlackReader.place(in: "sws-engineering (private channel)"), "#sws-engineering"),
+        ("place, dm", SlackReader.place(in: "Tasmeen Kathuria (direct message, away)"), "Tasmeen Kathuria"),
+        ("place, group dm", SlackReader.place(in: "Mik Okun, Mirza Baig (group direct message)"),
          "Mik Okun, Mirza Baig"),
-        ("place, not a place", TreeContext.place(in: "Files & links (2)"), nil),
+        ("place, not a place", SlackReader.place(in: "Files & links (2)"), nil),
         // A name with brackets of its own: the last "(" opens the kind.
-        ("place, bracketed name", TreeContext.place(in: "Nathan (Swoop) (direct message, away)"),
+        ("place, bracketed name", SlackReader.place(in: "Nathan (Swoop) (direct message, away)"),
          "Nathan (Swoop)"),
-        ("place, side-panel thread", TreeContext.place(in: "Thread in sws-engineering (channel)"),
+        ("place, side-panel thread", SlackReader.place(in: "Thread in sws-engineering (channel)"),
          "#sws-engineering"),
         // The Threads view names the place only on each reply box.
-        ("thread place, channel", TreeContext.threadPlace(in: "Reply to thread in sws-engineering"),
+        ("thread place, channel", SlackReader.threadPlace(in: "Reply to thread in sws-engineering"),
          "#sws-engineering"),
-        ("thread place, dm", TreeContext.threadPlace(in: "Reply to thread with Tasmeen Kathuria"),
+        ("thread place, dm", SlackReader.threadPlace(in: "Reply to thread with Tasmeen Kathuria"),
          "Tasmeen Kathuria"),
-        ("thread place, not a reply box", TreeContext.threadPlace(in: "Message to sws-engineering"), nil),
-        ("author", TreeContext.author(in: "Martin Alix: the deploy hook fired"), "Martin Alix"),
+        ("thread place, not a reply box", SlackReader.threadPlace(in: "Message to sws-engineering"), nil),
+        ("author", SlackReader.author(in: "Martin Alix: the deploy hook fired"), "Martin Alix"),
         // A lowercase display name is still a message, and still not a person:
         // `people` is offered to a dictation as a spelling, and "tip" is a word.
-        ("speaker, lowercase", TreeContext.speaker(in: "mik: hello team"), "mik"),
-        ("author, lowercase", TreeContext.author(in: "mik: hello team"), nil),
-        ("speaker, not a url", TreeContext.speaker(in: "http://localhost:3000"), nil),
-        ("author, trailing stop", TreeContext.author(in: "Matthieu Joannon.: it shipped"), "Matthieu Joannon"),
-        ("author, not one", TreeContext.author(in: "Note: this is not a name"), "Note"),
-        ("author, needs a space", TreeContext.author(in: "http://localhost:3000"), nil),
-        ("announcement", TreeContext.trimAnnouncement("it shipped. 4:38 PM. 10 reactions, 9 replies."),
+        ("speaker, lowercase", SlackReader.speaker(in: "mik: hello team"), "mik"),
+        ("author, lowercase", SlackReader.author(in: "mik: hello team"), nil),
+        ("speaker, not a url", SlackReader.speaker(in: "http://localhost:3000"), nil),
+        ("author, trailing stop", SlackReader.author(in: "Matthieu Joannon.: it shipped"), "Matthieu Joannon"),
+        ("author, not one", SlackReader.author(in: "Note: this is not a name"), "Note"),
+        ("author, needs a space", SlackReader.author(in: "http://localhost:3000"), nil),
+        ("announcement", SlackReader.trimAnnouncement("it shipped. 4:38 PM. 10 reactions, 9 replies."),
          "it shipped."),
-        ("announcement, nothing to cut", TreeContext.trimAnnouncement("it shipped"), "it shipped"),
+        ("announcement, nothing to cut", SlackReader.trimAnnouncement("it shipped"), "it shipped"),
         // Only what follows Slack's clock is Slack's. A count or a time in front
         // of it was written by the author.
         ("announcement, a count somebody wrote",
-         TreeContext.trimAnnouncement("Mik Okun: I uploaded 3 files. 12:09 PM."),
+         SlackReader.trimAnnouncement("Mik Okun: I uploaded 3 files. 12:09 PM."),
          "Mik Okun: I uploaded 3 files."),
         ("announcement, a time somebody wrote",
-         TreeContext.trimAnnouncement("see you at 9:03 PM. 9:05 PM."), "see you at 9:03 PM."),
+         SlackReader.trimAnnouncement("see you at 9:03 PM. 9:05 PM."), "see you at 9:03 PM."),
         ("roster, person",
-         TreeContext.rosterNames(in: "Mik Okun (notifications snoozed), status: PTO").first,
+         SlackReader.rosterNames(in: "Mik Okun (notifications snoozed), status: PTO").first,
          "Mik Okun"),
         ("roster, private channel",
-         TreeContext.rosterNames(in: "sws-engineering-internal (private, is a member, 14 members, …)").first,
+         SlackReader.rosterNames(in: "sws-engineering-internal (private, is a member, 14 members, …)").first,
          "#sws-engineering-internal"),
         ("roster, public channel",
-         TreeContext.rosterNames(in: "sws-engineering").first, "#sws-engineering"),
+         SlackReader.rosterNames(in: "sws-engineering").first, "#sws-engineering"),
         ("roster, a section",
-         TreeContext.rosterNames(in: "Drafts & sent (has unsent messages)").first, nil),
-        ("roster, emoji heading", TreeContext.rosterNames(in: "relaxed My team").first, nil),
+         SlackReader.rosterNames(in: "Drafts & sent (has unsent messages)").first, nil),
+        ("roster, emoji heading", SlackReader.rosterNames(in: "relaxed My team").first, nil),
         ("roster, group conversation",
-         TreeContext.rosterNames(in: "Greg Lu, Mark Bell (group direct message)").joined(separator: "|"),
+         SlackReader.rosterNames(in: "Greg Lu, Mark Bell (group direct message)").joined(separator: "|"),
          "Greg Lu|Mark Bell"),
-        ("title", TreeContext.cleanTitle("! Tasmeen Kathuria (DM) - Swoop - 21 new items - Slack"),
+        ("title", SlackReader.cleanTitle("! Tasmeen Kathuria (DM) - Swoop - 21 new items - Slack"),
          "Tasmeen Kathuria (DM) - Swoop"),
         // Only the pane is read. A short conversation is published as it is,
         // and no conversation still publishes the sidebar.
         ("published, a short conversation",
          published(Context.treeCapture(
-            TreeContext.Assembled(place: "Mik Okun", people: ["Mik Okun"], text: "Mik Okun: ok.", code: []),
+            SlackReader.Assembled(place: "Mik Okun", people: ["Mik Okun"], text: "Mik Okun: ok.", code: []),
             roster: ["#sws-engineering"])),
          "text=Mik Okun: ok.; place=Mik Okun; people=Mik Okun; code=; roster=#sws-engineering"),
         ("published, no conversation",
@@ -205,7 +200,7 @@ enum TreeContextCommand {
          "text=; place=; people=; code=; roster=#sws-engineering,Mik Okun"),
         ("published, a place and nothing else",
          published(Context.treeCapture(
-            TreeContext.Assembled(place: "#sws-engineering", people: [], text: "", code: []),
+            SlackReader.Assembled(place: "#sws-engineering", people: [], text: "", code: []),
             roster: [])),
          "text=; place=#sws-engineering; people=; code=; roster="),
         ("published, nothing at all", published(Context.treeCapture(nil, roster: [])),
@@ -221,7 +216,7 @@ enum TreeContextCommand {
         }
 
         for one in cases {
-            let got = TreeContext.assemble(one.nodes, title: one.title)
+            let got = SlackReader.assemble(one.nodes, title: one.title)
             if got.place != one.place {
                 failed.append("  \(one.name) place: want \(one.place), got \(got.place)")
             }
@@ -240,11 +235,11 @@ enum TreeContextCommand {
 
         let total = readings.count + cases.count * 4
         guard failed.isEmpty else {
-            print("✗ tree context: \(failed.count) of \(total)")
+            print("✗ slack labels: \(failed.count) of \(total)")
             for line in failed { print(line) }
             return 1
         }
-        print("✓ tree context: \(total) of \(total)")
+        print("✓ slack labels: \(total) of \(total)")
         return 0
     }
 }

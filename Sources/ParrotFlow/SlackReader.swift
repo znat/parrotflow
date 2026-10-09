@@ -5,9 +5,9 @@ import Foundation
 /// Slack's conversation, read through AXKit: one climb from the focused
 /// element, one walk of its window, then pure functions over the records.
 ///
-/// It publishes what `TreeContext` publishes for the same element, with the
-/// same label rules and the same limits. `--tree-read <bundle-id> --compare`
-/// runs both on one element and says where they differ.
+/// It replaced the old walk on raw AX calls after both published
+/// the same keys on every view compared (#358). The label rules are in
+/// `SlackLabels.swift`.
 enum SlackReader {
 
     /// What one read saw, as plain records, so the rest runs offline.
@@ -23,7 +23,7 @@ enum SlackReader {
         var cutShort = false
     }
 
-    /// `TreeContext`'s limits, relative to the element each one starts from.
+    /// Limits relative to the element each one starts from.
     static let paneDepth = 26
     static let lookDepth = 8
     static let rowDepth = 8
@@ -31,8 +31,7 @@ enum SlackReader {
     static let nodeLimit = 4000
 
     /// The budget counts every element, and `nodeLimit` only the labelled
-    /// ones: a Slack window had 725 elements on 10-09. `TreeContext` cuts no
-    /// value and has no deadline.
+    /// ones: a Slack window had 725 elements on 10-09. No value is cut.
     static let options = ReadOptions(budget: 20_000, depth: 64, seconds: 2, valueLimit: .max)
 
     static func read(from focused: Element) -> Result<Context.Capture, Context.Declined> {
@@ -67,7 +66,7 @@ enum SlackReader {
         let title = records[0].title
         let conversation = locate(screen.path, in: records).flatMap { focused in
             pane(around: focused, in: records).map {
-                TreeContext.assemble(nodes(under: [$0], in: records), title: title)
+                assemble(nodes(under: [$0], in: records), title: title)
             } ?? threadRun(around: focused, named: screen.focusedName, in: records)
         }
         return Context.treeCapture(conversation, roster: roster(in: records))
@@ -109,7 +108,13 @@ enum SlackReader {
     }
 
     /// The nearest ancestor that holds the list naming the conversation and
-    /// a message under it. See `TreeContext.conversation(around:)`.
+    /// a message under it.
+    ///
+    /// Climbed from the focused composer rather than picked out of the window:
+    /// one Slack window can show two conversations, each with a composer.
+    /// Both halves are needed. Slack keeps a second list beside the messages,
+    /// "Recent history in <channel>", which names the conversation and holds
+    /// none of it.
     static func pane(around focused: Int, in records: [Record]) -> Int? {
         var current = records[focused].parent
         for _ in 0..<paneDepth {
@@ -124,18 +129,20 @@ enum SlackReader {
         var named = false, messages = false
         for inner in below(index, in: records, depth: lookDepth) {
             guard let label = label(of: records[inner]) else { continue }
-            if records[inner].role == "AXList", TreeContext.place(in: label) != nil { named = true }
-            if records[inner].role != kAXTextAreaRole, TreeContext.speaker(in: label) != nil { messages = true }
+            if records[inner].role == "AXList", place(in: label) != nil { named = true }
+            if records[inner].role != kAXTextAreaRole, speaker(in: label) != nil { messages = true }
             if named && messages { return true }
         }
         return false
     }
 
     /// A thread in the Threads view: the list items after the previous reply
-    /// box, down to the focused one. See `TreeContext.threadRun(around:)`.
+    /// box, down to the focused one. That view stacks threads in one flat
+    /// list, "Threads, 4 new replies", and no element holds one thread. Read
+    /// with axkit on 2026-10-01.
     static func threadRun(around focused: Int, named name: String?,
-                          in records: [Record]) -> TreeContext.Assembled? {
-        guard let place = name.flatMap(TreeContext.threadPlace(in:)) else { return nil }
+                          in records: [Record]) -> Assembled? {
+        guard let place = name.flatMap(threadPlace(in:)) else { return nil }
         var item = focused
         for _ in 0..<paneDepth {
             guard let up = records[item].parent, records[up].role != kAXWindowRole else { return nil }
@@ -145,8 +152,8 @@ enum SlackReader {
                 let start = items[..<at].lastIndex { box in
                     below(box, in: records, depth: composerDepth).contains { records[$0].role == kAXTextAreaRole }
                 }.map { $0 + 1 } ?? 0
-                let found = TreeContext.assemble(nodes(under: Array(items[start..<at]), in: records), title: nil)
-                return TreeContext.Assembled(
+                let found = assemble(nodes(under: Array(items[start..<at]), in: records), title: nil)
+                return Assembled(
                     place: place, people: found.people, text: found.text, code: found.code)
             }
             item = up
@@ -156,8 +163,8 @@ enum SlackReader {
 
     /// The labelled elements under each root, under one limit. The last root
     /// is read first, so a long thread loses its oldest messages.
-    static func nodes(under roots: [Int], in records: [Record]) -> [TreeContext.Node] {
-        var parts: [[TreeContext.Node]] = []
+    static func nodes(under roots: [Int], in records: [Record]) -> [Node] {
+        var parts: [[Node]] = []
         var left = nodeLimit
         for root in roots.reversed() where left > 0 {
             let found = nodes(under: root, in: records, limit: left)
@@ -168,11 +175,12 @@ enum SlackReader {
     }
 
     /// Whether a record is in a message, in code, or in the composer follows
-    /// from its parent. See `TreeContext.walk`.
-    private static func nodes(under root: Int, in records: [Record], limit: Int) -> [TreeContext.Node] {
+    /// from its parent. A composer's children are the draft, which `input`
+    /// publishes. Buttons are dropped, except the member list.
+    private static func nodes(under root: Int, in records: [Record], limit: Int) -> [Node] {
         struct Flags { var message = false, code = false, composer = false }
         var flags: [Int: Flags] = [:]
-        var found: [TreeContext.Node] = []
+        var found: [Node] = []
         for index in below(root, in: records, depth: paneDepth) {
             guard found.count < limit else { break }
             let record = records[index]
@@ -180,12 +188,12 @@ enum SlackReader {
             let text = label(of: record)
             let composer = above.composer || record.role == kAXTextAreaRole
             let here = Flags(
-                message: !composer && (above.message || text.flatMap(TreeContext.speaker(in:)) != nil),
+                message: !composer && (above.message || text.flatMap(speaker(in:)) != nil),
                 code: above.code || record.subrole == "AXCodeStyleGroup",
                 composer: composer)
             flags[index] = here
-            if let text, record.role != kAXButtonRole || text.hasPrefix(TreeContext.memberPrefix) {
-                found.append(TreeContext.Node(
+            if let text, record.role != kAXButtonRole || text.hasPrefix(memberPrefix) {
+                found.append(Node(
                     role: record.role, label: text, frame: record.frame.map(cgRect),
                     inMessage: here.message, code: here.code))
             }
@@ -193,16 +201,17 @@ enum SlackReader {
         return found
     }
 
-    /// Every channel and person the sidebar lists. See `TreeContext.roster(in:)`.
+    /// Every channel and person the sidebar lists: the first outline in the
+    /// window is taken to be the sidebar.
     static func roster(in records: [Record]) -> [String] {
         guard let outline = below(0, in: records, depth: paneDepth)
             .first(where: { records[$0].role == kAXOutlineRole }) else { return [] }
         var names: [String] = []
         for index in below(outline, in: records, depth: rowDepth) where records[index].role == kAXRowRole {
-            guard names.count < TreeContext.maxRoster else { break }
+            guard names.count < maxRoster else { break }
             guard let label = label(of: records[index]) else { continue }
-            for name in TreeContext.rosterNames(in: label)
-            where names.count < TreeContext.maxRoster && !names.contains(name) {
+            for name in rosterNames(in: label)
+            where names.count < maxRoster && !names.contains(name) {
                 names.append(name)
             }
         }
@@ -216,7 +225,8 @@ enum SlackReader {
         return (index..<end).filter { records[$0].depth - base < depth }
     }
 
-    /// Value first, then title, then description, as `TreeContext` reads them.
+    /// Value first, then title, then description: the value is what a message
+    /// says, the description what a screen reader would announce about it.
     static func label(of record: Record) -> String? {
         record.value ?? record.title ?? record.description
     }
