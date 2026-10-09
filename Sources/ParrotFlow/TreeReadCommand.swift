@@ -59,6 +59,12 @@ enum TreeReadCommand {
                 print("✗ \(why.rawValue)")
             case .success(let got):
                 read = true
+                // Counts only, so a run can be quoted without what was on screen.
+                let lines = got.text.isEmpty ? 0 : got.text.components(separatedBy: "\n").count
+                print("shape   source \(got.source), text \(lines) lines \(got.chars) chars,"
+                    + " place \(got.place.count) chars, code \(got.code.count)"
+                    + (got.walked.map { ", \($0.records) records, pane \($0.branch)"
+                        + ($0.stopped.map { ", stopped: \($0)" } ?? "") } ?? ""))
                 print("place   \(got.place)")
                 print("people  \(got.people.joined(separator: "; "))")
                 print("code    \(got.code.joined(separator: "; "))")

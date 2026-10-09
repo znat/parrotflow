@@ -32,10 +32,3 @@ enum TerminalReader {
         return .success(Context.Capture(text: text, truncated: truncated))
     }
 }
-
-/// Any other app. Reads nothing yet.
-enum GenericReader {
-    static func read(from focused: Element, app: Pipeline.App) -> Result<Context.Capture, Context.Declined> {
-        .failure(.notReadable)
-    }
-}

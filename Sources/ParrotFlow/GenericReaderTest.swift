@@ -1,0 +1,147 @@
+import AXKit
+import ApplicationServices
+import Foundation
+
+/// `--tree-test`, third part: `GenericReader` on windows built as records.
+enum GenericReaderTest {
+
+    /// An element and what is under it. Text roles carry their words in the value.
+    struct Tree {
+        var record: Record
+        var children: [Tree] = []
+
+        init(_ role: String, _ text: String? = nil, subrole: String? = nil, title: String? = nil,
+             url: String? = nil, frame: CGRect? = nil, focused: Bool = false, _ children: [Tree] = []) {
+            let valued = [kAXStaticTextRole, kAXTextAreaRole, kAXTextFieldRole, "AXSecureTextField"].contains(role)
+            record = Record(role: role, subrole: subrole, title: title, description: valued ? nil : text,
+                            value: valued ? text : nil, url: url, frame: frame.map(Rect.init), focused: focused)
+            self.children = children
+        }
+    }
+
+    /// In tree order, as `Read.walk` returns them.
+    static func records(_ tree: Tree) -> [Record] {
+        var out: [Record] = []
+        func add(_ tree: Tree, depth: Int, parent: Int?) {
+            var record = tree.record
+            (record.depth, record.parent) = (depth, parent)
+            out.append(record)
+            let index = out.count - 1
+            for child in tree.children { add(child, depth: depth + 1, parent: index) }
+        }
+        add(tree, depth: 0, parent: nil)
+        return out
+    }
+
+    /// The climb ends at the focused record, or at the window when nothing is focused.
+    static func screen(_ tree: Tree, app: String = "Mail", document: String? = nil,
+                       browser: Bool = false) -> GenericReader.Screen {
+        let records = records(tree)
+        let path = SlackReaderTest.path(in: records)
+        return GenericReader.Screen(records: records, path: path.isEmpty ? [records[0]] : path, app: app,
+                                    document: document, browser: browser)
+    }
+
+    static func published(_ screen: GenericReader.Screen) -> String {
+        switch GenericReader.interpret(screen) {
+        case .failure(let why): return "declined: \(why.rawValue)"
+        case .success(let got):
+            return "text=\(got.text); place=\(got.place); code=\(got.code.joined(separator: ","));"
+                + " pane=\(got.walked?.branch ?? "")"
+        }
+    }
+
+    private static let long = String(repeating: "word ", count: 50).trimmingCharacters(in: .whitespaces)
+
+    /// A sidebar beside a message pane, a toolbar, a scrolled-out line, and
+    /// the field with the caret.
+    private static let mail = Tree(kAXWindowRole, title: "Inbox (1,234) — name@mail", frame: box(0, 0, 1000, 800), [
+        Tree(kAXToolbarRole, nil, frame: box(0, 0, 1000, 40), [Tree(kAXStaticTextRole, "Get Mail")]),
+        Tree(kAXGroupRole, nil, subrole: "AXLandmarkNavigation", frame: box(0, 40, 200, 760), [
+            Tree(kAXStaticTextRole, "Inbox", frame: box(0, 40, 200, 20)),
+        ]),
+        Tree(kAXScrollAreaRole, nil, frame: box(200, 40, 800, 700), [
+            Tree(kAXGroupRole, nil, frame: box(200, 40, 800, 1400), [
+                Tree(kAXStaticTextRole, long, frame: box(200, 40, 800, 100)),
+                Tree(kAXGroupRole, nil, frame: box(200, 140, 800, 20), [
+                    Tree(kAXStaticTextRole, "Lunch at noon?", frame: box(200, 140, 800, 20)),
+                ]),
+                Tree(kAXStaticTextRole, "Lunch at noon?", frame: box(200, 140, 800, 20)),
+                Tree(kAXButtonRole, "Reply", frame: box(200, 160, 80, 20), [Tree(kAXStaticTextRole, "Reply")]),
+                Tree(kAXGroupRole, nil, subrole: "AXCodeStyleGroup", frame: box(200, 180, 800, 20), [
+                    Tree(kAXStaticTextRole, "make test", frame: box(200, 180, 800, 20)),
+                ]),
+                Tree(kAXTextFieldRole, "a draft somewhere else", frame: box(200, 200, 800, 20)),
+                Tree("AXSecureTextField", "hunter2", frame: box(200, 220, 800, 20)),
+                Tree(kAXStaticTextRole, "scrolled away", frame: box(200, 1200, 800, 20)),
+                Tree(kAXTextAreaRole, "what I am dictating", frame: box(200, 600, 800, 100), focused: true),
+            ]),
+        ]),
+    ])
+
+    /// A field with little around it: the pane falls back to the web area.
+    private static let page = Tree(kAXWindowRole, title: "Docs - Google Chrome - Nathan (Work)", [
+        Tree("AXWebArea", nil, title: "Pull requests · parrotflow", url: "https://www.github.com/znat", [
+            Tree(kAXStaticTextRole, "Open"),
+            Tree(kAXGroupRole, nil, [Tree(kAXTextAreaRole, "a comment", focused: true)]),
+        ]),
+    ])
+
+    private static let editor = Tree(kAXWindowRole, title: "Report.pages — Edited", [
+        Tree(kAXTextAreaRole, "the whole document", focused: true),
+    ])
+
+    private static func box(_ x: Int, _ y: Int, _ w: Int, _ h: Int) -> CGRect {
+        CGRect(x: x, y: y, width: w, height: h)
+    }
+
+    static let checks: [(what: String, got: String, want: String)] = [
+        ("scrub: counts and an email", GenericReader.scrub("Inbox (1,234) — name@mail", app: "Mail"), "Inbox"),
+        ("scrub: marks, unread count, app name",
+         GenericReader.scrub("! Tasmeen Kathuria (DM) - Swoop - 21 new items - Slack", app: "Slack"),
+         "Tasmeen Kathuria (DM) - Swoop"),
+        ("scrub: the app name and the profile after it",
+         GenericReader.scrub("(3) Feed | LinkedIn - Google Chrome - Nathan (Work)", app: "Google Chrome"),
+         "Feed - LinkedIn"),
+        ("scrub: nothing to take", GenericReader.scrub("Report Q3.pages", app: "Pages"), "Report Q3.pages"),
+        ("scrub: only an address", GenericReader.scrub("nathan@example.com", app: "Mail"), ""),
+        ("scrub: a 100k title of one token, in under 50 ms", {
+            let started = Date()
+            let got = GenericReader.scrub(String(repeating: "a", count: 100_000), app: "Chrome")
+            return Date().timeIntervalSince(started) < 0.05 && got.count == GenericReader.scrubLimit ? "fast" : "slow"
+        }(), "fast"),
+        ("scrub: a 100k title of digits in brackets", {
+            let started = Date()
+            _ = GenericReader.scrub("(" + String(repeating: "1 ", count: 50_000), app: "Chrome")
+            return Date().timeIntervalSince(started) < 0.05 ? "fast" : "slow"
+        }(), "fast"),
+        ("place: at most 80 chars, cut on a word",
+         "\(GenericReader.place(screen(Tree(kAXWindowRole, title: long))).count)", "79"),
+        ("the pane around the caret",
+         published(screen(mail)),
+         "text=\(long)\nLunch at noon?\nmake test; place=Inbox; code=make test; pane=pane"),
+        ("the web area when the pane is thin, with the host in a browser",
+         published(screen(page, app: "Google Chrome", browser: true)),
+         "text=Open; place=Pull requests · parrotflow — github.com; code=; pane=web area"),
+        ("no host outside a browser",
+         published(screen(page, app: "Notion")),
+         "text=Open; place=Pull requests · parrotflow; code=; pane=web area"),
+        ("a document editor gives only the place",
+         published(screen(editor, app: "Pages", document: "file:///Users/someone/Report%20Q3.pages")),
+         "text=; place=Report Q3.pages; code=; pane=window"),
+        ("nothing at all",
+         published(screen(Tree(kAXWindowRole, nil, [Tree(kAXTextAreaRole, "draft", focused: true)]))),
+         "declined: \(Context.Declined.blank.rawValue)"),
+    ]
+
+    static func run() -> Int32 {
+        let failed = checks.filter { $0.got != $0.want }
+        print(failed.isEmpty ? "✓ generic reader: \(checks.count) of \(checks.count)"
+                             : "✗ generic reader: \(failed.count) of \(checks.count)")
+        for check in failed {
+            print("  \(check.what): want \(check.want.replacingOccurrences(of: "\n", with: " | ")),"
+                + " got \(check.got.replacingOccurrences(of: "\n", with: " | "))")
+        }
+        return failed.isEmpty ? 0 : 1
+    }
+}

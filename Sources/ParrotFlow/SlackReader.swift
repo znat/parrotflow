@@ -64,47 +64,12 @@ enum SlackReader {
         let records = screen.window
         guard !records.isEmpty else { return Context.treeCapture(nil, roster: []) }
         let title = records[0].title
-        let conversation = locate(screen.path, in: records).flatMap { focused in
+        let conversation = RecordTree.locate(screen.path, in: records).flatMap { focused in
             pane(around: focused, in: records).map {
                 assemble(nodes(under: [$0], in: records), title: title)
             } ?? threadRun(around: focused, named: screen.focusedName, in: records)
         }
         return Context.treeCapture(conversation, roster: roster(in: records))
-    }
-
-    /// The focused element's index: the end of a chain of records that match
-    /// `path` one level at a time from the window down. Records hold no live
-    /// reference, so this is how the climb and the walk meet.
-    ///
-    /// A step no child matches is skipped. Slack's web area has an
-    /// AXScrollArea for a parent, and that scroll area is nobody's child (10-09).
-    /// Twins that match the whole path are told apart by the focus flag. A
-    /// focused element whose frame or label changed between the two reads is
-    /// found by its role and that flag, even when an unfocused twin still matches.
-    static func locate(_ path: [Record], in records: [Record]) -> Int? {
-        guard let window = path.first, let root = records.first, same(root, window) else { return nil }
-        var children: [Int: [Int]] = [:]
-        for (index, record) in records.enumerated() {
-            if let parent = record.parent { children[parent, default: []].append(index) }
-        }
-        var frontier = [0]
-        for (step, record) in path.enumerated().dropFirst() {
-            let below = frontier.flatMap { children[$0] ?? [] }
-            let next = below.filter { same(records[$0], record) }
-            if step == path.count - 1 {
-                let moved = below.first { records[$0].focused && records[$0].role == record.role }
-                return next.first { records[$0].focused } ?? moved ?? next.first
-            }
-            if !next.isEmpty { frontier = next }
-        }
-        return frontier.first { records[$0].focused } ?? frontier.first
-    }
-
-    /// A draft or a focus flag can change between the climb and the walk, so
-    /// neither is compared.
-    private static func same(_ a: Record, _ b: Record) -> Bool {
-        a.role == b.role && a.subrole == b.subrole && a.title == b.title
-            && a.description == b.description && a.identifier == b.identifier && a.frame == b.frame
     }
 
     /// The nearest ancestor that holds the list naming the conversation and
@@ -127,7 +92,7 @@ enum SlackReader {
 
     static func holdsMessageList(_ index: Int, in records: [Record]) -> Bool {
         var named = false, messages = false
-        for inner in below(index, in: records, depth: lookDepth) {
+        for inner in RecordTree.below(index, in: records, depth: lookDepth) {
             guard let label = label(of: records[inner]) else { continue }
             if records[inner].role == "AXList", place(in: label) != nil { named = true }
             if records[inner].role != kAXTextAreaRole, speaker(in: label) != nil { messages = true }
@@ -147,10 +112,10 @@ enum SlackReader {
         for _ in 0..<paneDepth {
             guard let up = records[item].parent, records[up].role != kAXWindowRole else { return nil }
             if records[up].role == "AXList" {
-                let items = below(up, in: records, depth: 2).filter { records[$0].parent == up }
+                let items = RecordTree.below(up, in: records, depth: 2).filter { records[$0].parent == up }
                 guard let at = items.firstIndex(of: item) else { return nil }
                 let start = items[..<at].lastIndex { box in
-                    below(box, in: records, depth: composerDepth).contains { records[$0].role == kAXTextAreaRole }
+                    RecordTree.below(box, in: records, depth: composerDepth).contains { records[$0].role == kAXTextAreaRole }
                 }.map { $0 + 1 } ?? 0
                 let found = assemble(nodes(under: Array(items[start..<at]), in: records), title: nil)
                 return Assembled(
@@ -181,7 +146,7 @@ enum SlackReader {
         struct Flags { var message = false, code = false, composer = false }
         var flags: [Int: Flags] = [:]
         var found: [Node] = []
-        for index in below(root, in: records, depth: paneDepth) {
+        for index in RecordTree.below(root, in: records, depth: paneDepth) {
             guard found.count < limit else { break }
             let record = records[index]
             let above = index == root ? Flags() : record.parent.flatMap { flags[$0] } ?? Flags()
@@ -204,10 +169,10 @@ enum SlackReader {
     /// Every channel and person the sidebar lists: the first outline in the
     /// window is taken to be the sidebar.
     static func roster(in records: [Record]) -> [String] {
-        guard let outline = below(0, in: records, depth: paneDepth)
+        guard let outline = RecordTree.below(0, in: records, depth: paneDepth)
             .first(where: { records[$0].role == kAXOutlineRole }) else { return [] }
         var names: [String] = []
-        for index in below(outline, in: records, depth: rowDepth) where records[index].role == kAXRowRole {
+        for index in RecordTree.below(outline, in: records, depth: rowDepth) where records[index].role == kAXRowRole {
             guard names.count < maxRoster else { break }
             guard let label = label(of: records[index]) else { continue }
             for name in rosterNames(in: label)
@@ -216,13 +181,6 @@ enum SlackReader {
             }
         }
         return names
-    }
-
-    /// The record and the ones under it, less than `depth` levels down.
-    static func below(_ index: Int, in records: [Record], depth: Int) -> [Int] {
-        let base = records[index].depth
-        let end = records[(index + 1)...].firstIndex { $0.depth <= base } ?? records.count
-        return (index..<end).filter { records[$0].depth - base < depth }
     }
 
     /// Value first, then title, then description: the value is what a message

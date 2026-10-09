@@ -40,9 +40,20 @@ enum Context {
         var roster: [String] = []
         /// Which reader read it: "terminal", "slack" or "generic".
         var source = ""
+        /// How a tree reader got there, for the log and `--tree-read`.
+        var walked: Walked?
 
         var chars: Int { text.count }
         var lines: Int { text.isEmpty ? 0 : text.components(separatedBy: "\n").count }
+    }
+
+    /// The cost and shape of a tree read: counts only.
+    struct Walked {
+        var records = 0
+        /// "budget", "depth" or "deadline" when the walk did not reach the end.
+        var stopped: String?
+        /// Which rule picked the pane: "pane", "web area", "window".
+        var branch = ""
     }
 
     /// Why a read did not happen. Logged, and published as `context.declined`,
@@ -58,6 +69,7 @@ enum Context {
         case empty = "the screen has nothing on it above the input box"
         case noPress = "nothing was captured when the hotkey went down"
         case cutShort = "the window was too big or too slow to read whole"
+        case blank = "the window has no text to read around the focused field"
     }
 
     // MARK: - The capture, which happens when the hotkey goes down
