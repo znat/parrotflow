@@ -118,7 +118,39 @@ enum GenericReaderTest {
         CGRect(x: x, y: y, width: w, height: h)
     }
 
+    private static func chosen(_ bundleID: String, everyApp: Bool = true) -> String {
+        switch ContextReader.choose(for: Pipeline.App(name: "", bundleID: bundleID), everyApp: everyApp) {
+        case .success(let reader): return reader.rawValue
+        case .failure(let why): return "declined: \(why.rawValue)"
+        }
+    }
+
+    private static func owned(_ app: String, by owner: String?) -> String {
+        ContextReader.check(owner: owner, of: Pipeline.App(name: "", bundleID: app))
+            .map { "declined: \($0.rawValue)" } ?? "read"
+    }
+
     static let checks: [(what: String, got: String, want: String)] = [
+        ("denied: 1Password", chosen("com.1password.1password"), "declined: \(Context.Declined.denied.rawValue)"),
+        ("denied: Bitwarden", chosen("com.bitwarden.desktop"), "declined: \(Context.Declined.denied.rawValue)"),
+        ("denied: Keychain Access", chosen("com.apple.keychainaccess"),
+         "declined: \(Context.Declined.denied.rawValue)"),
+        ("denied: System Settings", chosen("com.apple.systempreferences"),
+         "declined: \(Context.Declined.denied.rawValue)"),
+        ("switch off: declined as before", chosen("com.apple.systempreferences", everyApp: false),
+         "declined: \(Context.Declined.notReadable.rawValue)"),
+        ("switch off: a terminal", chosen("com.mitchellh.ghostty", everyApp: false), "terminal"),
+        ("switch off: Slack", chosen("com.tinyspeck.slackmacgap", everyApp: false), "slack"),
+        ("switch on: any other app", chosen("com.google.Chrome"), "generic"),
+        ("denied: Apple Passwords", chosen("com.apple.Passwords"), "declined: \(Context.Declined.denied.rawValue)"),
+        ("owner: the app itself", owned("com.google.chrome", by: "com.google.Chrome"), "read"),
+        ("owner: a password manager's panel over a browser",
+         owned("com.google.Chrome", by: "com.1password.1password"), "declined: \(Context.Declined.denied.rawValue)"),
+        ("owner: an auth prompt over a terminal",
+         owned("com.mitchellh.ghostty", by: "com.apple.SecurityAgent"), "declined: \(Context.Declined.denied.rawValue)"),
+        ("owner: another app", owned("com.google.Chrome", by: "notion.id"),
+         "declined: \(Context.Declined.appChanged.rawValue)"),
+        ("owner: unknown", owned("com.google.Chrome", by: nil), "declined: \(Context.Declined.appChanged.rawValue)"),
         ("scrub: counts and an email", GenericReader.scrub("Inbox (1,234) — name@mail", app: "Mail"), "Inbox"),
         ("scrub: marks, unread count, app name",
          GenericReader.scrub("! Tasmeen Kathuria (DM) - Swoop - 21 new items - Slack", app: "Slack"),

@@ -26,6 +26,14 @@ enum TreeReadCommand {
             print("✗ not running: \(bundleID)")
             return 1
         }
+        let named = Pipeline.App(name: running.localizedName ?? "", bundleID: bundleID)
+        let reader: ContextReader
+        switch ContextReader.choose(for: named, everyApp: true) {
+        case .failure(let why):
+            print("✗ \(why.rawValue)")
+            return 1
+        case .success(let chosen): reader = chosen
+        }
         ChromiumAccessibility.askIfNeeded(running)
 
         let app = App(pid: running.processIdentifier)
@@ -36,8 +44,6 @@ enum TreeReadCommand {
             print("✗ no window")
             return 1
         }
-        let named = Pipeline.App(name: running.localizedName ?? "", bundleID: bundleID)
-        let reader = ContextReader.choose(for: named, everyApp: true)
         // An app in the background reports nothing focused. In Slack each
         // composer is then read as if the caret were in it; elsewhere the window.
         let composers = reader == .slack ? self.composers(in: window) : []
@@ -51,7 +57,7 @@ enum TreeReadCommand {
             let outcome = Context.read(app: named, from: start.ref, settings: settings)
             let ms = Date().timeIntervalSince(started) * 1000
             print(String(format: "%@ — %.0fms", running.localizedName ?? bundleID, ms)
-                + " (\(reader?.rawValue ?? "no reader"))")
+                + " (\(reader.rawValue))")
             // The description, not the value: a composer's value is the draft.
             if focused == nil { print("from    \(start.accessibilityDescription ?? start.role ?? "?")") }
             switch outcome {

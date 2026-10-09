@@ -72,6 +72,7 @@ enum Context {
         case noPress = "nothing was captured when the hotkey went down"
         case cutShort = "the window was too big or too slow to read whole"
         case blank = "the window has no text to read around the focused field"
+        case denied = "this app is never read: it holds passwords or system settings"
     }
 
     // MARK: - The capture, which happens when the hotkey goes down
@@ -213,8 +214,8 @@ enum Context {
     static func read(app: Pipeline.App?, settings: Settings) -> Result<Capture, Declined> {
         guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard let app else { return .failure(.noApp) }
-        guard ContextReader.choose(for: app, everyApp: settings.everyApp) != nil else {
-            return .failure(.notReadable)
+        if case .failure(let why) = ContextReader.choose(for: app, everyApp: settings.everyApp) {
+            return .failure(why)
         }
 
         let front = NSWorkspace.shared.frontmostApplication
@@ -257,8 +258,14 @@ enum Context {
     ) -> Result<Capture, Declined> {
         guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard let app else { return .failure(.noApp) }
-        guard let reader = ContextReader.choose(for: app, everyApp: settings.everyApp) else {
-            return .failure(.notReadable)
+        var pid: pid_t = 0
+        let owner = AXUIElementGetPid(element, &pid) == .success
+            ? NSRunningApplication(processIdentifier: pid)?.bundleIdentifier : nil
+        if let why = ContextReader.check(owner: owner, of: app) { return .failure(why) }
+        let reader: ContextReader
+        switch ContextReader.choose(for: app, everyApp: settings.everyApp) {
+        case .failure(let why): return .failure(why)
+        case .success(let chosen): reader = chosen
         }
         guard !SelectionReader.isOurs(element) else { return .failure(.nothingFocused) }
         let outcome: Result<Capture, Declined>
