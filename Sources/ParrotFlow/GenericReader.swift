@@ -71,12 +71,29 @@ enum GenericReader {
         let seen = top == chain.count - 1 ? walk.records.first { $0.role == "AXWebArea" } : nil
         let web = chain[top...].last { $0.record.role == "AXWebArea" }?.element
             ?? seen.flatMap { page in
-                chain[top].element.first(depth: page.depth, budget: walk.records.count) { $0.role == "AXWebArea" }
+                findPage(below: chain[top].element, depth: page.depth, budget: walk.records.count, options: options,
+                         until: started.addingTimeInterval(options.seconds))
             }
         web?.setMessagingTimeout(options.callTimeout)
         // Measured 10-09: on the web area in Chrome, Slack, Notion, Teams, Claude and VS Code.
         screen.chromium = web?.attribute("ChromeAXNodeId") != nil
         return (screen, walk)
+    }
+
+    /// Depth first, under the read's limits: its deadline, its `stop`, and its
+    /// timeout on every call.
+    private static func findPage(below window: Element, depth: Int, budget: Int, options: ReadOptions,
+                                 until deadline: Date) -> Element? {
+        var stack = [(window, 0)]
+        var left = budget
+        while let (element, level) = stack.popLast(), left > 0 {
+            guard Date() < deadline, options.stop?() != true else { return nil }
+            left -= 1
+            element.setMessagingTimeout(options.callTimeout)
+            if element.role == "AXWebArea" { return element }
+            if level < depth { stack += element.children.reversed().map { ($0, level + 1) } }
+        }
+        return nil
     }
 
     // MARK: - Pure, over records
@@ -206,7 +223,8 @@ enum GenericReader {
     /// What the readable records under `root` say, one line each, in tree
     /// order. A value is always read; a title or description only on a record
     /// with no children. A paragraph drawn as a group and again as its text
-    /// keeps one copy: the same words in nested boxes.
+    /// keeps one copy: the same words in nested boxes, from two records. A row
+    /// repeated inside one value is kept.
     static func lines(under root: Int, in records: [Record], kept: [Bool]) -> [Line] {
         let range = RecordTree.below(root, in: records, depth: .max)
         let parents = Set(range.compactMap { records[$0].parent })
@@ -220,7 +238,8 @@ enum GenericReader {
                 let text = row.trimmingCharacters(in: .whitespaces)
                 guard !text.isEmpty else { continue }
                 let line = Line(text: text, frame: frame, index: index)
-                if let last = found.last, last.text == text, last.holds(line) || line.holds(last) { continue }
+                if let last = found.last, last.index != index, last.text == text,
+                   last.holds(line) || line.holds(last) { continue }
                 found.append(line)
             }
         }

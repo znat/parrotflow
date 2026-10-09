@@ -47,12 +47,17 @@ final class PressRead: @unchecked Sendable {
         Self.isPast(releasedAt: lock.withLock { releasedAt }, afterRelease: afterRelease, now: clock.now())
     }
 
-    /// The reader is done. False when a waiter gave up first: the result is
-    /// then dropped, so the stage and `context_spelling` never see two answers.
-    func finish() -> Bool {
+    /// The reader is done. `publish` is told whether the result is kept, and
+    /// runs before a waiter can see the read done, so a waiter never finds an
+    /// empty slot. Not kept when a waiter gave up first: the stage and
+    /// `context_spelling` then never see two answers.
+    @discardableResult
+    func finish(publish: (Bool) -> Void = { _ in }) -> Bool {
         lock.withLock {
+            let kept = !abandoned
+            publish(kept)
             done = true
-            return !abandoned
+            return kept
         }
     }
 

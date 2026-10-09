@@ -114,6 +114,32 @@ enum PressReadTest {
         return "\(older), \(newer)"
     }
 
+    /// A waiter that sees the read done must also see what it published. The
+    /// publication takes 50 ms here, real time; the waiter polls every 5 ms.
+    static func doneMeansPublished() -> String {
+        let reading = PressRead(run: 11, afterRelease: 5)
+        reading.release()
+        let published = Box<Bool>()
+        published.value = false
+        let started = DispatchSemaphore(value: 0)
+        let done = DispatchSemaphore(value: 0)
+        let seen = Box<String>()
+        Task.detached {
+            started.signal()
+            let finished = await reading.wait()
+            seen.value = "\(finished ? "done" : "late"), published \(published.value == true)"
+            done.signal()
+        }
+        started.wait()
+        Thread.sleep(forTimeInterval: 0.02)
+        reading.finish { _ in
+            Thread.sleep(forTimeInterval: 0.05)
+            published.value = true
+        }
+        done.wait()
+        return seen.value ?? "nothing"
+    }
+
     /// No read at all: `--pipeline`, or a press with nothing focused.
     static func noRead() -> String {
         _ = Context.begin(nil)
@@ -147,6 +173,7 @@ enum PressReadTest {
             ("no read running: noPress at once", noRead(), "noPress"),
             ("a release before the read starts still counts", earlyRelease(), "false then true"),
             ("a newer press's screen is not an older dictation's", newerPressHoldsTheSlot(), "noPress, 42 chars"),
+            ("a waiter that sees the read done finds it published", doneMeansPublished(), "done, published true"),
         ]
         let failed = checks.filter { $0.got != $0.want }
         print(failed.isEmpty ? "✓ press read: \(checks.count) of \(checks.count)"

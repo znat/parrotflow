@@ -192,12 +192,12 @@ enum Context {
     /// waiting for it.
     @discardableResult
     static func store(_ done: Press, reading: PressRead, generation: Int, logs: Bool = true) -> Bool {
-        let kept = reading.finish()
-        let newest = pressLock.withLock {
+        // Lock order: pressLock, then the read's own.
+        let (kept, newest) = pressLock.withLock {
             let newest = generation == pressGeneration
-            if newest, kept { press = done }
+            let kept = reading.finish { kept in if newest, kept { press = done } }
             if pending === reading { pending = nil }
-            return newest
+            return (kept, newest)
         }
         guard newest else {
             if logs { Log.write(String(

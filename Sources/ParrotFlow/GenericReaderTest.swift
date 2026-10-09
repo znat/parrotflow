@@ -196,6 +196,12 @@ enum GenericReaderTest {
         ("not chromium: the side panel is read",
          published(screen(chat(main: false), app: "Chat")),
          "text=Details\ngeneral\nAna: lunch at noon?\nBen: sure\na second log; place=general; code=; pane=web area"),
+        ("a row repeated inside one value is kept",
+         published(screen(Tree(kAXWindowRole, nil, [
+            Tree(kAXStaticTextRole, "yes\nyes"),
+            Tree(kAXTextAreaRole, "draft", focused: true),
+         ]))),
+         "text=yes\nyes; place=; code=; pane=window"),
         ("nothing focused: the page the walk found names the place",
          published(screen(Tree(kAXWindowRole, title: "Docs - Google Chrome", [
             Tree("AXWebArea", nil, title: "Pull requests", url: "https://github.com/znat", [
