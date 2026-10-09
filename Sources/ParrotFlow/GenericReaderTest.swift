@@ -224,10 +224,12 @@ enum GenericReaderTest {
          "declined: \(Context.Declined.blank.rawValue)"),
     ]
 
-    static func run() -> Int32 {
+    static func run() -> Int32 { report("generic reader", checks) }
+
+    static func report(_ name: String, _ checks: [(what: String, got: String, want: String)]) -> Int32 {
         let failed = checks.filter { $0.got != $0.want }
-        print(failed.isEmpty ? "✓ generic reader: \(checks.count) of \(checks.count)"
-                             : "✗ generic reader: \(failed.count) of \(checks.count)")
+        print(failed.isEmpty ? "✓ \(name): \(checks.count) of \(checks.count)"
+                             : "✗ \(name): \(failed.count) of \(checks.count)")
         for check in failed {
             print("  \(check.what): want \(check.want.replacingOccurrences(of: "\n", with: " | ")),"
                 + " got \(check.got.replacingOccurrences(of: "\n", with: " | "))")

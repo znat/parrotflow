@@ -3,11 +3,16 @@ import ApplicationServices
 
 /// Which reader reads an app's screen at the press. An override replaces the
 /// generic reader for its app: the two never merge, so an override's output is
-/// exactly its own.
+/// exactly its own. Teams and Outlook have theirs only when every app is read.
 enum ContextReader: String {
-    case terminal, slack, generic
+    case terminal, slack, teams, outlook, generic
 
     static let slackBundleID = "com.tinyspeck.slackmacgap"
+
+    /// Lower case. The classic Teams app is another tree and was not measured.
+    static let everyAppOverrides: [String: ContextReader] = [
+        "com.microsoft.teams2": .teams, "com.microsoft.outlook": .outlook,
+    ]
 
     /// `notReadable` when no reader takes the app: it is neither a terminal
     /// nor Slack, and the generic reader is off. `denied` for an app that is
@@ -17,8 +22,9 @@ enum ContextReader: String {
         if profile.readsPane { return .success(.terminal) }
         if profile.readsTree { return .success(.slack) }
         guard everyApp else { return .failure(.notReadable) }
-        guard !deniedBundleIDs.contains(app.bundleID.lowercased()) else { return .failure(.denied) }
-        return .success(.generic)
+        let bundleID = app.bundleID.lowercased()
+        guard !deniedBundleIDs.contains(bundleID) else { return .failure(.denied) }
+        return .success(everyAppOverrides[bundleID] ?? .generic)
     }
 
     /// Whether the focused element belongs to the app the press was for. The
