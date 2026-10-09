@@ -77,6 +77,11 @@ final class ReadTests: XCTestCase {
         XCTAssertEqual(Record(role: "AXStaticText").isEditable, false)
     }
 
+    /// Keys are stored by agent skills. A new key format raises Walk.keyVersion.
+    func testKeyFormatHolds() {
+        XCTAssertEqual(Walk.key(role: "AXButton", name: "Send", path: "/AXWindow/AXWebArea"), "87c491eb")
+    }
+
     /// Needs the Accessibility permission. Holds on any Finder: CI's has no window.
     func testWalkOfFinderGivesATreeWhenTrusted() throws {
         try XCTSkipUnless(App.isTrusted, "no Accessibility permission")
