@@ -41,7 +41,8 @@ public struct ReadOptions: Sendable {
     public var budget = 4000
     /// Teams' tree goes deeper than 40: 604 records at 40, 642 at 64 (10-09).
     public var depth = 64
-    /// Checked between elements, so one call can overrun it by `callTimeout`.
+    /// Checked between elements, so an element's two calls can overrun it by
+    /// twice `callTimeout`.
     public var seconds: Double = 1
     /// How long one call may block. The system default is 6 s. It is set on
     /// every element the read touches, the one passed in included.
