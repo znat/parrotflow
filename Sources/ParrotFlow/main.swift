@@ -595,27 +595,34 @@ if let index = arguments.firstIndex(of: "--peek") {
 
 if let index = arguments.firstIndex(of: "--tree-read") {
     guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
-        print("usage: ParrotFlow --tree-read <bundle-id> [--compare [--runs N]]")
+        print("usage: ParrotFlow --tree-read <bundle-id> [--runs N] [--window <title>]")
         exit(2)
     }
-    var runs: Int?
-    if arguments.contains("--compare") {
-        runs = 3
-        if let at = arguments.firstIndex(of: "--runs") {
-            guard arguments.indices.contains(at + 1), let count = Int(arguments[at + 1]), count > 0 else {
-                print("usage: --runs takes a whole number above zero")
-                exit(2)
-            }
-            runs = count
+    var runs = 1
+    if let at = arguments.firstIndex(of: "--runs") {
+        guard arguments.indices.contains(at + 1), let count = Int(arguments[at + 1]), (1...50).contains(count) else {
+            print("usage: --runs takes a whole number from 1 to 50")
+            exit(2)
         }
+        runs = count
     }
-    exit(TreeReadCommand.run(bundleID: arguments[index + 1], compare: runs))
+    var titled: String?
+    if let at = arguments.firstIndex(of: "--window") {
+        guard arguments.indices.contains(at + 1) else {
+            print("usage: --window takes part of a window title")
+            exit(2)
+        }
+        titled = arguments[at + 1]
+    }
+    exit(TreeReadCommand.run(bundleID: arguments[index + 1], runs: runs, titled: titled))
 }
 
 if arguments.contains("--tree-test") {
-    let old = TreeContextCommand.run()
-    let new = SlackReaderTest.run()
-    exit(old == 0 && new == 0 ? 0 : 1)
+    let labels = SlackLabelTest.run()
+    let reader = SlackReaderTest.run()
+    let generic = GenericReaderTest.run()
+    let press = PressReadTest.run()
+    exit(labels == 0 && reader == 0 && generic == 0 && press == 0 ? 0 : 1)
 }
 
 if let index = arguments.firstIndex(of: "--context-test") {

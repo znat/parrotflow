@@ -1,29 +1,22 @@
+import AXKit
 import AppKit
 import ApplicationServices
 
 /// What is on screen around the field you are dictating into.
 ///
-/// The `context` pipeline stage is the only caller. It publishes what this
-/// returns as `context.*`, so a later stage — a `command:` script, a prompt —
-/// can read the conversation the transcript is about to join.
+/// The `context` pipeline stage publishes what this returns as `context.*`, so
+/// a later stage — a `command:` script, a prompt — can read the conversation
+/// the transcript is about to join. `context_spelling` reads the same capture.
 ///
-/// ## Two kinds of screen
+/// One reader per app, chosen by `ContextReader`: a terminal's value is its
+/// screen, Slack's conversation is walked out of its tree by `SlackReader`, and
+/// `GenericReader` reads any other app when `transcription.context.every_app`
+/// is on. An app no reader takes is declined, out loud, rather than
+/// half-served.
 ///
-/// A terminal is the cheap one. Its accessibility value *is* the visible screen
-/// — `Surface.Kind.screen` exists for exactly that reason — so the whole
-/// context is one AX call, the same call the app already makes to edit a line
-/// in place, and it costs about 1ms.
-///
-/// Slack is the other kind. The composer publishes its own contents and nothing
-/// above it, so the messages come from walking the window's children: 973 nodes
-/// for one window and 130–150ms, against 1ms for a terminal. `TreeContext` does
-/// that walk, and it also returns what the flat screen of a terminal cannot —
-/// which conversation this is and who is in it.
-///
-/// Both run where `capturePress` runs, off the main thread once recording has
-/// started, so neither is on the path that makes the hotkey feel fast.
-///
-/// An app that is neither is declined, out loud, rather than half-served.
+/// All of them run where `capturePress` runs, off the main thread once
+/// recording has started, so none is on the path that makes the hotkey feel
+/// fast.
 enum Context {
 
     /// One read of the screen.
@@ -45,9 +38,24 @@ enum Context {
         /// Every channel and person the window offers, from Slack's sidebar.
         /// Not who is in this conversation — who exists to be named.
         var roster: [String] = []
+        /// Which reader read it: "terminal", "slack" or "generic".
+        var source = ""
+        /// How a tree reader got there, for the log and `--tree-read`.
+        var walked: Walked?
 
         var chars: Int { text.count }
         var lines: Int { text.isEmpty ? 0 : text.components(separatedBy: "\n").count }
+    }
+
+    /// The cost and shape of a tree read: counts only.
+    struct Walked {
+        var records = 0
+        /// "budget", "depth" or "deadline" when the walk did not reach the end.
+        var stopped: String?
+        /// Which rule picked the pane: "pane", "web area", "window", or in a
+        /// Chromium page "main" or "log".
+        var branch = ""
+        var chromium = false
     }
 
     /// Why a read did not happen. Logged, and published as `context.declined`,
@@ -62,7 +70,10 @@ enum Context {
         case unreadable = "the focused element publishes no value"
         case empty = "the screen has nothing on it above the input box"
         case noPress = "nothing was captured when the hotkey went down"
+        case late = "the screen read had not ended by its deadline"
         case cutShort = "the window was too big or too slow to read whole"
+        case blank = "the window has no text to read around the focused field"
+        case denied = "this app is never read: it holds passwords or system settings"
     }
 
     // MARK: - The capture, which happens when the hotkey goes down
@@ -94,6 +105,10 @@ enum Context {
         let run: Int
     }
 
+    /// `transcription.context`: whether every app is read, and how long a
+    /// read may run on after the key comes up.
+    typealias Settings = Config.Transcription.ContextRead
+
     private static let pressLock = NSLock()
     nonisolated(unsafe) private static var press: Press?
 
@@ -111,6 +126,8 @@ enum Context {
     /// unrepresentable: a read that is no longer the newest simply does not
     /// store its answer.
     nonisolated(unsafe) private static var pressGeneration = 0
+    /// The read still running, if any.
+    nonisolated(unsafe) private static var pending: PressRead?
 
     static var pressCapture: Press? {
         pressLock.lock()
@@ -142,39 +159,87 @@ enum Context {
     /// dictation can never be published as if it were this one — and the
     /// generation taken here is checked before storing, so a read that has been
     /// overtaken cannot put the stale one back. See `pressGeneration`.
-    static func capturePress(run: Int, app: Pipeline.App?, element: AXUIElement?) {
-        pressLock.lock()
-        pressGeneration += 1
-        let mine = pressGeneration
-        press = nil
-        pressLock.unlock()
+    /// Call on the press's own thread, before the read is dispatched: a key
+    /// that comes up before the read starts must still find it.
+    static func reservePress(run: Int, hasElement: Bool, settings: Settings) -> (reading: PressRead, generation: Int) {
+        let reading = PressRead(run: run, afterRelease: settings.afterReleaseSeconds)
+        return (reading, begin(hasElement ? reading : nil))
+    }
+
+    static func capturePress(_ reserved: (reading: PressRead, generation: Int), app: Pipeline.App?,
+                             element: AXUIElement?, settings: Settings) {
+        let (reading, mine) = reserved
+        let run = reading.run
         guard let element else { return }
 
         let started = CFAbsoluteTimeGetCurrent()
-        let outcome = read(app: app, from: element)
+        let outcome = read(app: app, from: element, settings: settings, stop: { reading.mustStop })
         let ms = (CFAbsoluteTimeGetCurrent() - started) * 1000
+        store(Press(element: element, outcome: outcome, ms: ms, run: run), reading: reading, generation: mine)
+    }
 
-        pressLock.lock()
-        let newest = mine == pressGeneration
-        if newest { press = Press(element: element, outcome: outcome, ms: ms, run: run) }
-        pressLock.unlock()
-
-        guard newest else {
-            Log.write(String(
-                format: "context: a %.0fms read was overtaken by a newer press; dropped", ms
-            ))
-            return
+    /// Clears the last press, and marks this one's read as running. Its generation.
+    static func begin(_ reading: PressRead?) -> Int {
+        pressLock.withLock {
+            pressGeneration += 1
+            press = nil
+            pending = reading
+            return pressGeneration
         }
-        switch outcome {
+    }
+
+    /// Keeps a finished read, unless a newer press began or the stage stopped
+    /// waiting for it.
+    @discardableResult
+    static func store(_ done: Press, reading: PressRead, generation: Int, logs: Bool = true) -> Bool {
+        // Lock order: pressLock, then the read's own.
+        let (kept, newest) = pressLock.withLock {
+            let newest = generation == pressGeneration
+            let kept = reading.finish { kept in if newest, kept { press = done } }
+            if pending === reading { pending = nil }
+            return (kept, newest)
+        }
+        guard newest else {
+            if logs { Log.write(String(
+                format: "context: a %.0fms read was overtaken by a newer press; dropped", done.ms
+            )) }
+            return false
+        }
+        guard kept else {
+            if logs { Log.write(String(
+                format: "context: a %.0fms read ended after the stage stopped waiting; dropped", done.ms
+            )) }
+            return false
+        }
+        guard logs else { return true }
+        let stopped = reading.mustStop ? "; stopped: deadline" : ""
+        switch done.outcome {
         case .success(let capture):
             Log.write(String(
-                format: "context: captured %d chars at press in %.0fms", capture.chars, ms
-            ))
+                format: "context: captured %d chars at press in %.0fms", capture.chars, done.ms
+            ) + stopped)
         case .failure(let why):
             Log.write(String(
-                format: "context: nothing captured at press (%@) in %.0fms", why.rawValue, ms
-            ))
+                format: "context: nothing captured at press (%@) in %.0fms", why.rawValue, done.ms
+            ) + stopped)
         }
+        return true
+    }
+
+    /// The key came up, or the second press of a toggle: the running read
+    /// gets `after_release_seconds` more.
+    static func released() {
+        pressLock.withLock { pending }?.release()
+    }
+
+    /// This run's press, once its read is done. A read still running is
+    /// waited for, up to its deadline. `late` when the deadline passed first.
+    static func settledPress(run: Int?) async -> (press: Press?, late: Bool) {
+        if let run, let reading = pressLock.withLock({ pending }), reading.run == run {
+            if await !reading.wait() { return (nil, true) }
+        }
+        // A newer press may hold the slot: its screen is not this dictation's.
+        return (pressCapture.flatMap { run == nil || $0.run == run ? $0 : nil }, false)
     }
 
     /// How much of the screen a later stage is allowed to see.
@@ -197,11 +262,12 @@ enum Context {
     /// window in front is not reliably the window that was dictated into, and
     /// reading the wrong window is worse than reading none — it would hand a
     /// prompt somebody else's screen.
-    static func read(app: Pipeline.App?) -> Result<Capture, Declined> {
+    static func read(app: Pipeline.App?, settings: Settings) -> Result<Capture, Declined> {
         guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard let app else { return .failure(.noApp) }
-        let profile = AppProfile.of(app)
-        guard profile.readsPane || profile.readsTree else { return .failure(.notReadable) }
+        if case .failure(let why) = ContextReader.choose(for: app, everyApp: settings.everyApp) {
+            return .failure(why)
+        }
 
         let front = NSWorkspace.shared.frontmostApplication
         let frontID = front?.bundleIdentifier ?? ""
@@ -215,7 +281,7 @@ enum Context {
         guard AXUIElementGetPid(element, &pid) == .success,
               NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == app.bundleID
         else { return .failure(.appChanged) }
-        return read(app: app, from: element)
+        return read(app: app, from: element, settings: settings)
     }
 
     /// The same read, of an element the caller already has.
@@ -239,48 +305,32 @@ enum Context {
     /// Until it exists, a capture from the pane you dictated into is still the
     /// right one to publish. It is the pane you meant, whatever the paste does.
     static func read(
-        app: Pipeline.App?, from element: AXUIElement
+        app: Pipeline.App?, from element: AXUIElement, settings: Settings,
+        stop: (@Sendable () -> Bool)? = nil
     ) -> Result<Capture, Declined> {
         guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard let app else { return .failure(.noApp) }
-        let profile = AppProfile.of(app)
-        guard profile.readsPane || profile.readsTree else { return .failure(.notReadable) }
+        var pid: pid_t = 0
+        let owner = AXUIElementGetPid(element, &pid) == .success
+            ? NSRunningApplication(processIdentifier: pid)?.bundleIdentifier : nil
+        if let why = ContextReader.check(owner: owner, of: app) { return .failure(why) }
+        let reader: ContextReader
+        switch ContextReader.choose(for: app, everyApp: settings.everyApp) {
+        case .failure(let why): return .failure(why)
+        case .success(let chosen): reader = chosen
+        }
         guard !SelectionReader.isOurs(element) else { return .failure(.nothingFocused) }
-        if profile.readsTree { return readTree(from: element) }
-        guard let value = SelectionReader.visibleText(of: element) else {
-            return .failure(.unreadable)
+        let outcome: Result<Capture, Declined>
+        switch reader {
+        case .terminal: outcome = TerminalReader.read(from: element)
+        case .slack: outcome = SlackReader.read(from: Element(element), stop: stop)
+        case .generic: outcome = GenericReader.read(from: Element(element), app: app, stop: stop)
         }
-
-        let above = aboveInputBox(in: value)
-        guard !above.isEmpty else { return .failure(.empty) }
-
-        let (text, truncated) = tail(of: above, limit: maxChars)
-        return .success(Capture(text: text, truncated: truncated))
-    }
-
-    /// The conversation around the box, for an app whose screen is a tree.
-    ///
-    /// The subtree is climbed from the focused composer rather than chosen by
-    /// geometry: the Slack window measured on 2026-09-18 held two composers and
-    /// two conversations at once, and a rule about which side of the window the
-    /// sidebar ends on would have had to guess between them.
-    ///
-    /// Only that pane is read. A short conversation is a short pane, not a wrong
-    /// one. On 2026-09-28, with one DM open, a whole-window read took its place
-    /// from a sidebar row, added a line from outside the pane, and lost 7 of the
-    /// pane's 36 lines.
-    static func readTree(from element: AXUIElement) -> Result<Capture, Declined> {
-        let window = TreeContext.window(of: element)
-        let title = window.flatMap(TreeContext.title(of:))
-        let conversation = TreeContext.conversation(around: element).map {
-            TreeContext.assemble(TreeContext.nodes(under: $0), title: title)
-        } ?? TreeContext.threadRun(around: element).map { run in
-            // The reply box names the place. The window title would say "Threads".
-            let found = TreeContext.assemble(TreeContext.nodes(under: run.items), title: nil)
-            return TreeContext.Assembled(
-                place: run.place, people: found.people, text: found.text, code: found.code)
+        return outcome.map { capture in
+            var capture = capture
+            capture.source = reader.rawValue
+            return capture
         }
-        return treeCapture(conversation, roster: window.map(TreeContext.roster(in:)) ?? [])
     }
 
     /// What a tree app publishes: the conversation when the climb found one,
@@ -288,10 +338,10 @@ enum Context {
     ///
     /// Pure, so `--tree-test` scores it.
     static func treeCapture(
-        _ conversation: TreeContext.Assembled?, roster: [String]
+        _ conversation: SlackReader.Assembled?, roster: [String]
     ) -> Result<Capture, Declined> {
         let found = conversation
-            ?? TreeContext.Assembled(place: "", people: [], text: "", code: [])
+            ?? SlackReader.Assembled(place: "", people: [], text: "", code: [])
         let nothing = found.text.isEmpty && found.place.isEmpty && found.people.isEmpty
             && found.code.isEmpty && roster.isEmpty
         guard !nothing else { return .failure(.empty) }

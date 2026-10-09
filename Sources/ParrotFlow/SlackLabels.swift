@@ -1,24 +1,9 @@
 import AppKit
-import ApplicationServices
 
-/// The conversation around the box, for an app whose screen is a tree.
-///
-/// A terminal publishes its whole screen as one string, which is why `Context`
-/// could read one with a single call. Slack publishes a tree: 973 nodes for one
-/// window, 602 of them carrying text, and 16,342 characters once flattened —
-/// eight times what a later stage is allowed to see. So the work here is not
-/// reading, it is choosing: which subtree is the conversation, and which of its
-/// labels are words somebody wrote rather than furniture the app drew.
-///
-/// Measured on a real Slack window, 2026-09-18: the walk takes 130–150ms. That
-/// is why it runs where `Context.capturePress` already runs, off the main
-/// thread and after recording has started, and why nothing here is on the path
-/// that makes the hotkey feel fast.
-///
-/// Collection and assembly are separate on purpose. `nodes(under:)` is
-/// accessibility and cannot be tested without a running Slack; `assemble` is a
-/// pure function over labels and is scored by `scripts/check-tree-context.sh`.
-enum TreeContext {
+/// Slack's labels: what a label says about a message, a person, a place or
+/// the sidebar, and how a pane's labels become the published text. Pure, so
+/// `--tree-test` scores it without Slack running.
+extension SlackReader {
 
     /// One element worth keeping: what it is, what it says, where it sits, and
     /// whether it belongs to a message.
@@ -75,8 +60,6 @@ enum TreeContext {
         let code: [String]
     }
 
-    // MARK: - The sidebar
-
     /// Rows that organise the sidebar rather than name anything in it.
     private static let sections: Set<String> = [
         "Threads", "Huddles", "Recap", "Drafts & sent", "Directories", "Starred",
@@ -118,159 +101,16 @@ enum TreeContext {
         }
     }
 
-    /// Every channel and person the sidebar lists.
-    ///
-    /// A second, shallow walk rather than part of the conversation's: the
-    /// sidebar is a sibling of the message pane, so the pane walk never reaches
-    /// it, and it answers a different question — not who is in this thread, but
-    /// who and what exist to be named at all.
-    static func roster(in window: AXUIElement) -> [String] {
-        guard let outline = outline(in: window, depth: 0) else { return [] }
-        var names: [String] = []
-        rows(under: outline, depth: 0, into: &names)
-        return names
-    }
-
-    /// The sidebar sits about eighteen rungs down in a real window, so this
-    /// walks as deep as everything else here rather than stopping early.
-    private static func outline(in element: AXUIElement, depth: Int) -> AXUIElement? {
-        guard depth < depthLimit else { return nil }
-        if (attribute(element, kAXRoleAttribute) as? String) == "AXOutline" { return element }
-        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
-            if let found = outline(in: child, depth: depth + 1) { return found }
-        }
-        return nil
-    }
-
-    private static func rows(under element: AXUIElement, depth: Int, into names: inout [String]) {
-        guard depth < 8, names.count < maxRoster else { return }
-        if (attribute(element, kAXRoleAttribute) as? String) == "AXRow",
-           let label = label(of: element) {
-            for name in rosterNames(in: label) where names.count < maxRoster && !names.contains(name) {
-                names.append(name)
-            }
-        }
-        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
-            rows(under: child, depth: depth + 1, into: &names)
-        }
-    }
-
-    // MARK: - Reading the tree
-
-    private static let nodeLimit = 4000
-    private static let depthLimit = 26
-
     /// How many names and code runs are published, and how long one may be.
     /// `context.text` is capped at 2000 characters and these are published
     /// beside it, so they are capped too: a busy channel has a hundred authors
     /// and a pasted file is one code run of any length.
     static let maxSpans = 40
     static let maxSpanChars = 200
+
     /// The sidebar is a list of short names, so it is capped higher: this
     /// speaker's has 44 channels and people in it.
     static let maxRoster = 80
-
-    /// Every labelled element under `element`, in drawing order.
-    ///
-    /// Buttons, checkboxes and pop-ups are dropped here rather than in
-    /// `assemble`: their labels are instructions to the user ("Download",
-    /// "More actions"), and the one button worth reading — the member list — is
-    /// picked out by name before the rest go.
-    static func nodes(under element: AXUIElement) -> [Node] {
-        var found: [Node] = []
-        walk(element, depth: 0, inList: false, into: &found)
-        return found
-    }
-
-    /// The same walk over several elements under one limit, in drawing order.
-    /// The last element is walked first, so a long thread loses its oldest
-    /// messages to the limit and keeps its newest.
-    static func nodes(under elements: [AXUIElement]) -> [Node] {
-        var parts: [[Node]] = []
-        var left = nodeLimit
-        for element in elements.reversed() where left > 0 {
-            var found: [Node] = []
-            walk(element, depth: 0, inList: false, limit: left, into: &found)
-            left -= found.count
-            parts.append(found)
-        }
-        return parts.reversed().flatMap { $0 }
-    }
-
-    private static func walk(
-        _ element: AXUIElement, depth: Int, inList: Bool, code: Bool = false,
-        inComposer: Bool = false, limit: Int = nodeLimit, into found: inout [Node]
-    ) {
-        guard found.count < limit, depth < depthLimit else { return }
-        let role = attribute(element, kAXRoleAttribute) as? String ?? ""
-        let text = label(of: element)
-        let inCode = code
-            || (attribute(element, kAXSubroleAttribute) as? String) == "AXCodeStyleGroup"
-        // A composer carries the sentence being dictated, not the conversation,
-        // and `input` publishes it already. Its children are the draft too.
-        let composer = inComposer || role == "AXTextArea"
-        let messages = !composer && (inList || text.flatMap(speaker(in:)) != nil)
-        if let text, !text.isEmpty, role != "AXButton" || text.hasPrefix(memberPrefix) {
-            found.append(Node(
-                role: role, label: text, frame: frame(of: element),
-                inMessage: messages, code: inCode))
-        }
-        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
-            walk(
-                child, depth: depth + 1, inList: messages, code: inCode,
-                inComposer: composer, limit: limit, into: &found)
-        }
-    }
-
-    /// The subtree holding the conversation the caret is in.
-    ///
-    /// Climbed from the focused composer rather than picked out of the window,
-    /// because one Slack window can show two of everything: the window that was
-    /// measured had two composers in it, one for a direct message and one for a
-    /// channel. Geometry would have had to guess between them, and would have
-    /// guessed again every time the sidebar was resized.
-    ///
-    /// The ancestor that also contains the message list is the pane. Nil means
-    /// no ancestor below the window holds one, and nothing is read.
-    static func conversation(around focused: AXUIElement) -> AXUIElement? {
-        var element = focused
-        for _ in 0..<depthLimit {
-            guard let up = elementValue(element, kAXParentAttribute) else { return nil }
-            if (attribute(up, kAXRoleAttribute) as? String) == "AXWindow" { return nil }
-            if holdsMessageList(up) { return up }
-            element = up
-        }
-        return nil
-    }
-
-    /// The thread a reply box belongs to in Slack's Threads view, when the
-    /// climb found no pane.
-    ///
-    /// That view stacks threads in one flat list, "Threads, 4 new replies":
-    /// a header, the messages, the reply box, then the next thread. No element
-    /// holds one thread, and the list is not labelled like a conversation. So
-    /// a thread is the run of list items after the previous reply box, down to
-    /// this one. Read with axkit on 2026-10-01.
-    static func threadRun(around focused: AXUIElement) -> (items: [AXUIElement], place: String)? {
-        guard let place = name(of: focused).flatMap(threadPlace(in:)) else { return nil }
-        var item = focused
-        for _ in 0..<depthLimit {
-            guard let up = elementValue(item, kAXParentAttribute) else { return nil }
-            let role = attribute(up, kAXRoleAttribute) as? String
-            if role == "AXWindow" { return nil }
-            if role == "AXList" {
-                let items = (attribute(up, kAXChildrenAttribute) as? [AXUIElement]) ?? []
-                guard let at = items.firstIndex(where: { CFEqual($0, item) }) else { return nil }
-                // A reply box sits 7 levels under its item; 10 bounds the search.
-                let start = items[..<at]
-                    .lastIndex(where: { !composers(in: $0, depth: depthLimit - 10).isEmpty })
-                    .map { $0 + 1 } ?? 0
-                return (Array(items[start..<at]), place)
-            }
-            item = up
-        }
-        return nil
-    }
 
     /// `Reply to thread in sws-engineering-internal`, `Reply to thread with
     /// Salman Adeeb`: the name Slack gives a reply box in the Threads view.
@@ -282,38 +122,6 @@ enum TreeContext {
         }
         return nil
     }
-
-    /// Whether this element contains both the list Slack labels with the
-    /// conversation *and* messages under it.
-    ///
-    /// Both halves are needed. Slack keeps a second list beside the messages,
-    /// labelled "Recent history in <channel>", which names the conversation and
-    /// holds none of it — stopping there published three characters and a place
-    /// nobody writes down.
-    ///
-    /// Bounded: the composer's ancestors are shallow, and a full walk per rung
-    /// would cost the whole window each time.
-    private static func holdsMessageList(_ element: AXUIElement, depth: Int = 0) -> Bool {
-        var named = false, messages = 0
-        look(element, depth: depth, named: &named, messages: &messages)
-        return named && messages >= 1
-    }
-
-    private static func look(
-        _ element: AXUIElement, depth: Int, named: inout Bool, messages: inout Int
-    ) {
-        guard depth < 8, !(named && messages >= 1) else { return }
-        let role = attribute(element, kAXRoleAttribute) as? String
-        if let label = label(of: element) {
-            if role == "AXList", place(in: label) != nil { named = true }
-            if role != "AXTextArea", speaker(in: label) != nil { messages += 1 }
-        }
-        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
-            look(child, depth: depth + 1, named: &named, messages: &messages)
-        }
-    }
-
-    // MARK: - Making sense of the labels
 
     static let memberPrefix = "View all "
 
@@ -462,8 +270,7 @@ enum TreeContext {
 
     /// The conversation as text, the place, and the people, from one walk.
     ///
-    /// Pure, so it can be scored without Slack running — see
-    /// `scripts/check-tree-context.sh`.
+    /// Pure, so `--tree-test` scores it without Slack running.
     static func assemble(_ nodes: [Node], title: String?) -> Assembled {
         var named = ""
         var people: [String] = []
@@ -537,84 +344,5 @@ enum TreeContext {
             .filter { $0.range(of: "^\\d+ new items?$", options: .regularExpression) == nil }
             .filter { $0 != "Slack" }
         return parts.joined(separator: " - ")
-    }
-
-    // MARK: - Accessibility plumbing
-
-    private static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else {
-            return nil
-        }
-        return value
-    }
-
-    /// An attribute that should hold an element. The app decides what it
-    /// returns, so the type is checked before the cast.
-    private static func elementValue(_ element: AXUIElement, _ name: String) -> AXUIElement? {
-        guard let value = attribute(element, name),
-              CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return (value as! AXUIElement)
-    }
-
-    /// Value first, then title, then description: the value is what a message
-    /// says, and the description is what a screen reader would announce about
-    /// it. An element that has both is worth reading for the text it holds.
-    private static func label(of element: AXUIElement) -> String? {
-        for name in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
-            if let text = attribute(element, name) as? String,
-               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return text
-            }
-        }
-        return nil
-    }
-
-    /// What an element is called, not what it holds: a reply box's value is
-    /// the draft, and its name is "Reply to thread in …".
-    private static func name(of element: AXUIElement) -> String? {
-        for name in [kAXTitleAttribute, kAXDescriptionAttribute, "AXPlaceholderValue"] {
-            if let text = attribute(element, name) as? String,
-               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return text
-            }
-        }
-        return nil
-    }
-
-    private static func frame(of element: AXUIElement) -> CGRect? {
-        guard let position = attribute(element, kAXPositionAttribute),
-              let size = attribute(element, kAXSizeAttribute),
-              CFGetTypeID(position) == AXValueGetTypeID(),
-              CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
-        var origin = CGPoint.zero, extent = CGSize.zero
-        guard AXValueGetValue(position as! AXValue, .cgPoint, &origin),
-              AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
-        return CGRect(origin: origin, size: extent)
-    }
-
-    /// The window holding an element, for the title and the sidebar.
-    static func window(of element: AXUIElement) -> AXUIElement? {
-        if let window = elementValue(element, kAXWindowAttribute) { return window }
-        var current = element
-        for _ in 0..<depthLimit {
-            guard let up = elementValue(current, kAXParentAttribute) else { return nil }
-            if (attribute(up, kAXRoleAttribute) as? String) == "AXWindow" { return up }
-            current = up
-        }
-        return nil
-    }
-
-    static func title(of window: AXUIElement) -> String? {
-        attribute(window, kAXTitleAttribute) as? String
-    }
-
-    /// The boxes a message is typed into, for `--tree-read` when nothing in the
-    /// app is focused.
-    static func composers(in element: AXUIElement, depth: Int = 0) -> [AXUIElement] {
-        guard depth < depthLimit else { return [] }
-        if (attribute(element, kAXRoleAttribute) as? String) == "AXTextArea" { return [element] }
-        return ((attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [])
-            .flatMap { composers(in: $0, depth: depth + 1) }
     }
 }
