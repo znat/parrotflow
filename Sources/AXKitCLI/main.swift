@@ -109,8 +109,8 @@ case "hit":
         fail(usage, 2)
     }
     let point = CGPoint(x: x, y: y)
-    let app = target()
-    guard let element = app?.element(at: point) ?? App.element(at: point) else { fail("nothing at \(x),\(y)") }
+    let found = target().map { $0.element(at: point) } ?? App.element(at: point)
+    guard let element = found else { fail("nothing at \(x),\(y)") }
     let node = Walk.run(from: element, options: WalkOptions(depth: 1)).nodes.first
     if has("--json") { printJSON(node) } else { node.map { print(line($0)) } }
 

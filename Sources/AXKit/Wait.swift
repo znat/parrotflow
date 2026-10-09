@@ -34,12 +34,14 @@ public enum Wait {
     }
 
     /// Until the app has said nothing for `quiet` seconds: a list that stops
-    /// being rebuilt, a page that stops loading. Returns false on timeout.
+    /// being rebuilt, a page that stops loading. Returns false on timeout, and
+    /// when no notification could be registered, since silence then proves nothing.
     @discardableResult
     public static func settled(_ app: App, on element: Element? = nil, quiet: Double = 0.3,
                                timeout: Double = 3) -> Bool {
         let watch = Watch(app: app, element: element ?? app.element, notifications: everything)
         defer { watch.stop() }
+        guard watch.isWatching else { return false }
         let end = Date().addingTimeInterval(timeout)
         var last = Date()
         while Date() < end {
@@ -65,13 +67,13 @@ public enum Wait {
 /// One observer on one element, its callback setting `fired`.
 final class Watch {
     var fired = false
+    var isWatching: Bool { observer != nil }
     private var observer: AXObserver?
     private let element: Element
-    private let notifications: [String]
+    private var notifications: [String] = []
 
     init(app: App, element: Element, notifications: [String]) {
         self.element = element
-        self.notifications = notifications
         var created: AXObserver?
         let callback: AXObserverCallback = { _, _, _, refcon in
             guard let refcon else { return }
@@ -79,11 +81,13 @@ final class Watch {
             CFRunLoopStop(CFRunLoopGetCurrent())
         }
         guard AXObserverCreate(app.pid, callback, &created) == .success, let created else { return }
-        observer = created
         let refcon = Unmanaged.passUnretained(self).toOpaque()
-        for name in notifications {
-            AXObserverAddNotification(created, element.ref, name as CFString, refcon)
+        let added = notifications.filter {
+            AXObserverAddNotification(created, element.ref, $0 as CFString, refcon) == .success
         }
+        guard !added.isEmpty else { return }
+        observer = created
+        self.notifications = added
         CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(created), .defaultMode)
     }
 

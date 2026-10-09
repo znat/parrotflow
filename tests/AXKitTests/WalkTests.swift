@@ -46,6 +46,10 @@ final class WalkTests: XCTestCase {
                        "launch com.apple.Calculator: timed out")
     }
 
+    func testSettledIsFalseWhenNothingCanBeWatched() {
+        XCTAssertFalse(Wait.settled(App(pid: -1), quiet: 0.05, timeout: 0.5))
+    }
+
     /// Needs the Accessibility permission for the process running the tests.
     func testWalkOfFinderWhenTrusted() throws {
         try XCTSkipUnless(App.isTrusted, "no Accessibility permission")

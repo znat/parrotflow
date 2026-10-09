@@ -23,7 +23,8 @@ public struct Node: Codable, Equatable, Sendable {
     public var states: [String]
     public var depth: Int
     public var parent: Int?
-    /// Stable across walks: role, name and the path of roles above it.
+    /// Stable across walks: role, name and the path of roles above it. Twins
+    /// get `.2`, `.3` in walk order, so a twin added before another renumbers it.
     public var key: String
 }
 
@@ -31,7 +32,8 @@ public struct WalkOptions: Sendable {
     /// Teams trees reach 42 levels.
     public var depth = 64
     public var budget = 8000
-    /// Finder's Downloads list once took 27 s to walk.
+    /// Finder's Downloads list once took 27 s to walk. Checked between
+    /// elements: one blocked call can overrun it by its messaging timeout.
     public var seconds: Double = 3
     /// Values longer than this are cut. Outlook's message body is an
     /// AXTextArea of 395,489 characters.
