@@ -34,6 +34,8 @@ enum GenericReader {
     static let placeLimit = 80
     static let scrubLimit = 256
 
+    /// `seconds` is a cap beside the release deadline, the Slack reader's 2 s:
+    /// a read in a slow app during a long hold stops there.
     static let options = ReadOptions(budget: 4000, depth: 40, seconds: 2, callTimeout: 0.1)
 
     static func read(from focused: Element, app: Pipeline.App, stop: (@Sendable () -> Bool)? = nil)
@@ -66,9 +68,13 @@ enum GenericReader {
         screen.path = chain[top...].map(\.record)
         screen.document = Read.document(of: chain[top].element, options: options)
         screen.stopped = walk.stopped
-        // With nothing focused the climb starts at the window, so the page is looked for below it.
+        // With nothing focused the climb starts at the window. The page is then looked for live,
+        // only when the walk saw one, and no deeper than the walk saw it.
+        let seen = top == chain.count - 1 ? walk.records.first { $0.role == "AXWebArea" } : nil
         let web = chain[top...].last { $0.record.role == "AXWebArea" }?.element
-            ?? (top == chain.count - 1 ? chain[top].element.first(depth: 40, budget: 4000) { $0.role == "AXWebArea" } : nil)
+            ?? seen.flatMap { page in
+                chain[top].element.first(depth: page.depth, budget: walk.records.count) { $0.role == "AXWebArea" }
+            }
         web?.setMessagingTimeout(options.callTimeout)
         // Measured 10-09: on the web area in Chrome, Slack, Notion, Teams, Claude and VS Code.
         screen.chromium = web?.attribute("ChromeAXNodeId") != nil
