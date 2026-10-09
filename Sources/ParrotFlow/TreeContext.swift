@@ -315,7 +315,7 @@ enum TreeContext {
 
     // MARK: - Making sense of the labels
 
-    private static let memberPrefix = "View all "
+    static let memberPrefix = "View all "
 
     /// `sws-engineering-internal (private channel)`, `Tasmeen Kathuria (direct
     /// message, away)` — the label Slack puts on the message list, and the one

@@ -602,7 +602,9 @@ if let index = arguments.firstIndex(of: "--tree-read") {
 }
 
 if arguments.contains("--tree-test") {
-    exit(TreeContextCommand.run())
+    let old = TreeContextCommand.run()
+    let new = SlackReaderTest.run()
+    exit(old == 0 && new == 0 ? 0 : 1)
 }
 
 if let index = arguments.firstIndex(of: "--context-test") {
