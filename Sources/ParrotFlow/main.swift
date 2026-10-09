@@ -595,10 +595,26 @@ if let index = arguments.firstIndex(of: "--peek") {
 
 if let index = arguments.firstIndex(of: "--tree-read") {
     guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
-        print("usage: ParrotFlow --tree-read <bundle-id>")
+        print("usage: ParrotFlow --tree-read <bundle-id> [--runs N] [--window <title>]")
         exit(2)
     }
-    exit(TreeReadCommand.run(bundleID: arguments[index + 1]))
+    var runs = 1
+    if let at = arguments.firstIndex(of: "--runs") {
+        guard arguments.indices.contains(at + 1), let count = Int(arguments[at + 1]), (1...50).contains(count) else {
+            print("usage: --runs takes a whole number from 1 to 50")
+            exit(2)
+        }
+        runs = count
+    }
+    var titled: String?
+    if let at = arguments.firstIndex(of: "--window") {
+        guard arguments.indices.contains(at + 1) else {
+            print("usage: --window takes part of a window title")
+            exit(2)
+        }
+        titled = arguments[at + 1]
+    }
+    exit(TreeReadCommand.run(bundleID: arguments[index + 1], runs: runs, titled: titled))
 }
 
 if arguments.contains("--tree-test") {
