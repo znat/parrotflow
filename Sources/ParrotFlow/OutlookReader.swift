@@ -44,7 +44,10 @@ enum OutlookReader {
         guard let top = chain.lastIndex(where: { $0.record.role == kAXWindowRole }) else { return screen }
         let window = chain[top].element
         screen.title = chain[top].record.title
-        let parts = readingParts(of: window, timeout: options.callTimeout)
+        let deadline = started.addingTimeInterval(options.seconds)
+        let over = { Date() >= deadline || options.stop?() == true }
+        let parts = readingParts(of: window, timeout: options.callTimeout, over: over)
+        if parts.isEmpty, over() { screen.stopped = .deadline }
         if !parts.isEmpty { screen.branch = "reading pane" }
         // No reading pane found: the title alone, since a window walk meets the list and the search field.
         var records = [Record(role: kAXGroupRole)]
@@ -68,9 +71,11 @@ enum OutlookReader {
 
     /// The children of the innermost split group under the window's first
     /// split group, less splitters and the message list. Empty outside the
-    /// main window, so another window gives its title only.
-    static func readingParts(of window: Element, timeout: Float) -> [Element] {
+    /// main window, so another window gives its title only, and empty when
+    /// `over` says the read's time is up.
+    static func readingParts(of window: Element, timeout: Float, over: () -> Bool) -> [Element] {
         func peek(_ element: Element) -> String {
+            guard !over() else { return "" }
             element.setMessagingTimeout(timeout)
             return element.role ?? ""
         }
@@ -85,6 +90,7 @@ enum OutlookReader {
                 continue
             }
             let peeks = children.map { child in Peek(role: child.role, childRoles: child.element.children.map(peek)) }
+            guard !over() else { return [] }
             return parts(peeks).map { children[$0].element }
         }
         return []
