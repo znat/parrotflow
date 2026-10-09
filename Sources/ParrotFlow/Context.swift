@@ -10,9 +10,9 @@ import ApplicationServices
 ///
 /// One reader per app, chosen by `ContextReader`: a terminal's value is its
 /// screen, Slack's conversation is walked out of its tree by `SlackReader`, and
-/// `GenericReader` reads any other app when `transcription.context.every_app`
-/// is on. An app no reader takes is declined, out loud, rather than
-/// half-served.
+/// when `transcription.context.every_app` is on, `TeamsReader` and
+/// `OutlookReader` read their apps and `GenericReader` any other. An app no
+/// reader takes is declined, out loud, rather than half-served.
 ///
 /// All of them run where `capturePress` runs, off the main thread once
 /// recording has started, so none is on the path that makes the hotkey feel
@@ -38,7 +38,7 @@ enum Context {
         /// Every channel and person the window offers, from Slack's sidebar.
         /// Not who is in this conversation — who exists to be named.
         var roster: [String] = []
-        /// Which reader read it: "terminal", "slack" or "generic".
+        /// Which reader read it: "terminal", "slack", "teams", "outlook" or "generic".
         var source = ""
         /// How a tree reader got there, for the log and `--tree-read`.
         var walked: Walked?
@@ -53,7 +53,8 @@ enum Context {
         /// "budget", "depth" or "deadline" when the walk did not reach the end.
         var stopped: String?
         /// Which rule picked the pane: "pane", "web area", "window", or in a
-        /// Chromium page "main" or "log".
+        /// Chromium page "main" or "log". Teams: "messages" or "empty chat".
+        /// Outlook: "reading pane", "compose" or "window".
         var branch = ""
         var chromium = false
     }
@@ -324,6 +325,8 @@ enum Context {
         switch reader {
         case .terminal: outcome = TerminalReader.read(from: element)
         case .slack: outcome = SlackReader.read(from: Element(element), stop: stop)
+        case .teams: outcome = TeamsReader.read(from: Element(element), app: app, stop: stop)
+        case .outlook: outcome = OutlookReader.read(from: Element(element), app: app, stop: stop)
         case .generic: outcome = GenericReader.read(from: Element(element), app: app, stop: stop)
         }
         return outcome.map { capture in

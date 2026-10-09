@@ -789,9 +789,11 @@ $PF --tree-test
 $PF --tree-read <bundle-id> [--runs N] [--window <title>]
 ```
 
-`--tree-test` scores the Slack reader on built-in fixtures. No app, no
-accessibility. It runs the label rules on the fixtures, then the same fixtures
-turned into records, then whole windows built by hand.
+`--tree-test` scores the screen readers on built-in fixtures. No app, no
+accessibility. It runs Slack's label rules on the fixtures, then the same
+fixtures turned into records, then whole windows built by hand. Then the
+generic, Teams and Outlook readers on windows built as records, and the press
+read's deadline on a fake clock.
 
 `--tree-read` prints what the `context` stage would publish for that app's
 window, with `transcription.context.every_app` on. It starts from the app's

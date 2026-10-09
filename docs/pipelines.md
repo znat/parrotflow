@@ -1269,11 +1269,11 @@ It publishes ten things, on top of the four every stage gets:
 | `context.lines` | how many rows |
 | `context.truncated` | whether the cap cut anything off the front |
 | `context.place` | which conversation this is — the channel or direct message in Slack, empty in a terminal |
-| `context.people` | who is named on screen, joined on `; ` — message authors and the members the header lists |
+| `context.people` | who is named on screen, joined on `; ` — message authors and the members the header lists in Slack, the names Teams marks in messages |
 | `context.code` | what was written as code, joined on `; ` — a backticked run in Slack, empty in a terminal |
 | `context.roster` | every channel and person the window offers, joined on `; ` — Slack's sidebar, empty in a terminal |
 | `context.declined` | why nothing was read, when nothing was |
-| `context.source` | which reader read it: `terminal`, `slack` or `generic`; empty when nothing was read |
+| `context.source` | which reader read it: `terminal`, `slack`, `teams`, `outlook` or `generic`; empty when nothing was read |
 
 **It never changes the transcript.** `context.changed` is false on every run and
 means it — the stage returns its input by construction, not by outcome. A stage
@@ -1314,6 +1314,18 @@ An app that is neither is declined out loud, unless
 `transcription.context.every_app` is on. That switch is off by default. With it
 on, a generic reader reads any other app's window. The Slack and terminal
 readers still read their own apps, and their output does not change.
+
+Teams and Outlook get their own readers when the switch is on. In Teams
+(`com.microsoft.teams2`) the reader takes the message list nearest the focus
+and publishes one line per message. Teams draws each message twice, once as a
+summary for screen readers, so the summary is skipped. `context.people` holds
+the names Teams draws as person buttons inside messages: authors and
+mentions, never names guessed from the text. The place is the chat header. A
+chat with no message yet gives the place only. In Outlook
+(`com.microsoft.Outlook`) the reader reads the mail in the reading pane, and
+its subject is the place, without email addresses. It never reads the message
+list, whose rows hold previews. A draft gives only its subject. Any other
+window gives only its title.
 
 ```yaml
 transcription:
