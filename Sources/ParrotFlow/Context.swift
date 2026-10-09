@@ -52,8 +52,10 @@ enum Context {
         var records = 0
         /// "budget", "depth" or "deadline" when the walk did not reach the end.
         var stopped: String?
-        /// Which rule picked the pane: "pane", "web area", "window".
+        /// Which rule picked the pane: "pane", "web area", "window", or in a
+        /// Chromium page "main" or "log".
         var branch = ""
+        var chromium = false
     }
 
     /// Why a read did not happen. Logged, and published as `context.declined`,

@@ -22,6 +22,9 @@ enum GenericReader {
         /// Whether the URL host may name the place: browsers only. Electron
         /// apps load local or app-internal pages.
         var browser = false
+        /// The web area holding the focus was built by Chromium: Chrome,
+        /// Electron apps, Teams' WebView2.
+        var chromium = false
         var stopped: ReadResult.Stop?
     }
 
@@ -60,6 +63,12 @@ enum GenericReader {
         screen.path = chain[top...].map(\.record)
         screen.document = Read.document(of: chain[top].element, options: options)
         screen.stopped = walk.stopped
+        // With nothing focused the climb starts at the window, so the page is looked for below it.
+        let web = chain[top...].last { $0.record.role == "AXWebArea" }?.element
+            ?? (top == chain.count - 1 ? chain[top].element.first(depth: 40, budget: 4000) { $0.role == "AXWebArea" } : nil)
+        web?.setMessagingTimeout(options.callTimeout)
+        // Measured 10-09: on the web area in Chrome, Slack, Notion, Teams, Claude and VS Code.
+        screen.chromium = web?.attribute("ChromeAXNodeId") != nil
         return (screen, walk)
     }
 
@@ -70,8 +79,17 @@ enum GenericReader {
         guard !records.isEmpty else { return .failure(.blank) }
         // The window itself when nothing in it has the focus: `--tree-read` of an app behind.
         let focused = RecordTree.locate(screen.path, in: records).flatMap { $0 == 0 ? nil : $0 }
-        let kept = readable(records, focused: focused)
-        let (pane, branch) = pane(around: focused, in: records, kept: kept)
+        let web = focused.flatMap { at in
+            ([at] + RecordTree.ancestors(of: at, in: records)).first { records[$0].role == "AXWebArea" }
+        }
+            ?? (focused == nil ? records.firstIndex { $0.role == "AXWebArea" } : nil)
+        let chromium = screen.chromium && web != nil
+        let kept = readable(records, focused: focused,
+                            skipping: chromium ? chromiumSkipped : skippedLandmarks)
+        let (pane, branch) = chromium
+            ? chromiumPane(in: web ?? 0, around: focused, records: records)
+                ?? self.pane(around: focused, in: records, kept: kept)
+            : self.pane(around: focused, in: records, kept: kept)
         let lines = self.lines(under: pane, in: records, kept: kept)
         let code = self.code(in: lines, records: records)
         let place = self.place(screen)
@@ -79,7 +97,7 @@ enum GenericReader {
         guard !text.isEmpty || !place.isEmpty else { return .failure(.blank) }
         let (tail, truncated) = Context.tail(of: text, limit: Context.maxChars)
         var capture = Context.Capture(text: tail, truncated: truncated, place: place, code: code)
-        capture.walked = Context.Walked(branch: branch)
+        capture.walked = Context.Walked(branch: branch, chromium: chromium)
         return .success(capture)
     }
 
@@ -88,13 +106,38 @@ enum GenericReader {
         kAXToolbarRole, kAXMenuRole, kAXMenuBarRole, kAXMenuItemRole, kAXMenuBarItemRole,
         kAXScrollBarRole, kAXSplitterRole,
         // Controls: their label is an instruction, not something written.
-        kAXButtonRole, kAXCheckBoxRole, kAXRadioButtonRole, kAXPopUpButtonRole, kAXMenuButtonRole,
+        kAXCheckBoxRole, kAXRadioButtonRole, kAXPopUpButtonRole, kAXMenuButtonRole,
         kAXDisclosureTriangleRole, kAXSliderRole, kAXIncrementorRole, kAXImageRole,
+    ]
+
+    /// A button with fewer words than this under it is a label. Web apps draw
+    /// whole list items as buttons: 699 of Teams' 858 chars of text sat under
+    /// buttons on 10-09.
+    static let buttonWords = 4
+
+    /// A focused container is not a field: Chrome focuses the page itself,
+    /// Outlook its message list.
+    static let containers: Set<String> = [
+        "AXWebArea", kAXWindowRole, kAXScrollAreaRole, kAXListRole, kAXTableRole, kAXOutlineRole, kAXBrowserRole,
     ]
 
     static let skippedLandmarks: Set<String> = [
         "AXLandmarkNavigation", "AXLandmarkBanner", "AXLandmarkContentInfo",
     ]
+    static let chromiumSkipped = skippedLandmarks.union(["AXLandmarkComplementary"])
+
+    /// In a Chromium page the main landmark is the pane, and a log under it,
+    /// a chat's message list, is the pane when there is one. Nil when the
+    /// page has no main landmark.
+    static func chromiumPane(in web: Int, around focused: Int?, records: [Record]) -> (index: Int, branch: String)? {
+        let page = RecordTree.below(web, in: records, depth: .max)
+        guard let main = page.first(where: { records[$0].subrole == Landmark.Kind.main.rawValue }) else { return nil }
+        let logs = RecordTree.below(main, in: records, depth: .max)
+            .filter { records[$0].subrole == Landmark.Kind.log.rawValue }
+        let holding = focused.flatMap { at in logs.last { RecordTree.ancestors(of: at, in: records).contains($0) } }
+        if let log = holding ?? logs.first { return (log, "log") }
+        return (main, "main")
+    }
 
     /// Which records may give text: drawn inside the scroll areas above them,
     /// and under no focused element, editable or secure field, furniture or
@@ -105,11 +148,23 @@ enum GenericReader {
         for index in Read.visible(records) { kept[index] = true }
         for (index, record) in records.enumerated() {
             let above = record.parent.map { kept[$0] } ?? true
-            let skipped = index == focused || record.isEditable || record.isSecure
+            let skipped = (index == focused && !containers.contains(record.role))
+                || record.isEditable || record.isSecure
                 || furniture.contains(record.role) || record.subrole.map(landmarks.contains) == true
+                || (record.role == kAXButtonRole && words(under: index, in: records) < buttonWords)
             if !above || skipped { kept[index] = false }
         }
         return kept
+    }
+
+    private static func words(under index: Int, in records: [Record]) -> Int {
+        var count = 0
+        for inner in RecordTree.below(index, in: records, depth: .max) {
+            let record = records[inner]
+            count += (record.value ?? record.title ?? record.description ?? "").split(separator: " ").count
+            if count >= buttonWords { break }
+        }
+        return count
     }
 
     /// The nearest ancestor of the focus, at most `paneClimb` up and never the
@@ -122,7 +177,7 @@ enum GenericReader {
             let chars = lines(under: up, in: records, kept: kept).reduce(0) { $0 + $1.text.count }
             if chars >= paneChars { return (up, "pane") }
         }
-        if let web = above.first(where: { records[$0].role == "AXWebArea" }) { return (web, "web area") }
+        if let web = ([focused] + above).first(where: { records[$0].role == "AXWebArea" }) { return (web, "web area") }
         return (0, "window")
     }
 

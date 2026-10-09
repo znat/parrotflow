@@ -35,11 +35,11 @@ enum GenericReaderTest {
 
     /// The climb ends at the focused record, or at the window when nothing is focused.
     static func screen(_ tree: Tree, app: String = "Mail", document: String? = nil,
-                       browser: Bool = false) -> GenericReader.Screen {
+                       browser: Bool = false, chromium: Bool = false) -> GenericReader.Screen {
         let records = records(tree)
         let path = SlackReaderTest.path(in: records)
         return GenericReader.Screen(records: records, path: path.isEmpty ? [records[0]] : path, app: app,
-                                    document: document, browser: browser)
+                                    document: document, browser: browser, chromium: chromium)
     }
 
     static func published(_ screen: GenericReader.Screen) -> String {
@@ -87,6 +87,29 @@ enum GenericReaderTest {
         ]),
     ])
 
+    /// A chat in a Chromium page: a banner, a channel list, a side panel,
+    /// and the message log inside main. The composer sits outside the log.
+    private static func chat(focusInLog: Bool = false, main: Bool = true, focusPage: Bool = false) -> Tree {
+        let log = Tree(kAXGroupRole, nil, subrole: "AXApplicationLog", [
+            Tree(kAXStaticTextRole, "Ana: lunch at noon?"),
+            Tree(kAXStaticTextRole, "Ben: sure", focused: focusInLog),
+        ])
+        let content = [
+            Tree(kAXHeadingRole, nil, [Tree(kAXStaticTextRole, "general")]),
+            log,
+            Tree(kAXGroupRole, nil, subrole: "AXApplicationLog", [Tree(kAXStaticTextRole, "a second log")]),
+            Tree(kAXTextAreaRole, "my draft", focused: !focusInLog && !focusPage),
+        ]
+        return Tree(kAXWindowRole, title: "general (3) - Slack-like", [
+            Tree("AXWebArea", nil, title: "general", focused: focusPage, [
+                Tree(kAXGroupRole, nil, subrole: "AXLandmarkBanner", [Tree(kAXStaticTextRole, "Search")]),
+                Tree(kAXGroupRole, nil, subrole: "AXLandmarkNavigation", [Tree(kAXStaticTextRole, "random")]),
+                Tree(kAXGroupRole, nil, subrole: "AXLandmarkComplementary", [Tree(kAXStaticTextRole, "Details")]),
+                main ? Tree(kAXGroupRole, nil, subrole: "AXLandmarkMain", content) : Tree(kAXGroupRole, nil, content),
+            ]),
+        ])
+    }
+
     private static let editor = Tree(kAXWindowRole, title: "Report.pages — Edited", [
         Tree(kAXTextAreaRole, "the whole document", focused: true),
     ])
@@ -129,6 +152,28 @@ enum GenericReaderTest {
         ("a document editor gives only the place",
          published(screen(editor, app: "Pages", document: "file:///Users/someone/Report%20Q3.pages")),
          "text=; place=Report Q3.pages; code=; pane=window"),
+        ("chromium: the first log in main, the composer outside it",
+         published(screen(chat(), app: "Chat", chromium: true)),
+         "text=Ana: lunch at noon?\nBen: sure; place=general; code=; pane=log"),
+        ("chromium: the log holding the focus",
+         published(screen(chat(focusInLog: true), app: "Chat", chromium: true)),
+         "text=Ana: lunch at noon?; place=general; code=; pane=log"),
+        ("chromium: no main, so the climb, without banner, navigation or side panel",
+         published(screen(chat(main: false), app: "Chat", chromium: true)),
+         "text=general\nAna: lunch at noon?\nBen: sure\na second log; place=general; code=; pane=web area"),
+        ("not chromium: the side panel is read",
+         published(screen(chat(main: false), app: "Chat")),
+         "text=Details\ngeneral\nAna: lunch at noon?\nBen: sure\na second log; place=general; code=; pane=web area"),
+        ("a focused page is not a field",
+         published(screen(chat(focusPage: true), app: "Chat", chromium: true)),
+         "text=Ana: lunch at noon?\nBen: sure; place=general; code=; pane=log"),
+        ("a button with a sentence in it is read, a label is not",
+         published(screen(Tree(kAXWindowRole, nil, [
+            Tree(kAXButtonRole, "Send", [Tree(kAXStaticTextRole, "Send")]),
+            Tree(kAXButtonRole, nil, [Tree(kAXStaticTextRole, "Ana: the deploy is done")]),
+            Tree(kAXTextAreaRole, "draft", focused: true),
+         ]))),
+         "text=Ana: the deploy is done; place=; code=; pane=window"),
         ("nothing at all",
          published(screen(Tree(kAXWindowRole, nil, [Tree(kAXTextAreaRole, "draft", focused: true)]))),
          "declined: \(Context.Declined.blank.rawValue)"),

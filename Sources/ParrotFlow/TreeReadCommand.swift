@@ -64,6 +64,7 @@ enum TreeReadCommand {
                 print("shape   source \(got.source), text \(lines) lines \(got.chars) chars,"
                     + " place \(got.place.count) chars, code \(got.code.count)"
                     + (got.walked.map { ", \($0.records) records, pane \($0.branch)"
+                        + ($0.chromium ? " (chromium)" : "")
                         + ($0.stopped.map { ", stopped: \($0)" } ?? "") } ?? ""))
                 print("place   \(got.place)")
                 print("people  \(got.people.joined(separator: "; "))")
