@@ -1326,11 +1326,12 @@ transcription:
 `after_release_seconds` after the key comes up, 0.5 s by default; 0 stops it
 at the release. At that deadline the generic reader publishes what it found,
 and the log says `stopped: deadline`. The Slack reader declines a walk cut
-short, because a conversation without its newest messages reads as complete. The generic reader walks at most 4000 elements, 40
-levels deep, and waits at most 0.1 s for each call. The stage waits for a read
-still running, up to the same deadline, instead of declining with `nothing was
-captured`. If the read has still not ended, it declines with `the screen read
-had not ended by its deadline`.
+short, because a conversation without its newest messages reads as complete.
+The generic reader walks at most 4000 elements, 64 levels deep, and waits at
+most 0.1 s for each call. The stage waits for a read still running, up to the
+same deadline, instead of declining with `nothing was captured`. If the read
+has still not ended, it declines with `the screen read had not ended by its
+deadline`.
 
 **The screen is read when the hotkey goes down, not when the stage runs.** The
 press is the last moment the pane is known. By the time the pipeline reaches

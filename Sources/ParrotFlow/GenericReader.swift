@@ -36,7 +36,8 @@ enum GenericReader {
 
     /// `seconds` is a cap beside the release deadline, the Slack reader's 2 s:
     /// a read in a slow app during a long hold stops there.
-    static let options = ReadOptions(budget: 4000, depth: 40, seconds: 2, callTimeout: 0.1)
+    /// Teams' tree goes deeper than 40: 605 records stopped at 40, 646 whole at 64 (10-09).
+    static let options = ReadOptions(budget: 4000, depth: 64, seconds: 2, callTimeout: 0.1)
 
     static func read(from focused: Element, app: Pipeline.App, stop: (@Sendable () -> Bool)? = nil)
         -> Result<Context.Capture, Context.Declined> {
@@ -54,10 +55,7 @@ enum GenericReader {
     static func screen(from focused: Element, app: Pipeline.App,
                        options: ReadOptions = options) -> (screen: Screen, walk: ReadResult?) {
         let started = Date()
-        // Teams' tree goes deeper than 40, so the climb takes more than the walk.
-        var climb = options
-        climb.depth = 64
-        let chain = Read.climb(from: focused, options: climb)
+        let chain = Read.climb(from: focused, options: options)
         var screen = Screen(records: [], path: [], app: app.name,
                             browser: browserBundleIDs.contains(app.bundleID.lowercased()))
         guard let top = chain.lastIndex(where: { $0.record.role == kAXWindowRole }) else { return (screen, nil) }
