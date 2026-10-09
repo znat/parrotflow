@@ -110,6 +110,14 @@ jobs:
           }
           lipo -info "$BIN/ParrotFlow"
 
+      # The test target alone: a bare `swift test` builds the whole package in
+      # debug, MLX included (57 s against 12 s on a laptop). The one live test
+      # needs the Accessibility grant and skips here.
+      - name: The accessibility kit
+        run: |
+          swift build --build-system swiftbuild --target AXKitTests
+          swift test --build-system swiftbuild --skip-build --filter AXKitTests
+
       # The runners for the YAML the case files are written in.
       - name: Install pyyaml
         # Runners differ on whether their python is externally managed, and the
