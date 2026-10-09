@@ -600,14 +600,14 @@ if let index = arguments.firstIndex(of: "--tree-read") {
     }
     var runs: Int?
     if arguments.contains("--compare") {
-        let given = arguments.firstIndex(of: "--runs").map { at in
-            arguments.indices.contains(at + 1) ? Int(arguments[at + 1]) : nil
+        runs = 3
+        if let at = arguments.firstIndex(of: "--runs") {
+            guard arguments.indices.contains(at + 1), let count = Int(arguments[at + 1]), count > 0 else {
+                print("usage: --runs takes a whole number above zero")
+                exit(2)
+            }
+            runs = count
         }
-        guard let count = given ?? 3, count > 0 else {
-            print("usage: --runs takes a whole number above zero")
-            exit(2)
-        }
-        runs = count
     }
     exit(TreeReadCommand.run(bundleID: arguments[index + 1], compare: runs))
 }

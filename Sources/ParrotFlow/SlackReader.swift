@@ -19,6 +19,8 @@ enum SlackReader {
         /// The focused element's title, description or placeholder. A reply
         /// box in the Threads view names its thread there.
         var focusedName: String?
+        /// Set when the walk ran out of budget or time, so `window` lacks its tail.
+        var cutShort = false
     }
 
     /// `TreeContext`'s limits, relative to the element each one starts from.
@@ -49,12 +51,17 @@ enum SlackReader {
         var rest = options
         rest.seconds = max(0, options.seconds - Date().timeIntervalSince(started))
         let walk = Read.walk(from: chain[top].element, options: rest)
-        return (Screen(window: walk.records, path: chain[top...].map(\.record), focusedName: name), walk)
+        let cut = walk.stopped == .budget || walk.stopped == .deadline
+        let screen = Screen(window: walk.records, path: chain[top...].map(\.record), focusedName: name, cutShort: cut)
+        return (screen, walk)
     }
 
     // MARK: - Pure, over records
 
     static func interpret(_ screen: Screen) -> Result<Context.Capture, Context.Declined> {
+        // The tail of a walk holds the newest messages. Without it the
+        // conversation would read as complete and be wrong.
+        guard !screen.cutShort else { return .failure(.cutShort) }
         let records = screen.window
         guard !records.isEmpty else { return Context.treeCapture(nil, roster: []) }
         let title = records[0].title
@@ -72,6 +79,7 @@ enum SlackReader {
     ///
     /// A step no child matches is skipped. Slack's web area has an
     /// AXScrollArea for a parent, and that scroll area is nobody's child (10-09).
+    /// Twins that match the whole path are told apart by the focus flag.
     static func locate(_ path: [Record], in records: [Record]) -> Int? {
         guard let window = path.first, let root = records.first, same(root, window) else { return nil }
         var children: [Int: [Int]] = [:]
@@ -83,7 +91,7 @@ enum SlackReader {
             let next = frontier.flatMap { children[$0] ?? [] }.filter { same(records[$0], record) }
             if !next.isEmpty { frontier = next } else if step == path.count - 1 { return nil }
         }
-        return frontier.first
+        return frontier.first { records[$0].focused } ?? frontier.first
     }
 
     /// A draft or a focus flag can change between the climb and the walk, so

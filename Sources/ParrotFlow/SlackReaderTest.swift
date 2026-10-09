@@ -98,6 +98,20 @@ enum SlackReaderTest {
         ]),
     ])
 
+    /// The same two panes with twin composers: nothing but the focus tells them apart.
+    private static let twinComposers = Tree(kAXWindowRole, nil, [
+        Tree(kAXGroupRole, nil, [
+            Tree("AXList", "Tasmeen Kathuria (direct message)"),
+            Tree(kAXGroupRole, "Tasmeen Kathuria: can we talk Monday? 8:11 PM."),
+            Tree(kAXTextAreaRole, "draft", named: "Message"),
+        ]),
+        Tree(kAXGroupRole, nil, [
+            Tree("AXList", "sws-engineering (private channel)"),
+            Tree(kAXGroupRole, "Martin Alix: the deploy hook fired. 4:38 PM."),
+            Tree(kAXTextAreaRole, "draft", named: "Message", focused: true),
+        ]),
+    ])
+
     /// Slack's Threads view: one flat list, each thread closed by its reply box.
     private static let threads = Tree(kAXWindowRole, nil, [
         Tree("AXList", "Threads, 4 new replies", [
@@ -144,14 +158,15 @@ enum SlackReaderTest {
         Tree("AXOutline", nil, (0..<(TreeContext.maxRoster + 10)).map { Tree(kAXRowRole, "channel-\($0)") }),
     ])
 
-    private static func published(_ tree: Tree, lost: Bool = false, hidden: Bool = false) -> String {
+    private static func published(_ tree: Tree, lost: Bool = false, hidden: Bool = false,
+                                  cutShort: Bool = false) -> String {
         let window = records(tree)
         var trail = path(in: window)
         let name = trail.last.flatMap { $0.title ?? $0.description }
         if lost { trail[trail.count - 1].description = "Message to nobody" }
         if hidden { trail.insert(Record(role: kAXScrollAreaRole), at: 1) }
         return TreeContextCommand.published(SlackReader.interpret(
-            SlackReader.Screen(window: window, path: trail, focusedName: name)))
+            SlackReader.Screen(window: window, path: trail, focusedName: name, cutShort: cutShort)))
     }
 
     private static func labels(under tree: Tree) -> [String] {
@@ -171,6 +186,12 @@ enum SlackReaderTest {
          published(twoPanes, hidden: true),
          "text=Martin Alix: the deploy hook fired.; place=#sws-engineering; people=Martin Alix; code=;"
             + " roster=Mik Okun,#sws-engineering"),
+        ("twin composers, the focused one",
+         published(twinComposers),
+         "text=Martin Alix: the deploy hook fired.; place=#sws-engineering; people=Martin Alix; code=; roster="),
+        ("a walk cut short",
+         published(twoPanes, cutShort: true),
+         "declined: \(Context.Declined.cutShort.rawValue)"),
         ("no conversation, the sidebar still",
          published(noPane),
          "text=; place=; people=; code=; roster=Mik Okun,#sws-engineering"),
