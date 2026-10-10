@@ -114,7 +114,7 @@ on.
 
 | Stage | What it does |
 |---|---|
-| `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
+| `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Every app but password managers and System Settings, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
 | `input` | What is already *in* the field and where the caret is, published as `input.*`. Never touches the transcript. Every app, and off unless you ask for it — see [Input](#input-what-is-already-in-the-field). |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
@@ -1310,10 +1310,12 @@ label is the boundary, and everything under it is language rather than the app
 talking about itself. The sidebar is kept out of `context.text` too, and is
 published on its own as `context.roster`: every channel and person it lists.
 
-An app that is neither is declined out loud, unless
-`transcription.context.every_app` is on. That switch is off by default. With it
-on, a generic reader reads any other app's window. The Slack and terminal
-readers still read their own apps, and their output does not change.
+Any other app is read by a generic reader, because
+`transcription.context.every_app` is on by default. Password managers, the
+system's password prompts, Keychain Access and System Settings are never read,
+nor are password fields. With the switch off, any other app is declined out
+loud. The Slack and terminal readers still read their own apps, and their output
+does not change.
 
 Teams and Outlook get their own readers when the switch is on. In Teams
 (`com.microsoft.teams2`) the reader takes the message list nearest the focus
@@ -1330,7 +1332,7 @@ window gives only its title.
 ```yaml
 transcription:
   context:
-    every_app: false           # read every app, not only terminals and Slack
+    every_app: true            # false reads only terminals and Slack
     after_release_seconds: 0.5 # how long the read may run on after the key comes up
 ```
 
