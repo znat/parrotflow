@@ -16,8 +16,9 @@ transcription:
 
 - Works in every app: the visible screen in a terminal, the conversation you
   are typing in for Slack and Teams, the open mail in Outlook, the pane around
-  the caret elsewhere. Password managers, Keychain Access and System Settings
-  are never read, nor are password fields.
+  the caret elsewhere. Known password managers, Keychain Access and System
+  Settings are never read, nor are password fields. A vault in a browser tab
+  is read like any page, password fields excepted.
   `transcription.context.every_app: false` limits it to terminals and Slack.
 - Publishes `context.text` (the last 2000 characters, input box left out),
   `context.chars`, `context.lines`, `context.place` (the Slack channel),
