@@ -125,7 +125,8 @@ enum OutlookReader {
         var capture = Context.Capture(text: "", truncated: false, place: place)
         let composing = records.contains { $0.identifier.map(composeIDs.contains) == true }
         var branch = composing ? "compose" : screen.branch
-        if composing, let thread = quotedThread(in: records) {
+        let subject = records.first { $0.identifier == subjectFieldID }?.value
+        if composing, let thread = quotedThread(in: records, subject: subject) {
             let text = String(thread.prefix(Context.maxChars))
             capture = Context.Capture(text: text, truncated: text.count < thread.count, place: place)
             branch = "reply"
@@ -149,13 +150,14 @@ enum OutlookReader {
     /// The body is the page's text area, and its value is the whole body
     /// (10-12). Its children are no use: a mail's table is listed by row and
     /// again by column, and most of the thread lies below the scroll area.
-    static func quotedThread(in records: [Record]) -> String? {
-        guard let web = records.firstIndex(where: { $0.role == "AXWebArea" }),
+    static func quotedThread(in records: [Record], subject: String?) -> String? {
+        guard let subject, let web = records.firstIndex(where: { $0.role == "AXWebArea" }),
               let body = RecordTree.below(web, in: records, depth: .max)
                 .first(where: { records[$0].role == kAXTextAreaRole }),
               let value = records[body].value else { return nil }
-        let lines = value.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
-        guard let start = headerBlock(in: lines) else { return nil }
+        let lines = value.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let start = headerBlock(in: lines, subject: subject) else { return nil }
         return lines[start...].filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
@@ -164,12 +166,22 @@ enum OutlookReader {
     static let headerPattern = "^\\p{L}[\\p{L}\\p{M}'’. -]{0,24}[ \\u00a0]?:"
     static let headerLines = 3
 
-    /// Where the first run of `headerLines` header lines starts.
-    static func headerBlock(in lines: [String]) -> Int? {
-        var run = 0
-        for (index, line) in lines.enumerated() {
-            run = line.range(of: headerPattern, options: .regularExpression) == nil ? 0 : run + 1
-            if run == headerLines { return index - headerLines + 1 }
+    /// Where the first run of at least `headerLines` header lines starts,
+    /// when one of them is the draft's subject less a prefix such as "Re:".
+    /// Labels typed in a draft are not a header.
+    static func headerBlock(in lines: [String], subject: String) -> Int? {
+        let subject = subject.trimmingCharacters(in: .whitespaces).lowercased()
+        var start = 0
+        var named = false
+        for (index, line) in (lines + [""]).enumerated() {
+            guard let colon = line.range(of: headerPattern, options: .regularExpression) else {
+                if index - start >= headerLines, named { return start }
+                (start, named) = (index + 1, false)
+                continue
+            }
+            let said = line[colon.upperBound...].trimmingCharacters(in: .whitespaces).lowercased()
+            let prefix = subject.hasSuffix(said) ? subject.dropLast(said.count).trimmingCharacters(in: .whitespaces) : nil
+            if !said.isEmpty, let prefix, prefix.isEmpty || prefix.hasSuffix(":") { named = true }
         }
         return nil
     }

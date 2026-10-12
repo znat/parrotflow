@@ -1330,8 +1330,9 @@ chat with no message yet gives the place only. In Outlook
 its subject is the place, without email addresses. It never reads the message
 list, whose rows hold previews. A reply or a forward gives the mail it
 quotes, newest first: the body from the first header block ("From:", "Sent:",
-"To:", "Subject:", in any language) on. What you typed above that block is
-your draft and is left out. A new mail gives only its subject. Any other window
+"To:", "Subject:", in any language) on. The block must hold the reply's
+subject without its "Re:". What you typed above that block is your draft and
+is left out. A new mail gives only its subject. Any other window
 gives only its title.
 
 An app whose focus the system reports wrong, such as Codex, is read from its
