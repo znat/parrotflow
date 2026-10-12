@@ -1,6 +1,7 @@
 import AXKit
 import ApplicationServices
 import Foundation
+import Yams
 
 /// `--tree-test`, third part: `GenericReader` on windows built as records.
 enum GenericReaderTest {
@@ -125,6 +126,12 @@ enum GenericReaderTest {
         }
     }
 
+    private static func screenRead(_ yaml: String) -> String {
+        let config = yaml.isEmpty ? Config() : try? YAMLDecoder().decode(Config.self, from: yaml)
+        guard let config else { return "did not parse" }
+        return config.transcription.context.everyApp ? "every app" : "terminals and Slack"
+    }
+
     private static func owned(_ app: String, by owner: String?) -> String {
         ContextReader.check(owner: owner, of: Pipeline.App(name: "", bundleID: app))
             .map { "declined: \($0.rawValue)" } ?? "read"
@@ -142,6 +149,13 @@ enum GenericReaderTest {
         ("switch off: a terminal", chosen("com.mitchellh.ghostty", everyApp: false), "terminal"),
         ("switch off: Slack", chosen("com.tinyspeck.slackmacgap", everyApp: false), "slack"),
         ("switch on: any other app", chosen("com.google.Chrome"), "generic"),
+        ("config: an empty file reads every app", screenRead(""), "every app"),
+        ("config: no context block reads every app",
+         screenRead("transcription:\n  context_spelling:\n    enabled: true\n"), "every app"),
+        ("config: a context block without the switch reads every app",
+         screenRead("transcription:\n  context:\n    after_release_seconds: 0.2\n"), "every app"),
+        ("config: every_app false keeps it to terminals and Slack",
+         screenRead("transcription:\n  context:\n    every_app: false\n"), "terminals and Slack"),
         ("denied: Apple Passwords", chosen("com.apple.Passwords"), "declined: \(Context.Declined.denied.rawValue)"),
         ("owner: the app itself", owned("com.google.chrome", by: "com.google.Chrome"), "read"),
         ("owner: a password manager's panel over a browser",

@@ -1971,10 +1971,10 @@ struct Config: Decodable, Equatable {
             }
         }
 
-        /// Off by default: with `every_app` off, only terminals and Slack are
-        /// read, as before.
+        /// On by default. With `every_app: false`, only terminals and Slack are
+        /// read.
         struct ContextRead: Decodable, Equatable {
-            var everyApp = false
+            var everyApp = true
             /// How long the press read may run on after the key comes up. 0
             /// stops it at the release.
             var afterReleaseSeconds: Double = 0.5

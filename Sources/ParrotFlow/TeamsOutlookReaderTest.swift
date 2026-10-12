@@ -139,13 +139,28 @@ enum OutlookReaderTest {
         ]),
     ])
 
-    private static func draft(subject: String, withPage: Bool = false) -> [Tree] {
-        [
+    private static func draft(subject: String, withPage: Bool = false, body: String? = nil) -> [Tree] {
+        let page = body.map { body in
+            [Tree(kAXScrollAreaRole, nil, [Tree("AXWebArea", nil, [Tree(kAXTextAreaRole, body, focused: true, [
+                Tree(kAXGroupRole, nil, [Tree(kAXStaticTextRole, "the body's paragraphs, never read")]),
+            ])])])]
+        } ?? (withPage ? [Tree("AXWebArea", nil, [Tree(kAXStaticTextRole, "quoted text")])] : [])
+        return [
+            Tree(kAXGroupRole, "Reply", page),
             Tree(kAXScrollAreaRole, nil, [id("toTextField", Tree(kAXTextFieldRole, "ben@example.com"))]),
             id(OutlookReader.subjectFieldID, Tree(kAXTextFieldRole, subject)),
-            Tree(kAXGroupRole, "Editor", withPage ? [Tree("AXWebArea", nil, [Tree(kAXStaticTextRole, "quoted text")])] : []),
         ]
     }
+
+    private static let quotedHeader = "From: Ana Lima <ana@example.com>\nSent: Monday, 6 October 2026 09:12\n"
+        + "To: Ben Okoro <ben@example.com>\nSubject: Lunch plans"
+    private static let older = "From: Ben Okoro\nSent: Friday, 3 October 2026 17:40\nTo: Ana Lima\nSubject: Lunch plans"
+    private static let thread = quotedHeader + "\n\nShall we try the new place on Friday?\n\n" + older
+        + "\n\nAny ideas for lunch next week?\n  \nBen"
+    private static let threadRead = quotedHeader + "\nShall we try the new place on Friday?\n" + older
+        + "\nAny ideas for lunch next week?\nBen"
+    private static let french = "De\u{a0}: Ana Lima\nEnvoyé\u{a0}: lundi 6 octobre 2026 09:12\nÀ\u{a0}: Ben Okoro\n"
+        + "Objet\u{a0}: Déjeuner\n\nVendredi ?"
 
     private static func published(_ parts: [Tree], title: String? = "Inbox • nathan@example.com",
                                   focusedIdentifier: String? = nil, branch: String = "reading pane") -> String {
@@ -158,6 +173,16 @@ enum OutlookReaderTest {
             return "text=\(got.text); place=\(got.place); code=\(got.code.joined(separator: ","));"
                 + " pane=\(got.walked?.branch ?? "")"
         }
+    }
+
+    private static func longThread() -> String {
+        let body = "Ok.\n" + quotedHeader + "\n" + String(repeating: "lunch ", count: 400)
+        let screen = OutlookReader.Screen(
+            records: GenericReaderTest.records(Tree(kAXGroupRole, nil, draft(subject: "Re: Lunch plans", body: body))),
+            app: "Microsoft Outlook", title: nil)
+        guard case .success(let got) = OutlookReader.interpret(screen) else { return "declined" }
+        return "\(got.text.count) chars, \(got.text.hasPrefix(quotedHeader) ? "from the header" : "elsewhere")"
+            + (got.truncated ? ", truncated" : "")
     }
 
     private static let split = OutlookReader.Peek(role: kAXSplitterRole, childRoles: [])
@@ -184,6 +209,33 @@ enum OutlookReaderTest {
          published(draft(subject: "Lunch plans")), "text=; place=Lunch plans; code=; pane=compose"),
         ("a draft with its page: still only the subject",
          published(draft(subject: "Lunch plans", withPage: true)), "text=; place=Lunch plans; code=; pane=compose"),
+        ("a reply: the quoted thread, newest first, without the draft above it",
+         published(draft(subject: "Re: Lunch plans", body: "Friday works for me.\n\n" + thread)),
+         "text=\(threadRead); place=Re: Lunch plans; code=; pane=reply"),
+        ("a reply with nothing typed yet: the whole thread",
+         published(draft(subject: "Re: Lunch plans", body: "\n" + thread)),
+         "text=\(threadRead); place=Re: Lunch plans; code=; pane=reply"),
+        ("a French header, a space before each colon",
+         published(draft(subject: "RE: Déjeuner", body: "Oui.\n\n" + french)),
+         "text=\(french.replacingOccurrences(of: "\n\n", with: "\n")); place=RE: Déjeuner; code=; pane=reply"),
+        ("a new mail whose draft has lines like a header: the subject only",
+         published(draft(subject: "Notes", body: "Agenda: the budget\nOwner: Ana\nNotes: none\n\nSee you there.")),
+         "text=; place=Notes; code=; pane=compose"),
+        ("draft labels whose last value ends the subject: still the subject only",
+         published(draft(subject: "Lunch with Ana", body: "Where: the canteen\nWhen: noon\nWith: Ana\n\nOk?")),
+         "text=; place=Lunch with Ana; code=; pane=compose"),
+        ("draft labels with the subject on a line that is not the last: the subject only",
+         published(draft(subject: "Re: Lunch plans",
+                         body: "From: Re: Lunch plans\nTo: someone\nNote: a private line\n\n" + thread)),
+         "text=\(threadRead); place=Re: Lunch plans; code=; pane=reply"),
+        ("a reply whose subject was changed: the subject only",
+         published(draft(subject: "Friday", body: "Fine.\n\n" + thread)), "text=; place=Friday; code=; pane=compose"),
+        ("Windows line ends",
+         published(draft(subject: "Re: Lunch plans",
+                         body: ("Ok.\n\n" + thread).replacingOccurrences(of: "\n", with: "\r\n"))),
+         "text=\(threadRead); place=Re: Lunch plans; code=; pane=reply"),
+        ("a long thread: its first 2000 characters, the mail replied to",
+         longThread(), "2000 chars, from the header, truncated"),
         ("the caret in the subject: the window title instead",
          published(draft(subject: "Lunch plans"), focusedIdentifier: OutlookReader.subjectFieldID),
          "text=; place=Inbox; code=; pane=compose"),

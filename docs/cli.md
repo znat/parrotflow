@@ -798,7 +798,7 @@ read's deadline on a fake clock.
 `--tree-read` prints what the `context` stage would publish for that app's
 window, with `transcription.context.every_app` on. It starts from the app's
 focused element and reads the pane around it. With nothing focused, it reads
-from each composer in Slack, and from the window elsewhere. It works for any
+from each composer in Slack, and from the focused or main window elsewhere. It works for any
 app except the ones it never reads: password managers, the system's password
 prompts, Keychain Access and System Settings (`ContextReader.deniedBundleIDs`).
 

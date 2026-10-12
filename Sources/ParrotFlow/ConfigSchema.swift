@@ -268,7 +268,7 @@ enum ConfigSchema {
             key("every_app", .bool,
                 "Read every app's window, not only terminals and Slack. Password managers"
                     + " and System Settings are never read.",
-                default: false),
+                default: true),
             key("after_release_seconds", .range(Bounds(min: 0, max: 5)),
                 "How long the read may run on after the key comes up. 0 stops it at the"
                     + " release.",
