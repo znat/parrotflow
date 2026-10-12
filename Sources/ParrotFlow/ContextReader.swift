@@ -52,11 +52,13 @@ enum ContextReader: String {
 /// A terminal's accessibility value is its visible screen, so the whole read
 /// is one call.
 enum TerminalReader {
-    static func read(from element: AXUIElement) -> Result<Context.Capture, Context.Declined> {
+    static func read(from element: AXUIElement, stop: (@Sendable () -> Bool)? = nil)
+        -> Result<Context.Capture, Context.Declined> {
         AXUIElementSetMessagingTimeout(element, 0.5)
-        guard Element(element).valueIsReadable, let value = SelectionReader.visibleText(of: element) else {
-            return .failure(.unreadable)
-        }
+        guard stop?() != true else { return .failure(.late) }
+        guard Element(element).valueIsReadable else { return .failure(.unreadable) }
+        guard stop?() != true else { return .failure(.late) }
+        guard let value = SelectionReader.visibleText(of: element) else { return .failure(.unreadable) }
         let above = Context.aboveInputBox(in: value)
         guard !above.isEmpty else { return .failure(.empty) }
         let (text, truncated) = Context.tail(of: above, limit: Context.maxChars)

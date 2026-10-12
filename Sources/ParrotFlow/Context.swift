@@ -357,7 +357,7 @@ enum Context {
         guard !SelectionReader.isOurs(element) else { return .failure(.nothingFocused) }
         let outcome: Result<Capture, Declined>
         switch reader {
-        case .terminal: outcome = TerminalReader.read(from: element)
+        case .terminal: outcome = TerminalReader.read(from: element, stop: stop)
         case .slack: outcome = SlackReader.read(from: Element(element), stop: stop)
         case .teams: outcome = TeamsReader.read(from: Element(element), app: app, stop: stop)
         case .outlook: outcome = OutlookReader.read(from: Element(element), app: app, stop: stop)
