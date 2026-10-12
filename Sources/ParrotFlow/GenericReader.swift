@@ -65,8 +65,10 @@ enum GenericReader {
         let walk = Read.walk(from: chain[top].element, options: rest)
         screen.records = walk.records
         screen.path = chain[top...].map(\.record)
-        screen.document = Read.document(of: chain[top].element, options: options)
         screen.stopped = walk.stopped
+        // Past the press deadline, these two calls could outlast `PressRead.grace` and the read be dropped as late.
+        guard options.stop?() != true else { return (screen, walk) }
+        screen.document = Read.document(of: chain[top].element, options: options)
         // With nothing focused the climb starts at the window. The page is then looked for live,
         // only when the walk saw one, and no deeper than the walk saw it.
         let seen = top == chain.count - 1 ? walk.records.first { $0.role == "AXWebArea" } : nil
@@ -75,9 +77,10 @@ enum GenericReader {
                 findPage(below: chain[top].element, depth: page.depth, budget: walk.records.count, options: options,
                          until: started.addingTimeInterval(options.seconds))
             }
-        web?.setMessagingTimeout(options.callTimeout)
+        guard let web, options.stop?() != true else { return (screen, walk) }
+        web.setMessagingTimeout(options.callTimeout)
         // Measured 10-09: on the web area in Chrome, Slack, Notion, Teams, Claude and VS Code.
-        screen.chromium = web?.attribute("ChromeAXNodeId") != nil
+        screen.chromium = web.attribute("ChromeAXNodeId") != nil
         return (screen, walk)
     }
 
