@@ -10,9 +10,9 @@ import ApplicationServices
 ///
 /// One reader per app, chosen by `ContextReader`: a terminal's value is its
 /// screen, Slack's conversation is walked out of its tree by `SlackReader`, and
-/// `GenericReader` reads any other app when `transcription.context.every_app`
-/// is on. An app no reader takes is declined, out loud, rather than
-/// half-served.
+/// when `transcription.context.every_app` is on, `TeamsReader` and
+/// `OutlookReader` read their apps and `GenericReader` any other. An app no
+/// reader takes is declined, out loud, rather than half-served.
 ///
 /// All of them run where `capturePress` runs, off the main thread once
 /// recording has started, so none is on the path that makes the hotkey feel
@@ -38,7 +38,7 @@ enum Context {
         /// Every channel and person the window offers, from Slack's sidebar.
         /// Not who is in this conversation — who exists to be named.
         var roster: [String] = []
-        /// Which reader read it: "terminal", "slack" or "generic".
+        /// Which reader read it: "terminal", "slack", "teams", "outlook" or "generic".
         var source = ""
         /// How a tree reader got there, for the log and `--tree-read`.
         var walked: Walked?
@@ -53,7 +53,8 @@ enum Context {
         /// "budget", "depth" or "deadline" when the walk did not reach the end.
         var stopped: String?
         /// Which rule picked the pane: "pane", "web area", "window", or in a
-        /// Chromium page "main" or "log".
+        /// Chromium page "main" or "log". Teams: "messages" or "empty chat".
+        /// Outlook: "reading pane", "compose" or "window".
         var branch = ""
         var chromium = false
     }
@@ -161,18 +162,52 @@ enum Context {
     /// overtaken cannot put the stale one back. See `pressGeneration`.
     /// Call on the press's own thread, before the read is dispatched: a key
     /// that comes up before the read starts must still find it.
-    static func reservePress(run: Int, hasElement: Bool, settings: Settings) -> (reading: PressRead, generation: Int) {
+    static func reservePress(run: Int, start: PressStart?, settings: Settings) -> (reading: PressRead, generation: Int) {
         let reading = PressRead(run: run, afterRelease: settings.afterReleaseSeconds)
-        return (reading, begin(hasElement ? reading : nil))
+        return (reading, begin(start == nil ? nil : reading))
+    }
+
+    /// Where the press read starts.
+    enum PressStart: Equatable {
+        case element(AXUIElement)
+        /// A blind app: asked by pid, off the main thread.
+        case app(pid_t)
+    }
+
+    /// The system focus, except in a blind app: there it names another app's
+    /// element (#118), while the app's own focus answers (Codex, 10-12).
+    static func pressStart(blind: Bool, focus: AXUIElement?, pid: pid_t?) -> PressStart? {
+        guard blind else { return focus.map(PressStart.element) }
+        return pid.map(PressStart.app)
+    }
+
+    /// The app's focused element, else its focused or main window.
+    static func ownFocus(of pid: pid_t) -> AXUIElement? {
+        let root = App(pid: pid).element
+        root.setMessagingTimeout(0.25)
+        return [kAXFocusedUIElementAttribute, kAXFocusedWindowAttribute, kAXMainWindowAttribute]
+            .lazy.compactMap { root.element($0) }.first?.ref
     }
 
     static func capturePress(_ reserved: (reading: PressRead, generation: Int), app: Pipeline.App?,
-                             element: AXUIElement?, settings: Settings) {
+                             start: PressStart?, settings: Settings) {
         let (reading, mine) = reserved
         let run = reading.run
-        guard let element else { return }
-
         let started = CFAbsoluteTimeGetCurrent()
+        let element: AXUIElement
+        switch start {
+        case nil: return
+        case .element(let focused): element = focused
+        case .app(let pid):
+            guard let own = ownFocus(of: pid) else {
+                let ms = (CFAbsoluteTimeGetCurrent() - started) * 1000
+                store(Press(element: AXUIElementCreateApplication(pid), outcome: .failure(.nothingFocused), ms: ms,
+                            run: run), reading: reading, generation: mine)
+                return
+            }
+            element = own
+        }
+
         let outcome = read(app: app, from: element, settings: settings, stop: { reading.mustStop })
         let ms = (CFAbsoluteTimeGetCurrent() - started) * 1000
         store(Press(element: element, outcome: outcome, ms: ms, run: run), reading: reading, generation: mine)
@@ -324,6 +359,8 @@ enum Context {
         switch reader {
         case .terminal: outcome = TerminalReader.read(from: element)
         case .slack: outcome = SlackReader.read(from: Element(element), stop: stop)
+        case .teams: outcome = TeamsReader.read(from: Element(element), app: app, stop: stop)
+        case .outlook: outcome = OutlookReader.read(from: Element(element), app: app, stop: stop)
         case .generic: outcome = GenericReader.read(from: Element(element), app: app, stop: stop)
         }
         return outcome.map { capture in

@@ -622,7 +622,9 @@ if arguments.contains("--tree-test") {
     let reader = SlackReaderTest.run()
     let generic = GenericReaderTest.run()
     let press = PressReadTest.run()
-    exit(labels == 0 && reader == 0 && generic == 0 && press == 0 ? 0 : 1)
+    let teams = TeamsReaderTest.run()
+    let outlook = OutlookReaderTest.run()
+    exit([labels, reader, generic, press, teams, outlook].allSatisfy { $0 == 0 } ? 0 : 1)
 }
 
 if let index = arguments.firstIndex(of: "--context-test") {

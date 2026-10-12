@@ -36,7 +36,8 @@ enum GenericReader {
 
     /// `seconds` is a cap beside the release deadline, the Slack reader's 2 s:
     /// a read in a slow app during a long hold stops there.
-    /// Teams' tree goes deeper than 40: 605 records stopped at 40, 646 whole at 64 (10-09).
+    /// A Teams calendar went deeper than 40 on 10-09: 605 records stopped at 40, 646 whole at 64.
+    /// Its chat view is 27 levels deep.
     static let options = ReadOptions(budget: 4000, depth: 64, seconds: 2, callTimeout: 0.1)
 
     static func read(from focused: Element, app: Pipeline.App, stop: (@Sendable () -> Bool)? = nil)
@@ -312,7 +313,7 @@ enum GenericReader {
         return parts
     }
 
-    private static func capped(_ text: String) -> String {
+    static func capped(_ text: String) -> String {
         guard text.count > placeLimit else { return text }
         let cut = String(text.prefix(placeLimit))
         return cut.range(of: " ", options: .backwards).map { String(cut[..<$0.lowerBound]) } ?? cut
