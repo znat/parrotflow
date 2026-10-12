@@ -10,12 +10,12 @@ import ApplicationServices
 ///
 /// ## Why this is not part of `context`
 ///
-/// `Context` reads the screen *around* the box and is terminals-only, because
-/// everywhere else that means walking a window's children. This reads the box
-/// itself, which is the focused element, which is one call in every surface
-/// `Surface` already handles — a native field, a browser, an Electron
-/// composer. The two stages cover opposite halves of the same window and cost
-/// completely different things.
+/// `Context` reads the screen *around* the box, which outside a terminal means
+/// walking a window's children. This reads the box itself, which is the
+/// focused element, which is one call in every surface `Surface` already
+/// handles — a native field, a browser, an Electron composer. The two stages
+/// cover opposite halves of the same window and cost completely different
+/// things.
 ///
 /// They are also different disclosures. Naming `context` says "read my
 /// terminal". It must not also mean "read what I have typed in every app I

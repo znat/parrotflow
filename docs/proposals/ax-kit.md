@@ -32,6 +32,7 @@ This page covers the read layer, which is all that has landed.
 | Element | `Element.swift` | `AXUIElement` wrapper: typed attributes (role, subrole, title, description, value, frame, visible frame, enabled, focused, children, window, identifier, DOM id and classes), settable check, action list, perform and set, a per-call messaging timeout, bounded searches |
 | App | `App.swift` | running app by pid, bundle or name; frontmost and focused app; wake for Electron and Chromium (`AXManualAccessibility`, `AXEnhancedUserInterface`); windows; focused element; hit test at a point, in one app or system-wide; an element found by its frame |
 | Walk | `Walk.swift` | a bounded walk (depth, element budget, deadline); find by role, name glob and DOM id; a stable identity key; a Codable snapshot |
+| Read | `Read.swift`, `Records.swift` | the lean read for screen context: plain records at two calls per element, and pure functions over them. See [The lean read](#the-lean-read) |
 | Window | `Window.swift` | position, size, minimised and full screen, through accessibility |
 | Wait | `Wait.swift` | `AXObserver` notifications and bounded "wait until" predicates, instead of polling |
 | Errors | `AXKitError.swift` | `AXError` mapped to a Swift error that names the call |
@@ -45,6 +46,7 @@ swift build -c release
 .build/release/axkit dump --app com.apple.finder --depth 6
 .build/release/axkit find --app com.apple.finder --role AXButton --json
 .build/release/axkit hit 400 300 --app com.apple.finder
+.build/release/axkit read --app com.tinyspeck.slackmacgap
 ```
 
 `trusted` and `apps` need no permission. `dump`, `find` and `hit` need the
@@ -63,6 +65,54 @@ live Outlook and Teams.
 2. **Background:** accessibility reads work with the app in the background.
 3. **A write is not proof:** `AXUIElementSetAttributeValue` returns success
    when the app ignores the value. A caller reads the value back.
+
+## The lean read
+
+`Read` is what the context readers use. `Walk` stays for skills and the
+agent, which need its keys, names and actions.
+
+- `Read.walk(from:options:)` reads a subtree, depth first, into `[Record]`.
+  A record holds role, subrole, title, description, value, a numeric value,
+  identifier, AXURL, frame, depth, the parent's index, focused and enabled.
+  The text attributes stay apart: no merged name, so a placeholder never
+  passes for content. Values are cut at 4000 characters.
+- Per element: one `AXUIElementCopyMultipleAttributeValues` call for
+  everything but the value, then one call for the value. The value is not in
+  the first call because a secure text field (`AXSecureTextField`, role or
+  subrole) must never be asked for it, and the role is not known before.
+  When the subrole cannot be read, the value is not asked for either.
+  Skipping the value by role does not work: Outlook's buttons and groups hold
+  their text there.
+- Limits: 4000 records, depth 64 (Teams goes past 40), 1 s, and a 0.1 s
+  messaging timeout on every element it touches. The system default is 6 s.
+  The result says what stopped it, how many calls it made, and how many
+  elements did not answer.
+- It never wakes an app. Chromium and Electron must already publish their
+  tree.
+- Pure, over records: `visible` (inside every scroll area and window above),
+  `visibleText` (a value, or a leaf's title or description, one line per
+  record), `headings` (level from the value), `landmarks` (the `AXLandmark*`
+  subroles and `AXApplicationLog`; Chromium gives `feed` no subrole).
+- Live, bounded: `climb` and `ancestors` (two calls per element up),
+  `webArea(around:)` (title and AXURL), `document(of:)` (AXDocument).
+
+Measured 10-09, release build, `axkit read` against `axkit dump` (Walk) on
+the same window, 3 runs each:
+
+| App | Elements | `read` | `dump` |
+|---|---|---|---|
+| Slack | 726 | 69–79 ms, 0.10 ms each, 2 calls each | 239–262 ms, 0.34 ms each |
+| Claude | 1208 | 137–193 ms, 0.11 ms each | 437–449 ms |
+| Finder | 31 | 12–22 ms | 19–23 ms |
+
+Walk makes 14 to 17 calls per element.
+
+### Key format
+
+`Walk.key` is stored by agent skills and memories. `Walk.keyVersion` (now 1)
+names its format. A change to what a key is built from (`key`,
+`path(below:role:)`, `plainRoles`, `shortHash`, or the name a node is keyed
+by) raises it, and stored keys must be rebuilt.
 
 ## Tests
 

@@ -782,6 +782,36 @@ are visible. `scripts/check-input.sh` scores it against
 accessibility grant, so it is not faked here — see
 [pipelines.md](pipelines.md#input-what-is-already-in-the-field).
 
+## Reading an app's screen
+
+```sh
+$PF --tree-test
+$PF --tree-read <bundle-id> [--runs N] [--window <title>]
+```
+
+`--tree-test` scores the screen readers on built-in fixtures. No app, no
+accessibility. It runs Slack's label rules on the fixtures, then the same
+fixtures turned into records, then whole windows built by hand. Then the
+generic, Teams and Outlook readers on windows built as records, and the press
+read's deadline on a fake clock.
+
+`--tree-read` prints what the `context` stage would publish for that app's
+window, with `transcription.context.every_app` on. It starts from the app's
+focused element and reads the pane around it. With nothing focused, it reads
+from each composer in Slack, and from the focused or main window elsewhere. It works for any
+app except the ones it never reads: password managers, the system's password
+prompts, Keychain Access and System Settings (`ContextReader.deniedBundleIDs`).
+
+A `shape` line gives counts only: the reader, text lines and chars, place
+length, code spans, records walked, which rule picked the pane, and whether the
+walk stopped early. `--runs N` (1 to 50) reads N times and prints the words
+once. `--window` reads the window whose title contains the text, from the
+window down, so a scratch window can be read beside the ones in use.
+
+It needs the accessibility grant. It sets
+`AXManualAccessibility` on the app, as the app itself does when you switch to
+it.
+
 ## Text insertion, which is the risky path
 
 ```sh

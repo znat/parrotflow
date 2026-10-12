@@ -10,6 +10,8 @@ usage: axkit trusted
        axkit find  (--app … | --pid … | --front) [--role AXButton] [--name <glob>] [--dom <id>]
                    [--wake] [--json]
        axkit hit   <x> <y> [--app … | --pid …] [--json]
+       axkit read  (--app … | --pid … | --front) [--depth n] [--budget n]
+                   [--records | --text | --json]
 """
 
 func fail(_ message: String, _ code: Int32 = 1) -> Never {
@@ -76,6 +78,18 @@ func line(_ node: Node) -> String {
     return parts.joined(separator: " ")
 }
 
+func line(_ record: Record) -> String {
+    var parts = [String(repeating: "  ", count: record.depth) + record.role]
+    if let subrole = record.subrole { parts[0] += "/" + subrole }
+    for text in [record.title, record.description].compactMap({ $0 }) { parts.append("\"\(text)\"") }
+    if let value = record.value { parts.append("= \"\(value.replacingOccurrences(of: "\n", with: " "))\"") }
+    if let number = record.number { parts.append("= \(number)") }
+    if let url = record.url { parts.append("<\(url)>") }
+    if record.focused { parts.append("[focused]") }
+    if let frame = record.frame { parts.append("@\(frame.x),\(frame.y) \(frame.w)x\(frame.h)") }
+    return parts.joined(separator: " ")
+}
+
 if !["trusted", "apps"].contains(command) && !App.isTrusted {
     fail(AXKitError.notTrusted.description + " (the terminal running this needs it)")
 }
@@ -121,6 +135,24 @@ case "hit":
     guard let element = found else { fail("nothing at \(x),\(y)") }
     let node = Walk.run(from: element, options: WalkOptions(depth: 1)).nodes.first
     if has("--json") { printJSON(node) } else { node.map { print(line($0)) } }
+
+case "read":
+    guard let app = target() else { fail(usage, 2) }
+    var options = ReadOptions()
+    if let depth = count("--depth") { options.depth = depth }
+    if let budget = count("--budget") { options.budget = budget }
+    let result = Read.walk(from: app.focusedWindow ?? app.element, options: options)
+    if has("--json") {
+        printJSON(result)
+    } else {
+        if has("--records") { result.records.forEach { print(line($0)) } }
+        if has("--text") { Read.visibleText(result.records).forEach { print($0) } }
+        let nodes = max(result.records.count, 1)
+        print(String(format: "-- %d records, %d calls (%.2f per record), %.1f ms (%.3f ms per record), %d failed",
+                     result.records.count, result.calls, Double(result.calls) / Double(nodes),
+                     result.milliseconds, result.milliseconds / Double(nodes), result.failed)
+              + (result.stopped.map { ", stopped by \($0.rawValue)" } ?? ""))
+    }
 
 default:
     fail(usage, 2)
