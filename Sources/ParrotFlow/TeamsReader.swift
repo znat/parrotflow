@@ -65,8 +65,10 @@ enum TeamsReader {
 
     /// A record whose children are messages: an AXHeading and an
     /// AXApplicationGroup among them. The nearest to the focus, or with
-    /// nothing focused the one holding the most messages. The climb stops at
-    /// the sidebar, so a focus there is not taken for the chat beside it.
+    /// nothing focused the one holding the most messages. Two lists under
+    /// the same ancestor: the last one before the focus, as a composer
+    /// follows its list. The climb stops at the sidebar, so a focus there is
+    /// not taken for the chat beside it.
     static func messageList(around focused: Int?, in records: [Record]) -> Int? {
         var children: [Int: [Int]] = [:]
         for (index, record) in records.enumerated() {
@@ -79,9 +81,8 @@ enum TeamsReader {
         }
         guard let focused else { return lists.max { count($0) < count($1) } }
         for up in ([focused] + RecordTree.ancestors(of: focused, in: records)).prefix(GenericReader.paneClimb) {
-            if let list = lists.first(where: { RecordTree.ancestors(of: $0, in: records).contains(up) }) {
-                return list
-            }
+            let under = lists.filter { RecordTree.ancestors(of: $0, in: records).contains(up) }
+            if let list = under.last(where: { $0 < focused }) ?? under.first { return list }
             if holdsSidebar(up, in: records) { return nil }
         }
         return nil

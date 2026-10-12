@@ -62,6 +62,28 @@ enum TeamsReaderTest {
         ])
     }
 
+    private static func composer(focused: Bool) -> Tree {
+        Tree(kAXGroupRole, nil, [Tree(kAXTextAreaRole, "my draft", focused: focused)])
+    }
+
+    /// Invented: two chats side by side under one container, each with its
+    /// header, list and composer. `nested` wraps each chat in its own group.
+    private static func twoChats(focusFirst: Bool, nested: Bool = true) -> Tree {
+        let left = [Tree(kAXHeadingRole, nil, title: "Design review"), Tree(kAXGroupRole, nil, title: "Message List", first),
+                    composer(focused: focusFirst)]
+        let right = [Tree(kAXHeadingRole, nil, title: "Ops weekly"), Tree(kAXGroupRole, nil, title: "Message List", second),
+                     composer(focused: !focusFirst)]
+        let panes = nested ? [Tree(kAXGroupRole, nil, left), Tree(kAXGroupRole, nil, right)] : left + right
+        return Tree(kAXWindowRole, title: "Chat | Microsoft Teams", [
+            Tree("AXWebArea", nil, title: "Chat | Microsoft Teams", [Tree(kAXGroupRole, nil, panes)]),
+        ])
+    }
+
+    private static let leftRead = "text=Ana Lima 10:02 Can you ask Ben Okoro to look at the layout?;"
+        + " place=Design review; people=Ana Lima,Ben Okoro; code=; pane=messages"
+    private static let rightRead = "text=Ben Okoro 10:05 run make test first; place=Ops weekly;"
+        + " people=Ben Okoro; code=make test; pane=messages"
+
     static func published(_ tree: Tree, generic: Bool = false) -> String {
         let screen = GenericReaderTest.screen(tree, app: "Microsoft Teams", chromium: true)
         switch generic ? GenericReader.interpret(screen) : TeamsReader.interpret(screen) {
@@ -102,6 +124,12 @@ enum TeamsReaderTest {
         ("the focus in the sidebar beside a chat: the generic reader",
          published(chat(first + second, focus: false, focusSidebar: true)),
          published(chat(first + second, focus: false, focusSidebar: true), generic: true)),
+        ("two chats, the focus in the second: the second chat", published(twoChats(focusFirst: false)), rightRead),
+        ("two chats, the focus in the first: the first chat", published(twoChats(focusFirst: true)), leftRead),
+        ("two chats in one group, the focus in the second: the list before it",
+         published(twoChats(focusFirst: false, nested: false)), rightRead),
+        ("two chats in one group, the focus in the first: the list before it",
+         published(twoChats(focusFirst: true, nested: false)), leftRead),
         ("a message with no visible part: its title",
          published(chat([summary("Meeting started"),
                           Tree(kAXGroupRole, nil, subrole: "AXApplicationGroup", title: "Meeting started")])),
