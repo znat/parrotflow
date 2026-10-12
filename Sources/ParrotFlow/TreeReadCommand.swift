@@ -48,7 +48,7 @@ enum TreeReadCommand {
         let focused = picked == nil ? app.focusedElement : nil
         // `kAXWindowsAttribute` has no guaranteed order, so its first entry can
         // be a different window from the one holding the pane.
-        guard let window = picked ?? focused?.window ?? app.focusedWindow ?? app.windows.first else {
+        guard let window = picked ?? focused?.window ?? app.focusedWindow ?? app.mainWindow ?? app.windows.first else {
             print("✗ no window")
             return 1
         }

@@ -1334,6 +1334,10 @@ quotes, newest first: the body from the first header block ("From:", "Sent:",
 your draft and is left out. A new mail gives only its subject. Any other window
 gives only its title.
 
+An app whose focus the system reports wrong, such as Codex, is read from its
+own focused element, asked by process id. The words are still pasted with ⌘V
+as before.
+
 ```yaml
 transcription:
   context:

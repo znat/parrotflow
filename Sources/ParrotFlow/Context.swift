@@ -162,18 +162,51 @@ enum Context {
     /// overtaken cannot put the stale one back. See `pressGeneration`.
     /// Call on the press's own thread, before the read is dispatched: a key
     /// that comes up before the read starts must still find it.
-    static func reservePress(run: Int, hasElement: Bool, settings: Settings) -> (reading: PressRead, generation: Int) {
+    static func reservePress(run: Int, start: PressStart?, settings: Settings) -> (reading: PressRead, generation: Int) {
         let reading = PressRead(run: run, afterRelease: settings.afterReleaseSeconds)
-        return (reading, begin(hasElement ? reading : nil))
+        return (reading, begin(start == nil ? nil : reading))
+    }
+
+    /// Where the press read starts.
+    enum PressStart: Equatable {
+        case element(AXUIElement)
+        /// A blind app: asked by pid, off the main thread.
+        case app(pid_t)
+    }
+
+    /// The system focus, except in a blind app: there it names another app's
+    /// element (#118), while the app's own focus answers (Codex, 10-12).
+    static func pressStart(blind: Bool, focus: AXUIElement?, pid: pid_t?) -> PressStart? {
+        guard blind else { return focus.map(PressStart.element) }
+        return pid.map(PressStart.app)
+    }
+
+    /// The app's focused element, else its focused or main window.
+    static func ownFocus(of pid: pid_t) -> AXUIElement? {
+        let app = App(pid: pid)
+        app.element.setMessagingTimeout(0.25)
+        return (app.focusedElement ?? app.focusedWindow ?? app.mainWindow)?.ref
     }
 
     static func capturePress(_ reserved: (reading: PressRead, generation: Int), app: Pipeline.App?,
-                             element: AXUIElement?, settings: Settings) {
+                             start: PressStart?, settings: Settings) {
         let (reading, mine) = reserved
         let run = reading.run
-        guard let element else { return }
-
         let started = CFAbsoluteTimeGetCurrent()
+        let element: AXUIElement
+        switch start {
+        case nil: return
+        case .element(let focused): element = focused
+        case .app(let pid):
+            guard let own = ownFocus(of: pid) else {
+                let ms = (CFAbsoluteTimeGetCurrent() - started) * 1000
+                store(Press(element: AXUIElementCreateApplication(pid), outcome: .failure(.nothingFocused), ms: ms,
+                            run: run), reading: reading, generation: mine)
+                return
+            }
+            element = own
+        }
+
         let outcome = read(app: app, from: element, settings: settings, stop: { reading.mustStop })
         let ms = (CFAbsoluteTimeGetCurrent() - started) * 1000
         store(Press(element: element, outcome: outcome, ms: ms, run: run), reading: reading, generation: mine)
