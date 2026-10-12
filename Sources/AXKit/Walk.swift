@@ -33,14 +33,18 @@ public struct WalkOptions: Sendable {
     public var depth = 64
     public var budget = 8000
     /// Finder's Downloads list once took 27 s to walk. Checked between
-    /// elements: one blocked call can overrun it by its messaging timeout.
+    /// elements: one element's calls can overrun it by their messaging timeouts.
     public var seconds: Double = 3
     /// Values longer than this are cut. Outlook's message body is an
     /// AXTextArea of 395,489 characters.
     public var valueLimit = 200
+    /// How long one call may block, as in `ReadOptions`. The system default is 6 s.
+    public var callTimeout: Float = 0.1
 
-    public init(depth: Int = 64, budget: Int = 8000, seconds: Double = 3, valueLimit: Int = 200) {
+    public init(depth: Int = 64, budget: Int = 8000, seconds: Double = 3, valueLimit: Int = 200,
+                callTimeout: Float = 0.1) {
         (self.depth, self.budget, self.seconds, self.valueLimit) = (depth, budget, seconds, valueLimit)
+        self.callTimeout = callTimeout
     }
 }
 
@@ -57,7 +61,7 @@ public enum Walk {
     public static let plainRoles: Set<String> = [kAXGroupRole, "AXGenericElement", kAXUnknownRole]
 
     public static func run(from root: Element, options: WalkOptions = WalkOptions()) -> WalkResult {
-        var walker = Walker(options: options, focused: root.pid.flatMap { App(pid: $0).focusedElement })
+        var walker = Walker(options: options, focused: focused(of: root, options: options))
         let started = Date()
         walker.visit(root, depth: 0, parent: nil, path: "")
         return WalkResult(nodes: walker.nodes.map(\.1), stopped: walker.stopped,
@@ -67,7 +71,7 @@ public enum Walk {
     /// Elements whose role, name (a glob) and DOM id match, in reading order.
     public static func find(in root: Element, role: String? = nil, name: String? = nil,
                             dom: String? = nil, options: WalkOptions = WalkOptions()) -> [(Element, Node)] {
-        var walker = Walker(options: options, focused: root.pid.flatMap { App(pid: $0).focusedElement })
+        var walker = Walker(options: options, focused: focused(of: root, options: options))
         walker.visit(root, depth: 0, parent: nil, path: "")
         let kept = walker.nodes.indices.filter { index in
             let node = walker.nodes[index].1
@@ -82,6 +86,13 @@ public enum Walk {
             node.parent = node.parent.flatMap { position[$0] }
             return (element, node)
         }
+    }
+
+    private static func focused(of root: Element, options: WalkOptions) -> Element? {
+        guard let pid = root.pid else { return nil }
+        let app = App(pid: pid).element
+        app.setMessagingTimeout(options.callTimeout)
+        return app.element(kAXFocusedUIElementAttribute)
     }
 
     public static func key(role: String, name: String, path: String) -> String {
@@ -125,6 +136,7 @@ private struct Walker {
         guard budget > 0 else { stopped = "budget"; return }
         guard Date() < deadline else { stopped = "deadline"; return }
         budget -= 1
+        element.setMessagingTimeout(options.callTimeout)
         let role = element.role ?? "?"
         let name = element.name
         var key = Walk.key(role: role, name: name ?? "", path: path)
