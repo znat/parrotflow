@@ -1268,7 +1268,7 @@ It publishes ten things, on top of the four every stage gets:
 | `context.chars` | how much of it there is |
 | `context.lines` | how many rows |
 | `context.truncated` | whether the cap cut anything off the front |
-| `context.place` | which conversation this is — the channel or direct message in Slack, empty in a terminal |
+| `context.place` | which conversation this is — the channel or direct message in Slack, the chat in Teams, the subject in Outlook, else the page, file or window name; empty in a terminal |
 | `context.people` | who is named on screen, joined on `; ` — message authors and the members the header lists in Slack, the names Teams marks in messages |
 | `context.code` | what was written as code, joined on `; ` — a backticked run in Slack, empty in a terminal |
 | `context.roster` | every channel and person the window offers, joined on `; ` — Slack's sidebar, empty in a terminal |

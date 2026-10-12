@@ -9,8 +9,9 @@ released on its own, as an alternative to AXorcist. ParrotFlow becomes its
 first user. The agent (Python, skills, memories) is out of scope here.
 
 **Status.** The kit is internal. Its API may change in any pull request. It
-has no consumers outside this repository, and ParrotFlow does not use it yet.
-This page covers the read layer, which is all that has landed.
+has no consumers outside this repository. ParrotFlow's context readers use its
+read layer (`Read`, `Records`). This page covers the read layer, which is all
+that has landed.
 
 ## Package boundary
 
@@ -22,8 +23,7 @@ This page covers the read layer, which is all that has landed.
 - Tests: `tests/AXKitTests/`, target `AXKitTests`.
 - Everything the kit needs sits under paths that `git subtree split` can take
   in one go.
-- ParrotFlow's target does not depend on `AXKit` yet. A later pull request
-  adds that dependency, and nothing else in Package.swift changes for it.
+- ParrotFlow's target depends on `AXKit`.
 
 ## Layers
 
@@ -49,8 +49,8 @@ swift build -c release
 .build/release/axkit read --app com.tinyspeck.slackmacgap
 ```
 
-`trusted` and `apps` need no permission. `dump`, `find` and `hit` need the
-Accessibility permission for the terminal that runs them. None of them brings
+`trusted` and `apps` need no permission. `dump`, `find`, `hit` and `read`
+need the Accessibility permission for the terminal that runs them. None of them brings
 an app in front or sends it a key. `--wake` does write to the target: it sets
 `AXManualAccessibility` and `AXEnhancedUserInterface` on it, so that Chromium
 and Electron publish their tree.

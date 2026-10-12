@@ -21,8 +21,11 @@ transcription:
   is read like any page, password fields excepted.
   `transcription.context.every_app: false` limits it to terminals and Slack.
 - Publishes `context.text` (the last 2000 characters, input box left out),
-  `context.chars`, `context.lines`, `context.place` (the Slack channel),
-  `context.people`, `context.code`, `context.roster`, `context.declined`.
+  `context.chars`, `context.lines`, `context.place` (the Slack channel, the
+  Teams chat, the Outlook subject, else the page, file or window name),
+  `context.people`, `context.code`, `context.roster`, `context.declined`,
+  `context.source` (which reader read it: `terminal`, `slack`, `teams`,
+  `outlook` or `generic`).
 - Read when the hotkey goes down, not when the stage runs.
 - Costs about 1 ms in a terminal and 130–150 ms in Slack, off the main thread.
 - **While it is on, the log holds what was on screen.** Tell the user.
