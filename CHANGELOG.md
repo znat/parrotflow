@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.18.0](https://github.com/znat/parrotflow/compare/v0.17.0...v0.18.0) (2026-10-12)
+
+
+### Features
+
+* **axkit:** a lean read into plain records ([d25d13a](https://github.com/znat/parrotflow/commit/d25d13a5c9d07b09ef01861affd858a96ecbc7b0))
+* **axkit:** a lean read of the screen into plain records ([f41cb7e](https://github.com/znat/parrotflow/commit/f41cb7ed93db35e57c70fbb81c5882b9e919ef38))
+* **axkit:** a read-only axkit command line ([3183ccc](https://github.com/znat/parrotflow/commit/3183ccc1ff096d152ce9762df870875274e3ef7d))
+* **axkit:** axkit read prints the cost of a lean read ([94d053f](https://github.com/znat/parrotflow/commit/94d053f91bfa69e6c6f6e0708d100fe5c3b6eaad))
+* **axkit:** name the walk key format with Walk.keyVersion ([9ff8b64](https://github.com/znat/parrotflow/commit/9ff8b6460407516e19246b4a381fadcacc206104))
+* **axkit:** the kit's read layer as its own targets ([bbc57e6](https://github.com/znat/parrotflow/commit/bbc57e694b091d1bddabbbb581e372a9db08ad8f))
+* **axkit:** the kit's read layer as its own targets ([b13d8cb](https://github.com/znat/parrotflow/commit/b13d8cb434e1de913f157a01232279850b4efc7f))
+* **context:** --tree-read --compare runs both Slack readers ([4e9dfe4](https://github.com/znat/parrotflow/commit/4e9dfe4e8b2faf2ae87f0f48d3e5be4c5515bd17))
+* **context:** --tree-read can repeat a read and pick a window ([8daddd6](https://github.com/znat/parrotflow/commit/8daddd6bce19b5eb6354a2f6bda6a9af1f6dd575))
+* **context:** a generic reader for any other app ([def4f1a](https://github.com/znat/parrotflow/commit/def4f1a335bf07caaf8268bd391874b53101dda4))
+* **context:** a reader per app, and a generic reader for every other app, switched off ([05d0b19](https://github.com/znat/parrotflow/commit/05d0b19fb479d5d8b95a91083ba3b92f213bc1ba))
+* **context:** a Slack reader built on AXKit ([7115071](https://github.com/znat/parrotflow/commit/71150718597ffe52d33b2ef070e0a69832e34a32))
+* **context:** a Slack reader built on AXKit, proven equal to the old one ([3b472ff](https://github.com/znat/parrotflow/commit/3b472ffdfa0a60247849ca4c70053bfc24462872))
+* **context:** every app's window is read by default ([1264792](https://github.com/znat/parrotflow/commit/1264792bbdcee41d1ec715b6bbfe9b726a4568f6))
+* **context:** every app's window is read by default ([2c532da](https://github.com/znat/parrotflow/commit/2c532da3018bb84c81b9a78e57f94e9a9bccfac8))
+* **context:** never read password managers, System Settings or password fields ([9f603ef](https://github.com/znat/parrotflow/commit/9f603ef1985826ee142bad053442f50048e19b68))
+* **context:** pick a reader per app, and add a switch for every app ([a621ba0](https://github.com/znat/parrotflow/commit/a621ba016ff9553f1fb5835087ab573b5a2e2c0a))
+* **context:** read Chromium pages by their landmarks ([b7e23a8](https://github.com/znat/parrotflow/commit/b7e23a8a48d09cec71b30d6c78745cf2e221cc6c))
+* **context:** read every app's window at the press ([178ede7](https://github.com/znat/parrotflow/commit/178ede7526f97644ab1cac9f34c47f310c694e06))
+* **context:** Teams and Outlook get their own screen readers ([0ad4851](https://github.com/znat/parrotflow/commit/0ad48516e123ecd53d4626350b9aadefc8252e8e))
+* **context:** Teams and Outlook get their own screen readers ([66d18b6](https://github.com/znat/parrotflow/commit/66d18b6e96499f7ae28db2381f5e7f9d3fd0e755))
+* **context:** the generic reader walks 64 levels deep, not 40 ([20245cd](https://github.com/znat/parrotflow/commit/20245cdb13ccf5d49ed2e1c20fcbaeaf852959c7))
+* **context:** the press read stops after the release, and the stage waits for it ([2c54a3c](https://github.com/znat/parrotflow/commit/2c54a3c3db2b0cb3972b5be3be9d04e82e606dbb))
+
+
+### Fixes
+
+* an Outlook reply and the Codex app are read at the press ([9349051](https://github.com/znat/parrotflow/commit/9349051872a6bf795bf1d9717e8a08d2daa0c6fa))
+* **axkit:** a launch that times out, and a --pid that is not a number ([40cc20d](https://github.com/znat/parrotflow/commit/40cc20d6b0bffbab50b1c9d3d95b2d8fdd868914))
+* **axkit:** a walk sets a call timeout on every element ([e3a1f9e](https://github.com/znat/parrotflow/commit/e3a1f9e4f2b3462937c2d04cc354bfd702def56d))
+* **axkit:** find keeps parents and focus, and limits refuse bad numbers ([388db77](https://github.com/znat/parrotflow/commit/388db7716df1f6a7b16758c0ea4575e03738d31a))
+* **axkit:** hit stays in the app it was given, and settled needs a watch ([afce3ec](https://github.com/znat/parrotflow/commit/afce3eccb71aaa668a3b708384fb39a64c385f43))
+* **axkit:** never read a password field's value when its subrole is unknown ([02a6c29](https://github.com/znat/parrotflow/commit/02a6c29c2027ba1edb081e5840248449583b9b9f))
+* **context:** a blind app is read from its own focus ([4ce6c38](https://github.com/znat/parrotflow/commit/4ce6c3838aa79b3e0b14894ebf9cf50f60d3b5c2))
+* **context:** a blind app's own focus is asked with a 0.25 s timeout ([6fa8db2](https://github.com/znat/parrotflow/commit/6fa8db22f9c486bdb6779bd4449f4a66cff8d092))
+* **context:** a generic read past its deadline skips two calls ([91aa761](https://github.com/znat/parrotflow/commit/91aa761826a53a8cfb23e2c3607407c0ac9edd36))
+* **context:** a quoted header must name the reply's subject ([0b9c6e4](https://github.com/znat/parrotflow/commit/0b9c6e40525f52e00504d77bfa3c01af85d07377))
+* **context:** a Teams sidebar focus is not the chat, and Outlook never walks its window ([56f7a1e](https://github.com/znat/parrotflow/commit/56f7a1eb4cf828a11b22cd01d655f8199f2753cb))
+* **context:** a terminal read stops at the press deadline ([f06bf4f](https://github.com/znat/parrotflow/commit/f06bf4fdfb4e4faba5816f6d4121ff2053c64b00))
+* **context:** an Outlook reply reads the mail it quotes ([4157d3c](https://github.com/znat/parrotflow/commit/4157d3c6cd354311e3ba542897ccc68c731f4f1b))
+* **context:** bound the page lookup, and say Slack declines a cut walk ([f3cd2a4](https://github.com/znat/parrotflow/commit/f3cd2a49e221d97ccba54e2ca507c5af006c1bb5))
+* **context:** only a quoted header's last line may name the subject ([5f99410](https://github.com/znat/parrotflow/commit/5f99410790984b3c17f642539e69240e52df1540))
+* **context:** publish a read before it counts as done, bound the page search, keep repeated rows ([ed83549](https://github.com/znat/parrotflow/commit/ed835492dd2cdb5fef16b5c6211d301a7460421a))
+* **context:** reserve the press read at the press, and keep each screen to its dictation ([98bace5](https://github.com/znat/parrotflow/commit/98bace5d9511af2b64fc39b85e9e37dd4af39e1e))
+* **context:** Teams reads the chat whose composer has the focus ([5b79923](https://github.com/znat/parrotflow/commit/5b799234833d2395852ecfda98dc4660744b9324))
+* **context:** the Outlook pane lookup stops at the read's deadline ([6ac5a17](https://github.com/znat/parrotflow/commit/6ac5a177f33601cfdf68c6ad96fc85b487a26af8))
+* **context:** the Slack reader declines a cut walk and breaks focus ties ([342d461](https://github.com/znat/parrotflow/commit/342d4617ebddfc97f1c236829e03da8a638381c6))
+* **context:** the Slack reader finds a caret that changed between reads ([4b65767](https://github.com/znat/parrotflow/commit/4b65767040302c7bf052fb2bf9b22c661791dbbd))
+* **context:** the Slack reader prefers the focused composer over a stale twin ([9748c65](https://github.com/znat/parrotflow/commit/9748c65d17196b128ff3f6fa98cbde530fad8c9d))
+
 ## [0.17.0](https://github.com/znat/parrotflow/compare/v0.16.0...v0.17.0) (2026-10-06)
 
 
