@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.0](https://github.com/znat/parrotflow/compare/v0.17.0...v0.18.0) (2026-10-12)
+
+
+### Features
+
+* every app's window is read at the press, so context spelling can use the terms on screen in any app. Set `transcription.context.every_app: false` to read only terminals and Slack ([#364](https://github.com/znat/parrotflow/issues/364)) ([178ede7](https://github.com/znat/parrotflow/commit/178ede7526f97644ab1cac9f34c47f310c694e06))
+* password managers, Keychain Access, System Settings and password fields are never read ([9f603ef](https://github.com/znat/parrotflow/commit/9f603ef1985826ee142bad053442f50048e19b68))
+* Chrome pages and Electron apps such as Notion, Claude and VS Code are read by their main content, not their navigation ([b7e23a8](https://github.com/znat/parrotflow/commit/b7e23a8a48d09cec71b30d6c78745cf2e221cc6c))
+* Teams and Outlook get their own screen readers. An Outlook reply reads the mail it quotes ([0ad4851](https://github.com/znat/parrotflow/commit/0ad48516e123ecd53d4626350b9aadefc8252e8e)) ([4157d3c](https://github.com/znat/parrotflow/commit/4157d3c6cd354311e3ba542897ccc68c731f4f1b))
+* the Codex app is read at the press ([9349051](https://github.com/znat/parrotflow/commit/9349051872a6bf795bf1d9717e8a08d2daa0c6fa))
+* the screen read runs until 0.5 s after the hotkey is released, and the transcript waits for it ([2c54a3c](https://github.com/znat/parrotflow/commit/2c54a3c3db2b0cb3972b5be3be9d04e82e606dbb))
+
 ## [0.17.0](https://github.com/znat/parrotflow/compare/v0.16.0...v0.17.0) (2026-10-06)
 
 
