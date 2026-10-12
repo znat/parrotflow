@@ -183,9 +183,10 @@ enum Context {
 
     /// The app's focused element, else its focused or main window.
     static func ownFocus(of pid: pid_t) -> AXUIElement? {
-        let app = App(pid: pid)
-        app.element.setMessagingTimeout(0.25)
-        return (app.focusedElement ?? app.focusedWindow ?? app.mainWindow)?.ref
+        let root = App(pid: pid).element
+        root.setMessagingTimeout(0.25)
+        return [kAXFocusedUIElementAttribute, kAXFocusedWindowAttribute, kAXMainWindowAttribute]
+            .lazy.compactMap { root.element($0) }.first?.ref
     }
 
     static func capturePress(_ reserved: (reading: PressRead, generation: Int), app: Pipeline.App?,
