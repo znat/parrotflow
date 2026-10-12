@@ -47,8 +47,7 @@ struct AppProfile: Equatable {
     var anchor: Anchor
     /// Whether the visible text can be handed to the pipeline. See `Context`.
     var readsPane: Bool
-    /// Whether the conversation can be walked out of the window's tree, for an
-    /// app that publishes no pane. See `TreeContext`.
+    /// Whether `SlackReader` reads this app. See `ContextReader`.
     var readsTree: Bool = false
     var paste: Paste
 
@@ -108,12 +107,9 @@ struct AppProfile: Equatable {
         "warp", "hyper", "rio", "tabby",
     ]
 
-    /// An app whose window can be walked for the conversation around the box.
-    ///
-    /// By bundle id, and one line per app that has been measured: the walk
-    /// picks its subtree by the labels that app writes, so an app nobody has
-    /// read cannot be served by another app's rules. Slack, 2026-09-18: 973
-    /// nodes, a tree without asking for one, 130–150ms.
+    /// The apps `SlackReader` reads. Its rules are Slack's labels, so no other
+    /// app belongs here. Slack, 2026-09-18: 973 nodes, a tree without asking
+    /// for one, 130–150ms.
     private static let treeBundleIDs: Set<String> = ["com.tinyspeck.slackmacgap"]
 
     /// An app belongs here only once two things are measured: that

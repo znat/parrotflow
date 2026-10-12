@@ -99,6 +99,14 @@ transcription:
   context_spelling:
     enabled: true
 
+  # Reads the window you dictate into, in every app, to spell names and terms
+  # the way the screen does. Known password managers, the system's password
+  # prompts, Keychain Access and System Settings are never read, nor are
+  # password fields. What it reads stays on this Mac, unless a prompt or script
+  # you add sends it on. false reads only terminals and Slack.
+  context:
+    every_app: true
+
   # What a transcript runs through, in order. Everything here rewrites text
   # and may be moved. Remove a line to skip that stage. One list for every
   # language, and a step can carry a condition of its own. See

@@ -162,7 +162,7 @@ enum PeekCommand {
         report("")
         let capture = Context.read(app: front.map {
             Pipeline.App(name: $0.localizedName ?? "", bundleID: $0.bundleIdentifier ?? "")
-        })
+        }, settings: (try? ConfigStore.load())?.transcription.context ?? Context.Settings())
         switch capture {
         case .failure(let why):
             report("as context: declined — \(why.rawValue)")
