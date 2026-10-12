@@ -124,8 +124,13 @@ enum OutlookReader {
         let place = self.place(screen)
         var capture = Context.Capture(text: "", truncated: false, place: place)
         let composing = records.contains { $0.identifier.map(composeIDs.contains) == true }
-        // A draft is input. Its body showed no children on 10-09, so only the place is read.
-        if !composing, let web = records.firstIndex(where: { $0.role == "AXWebArea" }) {
+        var branch = composing ? "compose" : screen.branch
+        let subject = records.first { $0.identifier == subjectFieldID }?.value
+        if composing, let thread = quotedThread(in: records, subject: subject) {
+            let text = String(thread.prefix(Context.maxChars))
+            capture = Context.Capture(text: text, truncated: text.count < thread.count, place: place)
+            branch = "reply"
+        } else if !composing, let web = records.firstIndex(where: { $0.role == "AXWebArea" }) {
             let kept = GenericReader.readable(records, focused: nil)
             let lines = GenericReader.lines(under: web, in: records, kept: kept)
             let (text, truncated) = Context.tail(of: lines.map(\.text).joined(separator: "\n"), limit: Context.maxChars)
@@ -134,8 +139,51 @@ enum OutlookReader {
         }
         guard !capture.text.isEmpty || !place.isEmpty else { return .failure(.blank) }
         capture.walked = Context.Walked(records: max(0, records.count - 1), stopped: screen.stopped?.rawValue,
-                                        branch: composing ? "compose" : screen.branch)
+                                        branch: branch)
         return .success(capture)
+    }
+
+    /// What a reply or a forward quotes: the body's text from the first
+    /// header block on, the newest mail first. The lines above it are the
+    /// draft, which is input. Nil for a new mail.
+    ///
+    /// The body is the page's text area, and its value is the whole body
+    /// (10-12). Its children are no use: a mail's table is listed by row and
+    /// again by column, and most of the thread lies below the scroll area.
+    static func quotedThread(in records: [Record], subject: String?) -> String? {
+        guard let subject, let web = records.firstIndex(where: { $0.role == "AXWebArea" }),
+              let body = RecordTree.below(web, in: records, depth: .max)
+                .first(where: { records[$0].role == kAXTextAreaRole }),
+              let value = records[body].value else { return nil }
+        let lines = value.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let start = headerBlock(in: lines, subject: subject) else { return nil }
+        return lines[start...].filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+
+    /// Outlook writes From, Sent, To and Subject above each quoted mail, one
+    /// line each, in the mail's language: French puts a space before the colon.
+    static let headerPattern = "^\\p{L}[\\p{L}\\p{M}'’. -]{0,24}[ \\u00a0]?:"
+    static let headerLines = 3
+
+    /// Where the first run of at least `headerLines` header lines starts,
+    /// when its last line, the subject, is the draft's subject less a prefix
+    /// such as "Re:". Labels typed in a draft are not a header.
+    static func headerBlock(in lines: [String], subject: String) -> Int? {
+        let subject = subject.trimmingCharacters(in: .whitespaces).lowercased()
+        var start = 0
+        var named = false
+        for (index, line) in (lines + [""]).enumerated() {
+            guard let colon = line.range(of: headerPattern, options: .regularExpression) else {
+                if index - start >= headerLines, named { return start }
+                (start, named) = (index + 1, false)
+                continue
+            }
+            let said = line[colon.upperBound...].trimmingCharacters(in: .whitespaces).lowercased()
+            let prefix = subject.hasSuffix(said) ? subject.dropLast(said.count).trimmingCharacters(in: .whitespaces) : nil
+            named = !said.isEmpty && prefix.map { $0.isEmpty || $0.hasSuffix(":") } == true
+        }
+        return nil
     }
 
     /// The subject: the header's first text, else a draft's subject field

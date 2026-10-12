@@ -1462,11 +1462,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // when it ends. There is one capture, not one per press.
         if startsDictation, Context.isConfigured(in: config) {
             let app = front?.app
-            let element = focusAtPress?.element
+            let start = Context.pressStart(blind: app.map { AppProfile.of($0).focus == .blind } ?? false,
+                                           focus: focusAtPress?.element, pid: front?.pid)
             let settings = config.transcription.context
-            let reserved = Context.reservePress(run: pressRun, hasElement: element != nil, settings: settings)
+            let reserved = Context.reservePress(run: pressRun, start: start, settings: settings)
             DispatchQueue.global(qos: .userInitiated).async {
-                Context.capturePress(reserved, app: app, element: element, settings: settings)
+                Context.capturePress(reserved, app: app, start: start, settings: settings)
             }
         }
 

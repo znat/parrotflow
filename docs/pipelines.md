@@ -1328,8 +1328,16 @@ mentions, never names guessed from the text. The place is the chat header. A
 chat with no message yet gives the place only. In Outlook
 (`com.microsoft.Outlook`) the reader reads the mail in the reading pane, and
 its subject is the place, without email addresses. It never reads the message
-list, whose rows hold previews. A draft gives only its subject. Any other
-window gives only its title.
+list, whose rows hold previews. A reply or a forward gives the mail it
+quotes, newest first: the body from the first header block ("From:", "Sent:",
+"To:", "Subject:", in any language) on. The block must hold the reply's
+subject without its "Re:". What you typed above that block is your draft and
+is left out. A new mail gives only its subject. Any other window
+gives only its title.
+
+An app whose focus the system reports wrong, such as Codex, is read from its
+own focused element, asked by process id. The words are still pasted with ⌘V
+as before.
 
 ```yaml
 transcription:

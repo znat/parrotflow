@@ -146,6 +146,25 @@ enum PressReadTest {
         return described(blocking { await Context.settledPress(run: 3) })
     }
 
+    private static func started(blind: Bool, focus: Bool, pid: pid_t?) -> String {
+        switch Context.pressStart(blind: blind, focus: focus ? element : nil, pid: pid) {
+        case nil: return "no read"
+        case .element: return "the system focus"
+        case .app(let pid): return "app \(pid)"
+        }
+    }
+
+    /// A pid no process has: the app answers nothing.
+    static func blindAppAnswersNothing() -> String {
+        let pid = pid_t(Int32.max)
+        let reserved = Context.reservePress(run: 13, start: .app(pid), settings: Context.Settings())
+        Context.capturePress(reserved, app: Pipeline.App(name: "", bundleID: "com.openai.codex"),
+                             start: .app(pid), settings: Context.Settings())
+        let got = described(blocking { await Context.settledPress(run: 13) })
+        _ = Context.begin(nil)
+        return got
+    }
+
     private static func blocking<T: Sendable>(_ body: @escaping @Sendable () async -> T) -> T {
         let done = DispatchSemaphore(value: 0)
         let box = Box<T>()
@@ -174,6 +193,13 @@ enum PressReadTest {
             ("a release before the read starts still counts", earlyRelease(), "false then true"),
             ("a newer press's screen is not an older dictation's", newerPressHoldsTheSlot(), "noPress, 42 chars"),
             ("a waiter that sees the read done finds it published", doneMeansPublished(), "done, published true"),
+            ("a blind app: its own focus, by pid, not the system's", started(blind: true, focus: true, pid: 42),
+             "app 42"),
+            ("a blind app with no pid: no read", started(blind: true, focus: true, pid: nil), "no read"),
+            ("any other app: the system focus", started(blind: false, focus: true, pid: 42), "the system focus"),
+            ("nothing focused: no read", started(blind: false, focus: false, pid: 42), "no read"),
+            ("a blind app that answers nothing says so", blindAppAnswersNothing(),
+             Context.Declined.nothingFocused.rawValue),
         ]
         let failed = checks.filter { $0.got != $0.want }
         print(failed.isEmpty ? "✓ press read: \(checks.count) of \(checks.count)"
