@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scores the pure half of the tree context — what `TreeContext.assemble` makes
+# Scores the pure half of the Slack reader — what `SlackReader.assemble` makes
 # of the labels a Slack window publishes.
 #
 #   scripts/check-tree-context.sh

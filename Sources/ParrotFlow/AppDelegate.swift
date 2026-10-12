@@ -1462,10 +1462,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // when it ends. There is one capture, not one per press.
         if startsDictation, Context.isConfigured(in: config) {
             let app = front?.app
-            let element = focusAtPress?.element
-            let run = pressRun
+            let start = Context.pressStart(blind: app.map { AppProfile.of($0).focus == .blind } ?? false,
+                                           focus: focusAtPress?.element, pid: front?.pid)
+            let settings = config.transcription.context
+            let reserved = Context.reservePress(run: pressRun, start: start, settings: settings)
             DispatchQueue.global(qos: .userInitiated).async {
-                Context.capturePress(run: run, app: app, element: element)
+                Context.capturePress(reserved, app: app, start: start, settings: settings)
             }
         }
 
@@ -1728,6 +1730,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// on the release as before.
     private func stopRecordingAfterTail() {
         guard recorder.isRecording else { return }
+        Context.released()
 
         let tail = config.hotkey.releaseTailSeconds
         guard tail > 0 else {
@@ -2090,6 +2093,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func stopRecording(reason: String? = nil) {
         guard recorder.isRecording else { return }
+        Context.released()
 
         let recording = recorder.stop(config: config)
 

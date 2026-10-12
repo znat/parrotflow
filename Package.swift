@@ -33,7 +33,7 @@ let package = Package(
         .executableTarget(
             name: "ParrotFlow",
             dependencies: [
-                "Yams", "FluidAudio",
+                "Yams", "FluidAudio", "AXKit",
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "Transformers", package: "swift-transformers"),
