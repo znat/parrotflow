@@ -14,11 +14,18 @@ transcription:
       when: context.ok && context.chars > 200
 ```
 
-- Works in terminals (the visible screen) and in Slack (the conversation you
-  are typing in). Other apps decline.
+- Works in every app: the visible screen in a terminal, the conversation you
+  are typing in for Slack and Teams, the open mail in Outlook, the pane around
+  the caret elsewhere. Known password managers, Keychain Access and System
+  Settings are never read, nor are password fields. A vault in a browser tab
+  is read like any page, password fields excepted.
+  `transcription.context.every_app: false` limits it to terminals and Slack.
 - Publishes `context.text` (the last 2000 characters, input box left out),
-  `context.chars`, `context.lines`, `context.place` (the Slack channel),
-  `context.people`, `context.code`, `context.roster`, `context.declined`.
+  `context.chars`, `context.lines`, `context.place` (the Slack channel, the
+  Teams chat, the Outlook subject, else the page, file or window name),
+  `context.people`, `context.code`, `context.roster`, `context.declined`,
+  `context.source` (which reader read it: `terminal`, `slack`, `teams`,
+  `outlook` or `generic`).
 - Read when the hotkey goes down, not when the stage runs.
 - Costs about 1 ms in a terminal and 130–150 ms in Slack, off the main thread.
 - **While it is on, the log holds what was on screen.** Tell the user.

@@ -114,7 +114,7 @@ on.
 
 | Stage | What it does |
 |---|---|
-| `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
+| `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Every app but known password managers and System Settings, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
 | `input` | What is already *in* the field and where the caret is, published as `input.*`. Never touches the transcript. Every app, and off unless you ask for it — see [Input](#input-what-is-already-in-the-field). |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
@@ -1260,7 +1260,7 @@ pipeline:
     when: context.ok && context.chars > 200
 ```
 
-It publishes nine things, on top of the four every stage gets:
+It publishes ten things, on top of the four every stage gets:
 
 | | |
 |---|---|
@@ -1268,11 +1268,12 @@ It publishes nine things, on top of the four every stage gets:
 | `context.chars` | how much of it there is |
 | `context.lines` | how many rows |
 | `context.truncated` | whether the cap cut anything off the front |
-| `context.place` | which conversation this is — the channel or direct message in Slack, empty in a terminal |
-| `context.people` | who is named on screen, joined on `; ` — message authors and the members the header lists |
+| `context.place` | which conversation this is — the channel or direct message in Slack, the chat in Teams, the subject in Outlook, else the page, file or window name; empty in a terminal |
+| `context.people` | who is named on screen, joined on `; ` — message authors and the members the header lists in Slack, the names Teams marks in messages |
 | `context.code` | what was written as code, joined on `; ` — a backticked run in Slack, empty in a terminal |
 | `context.roster` | every channel and person the window offers, joined on `; ` — Slack's sidebar, empty in a terminal |
 | `context.declined` | why nothing was read, when nothing was |
+| `context.source` | which reader read it: `terminal`, `slack`, `teams`, `outlook` or `generic`; empty when nothing was read |
 
 **It never changes the transcript.** `context.changed` is false on every run and
 means it — the stage returns its input by construction, not by outcome. A stage
@@ -1309,9 +1310,52 @@ label is the boundary, and everything under it is language rather than the app
 talking about itself. The sidebar is kept out of `context.text` too, and is
 published on its own as `context.roster`: every channel and person it lists.
 
-An app that is neither is declined out loud. Adding one means measuring it and
-naming it in `AppProfile.treeBundleIDs`, because the walk picks its subtree by
-the labels that app writes.
+Any other app is read by a generic reader, because
+`transcription.context.every_app` is on by default. Known password managers,
+the system's password prompts, Keychain Access and System Settings are never
+read, nor are password fields (`ContextReader.deniedBundleIDs`). A password
+manager missing from that list, or a vault open in a browser tab, is read like
+any other window, password fields still excepted. With the switch off, any
+other app is declined out loud. The Slack and terminal readers still read their own apps, and their output
+does not change.
+
+Teams and Outlook get their own readers when the switch is on. In Teams
+(`com.microsoft.teams2`) the reader takes the message list nearest the focus
+and publishes one line per message. Teams draws each message twice, once as a
+summary for screen readers, so the summary is skipped. `context.people` holds
+the names Teams draws as person buttons inside messages: authors and
+mentions, never names guessed from the text. The place is the chat header. A
+chat with no message yet gives the place only. In Outlook
+(`com.microsoft.Outlook`) the reader reads the mail in the reading pane, and
+its subject is the place, without email addresses. It never reads the message
+list, whose rows hold previews. A reply or a forward gives the mail it
+quotes, newest first: the body from the first header block ("From:", "Sent:",
+"To:", "Subject:", in any language) on. The block must hold the reply's
+subject without its "Re:". What you typed above that block is your draft and
+is left out. A new mail gives only its subject. Any other window
+gives only its title.
+
+An app whose focus the system reports wrong, such as Codex, is read from its
+own focused element, asked by process id. The words are still pasted with ⌘V
+as before.
+
+```yaml
+transcription:
+  context:
+    every_app: true            # false reads only terminals and Slack
+    after_release_seconds: 0.5 # how long the read may run on after the key comes up
+```
+
+**How long the read may run.** From the press until
+`after_release_seconds` after the key comes up, 0.5 s by default; 0 stops it
+at the release. At that deadline the generic reader publishes what it found,
+and the log says `stopped: deadline`. The Slack reader declines a walk cut
+short, because a conversation without its newest messages reads as complete.
+The generic reader walks at most 4000 elements, 64 levels deep, and waits at
+most 0.1 s for each call. The stage waits for a read still running, up to the
+same deadline, instead of declining with `nothing was captured`. If the read
+has still not ended, it declines with `the screen read had not ended by its
+deadline`.
 
 **The screen is read when the hotkey goes down, not when the stage runs.** The
 press is the last moment the pane is known. By the time the pipeline reaches
