@@ -167,8 +167,8 @@ enum OutlookReader {
     static let headerLines = 3
 
     /// Where the first run of at least `headerLines` header lines starts,
-    /// when one of them is the draft's subject less a prefix such as "Re:".
-    /// Labels typed in a draft are not a header.
+    /// when its last line, the subject, is the draft's subject less a prefix
+    /// such as "Re:". Labels typed in a draft are not a header.
     static func headerBlock(in lines: [String], subject: String) -> Int? {
         let subject = subject.trimmingCharacters(in: .whitespaces).lowercased()
         var start = 0
@@ -181,7 +181,7 @@ enum OutlookReader {
             }
             let said = line[colon.upperBound...].trimmingCharacters(in: .whitespaces).lowercased()
             let prefix = subject.hasSuffix(said) ? subject.dropLast(said.count).trimmingCharacters(in: .whitespaces) : nil
-            if !said.isEmpty, let prefix, prefix.isEmpty || prefix.hasSuffix(":") { named = true }
+            named = !said.isEmpty && prefix.map { $0.isEmpty || $0.hasSuffix(":") } == true
         }
         return nil
     }
