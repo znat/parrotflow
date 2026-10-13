@@ -67,10 +67,12 @@ def run_epochs(package,output,plans,pools,dev,forbidden,epochs,bundle_hash,resum
         if smoke and max_batches is not None:schedule=schedule[:max_batches]
         start=meta['cursor'] if meta and epoch==meta['epoch'] and not meta['complete'] else 0
         if not start:torch.manual_seed(package.seed*1000+epoch)
-        started=time.perf_counter();rejections=CounterLike();loss_sum=0
+        started=time.perf_counter()
+        rejections=CounterLike(meta['augmentation_rejections'] if start else {})
+        loss_sum=meta['loss_sum'] if start else 0
         def checkpoint(cursor,complete):
             return capture(package,dict(epoch=epoch,cursor=cursor,complete=complete,smoke=smoke,bundle_hash=bundle_hash,
-                plan_hash=fingerprint(schedule),backend=package.device))
+                plan_hash=fingerprint(schedule),backend=package.device,loss_sum=loss_sum,augmentation_rejections=dict(rejections)))
         if meta and epoch==meta['epoch'] and not meta['complete']:
             require(meta['plan_hash']==fingerprint(schedule) and meta['backend']==package.device,'Resume schedule/backend changed')
         for index in range(start,len(schedule)):
@@ -89,9 +91,10 @@ def run_epochs(package,output,plans,pools,dev,forbidden,epochs,bundle_hash,resum
         save(latest,checkpoint(len(schedule),False))
         metrics=evaluate(package,dev)
         write(output/f'epoch{epoch}-evaluation.json',metrics)
-        entry=dict(epoch=epoch,steps=package.steps,batches_completed=len(schedule)-start,
-            mean_loss=loss_sum/max(len(schedule)-start,1),seconds=time.perf_counter()-started,augmentation_rejections=dict(rejections))
-        history.append(entry);write(output/'history.json',history)
+        entry=dict(epoch=epoch,steps=package.steps,batches_completed=len(schedule),
+            mean_loss=loss_sum/max(len(schedule),1),seconds_this_invocation=time.perf_counter()-started,augmentation_rejections=dict(rejections))
+        history=[h for h in history if h['epoch']!=epoch]+[entry]
+        write(output/'history.json',history)
         save(latest,final)
         print('EPOCH',output.name,entry,flush=True);meta=final['meta']
     return output/f'epoch{epochs[-1]}.pt'

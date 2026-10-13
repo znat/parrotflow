@@ -166,7 +166,7 @@ def test_partial_checkpoint_resumes_without_redoing_batches(tmp_path):
     rows=[dict(id=str(i),text='x',words=['x']) for i in range(3)]
     schedule=[dict(source='ner',indices=[i],view='original') for i in range(3)]
     with patch('campaign.training.adapter_state',return_value={}),patch('campaign.training.load_adapter_state'),patch('campaign.training.base_hash',return_value='frozen'),patch('campaign.training.evaluate',return_value={}):
-        pkg=Toy();pkg.update(rows[:1]);saved=capture(pkg,dict(epoch=1,cursor=1,complete=False,smoke=True,bundle_hash='data',backend='cpu',plan_hash=fingerprint(schedule)))
+        pkg=Toy();first=pkg.update(rows[:1]);saved=capture(pkg,dict(epoch=1,cursor=1,complete=False,smoke=True,bundle_hash='data',backend='cpu',plan_hash=fingerprint(schedule),loss_sum=first['loss'],augmentation_rejections={'earlier':1}))
         out=tmp_path/'run';out.mkdir();save(out/'latest.pt',saved)
         fresh=Toy();run_epochs(fresh,out,{'1':schedule},{'ner':rows},[],set(),[1],'data',smoke=True,max_batches=3)
         assert fresh.calls==['1','2'] and fresh.steps==3
@@ -261,3 +261,46 @@ def test_h_gate_rejects_new_keep_damage_even_with_equal_counts(tmp_path):
     assert not decision['passed'] and len(decision['seeds'][0]['new_harmful_keep'])==3
     write(tmp_path/'H-mix-seed42/epoch7-evaluation.json',result('keep-a',2))
     assert h_decision(tmp_path,[42],primary)['passed']
+
+
+
+def test_ner_period_reduction_preserves_unknown_offsets():
+    from campaign.ner_runner import ner_view
+    row=normalize_row(dict(text='Ana .',spans=[],annotation_complete=False,unknown_spans=[dict(start=0,end=4)]))
+    out=ner_view(row,'punctuation_reduced')
+    assert out['text']==row['text'] and out['unknown_spans']==row['unknown_spans']
+    assert out['augmentation_rejected']=='Removed suffix overlaps annotation'
+    assert row.get('augmentation_rejected') is None
+
+
+def test_resume_restores_epoch_statistics_and_replaces_history(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    import campaign.training as training
+    rows=[dict(id=str(i),text='x',words=['x'],augmentation_rejected='rejected') for i in range(3)]
+    schedule=[dict(source='ud',indices=[i],view='original') for i in range(3)]
+    pkg=SimpleNamespace(steps=1,lm=None,base_digest='base',seed=42,device='cpu')
+    calls=[]
+    def update(batch):
+        calls.append(batch[0]['id']);pkg.steps+=1
+        return dict(loss=float(batch[0]['id'])+1)
+    pkg.update=update
+    monkeypatch.setattr(training,'capture',lambda package,meta:dict(meta=meta))
+    monkeypatch.setattr(training,'restore',lambda package,state:state['meta'])
+    monkeypatch.setattr(training,'base_hash',lambda _: 'base')
+    monkeypatch.setattr(training,'evaluate',lambda *_: {})
+    # Simulate a saved first batch with its loss and rejection already counted.
+    training.save(tmp_path/'latest.pt',dict(meta=dict(epoch=1,cursor=1,complete=False,smoke=True,bundle_hash='data',backend='cpu',plan_hash=fingerprint(schedule),loss_sum=1.,augmentation_rejections={'rejected':1})))
+    real_save=training.save
+    def crash_after_history(path,state):
+        if Path(path).name=='latest.pt' and state['meta']['complete']:
+            raise RuntimeError('interrupted after history write')
+        real_save(path,state)
+    monkeypatch.setattr(training,'save',crash_after_history)
+    with pytest.raises(RuntimeError,match='interrupted after history'):
+        training.run_epochs(pkg,tmp_path,{'1':schedule},{'ud':rows},[],set(),[1],'data',smoke=True)
+    monkeypatch.setattr(training,'save',real_save)
+    training.run_epochs(pkg,tmp_path,{'1':schedule},{'ud':rows},[],set(),[1],'data',smoke=True)
+    history=read(tmp_path/'history.json')
+    assert calls==['1','2'] and len(history)==1
+    assert history[0]['mean_loss']==2. and history[0]['batches_completed']==3
+    assert history[0]['augmentation_rejections']=={'rejected':3}

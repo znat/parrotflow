@@ -19,7 +19,10 @@ def ner_view(row,mode):
         require(mode=='punctuation_reduced','Invalid NER view')
         if not text.endswith('.') or any(s['end']==len(text) for s in row['spans']+row.get('unknown_spans',[])):
             result['augmentation_rejected']='No safely removable period';return result
-        result['text']=text[:-1].rstrip()
+        shortened=text[:-1].rstrip()
+        if any(s['end']>len(shortened) for s in row['spans']+row.get('unknown_spans',[])):
+            result['augmentation_rejected']='Removed suffix overlaps annotation';return result
+        result['text']=shortened
     result=normalize_row(result);result['augmentation']=mode
     return result
 
