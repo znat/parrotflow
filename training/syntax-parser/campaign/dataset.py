@@ -6,10 +6,11 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from campaign.common import *
 from campaign.surface import aligned_units
-from data import RELATIONS, valid_tree
+from campaign.trees import RELATIONS, valid_tree
 
 
 def parse_feats(value):
+    """Parse UD morphology and canonicalize multi-valued attributes."""
     result={}
     for item in (value or '').split('|'):
         if not item or item=='_':continue
@@ -20,10 +21,12 @@ def parse_feats(value):
 
 
 def inventories(rows):
+    """Build grammar vocabularies exclusively from observed training labels."""
     return {'upos':UPOS, **{a:[ABSENT]+sorted({f[a] for r in rows for f,m in zip(r['morph'],r['morph_observed']) if m[a] and a in f}) for a in ATTRIBUTES}}
 
 
 def make_orders(rows, local, seed, epoch):
+    """Freeze balanced language schedules and paired local/control exposure."""
     rng=random.Random(seed*1000+epoch)
     pools={l:[i for i,r in enumerate(rows) if r['language']==l] for l in LANGUAGES}
     ordinary={}
@@ -57,6 +60,7 @@ def make_orders(rows, local, seed, epoch):
 
 
 def prepare(output):
+    """Verify source selections and write a new immutable EN/FR/ES bundle."""
     from huggingface_hub import hf_hub_download
     from transformers import AutoTokenizer
     import pyarrow.parquet as pq
@@ -132,7 +136,7 @@ def prepare(output):
         for r in groups[name]:
             require(normalized(r['text']) not in forbidden and normalized(' '.join(r['words'])) not in forbidden,'Heldout collision')
             if r.get('intended_output'):require(normalized(r['intended_output']) not in forbidden,'Target heldout collision')
-            require(valid_tree(r['heads']) and all(x in RELATIONS for x in r['labels']),'Invalid training tree')
+            require(valid_tree(r['heads'],r['labels']),'Invalid training tree')
     tok=AutoTokenizer.from_pretrained(cfg['model_id'],revision=cfg['model_revision'],local_files_only=True)
     coser_path=Path('artifacts/data/es_coser-test.jsonl')
     coser_rows=[json.loads(line) for line in coser_path.read_text().splitlines()]

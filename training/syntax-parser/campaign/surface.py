@@ -5,6 +5,7 @@ from campaign.common import require, normalized
 
 
 def aligned_units(row):
+    """Validate or reconstruct complete source-surface to UD-word alignment."""
     text, words = row['text'], row['words']
     units = copy.deepcopy(row.get('surface_ud_map'))
     if units is None:
@@ -35,6 +36,7 @@ def aligned_units(row):
 
 def input_only(row):
     # Deliberate allowlist: no gold tree, intent, abandoned/latest/cue annotations.
+    """Exclude all gold trees and repair annotations from inference input."""
     return dict(text=row['text'], words=row['words'], language=row['language'],
                 surface_ud_map=aligned_units(row))
 

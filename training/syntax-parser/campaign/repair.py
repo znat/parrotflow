@@ -6,7 +6,7 @@ module does not pretend to solve raw-ASR word segmentation.
 """
 import re
 from campaign.surface import aligned_units
-from mechanical_tree_repair import valid_tree, descendants
+from campaign.trees import valid_tree, descendants
 
 NEGATION = {'not',"n't",'n’t','never','ne','n\'','n’','pas','jamais','ni','nunca','jamás','tampoco','sin','sans','without'}
 CUES = {
@@ -17,12 +17,14 @@ CUES = {
 
 
 def lexical(word):
+    """Distinguish lexical tokens from pure punctuation."""
     return any(c.isalnum() for c in word)
 
 
 def repair(inputs, heads, labels):
+    """Apply supported forward reparandum deletions or preserve the source input."""
     text=inputs['text'];words=inputs['words'];base=dict(text=text,edits=[],deleted_token_ids=[],candidates=[],abstentions=[])
-    if not valid_tree(words,heads,labels) or any((h==0)!=(r=='root') for h,r in zip(heads,labels)):
+    if len(words)!=len(heads) or not valid_tree(heads,labels):
         return dict(base,error='invalid tree; input preserved')
     try: units=aligned_units(inputs)
     except (ValueError,KeyError,TypeError):return dict(base,error='invalid alignment; input preserved')

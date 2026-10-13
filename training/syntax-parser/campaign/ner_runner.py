@@ -7,6 +7,7 @@ from campaign.ner import load_corpus,normalize_row
 
 
 def ner_view(row,mode):
+    """Create a safe casing or terminal-period view while preserving annotations."""
     if mode=='original':return copy.deepcopy(row)
     result=copy.deepcopy(row);text=row['text']
     if mode=='lowercase':
@@ -28,6 +29,7 @@ def ner_view(row,mode):
 
 
 def prepare_ner(source,output):
+    """Freeze reviewed spans, aligned training views and balanced epoch schedules."""
     from transformers import AutoTokenizer
     output=Path(output);require(not output.exists(),'New NER output required')
     rows=load_corpus(source);cfg=read('config.json')
@@ -65,6 +67,7 @@ def prepare_ner(source,output):
 
 
 def train_ner(data,ner_data,output,device):
+    """Train both NER seeds and apply the predeclared extension criterion."""
     from campaign.cli import bundle,drop
     from campaign.network import Package
     from campaign.training import run_epochs,implementation_hash
@@ -92,6 +95,7 @@ def train_ner(data,ner_data,output,device):
 
 
 def confirm_ner(data,ner_data,output,device):
+    """Consume the locked NER confirmation partition once after prerequisite checks."""
     import torch
     from campaign.cli import bundle,drop
     from campaign.network import Package

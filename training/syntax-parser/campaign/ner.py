@@ -6,6 +6,7 @@ TOKEN=re.compile(r"\w+(?:['’]\w+)*|[^\w\s]")
 
 
 def normalize_row(row):
+    """Validate character spans and encode BIO labels with unknown regions masked."""
     r=dict(row);text=r['text'];matches=list(TOKEN.finditer(text))
     r['words']=[m.group() for m in matches];r['offsets']=[[m.start(),m.end()] for m in matches]
     target=[0]*len(matches);occupied=set();unknown=r.get('unknown_spans',[])
@@ -27,6 +28,7 @@ def normalize_row(row):
 
 
 def load_corpus(path):
+    """Require reviewed provenance, all language splits and leakage-free groups."""
     rows=read(path);require(isinstance(rows,list),'NER corpus must be a list')
     groups=defaultdict(set);contents=defaultdict(set);ids=set();languages=defaultdict(set)
     result=[]
@@ -47,6 +49,7 @@ def load_corpus(path):
 
 
 def decode(row, labels):
+    """Convert word BIO predictions to source-character entity spans."""
     spans=[];active=None
     for (a,b),tag in zip(row['offsets'],labels):
         if tag=='O':active=None;continue
@@ -58,6 +61,7 @@ def decode(row, labels):
 
 
 def counts(row,predicted):
+    """Count exact typed/untyped spans, excluding unannotated regions."""
     unknown=row.get('unknown_spans',[])
     keep=lambda s:not any(s['start']<u['end'] and u['start']<s['end'] for u in unknown)
     pred={tuple(s[k] for k in ('start','end','type')) for s in predicted if keep(s)}

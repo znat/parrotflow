@@ -27,12 +27,13 @@ Run from `training/syntax-parser` using its `.venv`:
 
 Preparation refuses to overwrite an existing directory. Training can resume the same run only with matching code, prepared-data manifest and device. Full runs cannot consume smoke checkpoints. The copied English parquet files and cached French/Spanish sources are read locally; no downloads occur. `prepare` may reject changed/overlength inputs rather than silently alter the fixed campaign counts.
 
-`artifacts/multilingual-campaign-data-v2` is a prepared corpus from this implementation task. Check the [implementation report](../MULTILINGUAL_PIPELINE_IMPLEMENTATION.md) for the final verified smoke and code revision. Earlier smoke directories are historical debugging artifacts, not starting checkpoints.
+`artifacts/multilingual-campaign-data-v2` is a prepared corpus from this implementation task. The [validation record](../verification/implementation-smoke.json) records the final smoke and code revision. Prepared data and smoke outputs are provisioned separately and are not committed.
 
 ## Modules
 
 | Module | Responsibility |
 |---|---|
+| `encoder.py`, `adapters.py`, `parser.py`, `trees.py` | Final block-12 representation, LoRA, biaffine decoding and strict UD targets |
 | `dataset.py` | Raw UD annotation reconciliation, train-only inventories, unknown versus absent masks, split/family protection, 564/627-step schedules |
 | `surface.py` | Source-unit alignment, lowercase offsets, terminal-leaf-period reduction, heldout collision rejection |
 | `repair.py` | Predicted-tree-only candidate/deletion policy and separate gold scoring |
@@ -42,7 +43,7 @@ Preparation refuses to overwrite an existing directory. Training can resume the 
 | `ner.py`, `ner_runner.py` | Reviewed span schema, unknown-region masks, deterministic NER views, extension gate and one-time confirmation |
 | `cli.py` | Staged orchestration, scorer preflight, H gates and protected COSER endpoint |
 
-All randomness in sampling/augmentation is encoded in prepared plans. CPU/MPS dropout RNG and the exact batch cursor are saved in full resumes. Sparse morphology heads can legitimately have fewer AdamW updates than the global counter. CPU next-update verification is exact; smoke verification on MPS uses declared `rtol=1e-6`, `atol=1e-7` while separately reporting bitwise equality. This numerical policy needs reviewer acceptance; it does not claim bitwise GPU determinism.
+All randomness in sampling/augmentation is encoded in prepared plans. CPU/MPS dropout RNG and the exact batch cursor are saved in full resumes. Sparse morphology heads can legitimately have fewer AdamW updates than the global counter. CPU next-update verification is exact; smoke verification on MPS uses declared `rtol=1e-6`, `atol=1e-7` while separately reporting bitwise equality. This tolerance is recorded explicitly; it does not claim bitwise GPU determinism.
 
 The feature screen requires mean paired macro LAS gain ≥0.20 points, a positive gain in both seeds, no language loss >0.50 points, **and each seed's conditional paired macro bootstrap lower bound >0**. Otherwise it records failed/inconclusive and retains context-only. This is a conservative engineering policy; its bootstrap does not quantify seed variability. COSER can veto if repair F1 declines or LAS declines >0.50 points versus either parent or matched control. Those policies are frozen before training.
 
@@ -56,7 +57,7 @@ Punctuation augmentation is deliberately **terminal leaf period removal**, not i
 
 ## NER data gate
 
-A reviewed EN/FR/ES NER corpus is not currently supplied. This is a data prerequisite, not a missing training path. The CLI will not promote the old English weak pilot or smoke fixtures into multilingual training data.
+A reviewed EN/FR/ES NER corpus is not currently supplied. This is a data prerequisite, not a missing training path. Smoke fixtures do not satisfy the reviewed-data contract.
 
 ```sh
 .venv/bin/python -m campaign.cli ner-prepare \
@@ -74,11 +75,24 @@ Each language must occur in all splits. Source/template/group/name families and 
 ## Review and tests
 
 ```sh
-.venv/bin/python -m pytest -q tests/test_campaign.py \
-  tests/test_import_reviewed_multilingual_v1.py \
-  tests/test_mechanical_tree_repair.py tests/test_mechanical_tree_scoring.py
+.venv/bin/python -m pytest -q
 ```
 
 Endpoint commands create an exclusive consumption marker **before** evaluation. A failed endpoint stays marked for investigation instead of permitting an accidental rerun. Ordinary preparation may inspect COSER text/labels for exclusion and length eligibility, but neither training nor smoke evaluates its model predictions.
 
 The training plan remains the rationale; this package and its frozen manifests are the execution contract. Full training, confirmation exposure and production promotion are distinct actions.
+
+## Separately provisioned inputs
+
+`prepare` reads the pinned research selection/protocol from
+`artifacts/multilingual-layer12-language-feature-v1`, final reviewed syntax
+candidates from `artifacts/hesitation-multilingual-adjudicated-v1`, English raw
+parquet and hashes from `artifacts/stanza-english-data`, pinned French/Spanish
+parquet from the local Hugging Face cache, and protected dev/test JSONL under
+`artifacts/data`. These names identify source bundles; no corresponding probe
+scripts run. The final prepared bundle can be supplied directly to `train`.
+
+No source corpora or checkpoints are distributed here. The model/tokenizer cache
+is also separate; set `HF_HOME` before invoking the CLI when it lives elsewhere.
+Preparation rejects missing or changed sources. Training never recreates the
+adjudications or interprets archived reviewer conversations.

@@ -6,17 +6,19 @@ from campaign.network import grammar_targets
 from campaign.surface import input_only
 from campaign.repair import repair,score
 from campaign.ner import decode as decode_ner,counts as ner_counts
-from english_diversity_pilot import ud_targets
-from model import decode
-from data import RELATIONS
+from campaign.trees import ud_targets
+from campaign.parser import decode
+from campaign.trees import RELATIONS
 
 
 def f1(c,prefix=''):
+    """Calculate count-based F1, leaving unsupported denominators undefined."""
     a,b,cnt=(c.get(prefix+k,0) for k in ('tp','fp','fn'))
     return 2*a/(2*a+b+cnt) if 2*a+b+cnt else None
 
 
 def summarize(c,task):
+    """Derive task metrics from additive per-row counters."""
     d=dict(c)
     if task=='syntax':
         d['las']=c.get('las_correct',0)/max(c.get('tokens',0),1)
@@ -37,6 +39,7 @@ def summarize(c,task):
 
 @torch.inference_mode()
 def evaluate(package,rows):
+    """Save predictions and task/safety counts without using gold repair hints."""
     package.head.eval();totals=defaultdict(Counter);predictions=[]
     for start in range(0,len(rows),16):
         batch=rows[start:start+16];x=package.features(batch)
@@ -98,7 +101,9 @@ def paired_effect(control,feature,samples=1000):
         require(c['counts']['tokens']==f['counts']['tokens'],'Unpaired scoring masks')
         groups[c['language']].append((c['counts']['las_correct'],f['counts']['las_correct'],c['counts']['tokens']))
     require(not lookup,'Unpaired feature rows')
-    def delta(rows):return 100*sum(b-a for a,b,n in rows)/sum(n for a,b,n in rows)
+    def delta(rows):
+        """Calculate the paired LAS effect for a sentence resample."""
+        return 100*sum(b-a for a,b,n in rows)/sum(n for a,b,n in rows)
     rng=random.Random(723);draws=[]
     effects={l:delta(v) for l,v in groups.items()}
     for _ in range(samples):draws.append(sum(delta(rng.choices(v,k=len(v))) for v in groups.values())/len(groups))
@@ -107,6 +112,7 @@ def paired_effect(control,feature,samples=1000):
 
 
 def select_feature(paired):
+    """Select grammar fusion only when both paired effects satisfy the gate."""
     require(len(paired)==2,'Both seeds required')
     practical=sum(p['macro_pp'] for p in paired)/2>=.2 and all(p['macro_pp']>0 and min(p['per_language_pp'].values())>=-.5 for p in paired)
     supported=all(p['macro_ci95_pp'][0]>0 for p in paired)

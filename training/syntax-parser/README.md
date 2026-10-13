@@ -1,9 +1,11 @@
-# Multilingual parser training
+# Multilingual training pipeline
 
-Start with [the one-page plan](MULTILINGUAL_TRAINING_ONE_PAGER.md), then the
-[campaign runbook](campaign/README.md) and [implementation report](MULTILINGUAL_PIPELINE_IMPLEMENTATION.md).
+The final research pipeline trains **English, French and Spanish** task adapters
+on frozen mmBERT-small, using **raw block 12** throughout. POS/morphology, syntax
+and fixed-category NER have separate LoRA adapters and task heads.
 
-## Install and test
+Start with the [training plan](MULTILINGUAL_TRAINING_PLAN.md) and
+[run commands and input contracts](campaign/README.md).
 
 ```sh
 cd training/syntax-parser
@@ -12,36 +14,18 @@ uv run python -m pytest -q
 uv run python -m campaign.cli --help
 ```
 
-The source-only tests need no model download. The corpus-import tests skip
-explicitly when their separately distributed review artifacts are absent.
-The local workspace validation ran all 43 tests with those artifacts present;
-CPU and MPS integrated training smoke also passed with exact resume replay.
-The clean PR checkout passes 27 tests and explicitly skips the 16 corpus checks;
-[recorded verification](verification/implementation-smoke.json) separates the two.
+All committed tests use small synthetic fixtures and run without model downloads
+or private datasets. The [validation record](verification/implementation-smoke.json)
+states the final source test and CPU/MPS smoke results. Smoke training is an
+implementation check, not a trained model or generalization score.
 
-## Data is a separate prerequisite
+The `campaign/` package is self-contained. It contains the selected encoder path,
+LoRA, biaffine head, data contracts, training orchestration and evaluation policy.
+Layer-search probes, historical training entry points and review exchanges are
+not part of the maintained pipeline.
 
-This source PR does **not** distribute checkpoints, model caches, dictation logs,
-training corpora or experiment outputs. Links into `artifacts/` in historical
-reports refer to local evidence, not files available in a fresh clone.
-
-`campaign.cli prepare` consumes the frozen data already used in the research:
-`artifacts/multilingual-layer12-language-feature-v1` (selection and protocol),
-`artifacts/hesitation-multilingual-adjudicated-v1` (reviewed syntax candidates),
-`artifacts/stanza-english-data` (pinned English parquet and hashes), cached pinned
-French/Spanish parquet under `artifacts/hf-cache`, and official development/test
-JSONL under `artifacts/data`. The pinned model/tokenizer cache is also required.
-Provision these through the existing research-data handoff before preparation.
-This PR does not offer a from-scratch corpus downloader or redistribute the data.
-The reviewed multilingual NER corpus is a further, still outstanding input.
-
-The campaign package is the supported entry point. Other Python modules are
-included because it reuses their encoder, LoRA, target, parser and evaluation
-helpers; their historical experiment CLIs require additional local artifacts.
-The optional old candidate comparison reads `PARROTFLOW_REFERENCE_RULE` instead
-of a machine-specific path and is not part of campaign execution.
-
-The [CodeRabbit record](CODERABBIT_CAMPAIGN_REVIEW.md) states review coverage and
-the quota-limited final check. Production app configuration and disfluency rules
-are unchanged. Full campaign training and protected endpoint evaluation are
-separate commands and have not been started by this PR.
+No training corpora, dictation logs, model caches or checkpoints are committed.
+Preparation requires the separately provisioned pinned sources listed in the
+runbook. A reviewed multilingual NER corpus remains an outstanding input.
+Full training and protected endpoint evaluation are explicit separate commands;
+production application configuration is unchanged.

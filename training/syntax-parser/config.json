@@ -2,15 +2,5 @@
   "model_id": "jhu-clsp/mmBERT-small",
   "model_revision": "abc32620dd4f6ab06f5fbe905dc25f310618e09f",
   "dataset_id": "universal-dependencies/universal_dependencies",
-  "dataset_revision": "c3fed78df6b9f8cd27ed24cc7142e9eccf1e6703",
-  "treebanks": ["en_ewt", "en_eslspok", "fr_gsd", "fr_rhapsodie", "fr_parisstories", "es_ancora", "es_coser"],
-  "evaluation_only": ["es_coser"],
-  "max_subwords": 256,
-  "arc_dim": 128,
-  "label_dim": 64,
-  "dropout": 0.2,
-  "batch_size": 16,
-  "epochs": 15,
-  "learning_rate": 0.001,
-  "seed": 42
+  "dataset_revision": "c3fed78df6b9f8cd27ed24cc7142e9eccf1e6703"
 }

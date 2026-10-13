@@ -6,16 +6,18 @@ import torch
 from campaign.common import *
 from campaign.surface import view
 from campaign.network import Package
-from adapters import adapter_state,load_adapter_state
-from lora_syntax_only import base_hash
+from campaign.adapters import adapter_state,load_adapter_state
+from campaign.encoder import base_hash
 from campaign.metrics import evaluate
 
 
 def implementation_hash():
-    return fingerprint({str(p):sha(p) for p in sorted(Path('campaign').glob('*.py'))} | {p:sha(p) for p in ('adapters.py','model.py','syntax_layers_10_11_12_v1.py','lora_syntax_only.py','data.py','english_diversity_pilot.py','mechanical_tree_repair.py','lora_syntax_continue.py')})
+    """Fingerprint every final-pipeline module for checkpoint compatibility."""
+    return fingerprint({str(p):sha(p) for p in sorted(Path('campaign').glob('*.py'))})
 
 
 def capture(package,meta):
+    """Copy model, optimizer, RNG and execution metadata into a full resume."""
     return dict(meta={**meta, 'task':package.task,'seed':package.seed,'feature':package.feature,
         'teacher_hash':package.teacher.digest if package.teacher else None,
         'implementation_hash':implementation_hash(),'protocol_hash':fingerprint(package.protocol),
@@ -27,6 +29,7 @@ def capture(package,meta):
 
 
 def restore(package,state,restore_rng=True):
+    """Validate checkpoint identity before restoring trainable state and optional RNG."""
     m=state['meta']
     require(m['task']==package.task and m['seed']==package.seed and m['feature']==package.feature,'Checkpoint task/seed/feature mismatch')
     require(m['inventory']==package.vocab and m['protocol_hash']==fingerprint(package.protocol),'Checkpoint input mismatch')
@@ -48,10 +51,12 @@ def restore(package,state,restore_rng=True):
 
 
 def save(path,state):
+    """Atomically replace a PyTorch checkpoint through a temporary sibling."""
     path=Path(path);tmp=path.with_suffix('.tmp');torch.save(state,tmp);tmp.replace(path)
 
 
 def run_epochs(package,output,plans,pools,dev,forbidden,epochs,bundle_hash,resume=None,smoke=False,max_batches=None):
+    """Resume frozen batches with cumulative statistics and idempotent epoch history."""
     output=Path(output);output.mkdir(parents=True,exist_ok=True)
     require(smoke or max_batches is None,'Partial-step limits are smoke-only')
     latest=output/'latest.pt'
@@ -71,6 +76,7 @@ def run_epochs(package,output,plans,pools,dev,forbidden,epochs,bundle_hash,resum
         rejections=CounterLike(meta['augmentation_rejections'] if start else {})
         loss_sum=meta['loss_sum'] if start else 0
         def checkpoint(cursor,complete):
+            """Capture the current cursor and all accumulated epoch statistics."""
             return capture(package,dict(epoch=epoch,cursor=cursor,complete=complete,smoke=smoke,bundle_hash=bundle_hash,
                 plan_hash=fingerprint(schedule),backend=package.device,loss_sum=loss_sum,augmentation_rejections=dict(rejections)))
         if meta and epoch==meta['epoch'] and not meta['complete']:
@@ -101,4 +107,20 @@ def run_epochs(package,output,plans,pools,dev,forbidden,epochs,bundle_hash,resum
 
 
 class CounterLike(dict):
-    def __missing__(self,key):return 0
+    def __missing__(self,key):
+        """Treat unseen augmentation rejection reasons as zero."""
+        return 0
+
+
+def assert_state_equal(actual, expected):
+    """Reject a reset optimizer or changed moment/counter, including nested state."""
+    if torch.is_tensor(expected):
+        assert torch.is_tensor(actual) and torch.equal(actual.detach().cpu(), expected.detach().cpu())
+    elif isinstance(expected, dict):
+        assert actual.keys() == expected.keys()
+        for key in expected: assert_state_equal(actual[key], expected[key])
+    elif isinstance(expected, (list, tuple)):
+        assert len(actual) == len(expected)
+        for a,b in zip(actual,expected): assert_state_equal(a,b)
+    else:
+        assert actual == expected, (actual, expected)

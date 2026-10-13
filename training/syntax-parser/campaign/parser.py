@@ -8,11 +8,13 @@ from stanza.models.common.chuliu_edmonds import chuliu_edmonds_one_root
 
 class Biaffine(nn.Module):
     def __init__(self, dim, outputs):
+        """Initialize the trainable biaffine scorer or dependency-head projections."""
         super().__init__()
         self.weight = nn.Parameter(torch.empty(outputs, dim + 1, dim + 1))
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, dependent, parent, aligned=False):
+        """Score dependent/parent pairs, using aligned gold edges only when supplied."""
         dependent = F.pad(dependent, (0, 1), value=1)
         parent = F.pad(parent, (0, 1), value=1)
         if aligned:
@@ -22,11 +24,13 @@ class Biaffine(nn.Module):
 
 class ParserHead(nn.Module):
     def __init__(self, hidden_size, relations, arc_dim=128, label_dim=64, dropout=0.2):
+        """Initialize the trainable biaffine scorer or dependency-head projections."""
         super().__init__()
         self.settings = dict(hidden_size=hidden_size, relations=relations, arc_dim=arc_dim,
                              label_dim=label_dim, dropout=dropout)
         self.root = nn.Parameter(torch.zeros(hidden_size))
         def projection(dim):
+            """Build one ELU/dropout projection used by arc or label scoring."""
             return nn.Sequential(nn.Linear(hidden_size, dim), nn.ELU(), nn.Dropout(dropout))
         self.arc_dep, self.arc_head = projection(arc_dim), projection(arc_dim)
         self.rel_dep, self.rel_head = projection(label_dim), projection(label_dim)
@@ -34,6 +38,7 @@ class ParserHead(nn.Module):
         self.rel = Biaffine(label_dim, len(relations))
 
     def forward(self, words, mask, gold_heads=None):
+        """Score dependent/parent pairs, using aligned gold edges only when supplied."""
         x = torch.cat([self.root.expand(words.size(0), 1, -1), words], dim=1)
         arcs = self.arc(self.arc_dep(x), self.arc_head(x)).squeeze(-1)
         rel_dep, rel_head = self.rel_dep(x), self.rel_head(x)
@@ -53,6 +58,7 @@ class ParserHead(nn.Module):
 
 def loss_for(arcs, labels, heads, relations, mask):
     # Select actual dependents before CE: padded rows may be entirely masked.
+    """Sum arc and relation cross-entropy over unpadded supervised words."""
     arc_loss = F.cross_entropy(arcs[:, 1:][mask], heads[mask])
     if labels.ndim == 3:
         selected = labels[:, 1:]
@@ -62,6 +68,7 @@ def loss_for(arcs, labels, heads, relations, mask):
 
 
 def decode(arcs, labels, length, relation_names):
+    """Decode one rooted tree and enforce root-label consistency."""
     scores = arcs[:length + 1, :length + 1].detach().cpu()
     # Stanza's one-root decoder expects log probabilities, not arbitrary positive logits.
     scores[0] = 0
@@ -77,18 +84,3 @@ def decode(arcs, labels, length, relation_names):
             rel[dependent, head, root_label] = float("-inf")
             result.append(relation_names[int(rel[dependent, head].argmax())])
     return heads, result
-
-
-def batch_rows(rows, device):
-    lengths = [len(row["words"]) for row in rows]
-    features = torch.zeros(len(rows), max(lengths), rows[0]["features"].size(-1))
-    mask = torch.zeros(len(rows), max(lengths), dtype=torch.bool)
-    heads = torch.full(mask.shape, -100, dtype=torch.long)
-    relations = torch.full(mask.shape, -100, dtype=torch.long)
-    names = rows[0]["relation_names"]
-    for i, (row, length) in enumerate(zip(rows, lengths)):
-        features[i, :length] = row["features"].float()
-        mask[i, :length] = True
-        heads[i, :length] = torch.tensor(row["heads"])
-        relations[i, :length] = torch.tensor([names.index(r) for r in row["labels"]])
-    return tuple(t.to(device) for t in (features, mask, heads, relations))

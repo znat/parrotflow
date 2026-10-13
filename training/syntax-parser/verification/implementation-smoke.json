@@ -1,14 +1,10 @@
 {
-  "scope": "Recorded implementation smoke before PR packaging; not model quality evaluation",
-  "implementation_hash": "cd26679d05427c7985b7b29af05d138dbbd4979477a2e5751e114bb8001686c4",
-  "original_workspace_tests": {
-    "passed": 43,
-    "failed": 0
-  },
-  "pr_without_corpus_tests": {
-    "passed": 27,
-    "skipped": 16,
-    "reason": "Reviewed corpus artifacts deliberately excluded"
+  "scope": "Final layer-12 pipeline implementation checks; not model-quality evaluation",
+  "implementation_hash": "7816984fba56150e0c3d265073a9c4705b32266b8bf04e48c8423d7854a584b9",
+  "source_tests": {
+    "passed": 26,
+    "failed": 0,
+    "skipped": 0
   },
   "smoke": {
     "cpu": {

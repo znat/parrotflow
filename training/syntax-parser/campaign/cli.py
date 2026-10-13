@@ -17,17 +17,20 @@ from campaign.repair import repair,score
 
 
 def bundle(path):
+    """Verify and load a prepared corpus, inventories and frozen protocol."""
     path=Path(path);verify_bundle(path)
     return path,read(path/'protocol.json'),read(path/'inventories.json'),sha(path/'manifest.json')
 
 
 def drop(*objects):
+    """Release unreachable model objects and free unused MPS allocations."""
     gc.collect()
     if torch.backends.mps.is_available():torch.mps.empty_cache()
 
 
 def smoke_rows():
     # Tiny authored examples solely for testing NER plumbing, not a reviewed corpus.
+    """Create tiny authored NER examples solely for integration checks."""
     result=[]
     for lang,text in [('en','Ana uses ToolX.'),('fr','Ana utilise ToolX.'),('es','Ana usa ToolX.')]:
         result.append(normalize_row(dict(id='fixture-'+lang,language=lang,text=text,annotation_complete=True,spans=[dict(start=0,end=3,type='person'),dict(start=text.index('ToolX'),end=text.index('ToolX')+5,type='product_tool')],provenance='smoke fixture only')))
@@ -35,6 +38,7 @@ def smoke_rows():
 
 
 def safety_examples():
+    """Check deletion, KEEP and negation fixtures before campaign execution."""
     cases=[]
     for lang,cue in [('en','sorry'),('fr','pardon'),('es','perdón')]:
         for kind in ('repair','keep','negation'):
@@ -49,6 +53,7 @@ def safety_examples():
 
 
 def execute(data,output,device,smoke=False):
+    """Run bounded grammar, syntax-screen and hesitation/control stages."""
     d,protocol,vocab,bhash=bundle(data);output=Path(output)
     output.mkdir(parents=True,exist_ok=True)
     lock=dict(bundle_hash=bhash,implementation_hash=implementation_hash(),smoke=smoke,device=device)
@@ -114,13 +119,14 @@ def execute(data,output,device,smoke=False):
         pkg=Package('ner',protocol,vocab,42,device)
         run_epochs(pkg,output/'N-fixture-seed42',plans,npools,fixtures,set(),[1],bhash,smoke=True,max_batches=3)
         # CPU exact or documented tight MPS tolerance on identical restored state.
-        from lora_syntax_continue import assert_state_equal
+        from campaign.training import assert_state_equal
         before=capture(pkg,dict(epoch=1,cursor=0,complete=False,smoke=True,bundle_hash=bhash,backend=device))
         save(output/'resume-probe.pt',before);pkg.update(fixtures);after=capture(pkg,before['meta'])
         restore(pkg,torch.load(output/'resume-probe.pt',map_location='cpu',weights_only=True))
         assert_state_equal(before,capture(pkg,before['meta']))
         pkg.update(fixtures);replayed=capture(pkg,before['meta']);diff=[]
         def compare(a,b):
+            """Compare nested replay state using the declared device tolerance."""
             if torch.is_tensor(a):
                 a,b=a.cpu(),b.cpu();delta=float((a.double()-b.double()).abs().max()) if a.numel() else 0
                 if delta:diff.append(delta)
@@ -142,6 +148,7 @@ def execute(data,output,device,smoke=False):
 
 
 def h_decision(output,seeds,primary):
+    """Compare paired hesitation branches with ordinary-language and safety gates."""
     results=[]
     for seed in seeds:
         mix_result=read(output/f'H-mix-seed{seed}/epoch7-evaluation.json');control_result=read(output/f'H-control-seed{seed}/epoch7-evaluation.json')
@@ -158,6 +165,7 @@ def h_decision(output,seeds,primary):
             # Match the original per-language primary dev gate; neither synthetic
             # all-token LAS nor the larger separate GUM set can dilute it.
             def las(result):
+                """Calculate LAS on the frozen primary dev partition for one language."""
                 subset=[p['counts'] for p in result['predictions'] if p['language']==l and (p['language'],p['treebank'],p['id']) in primary]
                 require(subset,'Missing primary language evaluation')
                 return sum(p['las_correct'] for p in subset)/sum(p['tokens'] for p in subset)
@@ -172,6 +180,7 @@ def h_decision(output,seeds,primary):
 
 
 def endpoint(data,run,device):
+    """Reserve and evaluate the single-use COSER endpoint after prerequisites pass."""
     d,protocol,vocab,bhash=bundle(data);run=Path(run)
     lock=read(run/'run-lock.json');require(not lock['smoke'] and lock['bundle_hash']==bhash and lock['implementation_hash']==implementation_hash(),'Only matching completed campaign can evaluate COSER')
     require((run/'campaign-status.json').exists(),'Complete campaign first')
@@ -203,6 +212,7 @@ def endpoint(data,run,device):
 
 
 def main():
+    """Dispatch explicit preparation, training, smoke and endpoint commands."""
     ap=argparse.ArgumentParser();sub=ap.add_subparsers(dest='command',required=True)
     p=sub.add_parser('prepare');p.add_argument('--output',required=True)
     for command in ('smoke','train','coser-endpoint'):
