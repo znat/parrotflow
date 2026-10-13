@@ -1,0 +1,48 @@
+{
+  "scope": "Recorded implementation smoke before PR packaging; not model quality evaluation",
+  "implementation_hash": "cd26679d05427c7985b7b29af05d138dbbd4979477a2e5751e114bb8001686c4",
+  "original_workspace_tests": {
+    "passed": 43,
+    "failed": 0
+  },
+  "pr_without_corpus_tests": {
+    "passed": 27,
+    "skipped": 16,
+    "reason": "Reviewed corpus artifacts deliberately excluded"
+  },
+  "smoke": {
+    "cpu": {
+      "passed": true,
+      "stages": [
+        "grammar",
+        "syntax_context",
+        "syntax_features",
+        "hesitation_mix",
+        "hesitation_control",
+        "NER_fixture"
+      ],
+      "replay_max_abs": 0,
+      "exact_replay": true,
+      "heldout_evaluation": false,
+      "NER_data_ready": false
+    },
+    "mps": {
+      "passed": true,
+      "stages": [
+        "grammar",
+        "syntax_context",
+        "syntax_features",
+        "hesitation_mix",
+        "hesitation_control",
+        "NER_fixture"
+      ],
+      "replay_max_abs": 0,
+      "exact_replay": true,
+      "heldout_evaluation": false,
+      "NER_data_ready": false
+    }
+  },
+  "full_campaign_started": false,
+  "coser_predictions_obtained": false,
+  "reviewed_multilingual_ner_ready": false
+}
