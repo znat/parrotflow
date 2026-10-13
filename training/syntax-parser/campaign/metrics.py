@@ -50,6 +50,7 @@ def evaluate(package,rows):
         for i,r in enumerate(batch):
             n=len(r['words']);c=Counter();p=dict(id=r['id'],language=r['language'],treebank=r.get('treebank'),family_id=r.get('family_id'))
             if package.task=='syntax':
+                c.update(tokens=0,uas_correct=0,las_correct=0)
                 heads,labels=decode(arcs[i],rels[i],n,RELATIONS)
                 for j,(h,l) in enumerate(zip(heads,labels)):
                     if not r.get('upos') or r['upos'][j]!='PUNCT':
@@ -95,12 +96,23 @@ def evaluate(package,rows):
 def paired_effect(control,feature,samples=1000):
     """Language-stratified paired sentence bootstrap; seed uncertainty is separate."""
     lookup={(r['language'],r['treebank'],r['id']):r for r in feature}
-    groups=defaultdict(list)
+    groups=defaultdict(list);zero_token_rows=Counter()
     for c in control:
         k=(c['language'],c['treebank'],c['id']);f=lookup.pop(k)
-        require(c['counts']['tokens']==f['counts']['tokens'],'Unpaired scoring masks')
-        groups[c['language']].append((c['counts']['las_correct'],f['counts']['las_correct'],c['counts']['tokens']))
+        # Legacy Counter JSON omits zero fields on punctuation-only sentences.
+        n=c['counts'].get('tokens',0)
+        require(n==f['counts'].get('tokens',0),'Unpaired scoring masks')
+        a,b=c['counts'].get('las_correct',0),f['counts'].get('las_correct',0)
+        require(0<=a<=n and 0<=b<=n,'Invalid attachment counts')
+        group=groups[c['language']]
+        if n==0:
+            zero_token_rows[c['language']]+=1
+            continue
+        # Zero-weight sentences carry no LAS evidence and can make a bootstrap
+        # draw undefined. Condition resampling on scoreable sentences.
+        group.append((a,b,n))
     require(not lookup,'Unpaired feature rows')
+    require(groups and all(groups.values()),'Each language needs scored tokens')
     def delta(rows):
         """Calculate the paired LAS effect for a sentence resample."""
         return 100*sum(b-a for a,b,n in rows)/sum(n for a,b,n in rows)
@@ -108,7 +120,7 @@ def paired_effect(control,feature,samples=1000):
     effects={l:delta(v) for l,v in groups.items()}
     for _ in range(samples):draws.append(sum(delta(rng.choices(v,k=len(v))) for v in groups.values())/len(groups))
     draws.sort()
-    return dict(per_language_pp=effects,macro_pp=sum(effects.values())/len(effects),macro_ci95_pp=[draws[int(.025*samples)],draws[min(samples-1,int(.975*samples))]])
+    return dict(per_language_pp=effects,macro_pp=sum(effects.values())/len(effects),macro_ci95_pp=[draws[int(.025*samples)],draws[min(samples-1,int(.975*samples))]],zero_token_rows=dict(zero_token_rows))
 
 
 def select_feature(paired):

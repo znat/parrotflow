@@ -168,7 +168,9 @@ def h_decision(output,seeds,primary):
                 """Calculate LAS on the frozen primary dev partition for one language."""
                 subset=[p['counts'] for p in result['predictions'] if p['language']==l and (p['language'],p['treebank'],p['id']) in primary]
                 require(subset,'Missing primary language evaluation')
-                return sum(p['las_correct'] for p in subset)/sum(p['tokens'] for p in subset)
+                tokens=sum(p.get('tokens',0) for p in subset)
+                require(tokens>0,'Primary language has no scored tokens')
+                return sum(p.get('las_correct',0) for p in subset)/tokens
             safe &= las(mix_result)>=las(control_result)-.005
         natural=[]
         for tb in ('en_eslspok','en_gum','fr_rhapsodie','fr_parisstories'):

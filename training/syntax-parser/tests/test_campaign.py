@@ -11,7 +11,7 @@ from campaign.repair import repair,score
 from campaign.dataset import make_orders,parse_feats,inventories
 from campaign.network import grammar_targets,masked_ce
 from campaign.ner import normalize_row,decode,counts,load_corpus
-from campaign.metrics import select_feature
+from campaign.metrics import select_feature,paired_effect
 
 
 def example(text,words,heads,labels,lang='en'):
@@ -274,10 +274,11 @@ def test_h_gate_rejects_new_keep_damage_even_with_equal_counts(tmp_path):
         for lang in LANGUAGES:
             metrics[lang]=dict(complete_repairs=repairs,repair_rows=10,deletion_harmful_keep=1)
             predictions.append(dict(language=lang,treebank='primary',id='ordinary',counts=dict(tokens=10,las_correct=9)))
+            predictions.append(dict(language=lang,treebank='primary',id='punctuation-only',counts={}))
             for identity in ('keep-a','keep-b'):
                 predictions.append(dict(language=lang,treebank=None,id=identity,counts={},deletion=dict(harmful_keep=identity==harm)))
         return dict(predictions=predictions,metrics=metrics)
-    primary={(l,'primary','ordinary') for l in LANGUAGES}
+    primary={(l,'primary',i) for l in LANGUAGES for i in ('ordinary','punctuation-only')}
     control=result('keep-a',1);mix=result('keep-b',2)
     write(tmp_path/'H-control-seed42/epoch7-evaluation.json',control)
     write(tmp_path/'parent-seed42-evaluation.json',control)
@@ -363,3 +364,29 @@ def test_layer12_features_calls_only_the_selected_prefix(monkeypatch):
     value=package([{'words':['x']}])
     assert seen==[('encoder',12)] and value.tolist()==[[[3.,6.]]]
     assert value.requires_grad
+
+
+@pytest.mark.parametrize('empty_counts',[{},dict(tokens=0,las_correct=0)])
+def test_paired_effect_zero_token_rows(empty_counts):
+    """Legacy omitted zeros and explicit zeros yield the same scoreable bootstrap."""
+    control=[dict(language=l,treebank='dev',id='scored',counts=dict(tokens=10,las_correct=8)) for l in LANGUAGES]
+    feature=copy.deepcopy(control)
+    for row in feature:row['counts']['las_correct']=9
+    expected=paired_effect(control,feature,samples=40)
+    for l in LANGUAGES:
+        zero=dict(language=l,treebank='dev',id='punctuation',counts=empty_counts.copy())
+        control.append(zero);feature.append(copy.deepcopy(zero))
+    actual=paired_effect(control,feature,samples=40)
+    assert actual=={**expected,'zero_token_rows':dict.fromkeys(LANGUAGES,1)}
+    assert actual['macro_pp']==10 and actual['macro_ci95_pp']==[10,10]
+
+
+def test_paired_effect_rejects_empty_language_and_mismatched_masks():
+    """Do not hide missing language evidence or one-sided punctuation masks."""
+    zero=dict(language='en',treebank='dev',id='punctuation',counts={})
+    scored=dict(language='fr',treebank='dev',id='scored',counts=dict(tokens=1,las_correct=1))
+    with pytest.raises(ValueError,match='Each language needs scored tokens'):
+        paired_effect([zero,scored],[copy.deepcopy(zero),copy.deepcopy(scored)])
+    other=copy.deepcopy(zero);other['counts']=dict(tokens=1,las_correct=0)
+    with pytest.raises(ValueError,match='Unpaired scoring masks'):
+        paired_effect([zero],[other])
