@@ -878,7 +878,7 @@ struct Config: Decodable, Equatable {
         /// Where the body was read from, for a `prompt:` or `replace:` written
         /// as `{ path: … }`. Nil for an inline one.
         var source: TransformFolder.Resolved?
-        /// More than one of `prompt:`, `replace:` and `command:` on one entry.
+        /// More than one of `prompt:`, `replace:`, `command:` and `native:` on one entry.
         var namesBoth = false
         /// A `path:` that named a file this could not read, in words.
         var unreadable: String?
@@ -904,7 +904,7 @@ struct Config: Decodable, Equatable {
         var model: ModelRef?
 
         enum CodingKeys: String, CodingKey, CaseIterable {
-            case name, description, display, confirm, prompt, content, replace, command
+            case name, description, display, confirm, prompt, content, replace, command, native
             case tests, returns, offer, model, say, done, failed
             case offerKey = "key"
             case timeout = "timeout_seconds"
@@ -1025,11 +1025,13 @@ struct Config: Decodable, Equatable {
                 ? try c.decodeIfPresent([String: [String]].self, forKey: .replace)
                 : nil
             let command = try trimmed(.command)
+            let native = try trimmed(.native)
 
             namesBoth = [
                 !instructions.isEmpty || promptPath != nil,
                 table != nil || tablePath != nil,
-                !command.isEmpty
+                !command.isEmpty,
+                !native.isEmpty
             ].filter { $0 }.count > 1
 
             // Assigned through a local rather than into `unreadable` directly.
@@ -1042,6 +1044,13 @@ struct Config: Decodable, Equatable {
             var bodyProblem: String?
             if !command.isEmpty {
                 body = .command(command)
+            } else if !native.isEmpty {
+                if let built = Transform.Native(rawValue: native.lowercased()) {
+                    body = .native(built)
+                } else {
+                    bodyProblem = "native: no built-in transform named \(native) — have: "
+                        + Transform.Native.allCases.map(\.rawValue).joined(separator: ", ")
+                }
             } else if let table {
                 body = .replace(table)
             } else if !instructions.isEmpty {
@@ -1129,7 +1138,7 @@ struct Config: Decodable, Equatable {
                 // for, on text nobody sees beforehand.
                 Log.write(
                     "transforms: \"\(entry.name)\" names more than one of "
-                    + "`prompt:`, `replace:` and `command:`; skipped"
+                    + "`prompt:`, `replace:`, `command:` and `native:`; skipped"
                 )
                 continue
             }
@@ -1162,7 +1171,7 @@ struct Config: Decodable, Equatable {
             guard let body = entry.body else {
                 Log.write(
                     "transforms: \"\(entry.name)\" has none of "
-                    + "`prompt:`, `replace:` or `command:`; skipped"
+                    + "`prompt:`, `replace:`, `command:` or `native:`; skipped"
                 )
                 continue
             }
@@ -1323,6 +1332,13 @@ struct Config: Decodable, Equatable {
             /// The cost is that config.yaml now executes code, which
             /// `--check-config` says out loud.
             case command(String)
+            /// A rewrite built into the app, run in process.
+            case native(Native)
+        }
+
+        enum Native: String, CaseIterable {
+            /// The string rules of `built-in/transforms/disfluency/disfluency.py`.
+            case disfluency
         }
 
         var isPrompt: Bool {
