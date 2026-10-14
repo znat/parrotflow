@@ -84,7 +84,7 @@ def stage_input(record):
 
 
 def dictations(trace, limit):
-    by_wav = {}
+    by_wav, skipped = {}, 0
     for line in trace.read_text(encoding="utf-8").splitlines():
         try:
             record = json.loads(line)
@@ -95,8 +95,10 @@ def dictations(trace, limit):
         text = stage_input(record)
         if text and "\n" not in text:
             by_wav[record.get("wav")] = (text, record.get("lang") or "en")
+        elif any(s.get("name") == "transform disfluency" for s in record.get("stages") or []):
+            skipped += 1
     items = sorted(by_wav.items())
-    return items[-limit:] if limit else items
+    return (items[-limit:] if limit else items), skipped
 
 
 def head_outputs(binary, items):
@@ -112,6 +114,7 @@ def head_outputs(binary, items):
                          capture_output=True, text=True, encoding="utf-8", env=env)
     if "parser   parrot-syrinx" not in run.stdout:
         sys.exit("the native stage did not load the parser:\n" + run.stdout + run.stderr)
+    overall = re.search(r"overall  (\d+)/(\d+)", run.stdout)
     got, name = {}, None
     for line in run.stdout.splitlines():
         found = re.match(r"  ✗ (r\d+)  \[", line)
@@ -120,6 +123,8 @@ def head_outputs(binary, items):
         elif name and line.startswith("      got   "):
             got[int(name[1:])] = line[len("      got   "):]
             name = None
+    if not overall or int(overall.group(2)) != len(items) or len(got) != len(items) - int(overall.group(1)):
+        sys.exit("the eval report does not account for every dictation:\n" + run.stdout)
     return [got.get(i, text) for i, (_, (text, _)) in enumerate(items)]
 
 
@@ -137,7 +142,7 @@ def main():
     args = parser.parse_args()
 
     trunk = trunk_module()
-    items = dictations(args.trace, args.limit)
+    items, skipped = dictations(args.trace, args.limit)
     heads = head_outputs(args.binary, items)
     groups = {"KEEP-looking": [], "head cuts a marker trunk kept": [], "head keeps a marker trunk cut": []}
     for (wav, (text, lang)), head in zip(items, heads):
@@ -157,6 +162,9 @@ def main():
             print(f"\n{wav}\n  in     {text}\n  trunk  {old}\n  head   {head}")
     print(f"\n{sum(map(len, groups.values()))} of {len(items)} dictations differ: "
           + ", ".join(f"{len(rows)} {title}" for title, rows in groups.items()))
+    if skipped:
+        print(f"{skipped} dictation(s) skipped: the trace could not rebuild what `disfluency` was handed,"
+              " or it held a line break")
 
 
 if __name__ == "__main__":

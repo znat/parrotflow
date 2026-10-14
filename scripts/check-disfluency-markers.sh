@@ -31,6 +31,9 @@ if "parser   parrot-syrinx" not in text:
     sys.exit("  ✗ the parser did not load:\n" + text)
 cases = yaml.safe_load(open(path, encoding="utf-8"))["cases"]
 got = dict(re.findall(r"  ✗ (.*)  \[.*\]\n(?:      in .*\n)?      got   (.*)\n", text))
+overall = re.search(r"overall  (\d+)/(\d+)", text)
+if not overall or int(overall.group(2)) != len(cases) or len(got) != len(cases) - int(overall.group(1)):
+    sys.exit("  ✗ the eval report does not account for every case:\n" + text)
 MARKER = re.compile(r"\b(?:i\s+mean|you\s+know|like)\b", re.I)
 
 
