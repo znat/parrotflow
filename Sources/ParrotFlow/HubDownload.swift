@@ -30,10 +30,14 @@ enum HubDownload {
         }
     }
 
+    private static var endpoint: String {
+        ProcessInfo.processInfo.environment["PARROTFLOW_HUB_ENDPOINT"] ?? "https://huggingface.co"
+    }
+
     static func url(repo: String, revision: String = "main", path: String) -> URL? {
         let escaped = path
             .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
-        return URL(string: "https://huggingface.co/\(repo)/resolve/\(revision)/\(escaped)")
+        return URL(string: "\(endpoint)/\(repo)/resolve/\(revision)/\(escaped)")
     }
 
     /// Downloads `paths` into `directory`, keeping the repository's own layout.
@@ -84,7 +88,7 @@ enum HubDownload {
     /// listing gives the real size, which is what the length check needs.
     private static func sizes(repo: String, revision: String) async throws -> [String: Int64] {
         let path = "api/models/\(repo)/tree/\(revision)?recursive=true"
-        guard let url = URL(string: "https://huggingface.co/\(path)") else { return [:] }
+        guard let url = URL(string: "\(endpoint)/\(path)") else { return [:] }
         let (data, response) = try await URLSession.shared.data(from: url)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
             throw Failure.http(path: path, status: http.statusCode)
