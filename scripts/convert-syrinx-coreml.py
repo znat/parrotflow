@@ -21,6 +21,7 @@ import argparse
 import hashlib
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -110,9 +111,11 @@ def main():
     args = ap.parse_args()
 
     import coremltools as ct
-    versions = dict(torch=torch.__version__, coremltools=ct.__version__, numpy=np.__version__)
-    wanted = dict(torch='2.7.0', coremltools='9.0', numpy='2.2.6')
-    if any(not versions[k].startswith(v) for k, v in wanted.items()):
+    import safetensors
+    versions = dict(python='.'.join(map(str, sys.version_info[:2])), torch=torch.__version__,
+                    coremltools=ct.__version__, numpy=np.__version__, safetensors=safetensors.__version__)
+    wanted = dict(python='3.13', torch='2.7.0', coremltools='9.0', numpy='2.2.6', safetensors='0.8.0')
+    if versions != wanted:
         raise SystemExit(f'pinned toolchain {wanted}, found {versions}')
 
     manifest = json.loads((args.weights / 'manifest.json').read_text())
