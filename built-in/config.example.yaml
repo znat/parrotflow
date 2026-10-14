@@ -325,25 +325,21 @@ transforms:
       "": ['/[,]?\s*\b(?:{{fillers_fr}})\b[,]?/',
            '/[,]?\s*\be+u+h+\b[,]?/']
 
-  # Repeats, false starts, and a discourse marker that carries nothing.
-  # ~0.04s for the first four rules, mostly the python3 start.
+  # Repeats, false starts, and a discourse marker that carries nothing, in
+  # process.
   #
-  # The fifth wants a dependency parse, because "you know" is a real verb with
-  # a real object half the time — "we'll let you know" has to survive. Run
-  # `ParrotFlow --setup-parsing` and it is used; without it the other four
-  # still run and `disfluency.declined` says what was lost. No interpreter is
-  # named here: the script finds the venv itself.
-  #
-  # `returns: json` is not optional. It is what sends `ctx.language` in, and
-  # the marker rule is English-only.
+  # The fifth rule, "I mean", "you know" and "like", wants a dependency parse,
+  # because "you know" is a real verb with a real object half the time — "we'll
+  # let you know" has to survive. The parser is a 519 MB download fetched after
+  # launch. Until it is in memory the other four still run and
+  # `disfluency.declined` says what was lost. English only.
   - name: disfluency
     description: delete hesitations, repeats and false starts
     # Nobody asks for "disfluency" out loud. `say:` is what the keyed path
     # matches on, and without these "clean up the repetitions" reaches the
     # catch-all instead of this — which the rename broke, 25/26.
     say: [repetitions, hesitations, false starts]
-    command: built-in/disfluency/disfluency.py
-    returns: json
+    native: disfluency
     tests: { path: built-in/disfluency/cases.yaml }
 
   # Opens the last dictation's timeline in a text editor: every step, every

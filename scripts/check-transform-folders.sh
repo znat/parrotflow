@@ -292,7 +292,7 @@ check "the seeded script is executable" \
 
 check "the seeded config resolves its command through transforms/built-in/" \
   "$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --check-config 2>/dev/null \
-     | grep -c 'transforms/built-in/disfluency/disfluency.py')" \
+     | grep -c 'transforms/built-in/dates/en.py')" \
   "1"
 
 check "a seeded config is clean" \
@@ -420,7 +420,7 @@ check "an update moves transforms/examples/ to transforms/built-in/" \
   "gone new"
 
 check "an update rewrites examples/ paths in config.yaml" \
-  "$(grep -cE '(command|tests|path): examples/' "$OLD/config.yaml") $(grep -c 'command: built-in/disfluency/disfluency.py' "$OLD/config.yaml")" \
+  "$(grep -cE '(command|tests|path): examples/' "$OLD/config.yaml") $(grep -c 'command: built-in/dates/en.py' "$OLD/config.yaml")" \
   "0 1"
 
 check "and the rewritten config is clean" \

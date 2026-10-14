@@ -341,3 +341,116 @@ cases:
     parse: true
     input: "I mean, what I mean is this."
     expect: "What I mean is this."
+
+  # --- blind ---
+  # 30 sentences an agent wrote on 2026-10-14 from the marker rule's
+  # description alone, before any rule code. Nothing was tuned on them. Score
+  # this block on its own with `--eval disfluency --probe blind`. It does not
+  # score 30/30 and is not meant to. The gate is that the native stage beats
+  # spaCy here (25/30, 3 keeps lost) in total and in keeps lost.
+  # "it broke again on friday you know" is a debatable cut.
+  - probe: blind
+    parse: true
+    input: "I mean we'll let you know once the build is green"
+    expect: "We'll let you know once the build is green"
+  - probe: blind
+    parse: true
+    input: "I mean that's the whole point of having a cache"
+    expect: "That's the whole point of having a cache"
+  - probe: blind
+    parse: true
+    input: "I mean it costs like fifty dollars a month so who cares"
+    expect: "It costs fifty dollars a month so who cares"
+  - probe: blind
+    parse: true
+    input: "I mean you know we already tried that last sprint"
+    expect: "We already tried that last sprint"
+  - probe: blind
+    parse: true
+    input: "the review is fine I mean the naming is a bit off but whatever"
+    expect: "the review is fine the naming is a bit off but whatever"
+  - probe: blind
+    parse: true
+    input: "I mean what I said in the standup yesterday"
+  - probe: blind
+    parse: true
+    input: "when I say the old branch I mean the release branch not main"
+  - probe: blind
+    parse: true
+    input: "I mean it this time no more force pushing to main"
+  - probe: blind
+    parse: true
+    input: "I was on a call with James, I mean Peter about the invoices"
+  - probe: blind
+    parse: true
+    input: "I mean that seriously we have to ship by friday"
+  - probe: blind
+    parse: true
+    input: "the query takes like thirty seconds on prod"
+    expect: "the query takes thirty seconds on prod"
+  - probe: blind
+    parse: true
+    input: "we have like two hundred open tickets in the backlog"
+    expect: "we have two hundred open tickets in the backlog"
+  - probe: blind
+    parse: true
+    input: "can you push the fix in like 5 minutes"
+    expect: "can you push the fix in 5 minutes"
+  - probe: blind
+    parse: true
+    input: "the new dashboard is like really slow on safari"
+    expect: "the new dashboard is really slow on safari"
+  - probe: blind
+    parse: true
+    input: "so like, should we just delete the old index"
+    expect: "so should we just delete the old index"
+  - probe: blind
+    parse: true
+    input: "I like the new naming better than the old one"
+  - probe: blind
+    parse: true
+    input: "it looks like a race condition in the worker"
+  - probe: blind
+    parse: true
+    input: "like I said we'll let you know by friday"
+  - probe: blind
+    parse: true
+    input: "we would like 3 more licenses for the design team"
+  - probe: blind
+    parse: true
+    input: "we need something like redis for the session store"
+  - probe: blind
+    parse: true
+    input: "it's just you know a lot of moving parts"
+    expect: "it's just a lot of moving parts"
+  - probe: blind
+    parse: true
+    input: "we should probably you know add a test for that"
+    expect: "we should probably add a test for that"
+  - probe: blind
+    parse: true
+    input: "and then you know, it just crashed"
+    expect: "and then it just crashed"
+  - probe: blind
+    parse: true
+    input: "it broke again on friday you know"
+    expect: "it broke again on friday"
+  - probe: blind
+    parse: true
+    input: "it takes like you know two days to get a review"
+    expect: "it takes two days to get a review"
+  - probe: blind
+    parse: true
+    input: "we'll let you know when the build is ready"
+  - probe: blind
+    parse: true
+    input: "do you know who owns the auth service"
+  - probe: blind
+    parse: true
+    input: "you know the answer better than I do"
+  - probe: blind
+    parse: true
+    input: "as you know the office is closed on monday"
+  - probe: blind
+    parse: true
+    input: "I want to make sure you know the release date moved to thursday"
