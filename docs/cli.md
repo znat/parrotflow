@@ -216,7 +216,8 @@ so a case file states the setup it assumes instead of inheriting this machine's.
   about 600 MB of downloads, and `make test` must not need one. Only what the
   fixture's own pipeline reads: a fixture with `slot_gate: false` on its
   `vocabulary` step fetches no slot model, and one with no `vocabulary` step
-  fetches neither.
+  fetches neither. It also loads the parser when the fixture runs the native
+  `disfluency` and dictates English, so the marker rule runs.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
 

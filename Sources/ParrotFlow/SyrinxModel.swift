@@ -87,9 +87,7 @@ actor SyrinxModel {
         Task { [weak self] in
             let started = Date()
             do {
-                let parser = try await self?.prepare()
-                // Core ML's first prediction is slower than the rest; a dictation should not pay it.
-                _ = parser?.parse(words: Words(joining: ["I", "mean", "it"]), language: "en")
+                _ = try await self?.prepare()
                 Log.write(String(format: "parser: warmed in %.1fs", Date().timeIntervalSince(started)))
             } catch {
                 await self?.hold(after: error)
@@ -131,7 +129,15 @@ actor SyrinxModel {
         }
     }
 
+    /// Off the actor, so a dictation asking for `loaded` never waits on it.
     private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
+        let parser = try await openOrFetch(progress: progress)
+        // The first prediction after a load took 167 to 223 ms against 10 to 16 ms warm.
+        _ = parser.parse(words: Words(joining: ["I", "mean", "it"]), language: "en")
+        return parser
+    }
+
+    private static func openOrFetch(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
         if isCached {
             ModelDownloads.report(download.id, .loading)
             do { return try load() } catch Failure.busy { throw Failure.busy } catch {
