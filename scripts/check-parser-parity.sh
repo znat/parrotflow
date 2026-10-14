@@ -3,8 +3,9 @@
 #
 #   scripts/check-parser-parity.sh
 #
-# Needs the model, so it is not in `make test`. Until the model is published, serve the converter's output with a mirror and
-# set PARROTFLOW_HUB_ENDPOINT.
+# Needs the model, so it is not in `make test`. It fetches the model on first
+# use. PARROTFLOW_SYRINX_ENDPOINT points the fetch at a mirror; the files it
+# serves must match the hashes pinned in SyrinxModel.swift.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
@@ -68,8 +69,18 @@ sys.exit(0 if passed == len(want) else 1)
 EOF
 status=$?
 
-if grep -q 'static let revision: String? = nil' "$ROOT/Sources/ParrotFlow/SyrinxModel.swift"; then
-  echo "  ✗ SyrinxModel.revision is a placeholder: publish the model and pin its commit"
-  exit 1
+# A cache built for other pinned hashes must be fetched again, never loaded.
+# The fetch goes to a closed port, so it fails fast and the parse abstains.
+STALE="$WORK/home/Library/Application Support/ParrotFlow/models/parrot-syrinx"
+mkdir -p "$STALE"
+zeros=0000000000000000000000000000000000000000000000000000000000000000
+printf '{"pinned":{"syrinx.safetensors":"%s"},"files":{"syrinx.safetensors":"%s"}}' "$zeros" "$zeros" > "$STALE/digests.json"
+out="$(CFFIXED_USER_HOME="$WORK/home" PARROTFLOW_SYRINX_ENDPOINT=http://127.0.0.1:9 "$BIN" --parse "we can try" 2>&1)"
+if grep -q "from another release; fetching it again" <<< "$out" && grep -q "✗ parser unavailable" <<< "$out"; then
+  echo "  ✓ a cache from another release is fetched again, not loaded"
+else
+  echo "  ✗ a cache from another release was not refetched:"
+  grep -v "ParrotFlow\[" <<< "$out" | sed 's/^/      /'
+  status=1
 fi
 exit $status

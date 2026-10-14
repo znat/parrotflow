@@ -11,20 +11,19 @@ actor SyrinxModel {
     enum Failure: LocalizedError {
         case busy
         case damaged(String)
-        case unpublished
+        case stale
 
         var errorDescription: String? {
             switch self {
             case .busy: return "another ParrotFlow process is fetching the parser"
             case .damaged(let file): return "the parser cache is damaged: \(file)"
-            case .unpublished: return "the parser has no published revision yet"
+            case .stale: return "the parser cache is from another release"
             }
         }
     }
 
     private static let repository = "znaat/parrot-syrinx-coreml"
-    /// Nil until the model is published.
-    static let revision: String? = "6ef93ba322a66cb3fda0addde0dd8f541b97e3fb"
+    static let revision = "6ef93ba322a66cb3fda0addde0dd8f541b97e3fb"
     private static let packageName = "parrot-syrinx.mlpackage"
 
     private static let pinned: [String: String] = [
@@ -35,6 +34,19 @@ actor SyrinxModel {
         "tokenizer.json": "197d4cc5406ee12cc50c8b5511f2393cc32d9db321545979ce041c1199178356",
     ]
     private static let kept = ["syrinx.safetensors", "tokenizer.json"]
+
+    /// `PARROTFLOW_SYRINX_ENDPOINT` points this download, and no other, at a
+    /// mirror for tests. What it serves must still match `pinned`.
+    private static var endpoint: String {
+        ProcessInfo.processInfo.environment["PARROTFLOW_SYRINX_ENDPOINT"] ?? HubDownload.huggingFace
+    }
+
+    /// `pinned` as it was when the cache was built, so a cache from another
+    /// release is fetched again rather than verified against itself.
+    private struct Digests: Codable {
+        let pinned: [String: String]
+        let files: [String: String]
+    }
 
     static var directory: URL {
         AppVariant.supportDirectory.appendingPathComponent("models/parrot-syrinx", isDirectory: true)
@@ -73,14 +85,10 @@ actor SyrinxModel {
                 progress?("\(error.localizedDescription); fetching it again")
             }
         }
-        let mirror = ProcessInfo.processInfo.environment["PARROTFLOW_HUB_ENDPOINT"] != nil
-        guard let revision = revision ?? (mirror ? "main" : nil) else { throw Failure.unpublished }
-        do {
-            let handle = try lock(LOCK_EX)
-            defer { close(handle) }
-            try await fetch(revision: revision, progress: progress)
-        }
-        return try load()
+        let handle = try lock(LOCK_EX)
+        defer { close(handle) }
+        try await fetch(progress: progress)
+        return try openCache()
     }
 
     /// `.cpuAndGPU` is pinned because under `.all` the OS picks the device per
@@ -95,6 +103,11 @@ actor SyrinxModel {
     private static func load() throws -> Parser {
         let handle = try lock(LOCK_SH)
         defer { close(handle) }
+        return try openCache()
+    }
+
+    /// Callers hold the lock, shared or exclusive.
+    private static func openCache() throws -> Parser {
         try verify()
         let configuration = MLModelConfiguration()
         configuration.computeUnits = computeUnits
@@ -109,10 +122,12 @@ actor SyrinxModel {
     /// Core ML segfaults on a compiled model missing `model.mil` rather than
     /// throwing.
     private static func verify() throws {
-        let data = try Data(contentsOf: digestsURL)
-        let digests = try JSONDecoder().decode([String: String].self, from: data)
-        guard !digests.isEmpty else { throw Failure.damaged("digests.json") }
-        for (path, digest) in digests.sorted(by: { $0.key < $1.key }) {
+        guard let digests = try? JSONDecoder().decode(Digests.self, from: Data(contentsOf: digestsURL))
+        else { throw Failure.damaged("digests.json") }
+        guard digests.pinned == pinned else { throw Failure.stale }
+        guard kept.allSatisfy({ digests.files[$0] == pinned[$0] }), digests.files.count > kept.count
+        else { throw Failure.damaged("digests.json") }
+        for (path, digest) in digests.files.sorted(by: { $0.key < $1.key }) {
             guard (try? sha256(directory.appendingPathComponent(path))) == digest else {
                 throw Failure.damaged(path)
             }
@@ -134,7 +149,7 @@ actor SyrinxModel {
         return handle
     }
 
-    private static func fetch(revision: String, progress: (@Sendable (String) -> Void)?) async throws {
+    private static func fetch(progress: (@Sendable (String) -> Void)?) async throws {
         let files = FileManager.default
         try? files.removeItem(at: digestsURL)
         try files.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -147,7 +162,8 @@ actor SyrinxModel {
 
         let reported = Reported()
         try await HubDownload.fetch(
-            repo: repository, revision: revision, paths: pinned.keys.sorted(), into: staging
+            repo: repository, revision: revision, paths: pinned.keys.sorted(), into: staging,
+            endpoint: endpoint
         ) { fraction in
             let percent = Int((fraction * 100).rounded())
             if reported.advanced(to: percent) { progress?("parser \(percent)%") }
@@ -167,15 +183,15 @@ actor SyrinxModel {
         try? files.removeItem(at: compiledURL)
         try files.moveItem(at: compiled, to: compiledURL)
 
-        var digests: [String: String] = [:]
-        for name in kept { digests[name] = try sha256(directory.appendingPathComponent(name)) }
+        var hashes: [String: String] = [:]
+        for name in kept { hashes[name] = try sha256(directory.appendingPathComponent(name)) }
         let base = directory.standardizedFileURL.path + "/"
         let walk = files.enumerator(at: compiledURL, includingPropertiesForKeys: [.isRegularFileKey])
         while let url = walk?.nextObject() as? URL {
             guard try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { continue }
-            digests[String(url.standardizedFileURL.path.dropFirst(base.count))] = try sha256(url)
+            hashes[String(url.standardizedFileURL.path.dropFirst(base.count))] = try sha256(url)
         }
-        try JSONEncoder().encode(digests).write(to: digestsURL, options: .atomic)
+        try JSONEncoder().encode(Digests(pinned: pinned, files: hashes)).write(to: digestsURL, options: .atomic)
     }
 
     private static func sha256(_ url: URL) throws -> String {
