@@ -2845,6 +2845,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .failure(let failure):
                 throw CommandDidNotRun(name: transform.name, said: failure.complaint)
             }
+        case .native(.disfluency):
+            return Disfluency.collapse(text).text
         }
     }
 

@@ -511,9 +511,11 @@ enum EvalCommand {
         case .prompt: kind = "prompt "
         case .replace: kind = "replace"
         case .command: kind = "command"
+        case .native: kind = "native "
         }
         if let found = transform.resolvedSource { return "\(kind)  \(short(found.path))" }
         if case .command(let command) = transform.body { return "\(kind)  \(command) — on PATH" }
+        if case .native(let built) = transform.body { return "\(kind)  \(built.rawValue) — built in" }
         return "\(kind)  inline"
     }
 
