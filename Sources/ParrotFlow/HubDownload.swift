@@ -30,10 +30,20 @@ enum HubDownload {
         }
     }
 
-    static func url(repo: String, revision: String = "main", path: String) -> URL? {
+    static let huggingFace = "https://huggingface.co"
+
+    static func url(
+        repo: String, revision: String = "main", path: String, endpoint: String = huggingFace
+    ) -> URL? {
         let escaped = path
             .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
-        return URL(string: "https://huggingface.co/\(repo)/resolve/\(revision)/\(escaped)")
+        return URL(string: "\(trimmed(endpoint))/\(repo)/resolve/\(revision)/\(escaped)")
+    }
+
+    private static func trimmed(_ endpoint: String) -> String {
+        var base = endpoint
+        while base.hasSuffix("/") { base.removeLast() }
+        return base
     }
 
     /// Downloads `paths` into `directory`, keeping the repository's own layout.
@@ -51,9 +61,10 @@ enum HubDownload {
         revision: String = "main",
         paths: [String],
         into directory: URL,
+        endpoint: String = huggingFace,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
-        let listed = try await sizes(repo: repo, revision: revision)
+        let listed = try await sizes(repo: repo, revision: revision, endpoint: endpoint)
         var wanted: [String: Int64] = [:]
         for path in paths {
             guard let size = listed[path] else { throw Failure.unlisted(path: path) }
@@ -66,7 +77,7 @@ enum HubDownload {
             let expected = wanted[path] ?? 0
             let before = done
             try await download(
-                repo: repo, revision: revision, path: path, expecting: expected,
+                repo: repo, revision: revision, path: path, endpoint: endpoint, expecting: expected,
                 to: directory.appendingPathComponent(path)
             ) { written in
                 progress(Double(before + min(written, expected)) / Double(max(total, 1)))
@@ -82,9 +93,9 @@ enum HubDownload {
     /// gzipped, and a gzipped response carries no length at all — the header
     /// that does arrive describes the compressed bytes, not the file. This
     /// listing gives the real size, which is what the length check needs.
-    private static func sizes(repo: String, revision: String) async throws -> [String: Int64] {
+    private static func sizes(repo: String, revision: String, endpoint: String) async throws -> [String: Int64] {
         let path = "api/models/\(repo)/tree/\(revision)?recursive=true"
-        guard let url = URL(string: "https://huggingface.co/\(path)") else { return [:] }
+        guard let url = URL(string: "\(trimmed(endpoint))/\(path)") else { return [:] }
         let (data, response) = try await URLSession.shared.data(from: url)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
             throw Failure.http(path: path, status: http.statusCode)
@@ -105,11 +116,12 @@ enum HubDownload {
         repo: String,
         revision: String,
         path: String,
+        endpoint: String,
         expecting: Int64,
         to destination: URL,
         progress: @escaping @Sendable (Int64) -> Void
     ) async throws {
-        guard let url = url(repo: repo, revision: revision, path: path) else {
+        guard let url = url(repo: repo, revision: revision, path: path, endpoint: endpoint) else {
             throw Failure.unlisted(path: path)
         }
         let watcher = Watcher(onWrite: progress)
