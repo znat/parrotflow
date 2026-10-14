@@ -4,7 +4,7 @@
     scripts/slot-probe-reference.py            -> tests/slot-tokenizer-cases.json
 
 Needs the `tokenizers` package and mmBERT-small's `tokenizer.json`. The Swift
-side reads that same file through `swift-transformers`, so a disagreement is
+side reads that same file through `ScalarBPE`, so a disagreement is
 `SlotTokenizer`, not the file.
 
 `tokenizers` and not `transformers.AutoTokenizer`. The two disagree on one
