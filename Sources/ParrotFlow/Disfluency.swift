@@ -489,6 +489,10 @@ extension Disfluency {
             } else if beforeSpace < head.count, [",", ";"].contains(head[head.count - beforeSpace - 1]) {
                 head.removeLast(beforeSpace + 1)
             }
+            // Python kept this space: "it broke again on friday you know" came back with a trailing blank.
+            if !tail.contains(where: { !$0.isSpace }) {
+                head.removeLast(head.reversed().prefix { $0.isSpace }.count)
+            }
             if head.contains(where: { !$0.isSpace }), tail.contains(where: { !$0.isSpace }),
                head.last?.isSpace == false, tail.first?.isSpace == false {
                 head.append(" ")
