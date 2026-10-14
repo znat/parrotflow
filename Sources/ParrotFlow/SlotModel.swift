@@ -53,13 +53,7 @@ actor SlotModel {
             "\(packageName)/Manifest.json",
             "\(packageName)/Data/com.apple.CoreML/model.mlmodel",
             "\(packageName)/Data/com.apple.CoreML/weights/weight.bin",
-            // The three `AutoTokenizer.from(modelFolder:)` reads. It wants
-            // `config.json` and `tokenizer_config.json` beside `tokenizer.json`
-            // and throws without them, which is why this repository holds two
-            // files `znaat/modernbert-coreml` does not.
             "tokenizer.json",
-            "tokenizer_config.json",
-            "config.json",
         ]
     }
 
@@ -75,7 +69,6 @@ actor SlotModel {
         directory.appendingPathComponent("mmBERT-small-64.mlmodelc", isDirectory: true)
     }
 
-    /// The folder `AutoTokenizer` reads, which is the cache directory itself.
     /// `PARROTFLOW_SLOT_TOKENIZER` points the check script at a copy.
     static var tokenizerDirectory: URL {
         if let path = ProcessInfo.processInfo.environment["PARROTFLOW_SLOT_TOKENIZER"] {
@@ -106,7 +99,7 @@ actor SlotModel {
     /// the `catch` below cannot recover from a damaged cache — only this can.
     private static let compiledParts = ["model.mil", "coremldata.bin", "weights/weight.bin"]
 
-    private static let tokenizerParts = ["tokenizer.json", "tokenizer_config.json", "config.json"]
+    private static let tokenizerParts = ["tokenizer.json"]
 
     static var isCached: Bool {
         let files = FileManager.default
@@ -217,7 +210,7 @@ actor SlotModel {
     /// the check script at another copy.
     func tokenizer(at directory: URL) async throws -> SlotTokenizer {
         if let cached = tokenizers[directory] { return cached }
-        let loaded = try await SlotTokenizer.load(from: directory)
+        let loaded = try SlotTokenizer.load(from: directory)
         tokenizers[directory] = loaded
         return loaded
     }

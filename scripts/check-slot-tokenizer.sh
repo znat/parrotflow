@@ -3,19 +3,19 @@
 #
 #   scripts/check-slot-tokenizer.sh
 #
-# `SlotTokenizer` reads mmBERT-small's `tokenizer.json` through
-# `swift-transformers`. That file is Gemma-shaped — byte-fallback BPE, a
-# `Metaspace` pre-tokenizer writing a space as `▁` — and the ways a reader gets
-# it wrong are quiet ones: a missing prefix space, a dropped accent, an empty
-# string that comes back as one token. tests/slot-tokenizer-cases.json holds
+# `SlotTokenizer` reads mmBERT-small's `tokenizer.json` through `ScalarBPE`.
+# That file is Gemma-shaped — byte-fallback BPE, a `Metaspace` pre-tokenizer
+# writing a space as `▁` — and the ways a reader gets it wrong are quiet ones: a
+# missing prefix space, a dropped accent, an empty string that comes back as one
+# token. tests/slot-tokenizer-cases.json holds
 # what the reference tokenizer answers. Regenerate it with
 # scripts/slot-probe-reference.py, which says why the `<mask>` case reads the
 # way it does.
 #
-# Reads the tokenizer files only, never the 269 MB model, so it runs on a
-# machine that has never dictated. If the model cache has no copy, they are
-# fetched from the repository the app fetches from — pinned to a revision. A run
-# that cannot get them fails; it does not pass by skipping.
+# Reads `tokenizer.json` only, never the 269 MB model, so it runs on a machine
+# that has never dictated. If the model cache has no copy, it is fetched from
+# the repository the app fetches from — pinned to a revision. A run that cannot
+# get it fails; it does not pass by skipping.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
@@ -32,20 +32,14 @@ BASE="https://huggingface.co/znaat/mmbert-small-coreml/resolve/$REVISION"
 WORK="$(mktemp -d -t parrotflow-slot-tokenizer)"
 trap 'rm -rf "$WORK"' EXIT
 
-# The whole folder, not one file: `AutoTokenizer.from(modelFolder:)` reads
-# config.json and tokenizer_config.json beside tokenizer.json and throws
-# without them.
-if [ -f "$CACHED/tokenizer.json" ] && [ -f "$CACHED/tokenizer_config.json" ] \
-  && [ -f "$CACHED/config.json" ]; then
+if [ -f "$CACHED/tokenizer.json" ]; then
   export PARROTFLOW_SLOT_TOKENIZER="$CACHED"
 else
   echo "  the tokenizer is not cached, fetching it"
-  for name in tokenizer.json tokenizer_config.json config.json; do
-    if ! curl -fsSL "$BASE/$name" -o "$WORK/$name"; then
-      echo "  ✗ could not fetch $BASE/$name"
-      exit 1
-    fi
-  done
+  if ! curl -fsSL "$BASE/tokenizer.json" -o "$WORK/tokenizer.json"; then
+    echo "  ✗ could not fetch $BASE/tokenizer.json"
+    exit 1
+  fi
   export PARROTFLOW_SLOT_TOKENIZER="$WORK"
 fi
 
