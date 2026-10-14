@@ -31,7 +31,9 @@ enum HubDownload {
     }
 
     private static var endpoint: String {
-        ProcessInfo.processInfo.environment["PARROTFLOW_HUB_ENDPOINT"] ?? "https://huggingface.co"
+        var value = ProcessInfo.processInfo.environment["PARROTFLOW_HUB_ENDPOINT"] ?? "https://huggingface.co"
+        while value.hasSuffix("/") { value.removeLast() }
+        return value
     }
 
     static func url(repo: String, revision: String = "main", path: String) -> URL? {
