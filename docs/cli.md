@@ -619,8 +619,9 @@ parser ready in 0.73 s
 ```
 
 The columns are the word's index, the word, the index of its head (0 for the
-root), the relation, the part of speech, and its UTF-16 range in the text. Over
-256 subwords it abstains and says so. It never cuts the text.
+root), the relation, the part of speech, and its UTF-16 range in the text. The
+model reads 256 ids, `<bos>` and `<eos>` included, so the text gets 254
+subwords. Over that it abstains and says so. It never cuts the text.
 
 `--batch` reads `[{"id", "text"} | {"id", "words"}]`, each with an optional
 `"language"`, and prints one JSON line per item with its time and memory, then
