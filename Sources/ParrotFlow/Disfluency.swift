@@ -11,7 +11,7 @@ enum Disfluency {
         case wordSaidTwice = "word said twice"
     }
 
-    struct Outcome: Equatable {
+    struct Outcome {
         var text: String
         /// One entry per cut, in the order made, repeats kept (Python's `applied` list).
         var cuts: [Cut]
@@ -122,7 +122,7 @@ enum Disfluency {
         for n in stride(from: maxPhrase, through: 1, by: -1) {
             for i in t.pairStarts(n) where t.bare[i..<i + n] == t.bare[i + n..<i + 2 * n] {
                 let pair = Repeat(transcript: t, i: i, n: n)
-                if kept.contains(where: { $0.holds(pair) }) { continue }
+                if kept.contains(where: { $0(pair) }) { continue }
                 return Edit(first: i, upto: i + n, cut: n > 1 ? .phraseSaidTwice : .wordSaidTwice)
             }
         }
@@ -144,28 +144,23 @@ enum Disfluency {
         var stops: Bool { transcript.stops(after: i + n - 1) }
     }
 
-    private struct Guard: Sendable {
-        let name: String
-        let holds: @Sendable (Repeat) -> Bool
-    }
-
-    /// Every one of these was a real transcript the naive rule damaged.
-    private static let kept: [Guard] = [
-        Guard(name: "meant twice") { $0.unit.contains(where: neverCollapse.contains) },
+    /// Reasons to keep a repeat. Every one of these was a real transcript the naive rule damaged.
+    private static let kept: [@Sendable (Repeat) -> Bool] = [
+        { $0.unit.contains(where: neverCollapse.contains) },
         // A number read as digits: losing one is unrecoverable.
-        Guard(name: "a number") { $0.unit.contains(where: isDigits) },
-        Guard(name: "a list") { $0.n > 1 && $0.unit.contains(where: conjunctions.contains) },
-        // One doubled capital, or a run of letters. The capital test is n == 1 only: scanning a longer run
-        // kept every English repeat holding "I", as in "I mean I mean".
-        Guard(name: "spelled aloud") { pair in
+        { $0.unit.contains(where: isDigits) },
+        { $0.n > 1 && $0.unit.contains(where: conjunctions.contains) },
+        // Spelled aloud: one doubled capital, or a run of letters. The capital test is n == 1 only: scanning
+        // a longer run kept every English repeat holding "I", as in "I mean I mean".
+        { pair in
             (pair.n == 1 && pair.raw.allSatisfy { isLetter($0) && $0.first?.properties.isUppercase == true })
                 || (pair.n > 1 && pair.raw.allSatisfy(isLetter))
         },
         // A lone lower-case letter is only a spelling if it sits among letters.
-        Guard(name: "a letter among letters") { pair in
+        { pair in
             pair.n == 1 && pair.raw.allSatisfy(isLetter) && pair.neighbours.contains(where: isLetter)
         },
-        Guard(name: "across a stop") { $0.stops },
+        { $0.stops },
     ]
 
     private static func words(_ list: [String]) -> Set<[Unicode.Scalar]> {
