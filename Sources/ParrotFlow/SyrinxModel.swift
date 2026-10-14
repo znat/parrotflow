@@ -24,7 +24,7 @@ actor SyrinxModel {
 
     private static let repository = "znaat/parrot-syrinx-coreml"
     /// Nil until the model is published.
-    static let revision: String? = nil
+    static let revision: String? = "6ef93ba322a66cb3fda0addde0dd8f541b97e3fb"
     private static let packageName = "parrot-syrinx.mlpackage"
 
     private static let pinned: [String: String] = [
