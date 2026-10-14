@@ -1,11 +1,13 @@
 # The `disfluency` string rules, run in process instead of through
 # disfluency.py. scripts/check-disfluency-native.sh scores it against
-# tests/disfluency-native-cases.json.
+# tests/disfluency-native-cases.json. `fillers:` is listed and the parser never
+# loads here, so a marker gives the "not ready" `declined`.
 languages: [en]
 transforms:
   - name: disfluency
     description: delete repeats and false starts
     native: disfluency
+    fillers: [i mean, you know, like]
 
 pipeline:
   - transform: disfluency

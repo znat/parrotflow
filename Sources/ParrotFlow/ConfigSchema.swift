@@ -474,6 +474,8 @@ enum ConfigSchema {
                 "A program: the transcript on stdin, the rewrite on stdout."),
             key("native", .choice(Config.Transform.Native.allCases.map(\.rawValue)),
                 "A rewrite built into the app, run in process."),
+            key("fillers", .list(.choice(Disfluency.Marker.allCases.map(\.rawValue))),
+                "The markers native: disfluency removes. Left out, none."),
             key("returns", .choice(["json", "text"]),
                 "json makes a command speak the structured protocol.", default: "text"),
             key("model", .either([.text, .object(modelRef)]),

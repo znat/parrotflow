@@ -6,6 +6,10 @@
 # is gone for good, so this half matters as much as `change`.
 #
 # Most inputs are real sentences from ~/Recordings/ParrotFlow.
+#
+# The `parse: true` cases need the marker rule, which the native transform
+# runs only with `fillers:` listed. scripts/check-disfluency-markers.sh scores
+# them with all three turned on.
 
 cases:
 

@@ -106,7 +106,8 @@ def head_outputs(binary, items):
     work = Path(tempfile.mkdtemp(prefix="replay-disfluency-"))
     cases = work / "cases.yaml"
     with cases.open("w", encoding="utf-8") as out:
-        out.write("transform: disfluency\ncases:\n")
+        out.write("transform: disfluency\ntransforms:\n  - name: disfluency\n    description: replay\n"
+                  "    native: disfluency\n    fillers: [i mean, you know, like]\ncases:\n")
         for i, (_, (text, lang)) in enumerate(items):
             out.write(f"  - name: r{i}\n    lang: {lang}\n    input: {json.dumps(text, ensure_ascii=False)}\n")
     env = dict(os.environ, PARROTFLOW_CONFIG_DIR=str(work / "config"))

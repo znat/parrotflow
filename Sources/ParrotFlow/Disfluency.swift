@@ -25,16 +25,18 @@ enum Disfluency {
     }
 
     /// The marker rule runs last: by then "I mean I mean" is one marker. `parser` is asked only for English
-    /// text that holds a marker, and nil means it is not loaded yet.
-    static func clean(_ text: String, language: String, parser: () async -> Parser?) async -> Cleaned {
+    /// text that holds one of `fillers`, and nil means it is not loaded yet.
+    static func clean(
+        _ text: String, language: String, fillers: Set<Marker>, parser: () async -> Parser?
+    ) async -> Cleaned {
         let done = collapse(text)
         var cleaned = Cleaned(text: done.text, applied: done.cuts.map(\.rawValue), declined: "")
-        guard language == "en", mentionsMarker(done.text) else { return cleaned }
+        guard language == "en", mentionsMarker(done.text, among: fillers) else { return cleaned }
         guard let parser = await parser() else {
             cleaned.declined = "word fillers: the parser is not ready"
             return cleaned
         }
-        let markers = resolveMarkers(done.text) { parser.parse(words: $0, language: "en") }
+        let markers = resolveMarkers(done.text, fillers) { parser.parse(words: $0, language: "en") }
         cleaned.text = markers.text
         cleaned.applied += markers.cut.map(\.rawValue)
         return cleaned
@@ -58,9 +60,9 @@ enum Disfluency {
     }
 
     /// Python's `any(marker_pattern(p).search(text) for p in ("i mean", "you know", "like"))`.
-    static func mentionsMarker(_ text: String) -> Bool {
+    static func mentionsMarker(_ text: String, among fillers: Set<Marker>) -> Bool {
         let scalars = Array(text.unicodeScalars)
-        return Marker.allCases.contains { marker in
+        return Marker.allCases.filter(fillers.contains).contains { marker in
             let spelled = marker.scalars
             return scalars.indices.contains { matchEnd(spelled, in: scalars, at: $0) != nil }
         }
@@ -425,11 +427,13 @@ extension Disfluency {
     /// Judged first, then cut a sentence at a time: a cut changes the parse of its own sentence. Sentences are
     /// replaced from the right because a cut moves every offset after it. A sentence the splitter or the
     /// parser abstains on keeps its markers.
-    static func resolveMarkers(_ text: String, parse: (Words) -> Parse?) -> (text: String, cut: [Marker]) {
+    static func resolveMarkers(
+        _ text: String, _ fillers: Set<Marker>, parse: (Words) -> Parse?
+    ) -> (text: String, cut: [Marker]) {
         var scalars = Array(text.unicodeScalars)
         var trees: [Int: Tree?] = [:]
         var cuts: [Int: (sentence: Range<Int>, spans: [(Range<Int>, Marker)])] = [:]
-        for marker in Marker.allCases {
+        for marker in Marker.allCases where fillers.contains(marker) {
             let spelled = marker.scalars
             var at = 0
             while at < scalars.count {

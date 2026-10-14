@@ -759,23 +759,27 @@ start.
 ### `native:`, a rewrite built into the app
 
 `native:` names a rewrite that runs inside the app, with no process start.
-There is one, `disfluency`. It applies the rules of
-`built-in/transforms/disfluency/disfluency.py`: repeats, fragments, restarts,
-partials, and the "I mean", "you know" and "like" markers. The marker rule
-reads a tree from parrot-syrinx, the 519 MB parser the app fetches after launch
-and keeps in memory.
+There is one, `disfluency`. It applies the repeat, fragment, restart and partial
+rules of `built-in/transforms/disfluency/disfluency.py`.
+
+`fillers:` turns on the marker rule for the markers it lists: `i mean`,
+`you know` and `like`, in any subset. Left out, no marker is removed and the
+parser is never fetched. The rule reads a tree from parrot-syrinx, the 519 MB
+parser the app fetches after launch and keeps in memory. A name it does not
+know is refused, and `--check-config` lists the ones it does.
 
 ```yaml
 transforms:
   - name: disfluency
     description: delete repeats and false starts
     native: disfluency
+    fillers: [i mean, you know, like]
 ```
 
 It publishes `disfluency.applied`, `disfluency.edits` and `disfluency.declined`,
 like the script does with `returns: json`. Until the parser is in memory, the
 markers stay and `declined` says `word fillers: the parser is not ready` when
-an English transcript holds one. A French transcript never reaches the parser.
+an English transcript holds a listed one. A French transcript never reaches the parser.
 `--eval` loads the parser before it scores, and so does `--pipeline --warm`.
 Any other name is refused, and `--check-config` says so.
 

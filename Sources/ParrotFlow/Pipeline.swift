@@ -1440,7 +1440,9 @@ struct Pipeline: Equatable, Codable {
         case .native(.disfluency):
             var language = "en"
             if case .string(let detected)? = scope["language"] { language = detected }
-            let done = await Disfluency.clean(text, language: language) { await SyrinxModel.shared.loaded }
+            let done = await Disfluency.clean(text, language: language, fillers: transform.fillers) {
+                await SyrinxModel.shared.loaded
+            }
             Pipeline.logRewrite(by: "transform \(name)", from: text, to: done.text)
             var applied: [String] = []
             for cut in done.applied where !applied.contains(cut) { applied.append(cut) }

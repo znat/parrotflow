@@ -325,14 +325,12 @@ transforms:
       "": ['/[,]?\s*\b(?:{{fillers_fr}})\b[,]?/',
            '/[,]?\s*\be+u+h+\b[,]?/']
 
-  # Repeats, false starts, and a discourse marker that carries nothing, in
-  # process.
+  # Repeats and false starts, in process.
   #
-  # The fifth rule, "I mean", "you know" and "like", wants a dependency parse,
-  # because "you know" is a real verb with a real object half the time — "we'll
-  # let you know" has to survive. The parser is a 519 MB download fetched after
-  # launch. Until it is in memory the other four still run and
-  # `disfluency.declined` says what was lost. English only.
+  # `fillers:` also removes "I mean", "you know" and "like" where they carry
+  # nothing, and keeps them where they are real verbs ("we'll let you know").
+  # Off unless listed: it fetches a 519 MB parser after launch, and English
+  # only. Any subset works.
   - name: disfluency
     description: delete hesitations, repeats and false starts
     # Nobody asks for "disfluency" out loud. `say:` is what the keyed path
@@ -340,6 +338,7 @@ transforms:
     # catch-all instead of this — which the rename broke, 25/26.
     say: [repetitions, hesitations, false starts]
     native: disfluency
+    # fillers: [i mean, you know, like]
     tests: { path: built-in/disfluency/cases.yaml }
 
   # Opens the last dictation's timeline in a text editor: every step, every

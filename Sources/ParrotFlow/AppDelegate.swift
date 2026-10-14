@@ -2855,7 +2855,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case .native(.disfluency):
             let language = Pipeline.language(of: text, config: config)
-            return await Disfluency.clean(text, language: language) { await SyrinxModel.shared.loaded }.text
+            return await Disfluency.clean(text, language: language, fillers: transform.fillers) {
+                await SyrinxModel.shared.loaded
+            }.text
         }
     }
 

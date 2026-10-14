@@ -89,7 +89,7 @@ enum EvalCommand {
         print("  body     \(body(of: transform))")
         // The app keeps the parser warm, so the cases are scored with it. Without it every marker case would
         // score the stage standing aside.
-        if transform.body == .native(.disfluency) {
+        if transform.body == .native(.disfluency), !transform.fillers.isEmpty {
             let failure = Blocking.run { () async -> String? in
                 do { _ = try await SyrinxModel.shared.prepare() } catch { return error.localizedDescription }
                 return nil

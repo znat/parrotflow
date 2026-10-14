@@ -92,4 +92,25 @@ if failed > 20:
     print("  … and %d more" % (failed - 20))
 print("\n  %d/%d  (%s)" % (len(cases) - failed, len(cases), path))
 sys.exit(1 if failed or not cases else 0)
-' "$BIN" "$ROOT/tests/pipelines/disfluency-native.yaml" "$CASES"
+' "$BIN" "$ROOT/tests/pipelines/disfluency-native.yaml" "$CASES" || exit 1
+
+# `fillers:` is opt-in. None of these load the parser.
+status=0
+expect() {  # expect <name> <got> <want>
+  if [ "$2" = "$3" ]; then printf '  ✓ %s\n' "$1"; else printf '  ✗ %s\n      got   %s\n      want  %s\n' "$1" "$2" "$3"; status=1; fi
+}
+"$BIN" --seed-config >/dev/null 2>&1
+printf 'cases:\n  - input: "I mean we can try"\n' > "$WORK/default.yaml"
+expect "the shipped config leaves \"I mean we can try\" alone, and does not load the parser" \
+  "$("$BIN" --eval disfluency --cases "$WORK/default.yaml" 2>/dev/null | grep -E 'keep|parser' | tr -s ' ' | tr '\n' '|')" \
+  ' keep 1/1 = 100% <- must come back byte for byte|'
+sed 's/^    fillers: .*/    fillers: []/' "$ROOT/tests/pipelines/disfluency-native.yaml" > "$WORK/empty.yaml"
+expect "fillers: [] removes no marker" \
+  "$("$BIN" --pipeline "$WORK/empty.yaml" "the the build is like you know broken" --vars --quiet 2>/dev/null | grep -E 'declined|^the' | tr '\n' '|')" \
+  'var   disfluency.declined = ""|the build is like you know broken|'
+sed 's/^    fillers: .*/    fillers: [you know, umm]/' "$ROOT/tests/pipelines/disfluency-native.yaml" > "$WORK/unknown.yaml"
+cp "$WORK/unknown.yaml" "$WORK/config.yaml"
+expect "an unknown filler fails --check-config and lists the markers" \
+  "$("$BIN" --check-config 2>/dev/null | grep -c 'no marker named umm — have: i mean, you know, like')" \
+  "1"
+exit $status

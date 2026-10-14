@@ -5,7 +5,8 @@
 #   scripts/check-disfluency-markers.sh
 #
 # Not in `make test`: `--eval` loads parrot-syrinx, a 519 MB download the
-# first time. The cases are built-in/transforms/disfluency/cases.yaml.
+# first time. The cases are built-in/transforms/disfluency/cases.yaml, scored
+# with the shipped config and all three `fillers:` turned on.
 #
 #   original cases  every keep comes back unchanged, and every miss differs
 #                   from its `expect` only by a marker left in
@@ -21,6 +22,25 @@ BIN="$ROOT/.build/release/ParrotFlow"
 WORK="$(mktemp -d -t parrotflow-markers)"
 trap 'rm -rf "$WORK"' EXIT
 export PARROTFLOW_CONFIG_DIR="$WORK"
+
+"$BIN" --seed-config >/dev/null 2>&1
+sed -i '' 's/^    # fillers: /    fillers: /' "$WORK/config.yaml"
+grep -q '^    fillers: \[i mean, you know, like\]$' "$WORK/config.yaml" \
+  || { echo "  ✗ the shipped config has no commented fillers: line to turn on"; exit 1; }
+
+# Only the listed markers go.
+sed 's/^    fillers: .*/    fillers: [you know]/' "$WORK/config.yaml" > "$WORK/only.yaml"
+mkdir -p "$WORK/only" && mv "$WORK/only.yaml" "$WORK/only/config.yaml"
+printf '%s\n' 'cases:' '  - input: "I mean we can try"' '  - input: "it took like three hours"' \
+  '  - input: "it'"'"'s just you know a lot of moving parts"' \
+  '    expect: "it'"'"'s just a lot of moving parts"' > "$WORK/only/cases.yaml"
+if PARROTFLOW_CONFIG_DIR="$WORK/only" "$BIN" --eval disfluency --cases "$WORK/only/cases.yaml" 2>/dev/null \
+    | grep -q 'overall  3/3'; then
+  echo "  ✓ fillers: [you know] keeps \"I mean\" and \"like\" and cuts \"you know\""
+else
+  echo "  ✗ fillers: [you know] did not keep to its list"
+  exit 1
+fi
 
 "$BIN" --eval disfluency --verbose > "$WORK/eval.txt" 2>/dev/null
 python3 - "$WORK/eval.txt" "$ROOT/built-in/transforms/disfluency/cases.yaml" <<'PY'
