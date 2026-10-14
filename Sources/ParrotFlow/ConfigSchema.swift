@@ -472,6 +472,8 @@ enum ConfigSchema {
                 "A substitution table, wanted: [heard, heard], or { path: file.yaml }."),
             key("command", .text,
                 "A program: the transcript on stdin, the rewrite on stdout."),
+            key("native", .choice(Config.Transform.Native.allCases.map(\.rawValue)),
+                "A rewrite built into the app, run in process."),
             key("returns", .choice(["json", "text"]),
                 "json makes a command speak the structured protocol.", default: "text"),
             key("model", .either([.text, .object(modelRef)]),

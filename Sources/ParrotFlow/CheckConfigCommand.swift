@@ -453,6 +453,7 @@ enum CheckConfigCommand {
         case .prompt: return "prompt "
         case .replace: return "replace"
         case .command: return "command"
+        case .native: return "native "
         }
     }
 
@@ -466,6 +467,7 @@ enum CheckConfigCommand {
         if case .command(let command) = transform.body {
             return "\(command.split(separator: " ").first ?? "") — on PATH"
         }
+        if case .native(let built) = transform.body { return "\(built.rawValue) — built in" }
         return "inline"
     }
 

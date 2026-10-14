@@ -77,6 +77,7 @@ enum Capability: Equatable {
             case .prompt: return "prompt "
             case .replace: return "table  "
             case .command: return "program"
+            case .native: return "native "
             }
         }
     }
