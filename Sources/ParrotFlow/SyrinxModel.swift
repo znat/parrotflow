@@ -8,6 +8,13 @@ actor SyrinxModel {
 
     static let shared = SyrinxModel()
 
+    /// The peak holds the package and its compile at once.
+    static let download = ModelDownload(
+        id: "parser", name: "parrot-syrinx", megabytes: 519, peak: 640,
+        group: .language, blocking: false,
+        costOfFailure: "\"I mean\", \"you know\" and \"like\" are left in"
+    )
+
     enum Failure: LocalizedError {
         case busy
         case damaged(String)
@@ -66,6 +73,44 @@ actor SyrinxModel {
 
     private var parser: Parser?
     private var loading: Task<Parser, Error>?
+    /// When a failed load may be tried again. A damaged cache re-fetches 519 MB, so not on every dictation.
+    private var retryAfter: Date?
+    private static let backoff: TimeInterval = 300
+
+    /// The parser if it is in memory. A dictation never waits for it.
+    var loaded: Parser? { parser }
+
+    /// Starts the load if nothing is doing it, and returns at once.
+    func warm() {
+        guard parser == nil, loading == nil else { return }
+        if let retryAfter, Date() < retryAfter { return }
+        Task { [weak self] in
+            let started = Date()
+            do {
+                let parser = try await self?.prepare()
+                // Core ML's first prediction is slower than the rest; a dictation should not pay it.
+                _ = parser?.parse(words: Words(joining: ["I", "mean", "it"]), language: "en")
+                Log.write(String(format: "parser: warmed in %.1fs", Date().timeIntervalSince(started)))
+            } catch {
+                await self?.hold(after: error)
+            }
+        }
+    }
+
+    /// Forgets the backoff and starts the load, for the setup screen's repair button.
+    func retryNow() {
+        retryAfter = nil
+        warm()
+    }
+
+    private func hold(after error: Error) {
+        retryAfter = Date().addingTimeInterval(Self.backoff)
+        Log.write("parser: \(error.localizedDescription); word fillers stay until it loads")
+    }
+
+    static func discardCache() {
+        try? FileManager.default.removeItem(at: directory)
+    }
 
     func prepare(progress: (@Sendable (String) -> Void)? = nil) async throws -> Parser {
         if let parser { return parser }
@@ -73,13 +118,22 @@ actor SyrinxModel {
         let task = Task<Parser, Error> { try await Self.build(progress: progress) }
         loading = task
         defer { loading = nil }
-        let loaded = try await task.value
-        parser = loaded
-        return loaded
+        do {
+            let loaded = try await task.value
+            parser = loaded
+            ModelDownloads.report(Self.download.id, .installed)
+            return loaded
+        } catch {
+            ModelDownloads.report(
+                Self.download.id, .failed(ModelDownloads.failure(error, needs: Self.download.peakLabel))
+            )
+            throw error
+        }
     }
 
     private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
         if isCached {
+            ModelDownloads.report(download.id, .loading)
             do { return try load() } catch Failure.busy { throw Failure.busy } catch {
                 Log.write("parser: the cached copy will not load (\(error.localizedDescription)); fetching it again")
                 progress?("\(error.localizedDescription); fetching it again")
@@ -88,6 +142,7 @@ actor SyrinxModel {
         let handle = try lock(LOCK_EX)
         defer { close(handle) }
         try await fetch(progress: progress)
+        ModelDownloads.report(download.id, .loading)
         return try openCache()
     }
 
@@ -166,7 +221,9 @@ actor SyrinxModel {
             endpoint: endpoint
         ) { fraction in
             let percent = Int((fraction * 100).rounded())
-            if reported.advanced(to: percent) { progress?("parser \(percent)%") }
+            guard reported.advanced(to: percent) else { return }
+            ModelDownloads.report(download.id, .downloading(percent: percent))
+            progress?("parser \(percent)%")
         }
         for (path, digest) in pinned where try sha256(staging.appendingPathComponent(path)) != digest {
             throw Failure.damaged("\(path) does not match its pinned SHA-256")

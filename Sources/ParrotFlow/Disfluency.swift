@@ -17,6 +17,29 @@ enum Disfluency {
         var cuts: [Cut]
     }
 
+    struct Cleaned {
+        var text: String
+        /// One entry per cut, string passes first, then the markers.
+        var applied: [String]
+        var declined: String
+    }
+
+    /// Every rule, in order. The marker rule runs last: by then "I mean I mean" is one marker. `parser` is
+    /// asked only for English text that holds a marker, and nil means it is not loaded yet.
+    static func clean(_ text: String, language: String, parser: () async -> Parser?) async -> Cleaned {
+        let done = collapse(text)
+        var cleaned = Cleaned(text: done.text, applied: done.cuts.map(\.rawValue), declined: "")
+        guard language == "en", mentionsMarker(done.text) else { return cleaned }
+        guard let parser = await parser() else {
+            cleaned.declined = "word fillers: the parser is not ready"
+            return cleaned
+        }
+        let markers = resolveMarkers(done.text) { parser.parse(words: $0, language: "en") }
+        cleaned.text = markers.text
+        cleaned.applied += markers.cut.map(\.rawValue)
+        return cleaned
+    }
+
     static func collapse(_ text: String) -> Outcome {
         var transcript = Transcript(Array(text.unicodeScalars))
         var cuts: [Cut] = []
@@ -37,8 +60,8 @@ enum Disfluency {
     /// Python's `any(marker_pattern(p).search(text) for p in ("i mean", "you know", "like"))`.
     static func mentionsMarker(_ text: String) -> Bool {
         let scalars = Array(text.unicodeScalars)
-        return markers.contains { marker in
-            scalars.indices.contains { matches(marker, in: scalars, at: $0) }
+        return Marker.allCases.contains { marker in
+            scalars.indices.contains { matchEnd(marker.scalars, in: scalars, at: $0) != nil }
         }
     }
 
@@ -263,35 +286,34 @@ enum Disfluency {
         return after?.properties.isCased != true
     }
 
-    private static let markers = ["i mean", "you know", "like"].map { Array($0.unicodeScalars) }
-
     /// What `re.I` matches beyond ASCII case, for the letters in the markers (exhaustive scan, Python 3.10).
     private static let extraFolds: [Unicode.Scalar: Set<Unicode.Scalar>] = [
         "i": ["\u{130}", "\u{131}"],
         "k": ["\u{212A}"],
     ]
 
-    /// `\b` + marker + `\b` with `re.I`, starting at `start`. A space in the marker is `\s+`.
-    private static func matches(
+    /// `\b` + marker + `\b` with `re.I`, starting at `start`. A space in the marker is `\s+`. Returns where
+    /// the match ends.
+    fileprivate static func matchEnd(
         _ marker: [Unicode.Scalar], in text: [Unicode.Scalar], at start: Int
-    ) -> Bool {
-        if start > 0, text[start - 1].isWord { return false }
+    ) -> Int? {
+        if start > 0, text[start - 1].isWord { return nil }
         var at = start
         for letter in marker {
             if letter == " " {
                 let from = at
                 while at < text.count, text[at].isSpace { at += 1 }
-                if at == from { return false }
+                if at == from { return nil }
             } else {
-                guard at < text.count else { return false }
+                guard at < text.count else { return nil }
                 let scalar = text[at]
                 guard scalar == letter || scalar.value == letter.value - 0x20
                         || extraFolds[letter]?.contains(scalar) == true
-                else { return false }
+                else { return nil }
                 at += 1
             }
         }
-        return at == text.count || !text[at].isWord
+        return at == text.count || !text[at].isWord ? at : nil
     }
 }
 
@@ -372,5 +394,200 @@ private extension Unicode.Scalar {
 
     var isSentenceEnd: Bool {
         self == "." || self == "!" || self == "?" || self == "\u{2026}"
+    }
+}
+
+// MARK: - Word fillers
+
+/// The marker rule of `disfluency.py` (`resolve`, `wants_cut`, `cut`), judged on a parrot-syrinx tree instead
+/// of spaCy. spaCy's labels are mapped to their UD twins, and lemmas are replaced by surface forms plus UPOS
+/// VERB or AUX. Offsets are scalars, as in Python, until a sentence meets its parse.
+extension Disfluency {
+
+    /// In Python's `resolve` order.
+    enum Marker: String, CaseIterable {
+        case iMean = "i mean"
+        case youKnow = "you know"
+        case like
+
+        var scalars: [Unicode.Scalar] { Array(rawValue.unicodeScalars) }
+
+        /// The marker's own verb. `like` has none, so it goes on its tag.
+        var verbForms: Set<String>? {
+            switch self {
+            case .iMean: ["mean", "means", "meant"]
+            case .youKnow: ["know", "knows", "knew", "knowing"]
+            case .like: nil
+            }
+        }
+    }
+
+    /// Judged first, then cut a sentence at a time: a cut changes the parse of its own sentence. Sentences are
+    /// replaced from the right because a cut moves every offset after it. A sentence the splitter or the
+    /// parser abstains on keeps its markers.
+    static func resolveMarkers(_ text: String, parse: (Words) -> Parse?) -> (text: String, cut: [Marker]) {
+        var scalars = Array(text.unicodeScalars)
+        var trees: [Int: Tree?] = [:]
+        var cuts: [Int: (sentence: Range<Int>, spans: [(Range<Int>, Marker)])] = [:]
+        for marker in Marker.allCases {
+            var at = 0
+            while at < scalars.count {
+                guard let end = matchEnd(marker.scalars, in: scalars, at: at) else {
+                    at += 1
+                    continue
+                }
+                let sentence = sentenceOf(scalars, at, end)
+                let span = at - sentence.lowerBound ..< end - sentence.lowerBound
+                let tree: Tree?
+                if let parsed = trees[sentence.lowerBound] {
+                    tree = parsed
+                } else {
+                    tree = Tree(Array(scalars[sentence]), parse: parse)
+                    trees[sentence.lowerBound] = .some(tree)
+                }
+                if let tree, tree.wantsCut(marker, at: span) {
+                    cuts[sentence.lowerBound, default: (sentence, [])].spans.append((span, marker))
+                }
+                at = end
+            }
+        }
+        var said: [Marker] = []
+        for offset in cuts.keys.sorted(by: >) {
+            guard let (sentence, spans) = cuts[offset] else { continue }
+            scalars.replaceSubrange(sentence, with: cut(Array(scalars[sentence]), spans.map(\.0)))
+            said += spans.sorted {
+                ($0.0.lowerBound, $0.0.upperBound, $0.1.rawValue) < ($1.0.lowerBound, $1.0.upperBound, $1.1.rawValue)
+            }.map(\.1)
+        }
+        return (String(String.UnicodeScalarView(scalars)), said)
+    }
+
+    /// Python's `sentence_of`: from after the last `.?!` before the marker to the first one after it. No strip:
+    /// stripping moved every offset and made the cuts eat a letter, "So like a generation" -> "So la generation".
+    private static func sentenceOf(_ text: [Unicode.Scalar], _ at: Int, _ end: Int) -> Range<Int> {
+        let stops: Set<Unicode.Scalar> = [".", "?", "!"]
+        let lo = (text[..<at].lastIndex(where: stops.contains) ?? -1) + 1
+        let hi = text[end...].firstIndex(where: stops.contains).map { $0 + 1 } ?? text.count
+        return lo ..< hi
+    }
+
+    /// Python's `cut`: every marker in one sentence, right to left, each with one adjacent comma. Without the
+    /// comma, "And you know, the comments should be" left "And, the comments should be", 8 of 186 cuts. The
+    /// sentence keeps its leading space, which is the gap after the previous full stop, and its capital when
+    /// the first word went: "I mean the hesitations part" -> "The hesitations part".
+    private static func cut(_ sentence: [Unicode.Scalar], _ spans: [Range<Int>]) -> [Unicode.Scalar] {
+        let lead = sentence.prefix { $0.isSpace }
+        let capitalised = sentence.dropFirst(lead.count).first?.properties.isUppercase == true
+        var sentence = sentence
+        for span in spans.sorted(by: { ($0.lowerBound, $0.upperBound) > ($1.lowerBound, $1.upperBound) }) {
+            var head = Array(sentence[..<span.lowerBound])
+            var tail = Array(sentence[span.upperBound...])
+            let afterSpace = tail.prefix { $0.isSpace }.count
+            let beforeSpace = head.reversed().prefix { $0.isSpace }.count
+            if afterSpace < tail.count, [",", ";"].contains(tail[afterSpace]) {
+                tail.removeFirst(afterSpace + 1)
+            } else if beforeSpace < head.count, [",", ";"].contains(head[head.count - beforeSpace - 1]) {
+                head.removeLast(beforeSpace + 1)
+            }
+            if head.contains(where: { !$0.isSpace }), tail.contains(where: { !$0.isSpace }),
+               head.last?.isSpace == false, tail.first?.isSpace == false {
+                head.append(" ")
+            }
+            sentence = head + tail
+        }
+        var body = tightened(sentence)
+        body.removeFirst(body.prefix { $0.isSpace }.count)
+        if capitalised, let first = body.first, first.properties.isLowercase {
+            body.replaceSubrange(0 ..< 1, with: first.properties.uppercaseMapping.unicodeScalars)
+        }
+        return Array(lead) + body
+    }
+
+    /// `re.sub(r"\s+([,.;?!])", r"\1", re.sub(r"[ \t]{2,}", " ", s))`.
+    private static func tightened(_ s: [Unicode.Scalar]) -> [Unicode.Scalar] {
+        var spaced: [Unicode.Scalar] = []
+        var i = 0
+        while i < s.count {
+            var j = i
+            while j < s.count, s[j] == " " || s[j] == "\t" { j += 1 }
+            if j - i >= 2 {
+                spaced.append(" ")
+                i = j
+            } else {
+                spaced.append(s[i])
+                i += 1
+            }
+        }
+        var out: [Unicode.Scalar] = []
+        i = 0
+        while i < spaced.count {
+            var j = i
+            while j < spaced.count, spaced[j].isSpace { j += 1 }
+            if j > i, j < spaced.count, [",", ".", ";", "?", "!"].contains(spaced[j]) {
+                i = j
+                continue
+            }
+            out.append(contentsOf: spaced[i ..< max(j, i + 1)])
+            i = max(j, i + 1)
+        }
+        return out
+    }
+}
+
+/// One sentence, its words and their parse, read in UTF-16 like `Words`.
+private struct Tree {
+    let words: [Words.Word]
+    let parse: [Parse.Word]
+    /// UTF-16 offset of each scalar of the sentence, and one past the end.
+    let utf16: [Int]
+
+    init?(_ sentence: [Unicode.Scalar], parse: (Words) -> Parse?) {
+        guard let words = WordSplit.english(String(String.UnicodeScalarView(sentence))),
+              let tree = parse(words), tree.words.count == words.all.count
+        else { return nil }
+        self.words = words.all
+        self.parse = tree.words
+        var utf16 = [0]
+        for scalar in sentence { utf16.append(utf16[utf16.count - 1] + scalar.utf16.count) }
+        self.utf16 = utf16
+    }
+
+    /// spaCy's sets in `disfluency.py`, through `LABEL_MAP` in `training/syntax-parser/marker_rule_ud.py`.
+    /// `attr` has no UD twin.
+    /// The marker verb's own object: if it has one, the marker is doing work.
+    private static let object: Set<String> = ["ccomp", "obj", "xcomp"]
+    /// The marker is itself an argument: "we'll let you know".
+    private static let argument: Set<String> = ["acl", "advcl", "ccomp", "conj", "csubj", "nmod", "obj", "obl", "xcomp"]
+    /// A verb ("I like it"), a preposition ("like a cat") and a subordinator ("like I said") all stay.
+    private static let likeKeeps: Set<UPOS> = [.verb, .aux, .adp, .sconj]
+
+    func wantsCut(_ marker: Disfluency.Marker, at scalars: Range<Int>) -> Bool {
+        let a = utf16[scalars.lowerBound], b = utf16[scalars.upperBound]
+        guard let forms = marker.verbForms else {
+            guard let like = words.firstIndex(where: { $0.utf16.lowerBound <= a && a < $0.utf16.upperBound })
+            else { return false }
+            return !Self.likeKeeps.contains(parse[like].tag)
+        }
+        // The marker's own verb, not the sentence's first one: "You know, do you know who owns this account?"
+        // holds a filler and a question, and matching on the form alone cut both.
+        guard let verb = words.indices.first(where: {
+            a <= words[$0].utf16.lowerBound && words[$0].utf16.lowerBound < b
+                && forms.contains(words[$0].string.lowercased()) && [.verb, .aux].contains(parse[$0].tag)
+        }) else { return false }
+        if parse.contains(where: { $0.head == verb + 1 && Self.object.contains($0.label) }) { return false }
+        if Self.argument.contains(parse[verb].label) { return false }
+        return !substitution(a, b)
+    }
+
+    /// A noun on both sides is a self-correction, not a filler: "I was with James I mean Peter, sorry".
+    /// Deleting the marker leaves both names, which is worse than leaving the sentence alone.
+    private func substitution(_ a: Int, _ b: Int) -> Bool {
+        let outside = words.indices.filter {
+            parse[$0].tag != .punct && (words[$0].utf16.upperBound <= a || words[$0].utf16.lowerBound >= b)
+        }
+        guard let before = outside.last(where: { words[$0].utf16.lowerBound < a }),
+              let after = outside.first(where: { words[$0].utf16.lowerBound >= b })
+        else { return false }
+        return [.noun, .propn].contains(parse[before].tag) && [.noun, .propn].contains(parse[after].tag)
     }
 }

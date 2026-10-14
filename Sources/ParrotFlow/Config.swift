@@ -3452,6 +3452,14 @@ struct Config: Decodable, Equatable {
         vocabularySteps.contains { $0.vocabulary.isOn(\.slotGate) }
     }
 
+    /// Whether anything will read the 519 MB parser: a `transform` step runs the native `disfluency`, and
+    /// English is dictated. The marker rule is English only.
+    var readsParser: Bool {
+        transcription.languages.contains("en") && Pipeline.resolved(config: self).steps.contains {
+            $0.stage == .transform && $0.transform.flatMap(transform(named:))?.body == .native(.disfluency)
+        }
+    }
+
     /// Whether anything will read the 400 MB word vectors. Both tests that
     /// read the sentence need them, so either switch keeps them.
     var readsSentenceGate: Bool {

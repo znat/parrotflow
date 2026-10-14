@@ -1438,17 +1438,16 @@ struct Pipeline: Equatable, Codable {
             Pipeline.logRewrite(by: "transform \(name)", from: text, to: after)
             return StageResult(text: after, vars: result.vars)
         case .native(.disfluency):
-            let done = Disfluency.collapse(text)
-            Pipeline.logRewrite(by: "transform \(name)", from: text, to: done.text)
             var language = "en"
             if case .string(let detected)? = scope["language"] { language = detected }
-            let declined = language == "en" && Disfluency.mentionsMarker(done.text)
+            let done = await Disfluency.clean(text, language: language) { await SyrinxModel.shared.loaded }
+            Pipeline.logRewrite(by: "transform \(name)", from: text, to: done.text)
             var applied: [String] = []
-            for cut in done.cuts where !applied.contains(cut.rawValue) { applied.append(cut.rawValue) }
+            for cut in done.applied where !applied.contains(cut) { applied.append(cut) }
             return StageResult(text: done.text, vars: [
                 "applied": .string(applied.joined(separator: ", ")),
-                "edits": .int(done.cuts.count),
-                "declined": .string(declined ? "word fillers need the parser" : ""),
+                "edits": .int(done.applied.count),
+                "declined": .string(done.declined),
             ])
         }
     }

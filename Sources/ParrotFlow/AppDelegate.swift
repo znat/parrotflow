@@ -2453,6 +2453,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             off: config.readsSlots ? nil : ModelDownload.gateOff
         )
         downloads.expect(
+            SyrinxModel.download,
+            off: config.readsParser ? nil : ModelDownload.gateOff
+        )
+        downloads.expect(
             SentenceReadings.download,
             off: config.readsSentenceModel ? nil : ModelDownload.gateOff
         )
@@ -2493,6 +2497,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // dictation: the stages that read them stand aside until they are
             // in memory.
             if config.readsSlots { await transcriber.warmSlotModel() }
+            // Kept in memory for the life of the app. Until it is, `disfluency` leaves the word fillers in.
+            if config.readsParser { await SyrinxModel.shared.warm() }
             // The boundary readings. 320 MB and a 1.3s load, and a dictation
             // never waits for either: without this the first few dictations of
             // a launch keep the periods a pause put in. Not fetched at all when
@@ -2549,6 +2555,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NeuralPhonemes.discardCache()
             }
             if damaged.contains(SlotModel.download.id) { SlotModel.discardCache() }
+            if damaged.contains(SyrinxModel.download.id) { SyrinxModel.discardCache() }
             if damaged.contains(SentenceReadings.download.id) { SentenceReadings.discardCache() }
             if damaged.contains(WordVectors.download.id) { WordVectors.discardCache() }
         }
@@ -2560,6 +2567,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if #available(macOS 14, *), config.readsSentenceModel {
             Task { await SentenceReadings.shared.retryNow() }
         }
+        if config.readsParser { Task { await SyrinxModel.shared.retryNow() } }
         warmModels()
     }
 
@@ -2846,7 +2854,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 throw CommandDidNotRun(name: transform.name, said: failure.complaint)
             }
         case .native(.disfluency):
-            return Disfluency.collapse(text).text
+            let language = Pipeline.language(of: text, config: config)
+            return await Disfluency.clean(text, language: language) { await SyrinxModel.shared.loaded }.text
         }
     }
 
