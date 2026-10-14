@@ -258,6 +258,18 @@ if let at = arguments.firstIndex(of: "--slot-probe") {
     exit(SlotProbeCommand.run(left: arguments[at + 1], right: arguments[at + 2]))
 }
 
+if let at = arguments.firstIndex(of: "--parse") {
+    if let batch = arguments.firstIndex(of: "--batch"), arguments.indices.contains(batch + 1) {
+        exit(ParserCommand.batch(path: arguments[batch + 1], splitOnly: arguments.contains("--split")))
+    }
+    guard arguments.indices.contains(at + 1), !arguments[at + 1].hasPrefix("--") else {
+        print("usage: ParrotFlow --parse \"<text>\" [--lang en]")
+        print("       ParrotFlow --parse --batch <items.json> [--split]")
+        exit(2)
+    }
+    exit(ParserCommand.run(text: arguments[at + 1], language: languageList(arguments)?.first ?? "en"))
+}
+
 if let at = arguments.firstIndex(of: "--sentence-probe") {
     guard #available(macOS 14, *) else {
         print("✗ the sentence probe needs macOS 14 or later")
