@@ -216,7 +216,7 @@ private struct Heads {
         let relations = labels.count
         struct Segment: Decodable { let key: String; let offset: Int; let size: Int; let values: [String] }
         let layout = try tensors.json([Segment].self, "inventories")
-        guard layout.first?.key == "upos", layout[0].values == UPOS.allCases.map(\.rawValue),
+        guard layout.first?.key == "upos", layout[0].offset == 0, layout[0].values == UPOS.allCases.map(\.rawValue),
               zip(layout, layout.dropFirst()).allSatisfy({ $0.offset + $0.size == $1.offset })
         else { throw Parser.Failure.malformed("an inventory layout this code does not read") }
         let width = Parser.width, features = layout.reduce(0) { $0 + $1.size }
@@ -378,8 +378,11 @@ private struct Tensors {
     private let start: Int
 
     init(_ file: MappedFile) throws {
-        let length = Int(UInt64(littleEndian: file.base.loadUnaligned(as: UInt64.self)))
-        guard length > 0, 8 + length <= file.count else { throw Parser.Failure.malformed("a safetensors header") }
+        let declared = UInt64(littleEndian: file.base.loadUnaligned(as: UInt64.self))
+        guard declared > 0, declared <= UInt64(file.count - 8) else {
+            throw Parser.Failure.malformed("a safetensors header")
+        }
+        let length = Int(declared)
         let header = Data(bytes: file.base + 8, count: length)
         guard var raw = try JSONSerialization.jsonObject(with: header) as? [String: Any] else {
             throw Parser.Failure.malformed("a safetensors header")
@@ -401,9 +404,9 @@ private struct Tensors {
 
     func pointer(_ name: String, shape: [Int]) throws -> UnsafePointer<Float> {
         guard let entry = entries[name], entry.dtype == "F32", entry.shape == shape,
-              entry.offsets.count == 2,
+              entry.offsets.count == 2, entry.offsets[0] >= 0,
+              entry.offsets[1] <= file.count - start,
               entry.offsets[1] - entry.offsets[0] == shape.reduce(4, *),
-              start + entry.offsets[1] <= file.count,
               (start + entry.offsets[0]) % 4 == 0
         else { throw Parser.Failure.malformed("\(name) is not a float32 \(shape)") }
         return (file.base + start + entry.offsets[0]).assumingMemoryBound(to: Float.self)
