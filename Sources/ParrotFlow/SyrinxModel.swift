@@ -68,14 +68,18 @@ actor SyrinxModel {
 
     private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
         if isCached {
-            do { return try load() } catch {
+            do { return try load() } catch Failure.busy { throw Failure.busy } catch {
                 Log.write("parser: the cached copy will not load (\(error.localizedDescription)); fetching it again")
                 progress?("\(error.localizedDescription); fetching it again")
             }
         }
         let mirror = ProcessInfo.processInfo.environment["PARROTFLOW_HUB_ENDPOINT"] != nil
         guard let revision = revision ?? (mirror ? "main" : nil) else { throw Failure.unpublished }
-        try await underLock { try await fetch(revision: revision, progress: progress) }
+        do {
+            let handle = try lock(LOCK_EX)
+            defer { close(handle) }
+            try await fetch(revision: revision, progress: progress)
+        }
         return try load()
     }
 
@@ -89,6 +93,8 @@ actor SyrinxModel {
     }
 
     private static func load() throws -> Parser {
+        let handle = try lock(LOCK_SH)
+        defer { close(handle) }
         try verify()
         let configuration = MLModelConfiguration()
         configuration.computeUnits = computeUnits
@@ -113,15 +119,19 @@ actor SyrinxModel {
         }
     }
 
-    private static func underLock(_ body: () async throws -> Void) async throws {
+    /// Shared to load, exclusive to fetch, so a load never verifies files a
+    /// fetch is replacing. Never waits: the caller abstains and asks again.
+    private static func lock(_ operation: Int32) throws -> Int32 {
         try FileManager.default.createDirectory(
             at: lockURL.deletingLastPathComponent(), withIntermediateDirectories: true
         )
         let handle = open(lockURL.path, O_CREAT | O_RDWR, 0o644)
         guard handle >= 0 else { throw Failure.busy }
-        defer { close(handle) }
-        guard flock(handle, LOCK_EX | LOCK_NB) == 0 else { throw Failure.busy }
-        try await body()
+        guard flock(handle, operation | LOCK_NB) == 0 else {
+            close(handle)
+            throw Failure.busy
+        }
+        return handle
     }
 
     private static func fetch(revision: String, progress: (@Sendable (String) -> Void)?) async throws {
