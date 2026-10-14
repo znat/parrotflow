@@ -581,6 +581,7 @@ private struct Tree {
             a <= words[$0].utf16.lowerBound && words[$0].utf16.lowerBound < b
                 && forms.contains(words[$0].string.lowercased()) && [.verb, .aux].contains(parse[$0].tag)
         }) else { return false }
+        if marker == .iMean, defines(verb, at: a) { return false }
         let objects = children(of: verb).filter { Self.object.contains(parse[$0].label) }
         let opens = opensClause(at: a, marker)
         if !objects.isEmpty, !(opens && objects.allSatisfy(isPlainClause)) { return false }
@@ -599,11 +600,34 @@ private struct Tree {
 
     private static let opening: Set<String> = ["and", "so", "but", "or", ","]
 
-    /// `like` first in a sentence, with no comma, before a clause's subject: "Like you suggested, I'll take
-    /// it", "like I said".
+    /// `like` first in a sentence, with no comma, before its clause's subject and that subject's whole noun
+    /// phrase: "Like you suggested, I'll take it", "Like the error message says, …".
     private func subordinates(_ like: Int) -> Bool {
-        like == 0 && parse.indices.contains(like + 1)
-            && parse[like + 1].label == "nsubj" && parse[like + 1].head == parse[like].head
+        guard like == 0, let subject = parse.indices.first(where: {
+            $0 > like && parse[$0].label == "nsubj" && parse[$0].head == parse[like].head
+        }) else { return false }
+        return (like + 1 ... subject).allSatisfy { descends($0, from: subject) }
+    }
+
+    private func descends(_ word: Int, from top: Int) -> Bool {
+        var at = word
+        for _ in parse.indices {
+            if at == top { return true }
+            guard parse[at].head > 0 else { return false }
+            at = parse[at].head - 1
+        }
+        return false
+    }
+
+    /// "I mean" defining a word: "By slow I mean over two seconds". Its clause opens with "by", or "mean"
+    /// holds a phrase that does.
+    private func defines(_ verb: Int, at a: Int) -> Bool {
+        if children(of: verb).contains(where: { child in
+            children(of: child).contains { words[$0].string.lowercased() == "by" }
+        }) { return true }
+        guard let first = words.firstIndex(where: { $0.utf16.lowerBound == a }) else { return false }
+        let opener = words[..<first].lastIndex { Self.opening.contains($0.string.lowercased()) } ?? -1
+        return opener + 1 < first && words[opener + 1].string.lowercased() == "by"
     }
 
     private func children(of index: Int) -> [Int] {
