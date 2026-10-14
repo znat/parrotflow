@@ -566,7 +566,7 @@ private struct Tree {
         guard let forms = marker.verbForms else {
             guard let like = words.firstIndex(where: { $0.utf16.lowerBound <= a && a < $0.utf16.upperBound })
             else { return false }
-            return !Self.likeKeeps.contains(parse[like].tag)
+            return !Self.likeKeeps.contains(parse[like].tag) || approximates(like)
         }
         // The marker's own verb, not the sentence's first one: "You know, do you know who owns this account?"
         // holds a filler and a question, and matching on the form alone cut both.
@@ -574,10 +574,49 @@ private struct Tree {
             a <= words[$0].utf16.lowerBound && words[$0].utf16.lowerBound < b
                 && forms.contains(words[$0].string.lowercased()) && [.verb, .aux].contains(parse[$0].tag)
         }) else { return false }
-        if parse.contains(where: { $0.head == verb + 1 && Self.object.contains($0.label) }) { return false }
+        let objects = children(of: verb).filter { Self.object.contains(parse[$0].label) }
+        if !objects.isEmpty, !(words.first?.utf16.lowerBound == a && objects.allSatisfy(isPlainClause)) {
+            return false
+        }
         if Self.argument.contains(parse[verb].label) { return false }
         return !substitution(a, b)
     }
+
+    private func children(of index: Int) -> [Int] {
+        parse.indices.filter { parse[$0].head == index + 1 }
+    }
+
+    /// A sentence-initial "I mean" read as a verb whose object is a clause with its own subject, and no
+    /// "that" or wh-word: "I mean you should try". "I mean that we need tests", "I mean who cares" and
+    /// "I mean it" keep it.
+    private func isPlainClause(_ head: Int) -> Bool {
+        let below = children(of: head)
+        return below.contains { parse[$0].label == "nsubj" }
+            && !below.contains { parse[$0].label == "mark" }
+            && !([head] + below).contains { Self.whWords.contains(words[$0].string.lowercased()) }
+    }
+
+    private static let whWords: Set<String> = [
+        "what", "who", "whom", "whose", "which", "where", "when", "why", "how",
+        "whatever", "whoever", "whichever", "wherever", "whenever", "however",
+    ]
+
+    /// `like` as an approximator, a preposition right before a number: "it took like three hours". Not
+    /// after a verb of seeming or a -thing pronoun, where it compares: "it felt like one long day",
+    /// "something like five". Not as a subordinator: "it looks like two of them failed".
+    private func approximates(_ like: Int) -> Bool {
+        guard parse[like].label == "case", parse.indices.contains(like + 1),
+              parse[like + 1].tag == .num || words[like + 1].string.allSatisfy(\.isNumber)
+        else { return false }
+        return like == 0 || !Self.comparing.contains(words[like - 1].string.lowercased())
+    }
+
+    private static let comparing: Set<String> = [
+        "look", "looks", "looked", "looking", "feel", "feels", "felt", "feeling",
+        "seem", "seems", "seemed", "seeming", "sound", "sounds", "sounded", "sounding",
+        "taste", "tastes", "tasted", "smell", "smells", "smelled", "smelt",
+        "something", "anything", "nothing", "everything",
+    ]
 
     /// A noun on both sides is a self-correction, not a filler: "I was with James I mean Peter, sorry".
     /// Deleting the marker leaves both names, which is worse than leaving the sentence alone.
