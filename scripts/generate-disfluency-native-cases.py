@@ -29,6 +29,8 @@ SOURCE = ROOT / "built-in/transforms/disfluency/disfluency.py"
 OUT = ROOT / "tests/disfluency-native-cases.json"
 SEED = 20261014
 DOC_SENTENCES = 300
+# The native stage's message. disfluency.py says something else; only whether
+# the marker gate fires is compared with Python.
 DECLINED = "word fillers need the parser"
 
 _spec = importlib.util.spec_from_file_location("disfluency", SOURCE)
