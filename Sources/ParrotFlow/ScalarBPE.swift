@@ -41,7 +41,7 @@ struct ScalarBPE: Sendable {
         var json = JSONBytes(bytes: [UInt8](try Data(contentsOf: url)))
         var vocab: [[UInt8]: Int32] = [:]
         var merges: [UInt64: Merge] = [:]
-        var added: [Added] = []
+        var added: [(key: [UInt8], token: Added)] = []
         var rank: Int32 = 0
 
         try json.object { key, json in
@@ -49,7 +49,7 @@ struct ScalarBPE: Sendable {
             case "added_tokens":
                 try json.array { json in
                     var content: [UInt8]?
-                    var id: Int?
+                    var id: Int32?
                     try json.object { key, json in
                         switch String(bytes: key, encoding: .utf8) {
                         case "content": content = try json.string()
@@ -59,14 +59,14 @@ struct ScalarBPE: Sendable {
                     }
                     guard let content, let id, let text = String(bytes: content, encoding: .utf8)
                     else { throw Failure.malformed("an added token") }
-                    added.append(Added(scalars: Array(text.unicodeScalars), id: Int32(id)))
+                    added.append((content, Added(scalars: Array(text.unicodeScalars), id: id)))
                 }
             case "model":
                 try json.object { key, json in
                     switch String(bytes: key, encoding: .utf8) {
                     case "vocab":
                         try json.object { key, json in
-                            guard vocab.updateValue(Int32(try json.integer()), forKey: key) == nil
+                            guard vocab.updateValue(try json.integer(), forKey: key) == nil
                             else { throw Failure.malformed("a repeated vocab key") }
                         }
                     case "merges":
@@ -89,9 +89,14 @@ struct ScalarBPE: Sendable {
             default: try json.skip()
             }
         }
+        try json.end()
 
         guard let metaspace = vocab[Array("\u{2581}".utf8)], let unknown = vocab[Array("<unk>".utf8)]
         else { throw Failure.malformed("no ▁ or <unk>") }
+        guard Set(vocab.values).count == vocab.count else { throw Failure.malformed("a repeated id") }
+        guard added.allSatisfy({ vocab[$0.key] == $0.token.id }) else {
+            throw Failure.malformed("an added token outside the vocab")
+        }
         var tokens = [[UInt8]](repeating: [], count: vocab.count)
         for (key, id) in vocab {
             guard tokens.indices.contains(Int(id)) else { throw Failure.malformed("id \(id)") }
@@ -100,7 +105,7 @@ struct ScalarBPE: Sendable {
         self.vocab = vocab
         self.tokens = tokens
         self.merges = merges
-        self.added = Dictionary(grouping: added.filter { !$0.scalars.isEmpty }) { $0.scalars[0] }
+        self.added = Dictionary(grouping: added.map(\.token).filter { !$0.scalars.isEmpty }) { $0.scalars[0] }
             .mapValues { $0.sorted { $0.scalars.count > $1.scalars.count } }
         // <0x09> is not in this vocab. A tab never falls back: `\t` is a token.
         self.byteIDs = (0 ..< 256).map { vocab[Array(String(format: "<0x%02X>", $0).utf8)] ?? unknown }
@@ -200,6 +205,7 @@ private struct JSONBytes {
                 case UInt8(ascii: "r"): out.append(0x0D)
                 case UInt8(ascii: "b"): out.append(0x08)
                 case UInt8(ascii: "f"): out.append(0x0C)
+                case UInt8(ascii: "\""), UInt8(ascii: "\\"), UInt8(ascii: "/"): out.append(bytes[at - 1])
                 case UInt8(ascii: "u"):
                     var value = try hex4()
                     if (0xD800 ..< 0xDC00).contains(value) {
@@ -214,7 +220,7 @@ private struct JSONBytes {
                         throw ScalarBPE.Failure.malformed("\\u escape at byte \(at)")
                     }
                     out += Array(scalar.utf8)
-                case let escaped: out.append(escaped)
+                default: throw ScalarBPE.Failure.malformed("an escape at byte \(at - 1)")
                 }
             default:
                 out.append(byte)
@@ -222,12 +228,16 @@ private struct JSONBytes {
         }
     }
 
-    mutating func integer() throws -> Int {
+    mutating func integer() throws -> Int32 {
         _ = try peek()
         let start = at
-        var value = 0
+        var value: Int32 = 0
         while at < bytes.count, (UInt8(ascii: "0") ... UInt8(ascii: "9")).contains(bytes[at]) {
-            value = value * 10 + Int(bytes[at] - UInt8(ascii: "0"))
+            let digit = Int32(bytes[at] - UInt8(ascii: "0"))
+            guard value <= (Int32.max - digit) / 10 else {
+                throw ScalarBPE.Failure.malformed("a number at byte \(start)")
+            }
+            value = value * 10 + digit
             at += 1
         }
         guard at > start else { throw ScalarBPE.Failure.malformed("a number at byte \(start)") }
@@ -242,6 +252,11 @@ private struct JSONBytes {
         default:
             while at < bytes.count, !Self.ends(bytes[at]) { at += 1 }
         }
+    }
+
+    mutating func end() throws {
+        while at < bytes.count, Self.blank(bytes[at]) { at += 1 }
+        guard at == bytes.count else { throw ScalarBPE.Failure.malformed("bytes after the end at \(at)") }
     }
 
     private static func ends(_ byte: UInt8) -> Bool {
