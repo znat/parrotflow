@@ -572,6 +572,7 @@ private struct Tree {
             guard let like = words.firstIndex(where: { $0.utf16.lowerBound <= a && a < $0.utf16.upperBound }),
                   words[like].string.lowercased() == "like"
             else { return false }
+            if subordinates(like) { return false }
             return !Self.likeKeeps.contains(parse[like].tag) || approximates(like)
         }
         // The marker's own verb, not the sentence's first one: "You know, do you know who owns this account?"
@@ -581,24 +582,40 @@ private struct Tree {
                 && forms.contains(words[$0].string.lowercased()) && [.verb, .aux].contains(parse[$0].tag)
         }) else { return false }
         let objects = children(of: verb).filter { Self.object.contains(parse[$0].label) }
-        let leadingIMean = marker == .iMean && words.first?.utf16.lowerBound == a
-        if !objects.isEmpty, !(leadingIMean && objects.allSatisfy(isPlainClause)) {
-            return false
-        }
-        if Self.argument.contains(parse[verb].label) { return false }
+        let opens = opensClause(at: a, marker)
+        if !objects.isEmpty, !(opens && objects.allSatisfy(isPlainClause)) { return false }
+        // After "and", the marker verb is a conjunct of what came before, not its argument.
+        if Self.argument.subtracting(opens ? ["conj"] : []).contains(parse[verb].label) { return false }
         return !substitution(a, b)
+    }
+
+    /// The marker starts a clause: first in the sentence, or right after a coordinator or a comma. "You know"
+    /// first in a sentence is left out: "You know he quit, right?" asks.
+    private func opensClause(at a: Int, _ marker: Disfluency.Marker) -> Bool {
+        guard let first = words.firstIndex(where: { $0.utf16.lowerBound == a }) else { return false }
+        guard first > 0 else { return marker == .iMean }
+        return Self.opening.contains(words[first - 1].string.lowercased())
+    }
+
+    private static let opening: Set<String> = ["and", "so", "but", "or", ","]
+
+    /// `like` first in a sentence, with no comma, before a clause's subject: "Like you suggested, I'll take
+    /// it", "like I said".
+    private func subordinates(_ like: Int) -> Bool {
+        like == 0 && parse.indices.contains(like + 1)
+            && parse[like + 1].label == "nsubj" && parse[like + 1].head == parse[like].head
     }
 
     private func children(of index: Int) -> [Int] {
         parse.indices.filter { parse[$0].head == index + 1 }
     }
 
-    /// A sentence-initial "I mean" read as a verb whose object is a clause with its own subject, and no
-    /// "that" or wh-word: "I mean you should try". "I mean that we need tests", "I mean who cares" and
-    /// "I mean it" keep it.
+    /// A marker verb whose object is a clause with its own subject, or a verb phrase, and no "that" or
+    /// wh-word: "I mean you should try", "and you know skipping it". "I mean that we need tests", "I mean who
+    /// cares" and "I mean it" keep it.
     private func isPlainClause(_ head: Int) -> Bool {
         let below = children(of: head)
-        return below.contains { parse[$0].label == "nsubj" }
+        return (below.contains { parse[$0].label == "nsubj" } || parse[head].tag == .verb)
             && !below.contains { parse[$0].label == "mark" }
             && !([head] + below).contains { Self.whWords.contains(words[$0].string.lowercased()) }
     }
@@ -608,11 +625,11 @@ private struct Tree {
         "whatever", "whoever", "whichever", "wherever", "whenever", "however",
     ]
 
-    /// `like` as an approximator, a preposition right before a number: "it took like three hours". Not
+    /// `like` as an approximator right before a number: "it took like three hours", "already like 300". Not
     /// after a verb of seeming or a -thing pronoun, where it compares: "it felt like one long day",
     /// "something like five". Not as a subordinator: "it looks like two of them failed".
     private func approximates(_ like: Int) -> Bool {
-        guard parse[like].label == "case", parse.indices.contains(like + 1),
+        guard ["case", "discourse"].contains(parse[like].label), parse.indices.contains(like + 1),
               parse[like + 1].tag == .num || words[like + 1].string.allSatisfy(\.isNumber)
         else { return false }
         return like == 0 || !Self.comparing.contains(words[like - 1].string.lowercased())
@@ -631,9 +648,15 @@ private struct Tree {
         let outside = words.indices.filter {
             parse[$0].tag != .punct && (words[$0].utf16.upperBound <= a || words[$0].utf16.lowerBound >= b)
         }
-        guard let before = outside.last(where: { words[$0].utf16.lowerBound < a }),
-              let after = outside.first(where: { words[$0].utf16.lowerBound >= b })
-        else { return false }
-        return [.noun, .propn].contains(parse[before].tag) && [.noun, .propn].contains(parse[after].tag)
+        let before = outside.filter { words[$0].utf16.lowerBound < a }.suffix(2)
+        let after = outside.filter { words[$0].utf16.lowerBound >= b }.prefix(2)
+        guard let last = before.last, let next = after.first else { return false }
+        let nouns: Set<UPOS> = [.noun, .propn]
+        if nouns.contains(parse[last].tag) && nouns.contains(parse[next].tag) { return true }
+        // Two phrases of one shape ending in a noun: "parse config I mean load config". Not when that noun
+        // is a subject, which makes it a clause: "the bug I mean the tests pass".
+        guard before.count == 2, after.count == 2, let end = after.last else { return false }
+        return before.map { parse[$0].tag } == after.map { parse[$0].tag }
+            && nouns.contains(parse[end].tag) && parse[end].label != "nsubj"
     }
 }
