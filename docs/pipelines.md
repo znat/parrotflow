@@ -762,26 +762,43 @@ start.
 There is one, `disfluency`. It applies the repeat, fragment, restart and partial
 rules of `built-in/transforms/disfluency/disfluency.py`.
 
-`fillers:` turns on the marker rule for the markers it lists: `i mean`,
-`you know` and `like`, in any subset. Left out, no marker is removed and the
-parser is never fetched. The rule reads a tree from parrot-syrinx, the 519 MB
-parser the app fetches after launch and keeps in memory. A name it does not
-know is refused, and `--check-config` lists the ones it does.
-
 ```yaml
 transforms:
   - name: disfluency
     description: delete repeats and false starts
     native: disfluency
-    fillers: [i mean, you know, like]
 ```
 
+In English it also takes back what the speaker corrected out loud:
+
+| Said | Written |
+|---|---|
+| Can I book a meeting with Peter, no, with James? | Can I book a meeting with James? |
+| Send it on Monday, sorry, on Tuesday. | Send it on Tuesday. |
+| I want to book a meeting with Peter. I mean James. | I want to book a meeting with James. |
+| Let's make the road cleaner. Let me restart. Let's make the road greener. | Let's make the road greener. |
+
+The markers are "I mean", "I meant", "no", "sorry", "wait", "or rather" and
+"actually". The words after the marker must repeat the start of what they
+replace ("with … with"), or replace a name or a number by another. The restart
+commands are "scratch that", "strike that" and "let me rephrase", and "let me
+restart", "let me start over" and the like when the next sentence starts like
+the one dropped. Each must be its own sentence or clause. "I mean it", "No, I
+don't think so" and "Sorry for the delay" stay. A clause that "I mean" restates
+stays too: "He is not rude, I mean he is just tired".
+
+The corrections read a tree from parrot-syrinx, the 519 MB parser the app
+fetches at launch with the speech model and keeps in memory. It is asked only
+when the text says a marker or a command. A dictation that does before the
+parser is loaded waits for it, as a dictation waits for the speech model. If
+the download or the load failed, the text goes through with the other rules
+applied, `declined` says why, and the setup screen's retry fetches it again.
+
 It publishes `disfluency.applied`, `disfluency.edits` and `disfluency.declined`,
-like the script does with `returns: json`. Until the parser is in memory, the
-markers stay and `declined` says `word fillers: the parser is not ready` when
-an English transcript holds a listed one. A French transcript never reaches the parser.
-`--eval` loads the parser before it scores, and so does `--pipeline --warm`.
-Any other name is refused, and `--check-config` says so.
+like the script does with `returns: json`. `applied` names `self-correction`
+and `restart command` for these cuts. A French transcript never reaches the
+parser. `--eval` loads the parser before it scores, and so does `--pipeline
+--warm`. Any other name is refused, and `--check-config` says so.
 
 ### `join`, which fits a clip to the box it lands in
 

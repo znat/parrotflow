@@ -217,7 +217,8 @@ so a case file states the setup it assumes instead of inheriting this machine's.
   fixture's own pipeline reads: a fixture with `slot_gate: false` on its
   `vocabulary` step fetches no slot model, and one with no `vocabulary` step
   fetches neither. It also loads the parser when the fixture runs the native
-  `disfluency` with `fillers:` and dictates English, so the marker rule runs.
+  `disfluency` and dictates English. Without `--warm` the stage waits for it
+  anyway, but only when the text says a correction.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
 

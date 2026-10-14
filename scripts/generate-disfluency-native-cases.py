@@ -29,15 +29,27 @@ SOURCE = ROOT / "built-in/transforms/disfluency/disfluency.py"
 OUT = ROOT / "tests/disfluency-native-cases.json"
 SEED = 20261014
 DOC_SENTENCES = 300
-# The native stage's message. disfluency.py says something else; only whether
-# the marker gate fires is compared with Python.
-DECLINED = "word fillers: the parser is not ready"
+# How the native stage's `declined` starts when a correction is said and the
+# parser will not load, which is how the check runs it.
+DECLINED = "corrections: the parser did not load"
+# Disfluency.correctionMarkers and the restart commands: the native stage asks
+# the parser only when one of these is said.
+CUES = [c.split() for c in (
+    "i mean", "i meant", "no", "sorry", "or rather", "wait", "actually",
+    "scratch that", "strike that", "let me rephrase", "let me rephrase that",
+    "let me restart", "let me start over", "let me start again", "let me try again",
+    "let me say that again", "start over",
+)]
 
 _spec = importlib.util.spec_from_file_location("disfluency", SOURCE)
 disfluency = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(disfluency)
 
-MARKERS = [disfluency.marker_pattern(p) for p in list(disfluency.CLAUSE) + ["like"]]
+
+
+def says_correction(text):
+    words = [disfluency.bare(w.group()) for w in disfluency.WORD.finditer(text)]
+    return any(words[i:i + len(cue)] == cue for i in range(len(words)) for cue in CUES)
 
 
 def reference(text):
@@ -50,7 +62,7 @@ def reference(text):
     if applied:
         case["applied"] = ", ".join(dict.fromkeys(applied))
         case["edits"] = len(applied)
-    if any(m.search(out) for m in MARKERS):
+    if says_correction(out):
         case["declined"] = DECLINED
     return case
 
@@ -74,7 +86,8 @@ def case_set_text():
     disfluency_cases = str(ROOT / "built-in/transforms/disfluency/cases.yaml")
     files.remove(disfluency_cases)
     for path in [disfluency_cases] + files:
-        if path.endswith("disfluency-native-cases.json"):
+        # The corrections need the parser, which this check never loads.
+        if path.endswith(("disfluency-native-cases.json", "disfluency-corrections-cases.yaml")):
             continue
         with open(path, encoding="utf-8") as handle:
             walk(json.load(handle) if path.endswith(".json") else yaml.safe_load(handle))

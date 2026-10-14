@@ -2,13 +2,16 @@
 /// offsets are code points, so every index here counts `Unicode.Scalar`s, and tokens are compared as scalar
 /// arrays: Swift's `String ==` is canonical equivalence, Python's is code points.
 enum Disfluency {
-    /// What `applied` names, one per cut. Raw values are Python's strings.
+    /// What `applied` names, one per cut.
     enum Cut: String {
         case falseStart = "false start"
         case phraseRestarted = "phrase restarted"
         case wordRestarted = "word restarted"
         case phraseSaidTwice = "phrase said twice"
         case wordSaidTwice = "word said twice"
+        // No Python twin: disfluency.py has no correction rule.
+        case selfCorrection = "self-correction"
+        case restartCommand = "restart command"
     }
 
     struct Outcome {
@@ -19,26 +22,27 @@ enum Disfluency {
 
     struct Cleaned {
         var text: String
-        /// One entry per cut, string passes first, then the markers.
+        /// One entry per cut, string passes first, then the corrections.
         var applied: [String]
         var declined: String
     }
 
-    /// The marker rule runs last: by then "I mean I mean" is one marker. `parser` is asked only for English
-    /// text that holds one of `fillers`, and nil means it is not loaded yet.
+    /// The corrections run last: by then "I mean I mean" is one marker. `parser` is asked only for English
+    /// text that says a marker or a restart command. It waits for the parser, and fails only when the load did.
     static func clean(
-        _ text: String, language: String, fillers: Set<Marker>, parser: () async -> Parser?
+        _ text: String, language: String, parser: () async -> Result<Parser, Error>
     ) async -> Cleaned {
         let done = collapse(text)
         var cleaned = Cleaned(text: done.text, applied: done.cuts.map(\.rawValue), declined: "")
-        guard language == "en", mentionsMarker(done.text, among: fillers) else { return cleaned }
-        guard let parser = await parser() else {
-            cleaned.declined = "word fillers: the parser is not ready"
-            return cleaned
+        guard language == "en", mentionsCorrection(done.text) else { return cleaned }
+        switch await parser() {
+        case .failure(let error):
+            cleaned.declined = "corrections: the parser did not load (\(error.localizedDescription))"
+        case .success(let parser):
+            let fixed = correct(done.text) { parser.parse(words: $0, language: "en") }
+            cleaned.text = fixed.text
+            cleaned.applied += fixed.cuts.map(\.rawValue)
         }
-        let markers = resolveMarkers(done.text, fillers) { parser.parse(words: $0, language: "en") }
-        cleaned.text = markers.text
-        cleaned.applied += markers.cut.map(\.rawValue)
         return cleaned
     }
 
@@ -57,15 +61,6 @@ enum Disfluency {
             }
         } while transcript.scalars != before
         return Outcome(text: String(String.UnicodeScalarView(transcript.scalars)), cuts: cuts)
-    }
-
-    /// Python's `any(marker_pattern(p).search(text) for p in ("i mean", "you know", "like"))`.
-    static func mentionsMarker(_ text: String, among fillers: Set<Marker>) -> Bool {
-        let scalars = Array(text.unicodeScalars)
-        return Marker.allCases.filter(fillers.contains).contains { marker in
-            let spelled = marker.scalars
-            return scalars.indices.contains { matchEnd(spelled, in: scalars, at: $0) != nil }
-        }
     }
 
     private struct Edit {
@@ -178,8 +173,10 @@ enum Disfluency {
         { $0.n > 1 && $0.unit.contains(where: conjunctions.contains) },
         // Spelled aloud: one doubled capital, or a run of letters. The capital test is n == 1 only: scanning
         // a longer run kept every English repeat holding "I", as in "I mean I mean".
+        // "I I want" is the pronoun twice: it is a spelling only among letters.
         { pair in
-            (pair.n == 1 && pair.raw.allSatisfy { isLetter($0) && $0.first?.properties.isUppercase == true })
+            (pair.n == 1 && pair.raw.allSatisfy { isLetter($0) && $0.first?.properties.isUppercase == true }
+                && (pair.raw != [["I"]] || pair.neighbours.contains(where: isLetter)))
                 || (pair.n > 1 && pair.raw.allSatisfy(isLetter))
         },
         // A lone lower-case letter is only a spelling if it sits among letters.
@@ -197,6 +194,7 @@ enum Disfluency {
     private static let neverCollapse = words([
         "blah", "dot",                      // idiom, dictated ellipsis
         "yeah", "oui", "non", "si", "no",   // doubled is still one
+        "sorry",                            // "Sorry, sorry, I forgot"
         "that", "had",                      // "that that person said", "I had had enough"
         "very", "très", "tres",             // emphasis is the second copy
         "vous", "nous",                     // French reflexive: "vous vous êtes" needs both
@@ -288,35 +286,6 @@ enum Disfluency {
         let after = word[(i + 1)...].first { !$0.properties.isCaseIgnorable }
         return after?.properties.isCased != true
     }
-
-    /// What `re.I` matches beyond ASCII case, for the letters in the markers (exhaustive scan, Python 3.10).
-    private static let extraFolds: [Unicode.Scalar: Set<Unicode.Scalar>] = [
-        "i": ["\u{130}", "\u{131}"],
-        "k": ["\u{212A}"],
-    ]
-
-    /// `\b` + marker + `\b` with `re.I`, starting at `start`. A space in the marker is `\s+`.
-    fileprivate static func matchEnd(
-        _ marker: [Unicode.Scalar], in text: [Unicode.Scalar], at start: Int
-    ) -> Int? {
-        if start > 0, text[start - 1].isWord { return nil }
-        var at = start
-        for letter in marker {
-            if letter == " " {
-                let from = at
-                while at < text.count, text[at].isSpace { at += 1 }
-                if at == from { return nil }
-            } else {
-                guard at < text.count else { return nil }
-                let scalar = text[at]
-                guard scalar == letter || scalar.value == letter.value - 0x20
-                        || extraFolds[letter]?.contains(scalar) == true
-                else { return nil }
-                at += 1
-            }
-        }
-        return at == text.count || !text[at].isWord ? at : nil
-    }
 }
 
 /// The text cut into Python's `WORD.finditer` matches.
@@ -356,6 +325,26 @@ private struct Transcript {
     func stops(after i: Int) -> Bool {
         guard i >= 0, i + 1 < words.count else { return false }
         return scalars[words[i].upperBound..<words[i + 1].lowerBound].contains(where: \.isSentenceEnd)
+    }
+
+    func sentenceStart(_ i: Int) -> Int {
+        var s = i
+        while s > 0, !stops(after: s - 1) { s -= 1 }
+        return s
+    }
+
+    func sentenceEnd(_ i: Int) -> Int {
+        var e = i
+        while e + 1 < words.count, !stops(after: e) { e += 1 }
+        return e
+    }
+
+    /// A stop, comma, semicolon or colon between word `i` and the next.
+    func pauses(after i: Int) -> Bool {
+        guard i >= 0, i + 1 < words.count else { return false }
+        return scalars[words[i].upperBound..<words[i + 1].lowerBound].contains {
+            $0.isSentenceEnd || $0 == "," || $0 == ";" || $0 == ":"
+        }
     }
 
     /// Python's `cut_to`: words `first..<upto` and the gap after them go, and the case the first one carried
@@ -399,292 +388,310 @@ private extension Unicode.Scalar {
     }
 }
 
-// MARK: - Word fillers
+// MARK: - Spoken corrections
 
-/// The marker rule of `disfluency.py` (`resolve`, `wants_cut`, `cut`), judged on a parrot-syrinx tree instead
-/// of spaCy. spaCy's labels are mapped to their UD twins, and lemmas are replaced by surface forms plus UPOS
-/// VERB or AUX. Offsets are scalars, as in Python, until a sentence meets its parse.
+/// "with Peter, no, with James", "with Peter. I mean James.", "… Let me restart. …". The string finds the
+/// marker and the words that repeat across it; the parrot-syrinx tree decides whether the marker is one and
+/// whether the repair stands in for what it replaces.
 extension Disfluency {
-
-    /// In Python's `resolve` order.
-    enum Marker: String, CaseIterable {
-        case iMean = "i mean"
-        case youKnow = "you know"
-        case like
-
-        var scalars: [Unicode.Scalar] { Array(rawValue.unicodeScalars) }
-
-        /// The marker's own verb. `like` has none, so it goes on its tag.
-        var verbForms: Set<String>? {
-            switch self {
-            case .iMean: ["mean", "means", "meant"]
-            case .youKnow: ["know", "knows", "knew", "knowing"]
-            case .like: nil
-            }
-        }
+    private static func phrases(_ list: [String]) -> [[[Unicode.Scalar]]] {
+        list.map { $0.split(separator: " ").map { Array($0.unicodeScalars) } }
     }
 
-    /// Judged first, then cut a sentence at a time: a cut changes the parse of its own sentence. Sentences are
-    /// replaced from the right because a cut moves every offset after it. A sentence the splitter or the
-    /// parser abstains on keeps its markers.
-    static func resolveMarkers(
-        _ text: String, _ fillers: Set<Marker>, parse: (Words) -> Parse?
-    ) -> (text: String, cut: [Marker]) {
-        var scalars = Array(text.unicodeScalars)
-        var trees: [Int: Tree?] = [:]
-        var cuts: [Int: (sentence: Range<Int>, spans: [(Range<Int>, Marker)])] = [:]
-        for marker in Marker.allCases where fillers.contains(marker) {
-            let spelled = marker.scalars
-            var at = 0
-            while at < scalars.count {
-                guard let end = matchEnd(spelled, in: scalars, at: at) else {
-                    at += 1
-                    continue
-                }
-                let sentence = sentenceOf(scalars, at, end)
-                let span = at - sentence.lowerBound ..< end - sentence.lowerBound
-                let tree: Tree?
-                if let parsed = trees[sentence.lowerBound] {
-                    tree = parsed
-                } else {
-                    tree = Tree(Array(scalars[sentence]), parse: parse)
-                    trees[sentence.lowerBound] = .some(tree)
-                }
-                if let tree, tree.wantsCut(marker, at: span) {
-                    cuts[sentence.lowerBound, default: (sentence, [])].spans.append((span, marker))
-                }
-                at = end
-            }
-        }
-        var said: [Marker] = []
-        for offset in cuts.keys.sorted(by: >) {
-            guard let (sentence, spans) = cuts[offset] else { continue }
-            scalars.replaceSubrange(sentence, with: cut(Array(scalars[sentence]), spans.map(\.0)))
-            said += spans.sorted {
-                ($0.0.lowerBound, $0.0.upperBound, $0.1.rawValue) < ($1.0.lowerBound, $1.0.upperBound, $1.1.rawValue)
-            }.map(\.1)
-        }
-        return (String(String.UnicodeScalarView(scalars)), said)
+    private static let correctionMarkers = phrases([
+        "i mean", "i meant", "no", "sorry", "or rather", "wait", "actually",
+    ])
+    /// After a full stop "no" answers a question: "Is it Peter? No, James."
+    private static let afterStop = phrases(["i mean", "i meant", "sorry"])
+    /// The marker in its ordinary sense, said before the very word a restart would repeat.
+    private static let idioms = phrases([
+        "sorry for", "sorry about", "sorry to", "sorry if", "sorry that", "no matter", "no longer", "no more",
+        "wait for", "wait until", "wait till",
+    ])
+    /// Said as their own clause, they take back the sentence before.
+    private static let restartCommands = phrases([
+        "scratch that", "strike that", "let me rephrase", "let me rephrase that",
+    ])
+    /// These also say what they mean literally ("The app froze. Let me restart."), so the next sentence must
+    /// start like the one dropped.
+    private static let ambiguousRestartCommands = phrases([
+        "let me restart", "let me start over", "let me start again", "let me try again", "let me say that again",
+        "start over",
+    ])
+
+    /// The parser is asked only when one of these is said.
+    static func mentionsCorrection(_ text: String) -> Bool {
+        let t = Transcript(Array(text.unicodeScalars))
+        let cues = correctionMarkers + restartCommands + ambiguousRestartCommands
+        return t.bare.indices.contains { i in cues.contains { t.bare[i...].starts(with: $0) } }
     }
 
-    /// Python's `sentence_of`: from after the last `.?!` before the marker to the first one after it. No strip:
-    /// stripping moved every offset and made the cuts eat a letter, "So like a generation" -> "So la generation".
-    private static func sentenceOf(_ text: [Unicode.Scalar], _ at: Int, _ end: Int) -> Range<Int> {
-        let stops: Set<Unicode.Scalar> = [".", "?", "!"]
-        let lo = (text[..<at].lastIndex(where: stops.contains) ?? -1) + 1
-        let hi = text[end...].firstIndex(where: stops.contains).map { $0 + 1 } ?? text.count
-        return lo ..< hi
+    static func correct(_ text: String, parse: (Words) -> Parse?) -> (text: String, cuts: [Cut]) {
+        var t = Transcript(Array(text.unicodeScalars))
+        var cuts: [Cut] = []
+        // A sentence a cut did not touch is asked about again after it.
+        var parsed: [String: Parse?] = [:]
+        func remembered(_ words: Words) -> Parse? {
+            if let known = parsed[words.text] { return known }
+            let tree = parse(words)
+            parsed[words.text] = .some(tree)
+            return tree
+        }
+        while let edit = firstCorrection(t, remembered) ?? firstRestartCommand(t, remembered) {
+            cuts.append(edit.cut)
+            t = t.cut(edit.first, upto: edit.upto)
+        }
+        return (String(String.UnicodeScalarView(t.scalars)), cuts)
     }
 
-    /// Python's `cut`: every marker in one sentence, right to left, each with one adjacent comma. Without the
-    /// comma, "And you know, the comments should be" left "And, the comments should be", 8 of 186 cuts. The
-    /// sentence keeps its leading space, which is the gap after the previous full stop, and its capital when
-    /// the first word went: "I mean the hesitations part" -> "The hesitations part".
-    private static func cut(_ sentence: [Unicode.Scalar], _ spans: [Range<Int>]) -> [Unicode.Scalar] {
-        let lead = sentence.prefix { $0.isSpace }
-        let capitalised = sentence.dropFirst(lead.count).first?.properties.isUppercase == true
-        var sentence = sentence
-        for span in spans.sorted(by: { ($0.lowerBound, $0.upperBound) > ($1.lowerBound, $1.upperBound) }) {
-            var head = Array(sentence[..<span.lowerBound])
-            var tail = Array(sentence[span.upperBound...])
-            let afterSpace = tail.prefix { $0.isSpace }.count
-            let beforeSpace = head.reversed().prefix { $0.isSpace }.count
-            if afterSpace < tail.count, [",", ";"].contains(tail[afterSpace]) {
-                tail.removeFirst(afterSpace + 1)
-            } else if beforeSpace < head.count, [",", ";"].contains(head[head.count - beforeSpace - 1]) {
-                head.removeLast(beforeSpace + 1)
-            }
-            // Python kept this space: "it broke again on friday you know" came back with a trailing blank.
-            if !tail.contains(where: { !$0.isSpace }) {
-                head.removeLast(head.reversed().prefix { $0.isSpace }.count)
-            }
-            if head.contains(where: { !$0.isSpace }), tail.contains(where: { !$0.isSpace }),
-               head.last?.isSpace == false, tail.first?.isSpace == false {
-                head.append(" ")
-            }
-            sentence = head + tail
-        }
-        var body = tightened(sentence)
-        body.removeFirst(body.prefix { $0.isSpace }.count)
-        if capitalised, let first = body.first, first.properties.isLowercase {
-            body.replaceSubrange(0 ..< 1, with: first.properties.uppercaseMapping.unicodeScalars)
-        }
-        return Array(lead) + body
-    }
-
-    /// `re.sub(r"\s+([,.;?!])", r"\1", re.sub(r"[ \t]{2,}", " ", s))`.
-    private static func tightened(_ s: [Unicode.Scalar]) -> [Unicode.Scalar] {
-        var spaced: [Unicode.Scalar] = []
-        var i = 0
-        while i < s.count {
-            var j = i
-            while j < s.count, s[j] == " " || s[j] == "\t" { j += 1 }
-            if j - i >= 2 {
-                spaced.append(" ")
-                i = j
-            } else {
-                spaced.append(s[i])
-                i += 1
-            }
-        }
-        var out: [Unicode.Scalar] = []
-        i = 0
-        while i < spaced.count {
-            var j = i
-            while j < spaced.count, spaced[j].isSpace { j += 1 }
-            if j > i, j < spaced.count, [",", ".", ";", "?", "!"].contains(spaced[j]) {
-                i = j
+    private static func firstCorrection(_ t: Transcript, _ parse: (Words) -> Parse?) -> Edit? {
+        var m = 0
+        while m < t.words.count {
+            guard let e = markerEnd(t, at: m) else {
+                m += 1
                 continue
             }
-            out.append(contentsOf: spaced[i ..< max(j, i + 1)])
-            i = max(j, i + 1)
+            if m > 0, !saysIdiom(t, m), afterStopAllowed(t, m),
+               let edit = anchored(t, m, e, parse) ?? bare(t, m, e, parse) {
+                return edit
+            }
+            m = e
         }
-        return out
+        return nil
+    }
+
+    /// "sorry for the delay", but not "sorry, to Tim".
+    private static func saysIdiom(_ t: Transcript, _ m: Int) -> Bool {
+        idioms.contains { idiom in
+            t.bare[m...].starts(with: idiom) && !(m..<m + idiom.count - 1).contains(where: t.pauses(after:))
+        }
+    }
+
+    /// Where a run of markers starting at `m` ends: "no, sorry, I mean" is one. Nil when no word follows it.
+    private static func markerEnd(_ t: Transcript, at m: Int) -> Int? {
+        var end = m
+        while let marker = correctionMarkers.first(where: { t.bare[end...].starts(with: $0) }) {
+            end += marker.count
+        }
+        guard end > m, end < t.words.count, !(m..<end).contains(where: t.stops(after:)) else { return nil }
+        return end
+    }
+
+    /// A stop before the marker is crossed only by a full stop and a marker that does not answer.
+    private static func afterStopAllowed(_ t: Transcript, _ m: Int) -> Bool {
+        guard t.stops(after: m - 1) else { return true }
+        let gap = t.scalars[t.words[m - 1].upperBound..<t.words[m].lowerBound]
+        return gap.allSatisfy { !$0.isSentenceEnd || $0 == "." }
+            && afterStop.contains { t.bare[m...].starts(with: $0) }
+    }
+
+    /// "the rain I mean the sun": the words after the marker repeat the first words of what they replace.
+    /// The nearest, longest anchor only: when it fails, a farther one is a weaker reading of the same marker.
+    private static func anchored(_ t: Transcript, _ m: Int, _ e: Int, _ parse: (Words) -> Parse?) -> Edit? {
+        for k in stride(from: 3, through: 1, by: -1) where e + k <= t.words.count {
+            for extra in 1...3 {
+                let a = m - k - extra
+                guard a >= 0 else { break }
+                guard t.bare[a..<a + k] == t.bare[e..<e + k] else { continue }
+                let last = t.bare[m - 1]
+                guard !(a..<m - 1).contains(where: t.stops(after:)),
+                      // "tea or no tea", "I'm sorry I'm late": the marker belongs to the sentence.
+                      !closingWords.contains(last),
+                      !last.contains("'"), !last.contains("\u{2019}"),
+                      !(a..<a + k).contains(where: { isNumber(t, $0) }),
+                      let tree = Tree(t, from: t.sentenceStart(a), to: t.sentenceEnd(e), parse: parse),
+                      isMarker(tree, t, m..<e),
+                      let replaced = tree.phrase(t, a..<m), let first = tree.node(t, e), let anchor = tree.node(t, a),
+                      !tree.splitsNumber(tree.nodes(t, a..<m)),
+                      // "into main, I mean into develop": one preposition, two objects.
+                      tree.relation(anchor) == "case" && tree.relation(first) == "case"
+                        || tree.chain(from: first).contains(where: { sameKind(tree.tag($0), tree.tag(replaced)) }),
+                      !restatesClause(tree, t, a..<m, replaced, marker: m..<e)
+                else { return nil }
+                return Edit(first: a, upto: e, cut: .selfCorrection)
+            }
+        }
+        return nil
+    }
+
+    /// "with Peter I mean James": a name or a number, then another of the same kind that ends the clause.
+    private static func bare(_ t: Transcript, _ m: Int, _ e: Int, _ parse: (Words) -> Parse?) -> Edit? {
+        let start = t.sentenceStart(m - 1)
+        // Before the parse, which costs 5 to 15 ms: two capitalised words or two numbers.
+        let capitalised = { (i: Int) in t.raw(i).first?.properties.isUppercase == true }
+        guard capitalised(m - 1) && capitalised(e) || isNumber(t, m - 1) && isNumber(t, e),
+              let tree = Tree(t, from: start, to: t.sentenceEnd(e), parse: parse),
+              let x = tree.node(t, m - 1), let y = tree.node(t, e),
+              tree.tag(x) == tree.tag(y), [.propn, .num].contains(tree.tag(x)),
+              // "at three, I mean three sharp" swaps nothing.
+              t.bare[m - 1] != t.bare[e],
+              isMarker(tree, t, m..<e)
+        else { return nil }
+        let kind = tree.tag(x)
+        let same = { (i: Int) in tree.node(t, i).map { tree.tag($0) == kind } ?? false }
+        var from = m - 1
+        while from > start, !t.pauses(after: from - 1), same(from - 1) { from -= 1 }
+        var to = e
+        while to + 1 < t.words.count, !t.pauses(after: to), same(to + 1) { to += 1 }
+        // A verb after the repair makes it a subject: "I told Peter, I mean, John was right".
+        let next = to + 1 < t.words.count && !t.pauses(after: to) ? tree.node(t, to + 1) : nil
+        guard from > start, next.map({ ![.verb, .aux].contains(tree.tag($0)) }) ?? true, !isNumber(t, from - 1),
+              !["nsubj", "csubj", "expl"].contains(tree.relation(x)),
+              // "at eight, or rather one if you feel fine" is a second option.
+              !["nsubj", "csubj", "expl", "conj"].contains(tree.relation(y))
+        else { return nil }
+        return Edit(first: from, upto: e, cut: .selfCorrection)
+    }
+
+    /// "He is not rude, I mean he is just tired": a whole clause again, after a marker that also explains.
+    /// After "no" or "sorry" the same shape is a correction.
+    private static func restatesClause(
+        _ tree: Tree, _ t: Transcript, _ span: Range<Int>, _ replaced: Int, marker: Range<Int>
+    ) -> Bool {
+        let explains = marker.contains { ["mean", "actually", "rather"].map { Array($0.unicodeScalars) }.contains(t.bare[$0]) }
+        return explains && tree.nodes(t, span).contains {
+            tree.head($0) == replaced && ["nsubj", "csubj", "expl"].contains(tree.relation($0))
+        }
+    }
+
+    /// "no" as a discourse word, not a determiner ("no way") or an answer ("I said no"); "I mean" with no
+    /// "that" or wh-word of its own ("what I mean is").
+    private static func isMarker(_ tree: Tree, _ t: Transcript, _ run: Range<Int>) -> Bool {
+        let repair = run.upperBound < t.words.count ? tree.node(t, run.upperBound) ?? Int.max : Int.max
+        return run.allSatisfy { i in
+            guard let n = tree.node(t, i) else { return false }
+            let word = String(String.UnicodeScalarView(t.bare[i]))
+            if tree.tag(n) == .intj || ["discourse", "reparandum"].contains(tree.relation(n)) { return true }
+            switch word {
+            case "no":
+                // "no wait" parses as a determiner and its noun.
+                return i + 1 < run.upperBound && t.bare[i + 1] == Array("wait".unicodeScalars)
+            case "sorry":
+                return false
+            case "wait":
+                // On its own: nothing hangs on it but the punctuation, its "no" and the misattached repair.
+                return tree.children(of: n).allSatisfy {
+                    $0 >= repair || tree.tag($0) == .punct || tree.words[$0].string.lowercased() == "no"
+                }
+            case "mean", "meant":
+                return [.verb, .aux].contains(tree.tag(n)) && !tree.children(of: n).contains {
+                    tree.relation($0) == "mark" || Tree.whWords.contains(tree.words[$0].string.lowercased())
+                }
+            default:
+                return true
+            }
+        }
+    }
+
+    /// A function word cannot end what a marker takes back. An object pronoun can: "to him, no, to her".
+    private static let closingWords = functionWords.subtracting(words(["it", "him", "her", "them", "me", "us", "you"]))
+
+    private static func sameKind(_ a: UPOS, _ b: UPOS) -> Bool {
+        a == b || ([.noun, .propn].contains(a) && [.noun, .propn].contains(b))
+    }
+
+    private static func isNumber(_ t: Transcript, _ i: Int) -> Bool {
+        t.words.indices.contains(i) && (isDigits(t.bare[i]) || numberWords.contains(t.bare[i]))
+    }
+
+    private static func firstRestartCommand(_ t: Transcript, _ parse: (Words) -> Parse?) -> Edit? {
+        for c in t.words.indices.dropFirst() {
+            let strong = restartCommands.filter { t.bare[c...].starts(with: $0) }.map(\.count).max() ?? 0
+            let weak = ambiguousRestartCommands.filter { t.bare[c...].starts(with: $0) }.map(\.count).max() ?? 0
+            let d = c + max(strong, weak)
+            guard d > c, d < t.words.count, t.pauses(after: c - 1), t.pauses(after: d - 1),
+                  !(c..<d - 1).contains(where: t.pauses(after:))
+            else { continue }
+            var s = c - 1
+            while s > 0, !t.stops(after: s - 1) { s -= 1 }
+            guard t.bare[s] == t.bare[d] || (t.stops(after: c - 1) && strong == d - c),
+                  let tree = Tree(t, from: t.sentenceStart(c), to: t.sentenceEnd(c), parse: parse)
+            else { continue }
+            // "let me restart, the server" is still the server.
+            let command = tree.nodes(t, c..<d)
+            let takes = command.contains { w in
+                tree.children(of: w).contains {
+                    !command.contains($0) && ["obj", "iobj", "obl", "xcomp", "ccomp"].contains(tree.relation($0))
+                }
+            }
+            if !takes { return Edit(first: s, upto: d, cut: .restartCommand) }
+        }
+        return nil
     }
 }
 
+/// One parse of whole sentences of a transcript, read by transcript word.
 private struct Tree {
     let words: [Words.Word]
     let parse: [Parse.Word]
-    /// UTF-16 offset of each scalar of the sentence, and one past the end.
+    /// Where the parsed stretch starts in the transcript, in scalars.
+    let base: Int
+    /// UTF-16 offset of each scalar of the stretch, and one past the end.
     let utf16: [Int]
 
-    init?(_ sentence: [Unicode.Scalar], parse: (Words) -> Parse?) {
-        guard let words = WordSplit.english(String(String.UnicodeScalarView(sentence))),
+    init?(_ t: Transcript, from first: Int, to last: Int, parse: (Words) -> Parse?) {
+        let lo = t.words[first].lowerBound
+        var hi = last + 1 < t.words.count ? t.words[last + 1].lowerBound : t.scalars.count
+        while hi > lo, t.scalars[hi - 1].isSpace { hi -= 1 }
+        let stretch = Array(t.scalars[lo..<hi])
+        guard let words = WordSplit.english(String(String.UnicodeScalarView(stretch))),
               let tree = parse(words), tree.words.count == words.all.count
         else { return nil }
         self.words = words.all
         self.parse = tree.words
+        base = lo
         var utf16 = [0]
-        for scalar in sentence { utf16.append(utf16[utf16.count - 1] + scalar.utf16.count) }
+        for scalar in stretch { utf16.append(utf16[utf16.count - 1] + scalar.utf16.count) }
         self.utf16 = utf16
     }
 
-    /// spaCy's sets in `disfluency.py`, through `LABEL_MAP` in `training/syntax-parser/marker_rule_ud.py`.
-    /// `attr` has no UD twin.
-    /// The marker verb's own object: if it has one, the marker is doing work.
-    private static let object: Set<String> = ["ccomp", "obj", "xcomp"]
-    /// The marker is itself an argument: "we'll let you know".
-    private static let argument: Set<String> = ["acl", "advcl", "ccomp", "conj", "csubj", "nmod", "obj", "obl", "xcomp"]
-    /// A verb ("I like it"), a preposition ("like a cat") and a subordinator ("like I said") all stay.
-    private static let likeKeeps: Set<UPOS> = [.verb, .aux, .adp, .sconj]
+    /// The parse words that start inside transcript words `range`. "I'm" is two.
+    func nodes(_ t: Transcript, _ range: Range<Int>) -> [Int] {
+        guard let first = range.first, let last = range.last,
+              t.words[first].lowerBound >= base, t.words[last].upperBound - base < utf16.count
+        else { return [] }
+        let a = utf16[t.words[first].lowerBound - base], b = utf16[t.words[last].upperBound - base]
+        return words.indices.filter { a <= words[$0].utf16.lowerBound && words[$0].utf16.lowerBound < b }
+    }
 
-    func wantsCut(_ marker: Disfluency.Marker, at scalars: Range<Int>) -> Bool {
-        let a = utf16[scalars.lowerBound], b = utf16[scalars.upperBound]
-        guard let forms = marker.verbForms else {
-            // "like-minded" is one word, and cutting its first half leaves "-minded".
-            guard let like = words.firstIndex(where: { $0.utf16.lowerBound <= a && a < $0.utf16.upperBound }),
-                  words[like].string.lowercased() == "like"
+    func node(_ t: Transcript, _ i: Int) -> Int? { nodes(t, i..<i + 1).first }
+
+    func tag(_ i: Int) -> UPOS { parse[i].tag }
+
+    /// The UD relation without its subtype: `nsubj:pass` is `nsubj`.
+    func relation(_ i: Int) -> String { String(parse[i].label.prefix { $0 != ":" }) }
+
+    func head(_ i: Int) -> Int? { parse[i].head > 0 ? parse[i].head - 1 : nil }
+
+    func children(of i: Int) -> [Int] { parse.indices.filter { parse[$0].head == i + 1 } }
+
+    /// The one word of transcript words `range` whose head is outside them, or nil when they are not one
+    /// phrase.
+    func phrase(_ t: Transcript, _ range: Range<Int>) -> Int? {
+        let span = nodes(t, range)
+        let tops = span.filter { word in head(word).map { !span.contains($0) } ?? true }
+        return tops.count == 1 ? tops[0] : nil
+    }
+
+    /// `word` and its heads, while they stay at or after it: the phrase a repair word heads.
+    func chain(from word: Int) -> [Int] {
+        var chain = [word]
+        while chain.count <= parse.count, let up = head(chain[chain.count - 1]), up >= word { chain.append(up) }
+        return chain
+    }
+
+    /// A number link from inside `span` to outside it: cutting there splits "two hundred".
+    func splitsNumber(_ span: [Int]) -> Bool {
+        let links: Set<String> = ["nummod", "compound", "flat", "fixed"]
+        return parse.indices.contains { word in
+            guard let up = head(word), span.contains(word) != span.contains(up), links.contains(relation(word))
             else { return false }
-            if subordinates(like) { return false }
-            return !Self.likeKeeps.contains(parse[like].tag) || approximates(like)
+            return tag(word) == .num || tag(up) == .num
         }
-        // The marker's own verb, not the sentence's first one: "You know, do you know who owns this account?"
-        // holds a filler and a question, and matching on the form alone cut both.
-        guard let verb = words.indices.first(where: {
-            a <= words[$0].utf16.lowerBound && words[$0].utf16.lowerBound < b
-                && forms.contains(words[$0].string.lowercased()) && [.verb, .aux].contains(parse[$0].tag)
-        }) else { return false }
-        if marker == .iMean, defines(verb, at: a) { return false }
-        let objects = children(of: verb).filter { Self.object.contains(parse[$0].label) }
-        let opens = opensClause(at: a, marker)
-        if !objects.isEmpty, !(opens && objects.allSatisfy(isPlainClause)) { return false }
-        // After "and", the marker verb is a conjunct of what came before, not its argument.
-        if Self.argument.subtracting(opens ? ["conj"] : []).contains(parse[verb].label) { return false }
-        return !substitution(a, b)
     }
 
-    /// The marker starts a clause: first in the sentence, or right after a coordinator or a comma. "You know"
-    /// first in a sentence is left out: "You know he quit, right?" asks.
-    private func opensClause(at a: Int, _ marker: Disfluency.Marker) -> Bool {
-        guard let first = words.firstIndex(where: { $0.utf16.lowerBound == a }) else { return false }
-        guard first > 0 else { return marker == .iMean }
-        return Self.opening.contains(words[first - 1].string.lowercased())
-    }
-
-    private static let opening: Set<String> = ["and", "so", "but", "or", ","]
-
-    /// `like` first in a sentence, with no comma, before its clause's subject and that subject's whole noun
-    /// phrase: "Like you suggested, I'll take it", "Like the error message says, …".
-    private func subordinates(_ like: Int) -> Bool {
-        guard like == 0, let subject = parse.indices.first(where: {
-            $0 > like && parse[$0].label == "nsubj" && parse[$0].head == parse[like].head
-        }) else { return false }
-        return (like + 1 ... subject).allSatisfy { descends($0, from: subject) }
-    }
-
-    private func descends(_ word: Int, from top: Int) -> Bool {
-        var at = word
-        for _ in parse.indices {
-            if at == top { return true }
-            guard parse[at].head > 0 else { return false }
-            at = parse[at].head - 1
-        }
-        return false
-    }
-
-    /// "I mean" defining a word: "By slow I mean over two seconds". Its clause opens with "by", or "mean"
-    /// holds a phrase that does.
-    private func defines(_ verb: Int, at a: Int) -> Bool {
-        if children(of: verb).contains(where: { child in
-            children(of: child).contains { words[$0].string.lowercased() == "by" }
-        }) { return true }
-        guard let first = words.firstIndex(where: { $0.utf16.lowerBound == a }) else { return false }
-        let opener = words[..<first].lastIndex { Self.opening.contains($0.string.lowercased()) } ?? -1
-        return opener + 1 < first && words[opener + 1].string.lowercased() == "by"
-    }
-
-    private func children(of index: Int) -> [Int] {
-        parse.indices.filter { parse[$0].head == index + 1 }
-    }
-
-    /// A marker verb whose object is a clause with its own subject, or a verb phrase, and no "that" or
-    /// wh-word: "I mean you should try", "and you know skipping it". "I mean that we need tests", "I mean who
-    /// cares" and "I mean it" keep it.
-    private func isPlainClause(_ head: Int) -> Bool {
-        let below = children(of: head)
-        return (below.contains { parse[$0].label == "nsubj" } || parse[head].tag == .verb)
-            && !below.contains { parse[$0].label == "mark" }
-            && !([head] + below).contains { Self.whWords.contains(words[$0].string.lowercased()) }
-    }
-
-    private static let whWords: Set<String> = [
+    static let whWords: Set<String> = [
         "what", "who", "whom", "whose", "which", "where", "when", "why", "how",
         "whatever", "whoever", "whichever", "wherever", "whenever", "however",
     ]
-
-    /// `like` as an approximator right before a number: "it took like three hours", "already like 300". Not
-    /// after a verb of seeming or a -thing pronoun, where it compares: "it felt like one long day",
-    /// "something like five". Not as a subordinator: "it looks like two of them failed".
-    private func approximates(_ like: Int) -> Bool {
-        guard ["case", "discourse"].contains(parse[like].label), parse.indices.contains(like + 1),
-              parse[like + 1].tag == .num || words[like + 1].string.allSatisfy(\.isNumber)
-        else { return false }
-        return like == 0 || !Self.comparing.contains(words[like - 1].string.lowercased())
-    }
-
-    private static let comparing: Set<String> = [
-        "look", "looks", "looked", "looking", "feel", "feels", "felt", "feeling",
-        "seem", "seems", "seemed", "seeming", "sound", "sounds", "sounded", "sounding",
-        "taste", "tastes", "tasted", "smell", "smells", "smelled", "smelt",
-        "something", "anything", "nothing", "everything",
-    ]
-
-    /// A noun on both sides is a self-correction, not a filler: "I was with James I mean Peter, sorry".
-    /// Deleting the marker leaves both names, which is worse than leaving the sentence alone.
-    private func substitution(_ a: Int, _ b: Int) -> Bool {
-        let outside = words.indices.filter {
-            parse[$0].tag != .punct && (words[$0].utf16.upperBound <= a || words[$0].utf16.lowerBound >= b)
-        }
-        let before = outside.filter { words[$0].utf16.lowerBound < a }.suffix(2)
-        let after = outside.filter { words[$0].utf16.lowerBound >= b }.prefix(2)
-        guard let last = before.last, let next = after.first else { return false }
-        let nouns: Set<UPOS> = [.noun, .propn]
-        if nouns.contains(parse[last].tag) && nouns.contains(parse[next].tag) { return true }
-        // Two phrases of one shape ending in a noun: "parse config I mean load config". Not when that noun
-        // is a subject, which makes it a clause: "the bug I mean the tests pass".
-        guard before.count == 2, after.count == 2, let end = after.last else { return false }
-        return before.map { parse[$0].tag } == after.map { parse[$0].tag }
-            && nouns.contains(parse[end].tag) && parse[end].label != "nsubj"
-    }
 }

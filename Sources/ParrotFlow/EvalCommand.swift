@@ -87,9 +87,8 @@ enum EvalCommand {
         print("  cases    \(short(file.path))  (\(set.cases.count))"
             + (probe.map { "  — only probe \($0)" } ?? ""))
         print("  body     \(body(of: transform))")
-        // The app keeps the parser warm, so the cases are scored with it. Without it every marker case would
-        // score the stage standing aside.
-        if transform.body == .native(.disfluency), !transform.fillers.isEmpty {
+        // A parser that will not load is said here, not scored as a case set with no corrections.
+        if transform.body == .native(.disfluency) {
             let failure = Blocking.run { () async -> String? in
                 do { _ = try await SyrinxModel.shared.prepare() } catch { return error.localizedDescription }
                 return nil

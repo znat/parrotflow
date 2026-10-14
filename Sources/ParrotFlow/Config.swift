@@ -902,11 +902,9 @@ struct Config: Decodable, Equatable {
         var say: [String] = []
         /// `model: gpt`, or `model: { use: gpt, reasoning: low }`.
         var model: ModelRef?
-        /// `fillers: [i mean, you know]` — the markers `native: disfluency` removes. None when absent.
-        var fillers: Set<Disfluency.Marker> = []
 
         enum CodingKeys: String, CodingKey, CaseIterable {
-            case name, description, display, confirm, prompt, content, replace, command, native, fillers
+            case name, description, display, confirm, prompt, content, replace, command, native
             case tests, returns, offer, model, say, done, failed
             case offerKey = "key"
             case timeout = "timeout_seconds"
@@ -1062,25 +1060,7 @@ struct Config: Decodable, Equatable {
             } else if let tablePath {
                 (body, source, bodyProblem) = readTable(tablePath)
             }
-            unreadable = unreadable ?? bodyProblem ?? readFillers(c)
-        }
-
-        /// Refused rather than ignored: a misspelt marker would quietly stay in every dictation.
-        private mutating func readFillers(_ c: KeyedDecodingContainer<CodingKeys>) -> String? {
-            guard c.contains(.fillers) else { return nil }
-            let have = Disfluency.Marker.allCases.map(\.rawValue).joined(separator: ", ")
-            guard body == .native(.disfluency) else { return "has `fillers:`, which only `native: disfluency` reads" }
-            guard let written = try? c.decode([String].self, forKey: .fillers) else {
-                return "`fillers:` is not a list — have: \(have)"
-            }
-            for name in written {
-                let spelled = name.split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()
-                guard let marker = Disfluency.Marker(rawValue: spelled) else {
-                    return "fillers: no marker named \(name) — have: \(have)"
-                }
-                fillers.insert(marker)
-            }
-            return nil
+            unreadable = unreadable ?? bodyProblem
         }
 
         /// A prompt file, read verbatim. No front matter, no templating: what is
@@ -1216,7 +1196,7 @@ struct Config: Decodable, Equatable {
                 failed: entry.failed,
                 say: entry.say,
                 body: body, source: entry.source,
-                tests: entry.tests, model: entry.model, fillers: entry.fillers
+                tests: entry.tests, model: entry.model
             ))
         }
         return (kept, unreadable)
@@ -1333,8 +1313,6 @@ struct Config: Decodable, Equatable {
         /// A `replace:` or `command:` transform asks no model anything, so it
         /// is meaningless there and `--check-config` says so.
         var model: ModelRef?
-        /// The markers `native: disfluency` removes. Empty turns its marker rule off.
-        var fillers: Set<Disfluency.Marker> = []
 
         enum Body: Equatable {
             /// Instructions for the local model.
@@ -3474,12 +3452,12 @@ struct Config: Decodable, Equatable {
         vocabularySteps.contains { $0.vocabulary.isOn(\.slotGate) }
     }
 
-    /// Whether anything will read the 519 MB parser: a `transform` step runs the native `disfluency` with
-    /// `fillers:`, and English is dictated.
+    /// Whether anything will read the 519 MB parser: a `transform` step runs the native `disfluency`, whose
+    /// correction rule reads the tree, and English is dictated.
     var readsParser: Bool {
         transcription.languages.contains("en") && Pipeline.resolved(config: self).steps.contains {
             guard $0.stage == .transform, let transform = $0.transform.flatMap(transform(named:)) else { return false }
-            return transform.body == .native(.disfluency) && !transform.fillers.isEmpty
+            return transform.body == .native(.disfluency)
         }
     }
 

@@ -2493,11 +2493,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-            // The rest together, once speech is in. None of them blocks a
-            // dictation: the stages that read them stand aside until they are
-            // in memory.
+            // The rest together, once speech is in. Only the parser blocks a
+            // dictation: the other stages stand aside until their model is in
+            // memory.
             if config.readsSlots { await transcriber.warmSlotModel() }
-            // Kept in memory for the life of the app. Until it is, `disfluency` leaves the word fillers in.
+            // Kept in memory for the life of the app. A dictation that says a correction before it is waits for
+            // it, as one waits for the speech model.
             if config.readsParser { await SyrinxModel.shared.warm() }
             // The boundary readings. 320 MB and a 1.3s load, and a dictation
             // never waits for either: without this the first few dictations of
@@ -2855,9 +2856,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case .native(.disfluency):
             let language = Pipeline.language(of: text, config: config)
-            return await Disfluency.clean(text, language: language, fillers: transform.fillers) {
-                await SyrinxModel.shared.loaded
-            }.text
+            return await Disfluency.clean(text, language: language) { await SyrinxModel.shared.ready() }.text
         }
     }
 

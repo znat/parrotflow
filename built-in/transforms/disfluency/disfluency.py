@@ -56,12 +56,13 @@ WORD = re.compile(r"[\wÀ-ɏ'’-]+")
 # Said twice on purpose — collapsing changes the meaning.
 #   blah, dot            idiom / dictated ellipsis
 #   yeah/oui/non/si/no   affirmation or denial, doubled is still one
+#   sorry                "Sorry, sorry, I forgot" apologises once
 #   that, had            "that that person said", "I had had enough"
 #   very, très           emphasis is the second copy
 #   vous, nous           French reflexive: "vous vous êtes" needs both
 #   ha, la               laughter / singing
 NEVER_COLLAPSE = {
-    "blah", "dot", "yeah", "oui", "non", "si", "no",
+    "blah", "dot", "yeah", "oui", "non", "si", "no", "sorry",
     "that", "had", "very", "très", "tres", "vous", "nous", "ha", "la",
 }
 
@@ -148,8 +149,10 @@ KEPT = (
     # A spelled name: one doubled capital letter, or a run that is all letters.
     # The capital-letter test is n == 1 only. Scanning a longer run with `any`
     # kept every English repeat holding "I" — "I mean I mean".
+    # "I I want" is the pronoun twice: it is a spelling only among letters.
     Guard("spelled aloud",
-          lambda r: (r.n == 1 and is_letter(r.raw[0]) and r.raw[0].isupper())
+          lambda r: (r.n == 1 and is_letter(r.raw[0]) and r.raw[0].isupper()
+                     and (r.raw[0] != "I" or any(is_letter(x) for x in r.neighbours)))
           or (r.n > 1 and all(is_letter(x) for x in r.raw))),
     # A lone lower-case letter is only a spelling if it sits among letters.
     Guard("a letter among letters",

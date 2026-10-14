@@ -12,7 +12,7 @@ actor SyrinxModel {
     static let download = ModelDownload(
         id: "parser", name: "parrot-syrinx", megabytes: 519, peak: 640,
         group: .language, blocking: false,
-        costOfFailure: "\"I mean\", \"you know\" and \"like\" are left in"
+        costOfFailure: "spoken corrections (\"with Peter, no, with James\") are left in"
     )
 
     enum Failure: LocalizedError {
@@ -75,10 +75,16 @@ actor SyrinxModel {
     private var loading: Task<Parser, Error>?
     /// When a failed load may be tried again. A damaged cache re-fetches 519 MB, so not on every dictation.
     private var retryAfter: Date?
+    private var failure: Error?
     private static let backoff: TimeInterval = 300
 
-    /// A dictation never waits for the parser.
-    var loaded: Parser? { parser }
+    /// What a dictation waits on, as it waits for the speech model. A load that failed less than `backoff`
+    /// ago is not tried again here: the dictation goes on without the parser, and `retryNow` tries.
+    func ready() async -> Result<Parser, Error> {
+        if let parser { return .success(parser) }
+        if loading == nil, let failure, let retryAfter, Date() < retryAfter { return .failure(failure) }
+        do { return .success(try await prepare()) } catch { return .failure(error) }
+    }
 
     func warm() {
         guard parser == nil, loading == nil else { return }
@@ -89,7 +95,7 @@ actor SyrinxModel {
                 _ = try await self?.prepare()
                 Log.write(String(format: "parser: warmed in %.1fs", Date().timeIntervalSince(started)))
             } catch {
-                Log.write("parser: \(error.localizedDescription); word fillers stay until it loads")
+                Log.write("parser: \(error.localizedDescription); spoken corrections stay until it loads")
             }
         }
     }
@@ -97,6 +103,7 @@ actor SyrinxModel {
     /// For the setup screen's repair button.
     func retryNow() {
         retryAfter = nil
+        failure = nil
         warm()
     }
 
@@ -118,6 +125,7 @@ actor SyrinxModel {
         } catch {
             // Here and not in `warm`, so no `warm` can slip in between the failure and the backoff.
             retryAfter = Date().addingTimeInterval(Self.backoff)
+            failure = error
             ModelDownloads.report(
                 Self.download.id, .failed(ModelDownloads.failure(error, needs: Self.download.peakLabel))
             )
@@ -125,7 +133,7 @@ actor SyrinxModel {
         }
     }
 
-    /// Off the actor, so a dictation asking for `loaded` never waits on it.
+    /// Off the actor, so a dictation that finds the parser loaded never waits on a load.
     private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
         let parser = try await openOrFetch(progress: progress)
         // The first prediction after a load took 167 to 223 ms against 10 to 16 ms warm.

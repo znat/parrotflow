@@ -1,0 +1,872 @@
+# Spoken corrections for the native `disfluency` stage, which needs the parser.
+# Scored by scripts/check-disfluency-corrections.sh.
+#
+# `correction` and `restart`: `expect` is the text with the taken-back words
+# gone. Left unchanged is a miss; any other text is a wrong cut.
+# `keep` (no `expect`): must come back byte for byte.
+#
+# `set: blind-1` and `set: blind-2` were written by a fresh agent from the rule
+# description alone, before it saw the code. `set: user` is what the user
+# dictated.
+
+cases:
+  - set: user
+    probe: correction
+    input: "So we need to check whether the rain I mean the sun has gone."
+    expect: "So we need to check whether the sun has gone."
+  - set: user
+    probe: correction
+    input: "Can I book a meeting with Peter, no, with James?"
+    expect: "Can I book a meeting with James?"
+  - set: user
+    probe: correction
+    input: "Send it on Monday, sorry, on Tuesday."
+    expect: "Send it on Tuesday."
+  - set: user
+    probe: restart
+    input: "Let's make the road cleaner. Let me restart. Let's make the road greener."
+    expect: "Let's make the road greener."
+  - set: user
+    probe: correction
+    input: "I want to book a meeting with Peter. I mean James."
+    expect: "I want to book a meeting with James."
+  - set: user
+    probe: correction
+    input: "I I want to book a meeting."
+    expect: "I want to book a meeting."
+  - set: user
+    probe: correction
+    input: "Can I book a meeting with Peter? I no I mean with James"
+    expect: "Can I book a meeting with James?"
+  - set: user
+    probe: keep
+    input: "I mean that seriously."
+  - set: user
+    probe: keep
+    input: "No, I don't think so."
+  - set: user
+    probe: keep
+    input: "Sorry, I'm late."
+  - set: user
+    probe: keep
+    input: "I mean it."
+  - set: user
+    probe: keep
+    input: "No, with James."
+  - set: user
+    probe: keep
+    input: "Okay, we'll let you know."
+  - set: blind-1
+    probe: correction
+    input: "Please forward the invoice to Anna, no, to Maria."
+    expect: "Please forward the invoice to Maria."
+  - set: blind-1
+    probe: correction
+    input: "We should deploy on Friday, sorry, on Thursday."
+    expect: "We should deploy on Thursday."
+  - set: blind-1
+    probe: correction
+    input: "I'll be there at three, no, at four."
+    expect: "I'll be there at four."
+  - set: blind-1
+    probe: correction
+    input: "Let's meet at the cafe or rather at the library after lunch."
+    expect: "Let's meet at the library after lunch."
+  - set: blind-1
+    probe: correction
+    input: "Can you send it to Tom, sorry, to Tim?"
+    expect: "Can you send it to Tim?"
+  - set: blind-1
+    probe: correction
+    input: "the meeting is at nine no wait at ten"
+    expect: "the meeting is at ten"
+  - set: blind-1
+    probe: correction
+    input: "Remind me to call the dentist, no, to call the plumber tomorrow."
+    expect: "Remind me to call the plumber tomorrow."
+  - set: blind-1
+    probe: correction
+    input: "Pick up the kids at five, no wait, at six."
+    expect: "Pick up the kids at six."
+  - set: blind-1
+    probe: correction
+    input: "Merge the branch into main, I mean into develop."
+    expect: "Merge the branch into develop."
+  - set: blind-1
+    probe: correction
+    input: "We shipped it in March. I mean in April."
+    expect: "We shipped it in April."
+  - set: blind-1
+    probe: correction
+    input: "i want it with the red one, no, with the blue one"
+    expect: "i want it with the blue one"
+  - set: blind-1
+    probe: correction
+    input: "At the station, sorry, at the airport, we'll meet Dad."
+    expect: "At the airport, we'll meet Dad."
+  - set: blind-1
+    probe: correction
+    input: "The red folder, no, the blue folder is on your desk."
+    expect: "The blue folder is on your desk."
+  - set: blind-1
+    probe: correction
+    input: "Is it due on the fifth, sorry, on the sixth?"
+    expect: "Is it due on the sixth?"
+  - set: blind-1
+    probe: correction
+    input: "Use the staging key or rather the production key for this."
+    expect: "Use the production key for this."
+  - set: blind-1
+    probe: correction
+    input: "Set the timeout to thirty seconds, no, to sixty seconds."
+    expect: "Set the timeout to sixty seconds."
+  - set: blind-1
+    probe: correction
+    input: "Rename the function to fetchUser, sorry, to loadUser."
+    expect: "Rename the function to loadUser."
+  - set: blind-1
+    probe: correction
+    input: "We need two tickets for Saturday, no wait, for Sunday."
+    expect: "We need two tickets for Sunday."
+  - set: blind-1
+    probe: correction
+    input: "Book a table for four at seven, sorry, at eight."
+    expect: "Book a table for four at eight."
+  - set: blind-1
+    probe: correction
+    input: "Pick up the bread from the bakery, no, from the market."
+    expect: "Pick up the bread from the market."
+  - set: blind-1
+    probe: correction
+    input: "Mum is coming on the train, I mean on the bus."
+    expect: "Mum is coming on the bus."
+  - set: blind-1
+    probe: correction
+    input: "Send it to the team sorry I mean to the managers"
+    expect: "Send it to the managers"
+  - set: blind-1
+    probe: correction
+    input: "Can you reply to Sarah, no, to Sam about the invoice?"
+    expect: "Can you reply to Sam about the invoice?"
+  - set: blind-1
+    probe: correction
+    input: "I'll call you at noon, sorry, at one o'clock."
+    expect: "I'll call you at one o'clock."
+  - set: blind-1
+    probe: correction
+    input: "Charge it to the card ending in 4412, no, in 4421."
+    expect: "Charge it to the card ending in 4421."
+  - set: blind-1
+    probe: correction
+    input: "Reserve it for 40 people, no, for 45 people."
+    expect: "Reserve it for 45 people."
+  - set: blind-1
+    probe: correction
+    input: "Please invite Peter I mean James to the call."
+    expect: "Please invite James to the call."
+  - set: blind-1
+    probe: correction
+    input: "The call is with Anna I mean Hannah."
+    expect: "The call is with Hannah."
+  - set: blind-1
+    probe: correction
+    input: "Email Priya, sorry, Priyanka about the roster."
+    expect: "Email Priyanka about the roster."
+  - set: blind-1
+    probe: correction
+    input: "Open the file in vim, no, in nano."
+    expect: "Open the file in nano."
+  - set: blind-1
+    probe: correction
+    input: "Push it to origin, sorry, to upstream."
+    expect: "Push it to upstream."
+  - set: blind-1
+    probe: correction
+    input: "Run the tests on Linux or rather on macOS first."
+    expect: "Run the tests on macOS first."
+  - set: blind-1
+    probe: correction
+    input: "Drop her at school, no, at the pool at four."
+    expect: "Drop her at the pool at four."
+  - set: blind-1
+    probe: correction
+    input: "We'll sit at the front, wait, at the back."
+    expect: "We'll sit at the back."
+  - set: blind-1
+    probe: correction
+    input: "Could you send it to the printer, sorry, to the scanner?"
+    expect: "Could you send it to the scanner?"
+  - set: blind-1
+    probe: correction
+    input: "Let's order from the Thai place, no, from the Greek place tonight."
+    expect: "Let's order from the Greek place tonight."
+  - set: blind-1
+    probe: correction
+    input: "Send it to him, no, send it to her tomorrow."
+    expect: "Send it to her tomorrow."
+  - set: blind-1
+    probe: correction
+    input: "Call the bank at three, actually at four."
+    expect: "Call the bank at four."
+  - set: blind-1
+    probe: correction
+    input: "the build failed on node eighteen, no, on node twenty"
+    expect: "the build failed on node twenty"
+  - set: blind-1
+    probe: correction
+    input: "Add it to the Monday list, sorry I mean to the Tuesday list."
+    expect: "Add it to the Tuesday list."
+  - set: blind-1
+    probe: restart
+    input: "Thanks for the update. Scratch that. Thanks for the quick update."
+    expect: "Thanks for the quick update."
+  - set: blind-1
+    probe: restart
+    input: "We meet at noon. Let me start over. We meet at one."
+    expect: "We meet at one."
+  - set: blind-1
+    probe: restart
+    input: "Hi Tom, can you review this? Let me restart. Hi Tom, can you merge this?"
+    expect: "Hi Tom, can you merge this?"
+  - set: blind-1
+    probe: restart
+    input: "Buy eggs and flour. Scratch that. Buy eggs and butter."
+    expect: "Buy eggs and butter."
+  - set: blind-1
+    probe: restart
+    input: "I'll pick her up at six. Let me restart. I'll pick her up at seven."
+    expect: "I'll pick her up at seven."
+  - set: blind-1
+    probe: restart
+    input: "The server is down. Scratch that. The server is back up."
+    expect: "The server is back up."
+  - set: blind-1
+    probe: restart
+    input: "Dear team, the deadline is Friday. Let me start over. Dear team, the deadline is Monday."
+    expect: "Dear team, the deadline is Monday."
+  - set: blind-1
+    probe: restart
+    input: "Remove the old cache. Scratch that, remove the old logs."
+    expect: "Remove the old logs."
+  - set: blind-1
+    probe: keep
+    input: "I mean that sincerely."
+  - set: blind-1
+    probe: keep
+    input: "No, I don't want any."
+  - set: blind-1
+    probe: keep
+    input: "Sorry, the line was bad."
+  - set: blind-1
+    probe: keep
+    input: "I mean it, this is the last time."
+  - set: blind-1
+    probe: keep
+    input: "No, with Anna."
+  - set: blind-1
+    probe: keep
+    input: "We'll let you know on Friday."
+  - set: blind-1
+    probe: keep
+    input: "It costs like two hundred, no problem."
+  - set: blind-1
+    probe: keep
+    input: "No problem, I'll send it today."
+  - set: blind-1
+    probe: keep
+    input: "Sorry for the delay on the invoice."
+  - set: blind-1
+    probe: keep
+    input: "I'm sorry I missed it."
+  - set: blind-1
+    probe: keep
+    input: "There is no way we ship by Friday."
+  - set: blind-1
+    probe: keep
+    input: "No one came to the standup."
+  - set: blind-1
+    probe: keep
+    input: "I said no to him twice."
+  - set: blind-1
+    probe: keep
+    input: "Wait for me at the station."
+  - set: blind-1
+    probe: keep
+    input: "We chose Rust rather than Go."
+  - set: blind-1
+    probe: keep
+    input: "I would rather stay home tonight."
+  - set: blind-1
+    probe: keep
+    input: "What I mean is that the test is flaky."
+  - set: blind-1
+    probe: keep
+    input: "Do you know what I mean?"
+  - set: blind-1
+    probe: keep
+    input: "Let me restart the server and check the logs."
+  - set: blind-1
+    probe: keep
+    input: "Please restart the build on the main branch."
+  - set: blind-1
+    probe: keep
+    input: "Scratch that ticket off the list when you are done."
+  - set: blind-1
+    probe: keep
+    input: "The plan, no matter the cost, the plan stays."
+  - set: blind-1
+    probe: keep
+    input: "We need two, no, three hundred is too many."
+  - set: blind-1
+    probe: keep
+    input: "Wait, what time is it?"
+  - set: blind-1
+    probe: keep
+    input: "I need the report on Monday, on time, not late."
+  - set: blind-1
+    probe: keep
+    input: "Send it to Anna and then send it to Maria."
+  - set: blind-1
+    probe: keep
+    input: "I'll go to the shop and to the bank."
+  - set: blind-1
+    probe: keep
+    input: "He lives in Paris, in the north, in a small flat."
+  - set: blind-1
+    probe: keep
+    input: "Not at three, at four works fine for me."
+  - set: blind-1
+    probe: keep
+    input: "Actually, that makes sense."
+  - set: blind-1
+    probe: keep
+    input: "It was actually quite good."
+  - set: blind-1
+    probe: keep
+    input: "Sorry about that, it won't happen again."
+  - set: blind-1
+    probe: keep
+    input: "No, I did not call her at four."
+  - set: blind-1
+    probe: keep
+    input: "On Monday we ship, on Tuesday we test."
+  - set: blind-1
+    probe: keep
+    input: "Call me at three or at four, whichever is easier."
+  - set: blind-1
+    probe: keep
+    input: "I think so, I mean, it should work."
+  - set: blind-1
+    probe: keep
+    input: "Let me start over with a clean branch tomorrow."
+  - set: blind-1
+    probe: keep
+    input: "Wait for the build, then wait for the review."
+  - set: blind-1
+    probe: keep
+    input: "She said no, and then she said no again."
+  - set: blind-1
+    probe: keep
+    input: "The meeting is at nine, not at ten."
+  - set: blind-1
+    probe: keep
+    input: "Peter and James are coming."
+  - set: blind-1
+    probe: keep
+    input: "With Peter, with James, and with Anna it will be fun."
+  - set: blind-1
+    probe: keep
+    input: "Sorry, sorry, I forgot the keys."
+  - set: blind-2
+    probe: correction
+    input: "Please send the invoice to Marta, no, to Elena before noon."
+    expect: "Please send the invoice to Elena before noon."
+  - set: blind-2
+    probe: correction
+    input: "We deploy on Thursday, sorry, on Friday afternoon."
+    expect: "We deploy on Friday afternoon."
+  - set: blind-2
+    probe: correction
+    input: "I booked a flight to Lisbon, I mean to Porto, for the twelfth."
+    expect: "I booked a flight to Porto, for the twelfth."
+  - set: blind-2
+    probe: correction
+    input: "The build failed on the staging server or rather the production server last night."
+    expect: "The build failed on the production server last night."
+  - set: blind-2
+    probe: correction
+    input: "Preheat the oven to 180, I mean 200 degrees."
+    expect: "Preheat the oven to 200 degrees."
+  - set: blind-2
+    probe: correction
+    input: "The appointment is at three, sorry, at four thirty."
+    expect: "The appointment is at four thirty."
+  - set: blind-2
+    probe: correction
+    input: "Dr Patel can see Anna on Tuesday no on Wednesday morning."
+    expect: "Dr Patel can see Anna on Wednesday morning."
+  - set: blind-2
+    probe: correction
+    input: "the meeting is in room four, I mean room five, at ten"
+    expect: "the meeting is in room five, at ten"
+  - set: blind-2
+    probe: correction
+    input: "Merge the branch into main, actually, into develop first."
+    expect: "Merge the branch into develop first."
+  - set: blind-2
+    probe: correction
+    input: "Run the migration on the staging database, sorry, on the test database."
+    expect: "Run the migration on the test database."
+  - set: blind-2
+    probe: correction
+    input: "Tell Maria, no, tell Jonas the van arrives at nine."
+    expect: "Tell Jonas the van arrives at nine."
+  - set: blind-2
+    probe: correction
+    input: "Pick up the kids at five, no, at six."
+    expect: "Pick up the kids at six."
+  - set: blind-2
+    probe: correction
+    input: "Our striker scored in the first half, sorry, in the second half."
+    expect: "Our striker scored in the second half."
+  - set: blind-2
+    probe: correction
+    input: "We play Leeds on Saturday, I mean Sunday, at home."
+    expect: "We play Leeds on Sunday, at home."
+  - set: blind-2
+    probe: correction
+    input: "Can you reset the password for Daniel, wait, for Danielle?"
+    expect: "Can you reset the password for Danielle?"
+  - set: blind-2
+    probe: correction
+    input: "I'll take the red jacket, or rather the blue jacket, in a medium."
+    expect: "I'll take the blue jacket, in a medium."
+  - set: blind-2
+    probe: correction
+    input: "Book a table for four, no, for six people at eight."
+    expect: "Book a table for six people at eight."
+  - set: blind-2
+    probe: correction
+    input: "The train leaves from platform two, sorry, platform nine."
+    expect: "The train leaves from platform nine."
+  - set: blind-2
+    probe: correction
+    input: "Set the timeout to thirty seconds, no, to sixty seconds."
+    expect: "Set the timeout to sixty seconds."
+  - set: blind-2
+    probe: correction
+    input: "let's meet in the lobby sorry in the cafe at noon"
+    expect: "let's meet in the cafe at noon"
+  - set: blind-2
+    probe: correction
+    input: "She lives in Leeds, I mean in Bristol now."
+    expect: "She lives in Bristol now."
+  - set: blind-2
+    probe: correction
+    input: "Please call Mr Okafor on Monday, actually on Tuesday, about the form."
+    expect: "Please call Mr Okafor on Tuesday, about the form."
+  - set: blind-2
+    probe: correction
+    input: "Write the report for Friday, no, for Thursday."
+    expect: "Write the report for Thursday."
+  - set: blind-2
+    probe: correction
+    input: "The pasta needs ten, sorry, twelve minutes."
+    expect: "The pasta needs twelve minutes."
+  - set: blind-2
+    probe: correction
+    input: "Use the blue folder, no, the green folder for the receipts."
+    expect: "Use the green folder for the receipts."
+  - set: blind-2
+    probe: correction
+    input: "The pharmacy opens at nine, I mean at eight on Saturdays."
+    expect: "The pharmacy opens at eight on Saturdays."
+  - set: blind-2
+    probe: correction
+    input: "I'll ask Peter I mean Paul to cover the shift."
+    expect: "I'll ask Paul to cover the shift."
+  - set: blind-2
+    probe: correction
+    input: "Assign the ticket to Sam, no, to Priya, please."
+    expect: "Assign the ticket to Priya, please."
+  - set: blind-2
+    probe: correction
+    input: "The swim lesson is on Wednesday, wait, on Thursday at four."
+    expect: "The swim lesson is on Thursday at four."
+  - set: blind-2
+    probe: correction
+    input: "Rebase onto the release branch, sorry, onto the hotfix branch before pushing."
+    expect: "Rebase onto the hotfix branch before pushing."
+  - set: blind-2
+    probe: restart
+    input: "The flight is delayed. Scratch that. The flight is cancelled."
+    expect: "The flight is cancelled."
+  - set: blind-2
+    probe: restart
+    input: "Dear Mr Hall, thanks for your reply. Let me start over. Dear Mr Hall, thank you for your quick reply."
+    expect: "Dear Mr Hall, thank you for your quick reply."
+  - set: blind-2
+    probe: restart
+    input: "We should refactor the parser this week. Let me restart. We should rewrite the parser next quarter."
+    expect: "We should rewrite the parser next quarter."
+  - set: blind-2
+    probe: restart
+    input: "Add garlic and onion. Scratch that. Add shallots and chives."
+    expect: "Add shallots and chives."
+  - set: blind-2
+    probe: restart
+    input: "I think we lost by two goals. Let me start over. We lost by three goals."
+    expect: "We lost by three goals."
+  - set: blind-2
+    probe: keep
+    input: "I mean well, even when I get it wrong."
+  - set: blind-2
+    probe: keep
+    input: "No idea where the keys went."
+  - set: blind-2
+    probe: keep
+    input: "No thanks, I already ate."
+  - set: blind-2
+    probe: keep
+    input: "Sorry to hear that your flight was cancelled."
+  - set: blind-2
+    probe: keep
+    input: "I'm sorry for your loss."
+  - set: blind-2
+    probe: keep
+    input: "Wait a minute, that is not the right invoice."
+  - set: blind-2
+    probe: keep
+    input: "I can't wait to see you on Saturday."
+  - set: blind-2
+    probe: keep
+    input: "Actually I agree with the second option."
+  - set: blind-2
+    probe: keep
+    input: "I'd rather not discuss the budget today."
+  - set: blind-2
+    probe: keep
+    input: "You know what I mean, the thing with the cables."
+  - set: blind-2
+    probe: keep
+    input: "Please restart the router and wait two minutes."
+  - set: blind-2
+    probe: keep
+    input: "Let me restart my laptop first, then I will join the call."
+  - set: blind-2
+    probe: keep
+    input: "He wants to scratch that itch before the season ends."
+  - set: blind-2
+    probe: keep
+    input: "Let's start over from scratch next sprint."
+  - set: blind-2
+    probe: keep
+    input: "We flew to London, no doubt, to Paris too."
+  - set: blind-2
+    probe: keep
+    input: "She said no, then said yes, then said no again."
+  - set: blind-2
+    probe: keep
+    input: "I mean it, the deadline is Friday."
+  - set: blind-2
+    probe: keep
+    input: "Sorry, the line was bad."
+  - set: blind-2
+    probe: keep
+    input: "We'll send the file to Anna, Ben, and Carla, no later than noon."
+  - set: blind-2
+    probe: keep
+    input: "The ticket costs like two hundred dollars."
+  - set: blind-2
+    probe: keep
+    input: "It took about twenty, maybe thirty minutes."
+  - set: blind-2
+    probe: keep
+    input: "Is the clinic open on Monday? No, Tuesday."
+  - set: blind-2
+    probe: keep
+    input: "No, with James."
+  - set: blind-2
+    probe: keep
+    input: "I was actually thinking about Tuesday, not Monday."
+  - set: blind-2
+    probe: keep
+    input: "Take two tablets at eight, or rather one if you feel fine."
+  - set: blind-2
+    probe: keep
+    input: "He is not rude, I mean he is just tired after the match."
+  - set: blind-2
+    probe: keep
+    input: "Sorry, sorry, sorry, I forgot the attachment."
+  - set: blind-2
+    probe: keep
+    input: "We could go on Monday or on Tuesday, no problem either way."
+  - set: blind-2
+    probe: keep
+    input: "Wait for the build to finish, then wait for the tests."
+  - set: blind-2
+    probe: keep
+    input: "The doctor said scratch that mole check off the list is fine, so no rush."
+  - set: blind-3
+    probe: correction
+    input: "We will wire the deposit on Friday, no, on Monday morning."
+    expect: "We will wire the deposit on Monday morning."
+  - set: blind-3
+    probe: correction
+    input: "The tenant must pay the deposit within ten days, sorry, within fourteen days of signing."
+    expect: "The tenant must pay the deposit within fourteen days of signing."
+  - set: blind-3
+    probe: correction
+    input: "Prune the roses in early spring, or rather in late winter, before the buds open."
+    expect: "Prune the roses in late winter, before the buds open."
+  - set: blind-3
+    probe: correction
+    input: "Water the tomatoes every morning, actually every evening, during the heat wave."
+    expect: "Water the tomatoes every evening, during the heat wave."
+  - set: blind-3
+    probe: correction
+    input: "Seal the gap with silicone, wait, with acrylic caulk, before painting."
+    expect: "Seal the gap with acrylic caulk, before painting."
+  - set: blind-3
+    probe: correction
+    input: "Turn off the water at the stopcock, no, at the main valve first."
+    expect: "Turn off the water at the main valve first."
+  - set: blind-3
+    probe: correction
+    input: "Use a number two screwdriver, I mean a number three, for the hinge plate."
+    expect: "Use a number three, for the hinge plate."
+  - set: blind-3
+    probe: correction
+    input: "Pick up is at three thirty, sorry, at three fifteen on Wednesdays."
+    expect: "Pick up is at three fifteen on Wednesdays."
+  - set: blind-3
+    probe: correction
+    input: "Please return the permission slip by Tuesday, I mean by Wednesday, to the front office."
+    expect: "Please return the permission slip by Wednesday, to the front office."
+  - set: blind-3
+    probe: correction
+    input: "go mid with the tank, no, with the healer, and push the tower."
+    expect: "go mid with the healer, and push the tower."
+  - set: blind-3
+    probe: correction
+    input: "i'm queueing for ranked tonight, wait, for casual tonight since my ping is bad"
+    expect: "i'm queueing for casual tonight since my ping is bad"
+  - set: blind-3
+    probe: correction
+    input: "The patient reports pain in the left knee, I mean the right knee, since Monday."
+    expect: "The patient reports pain in the right knee, since Monday."
+  - set: blind-3
+    probe: correction
+    input: "Give her 500 milligrams, no, give her 250 milligrams twice daily."
+    expect: "Give her 250 milligrams twice daily."
+  - set: blind-3
+    probe: correction
+    input: "We will refund the full amount, or rather we will credit the full amount to your card by Friday."
+    expect: "We will credit the full amount to your card by Friday."
+  - set: blind-3
+    probe: correction
+    input: "Your ticket was closed on the third, sorry, on the fifth of October."
+    expect: "Your ticket was closed on the fifth of October."
+  - set: blind-3
+    probe: correction
+    input: "In episode twelve we talk to the founder, I mean the chef, about sourdough."
+    expect: "In episode twelve we talk to the chef, about sourdough."
+  - set: blind-3
+    probe: correction
+    input: "The intro runs for two minutes, no, for ninety seconds, then the ad break starts."
+    expect: "The intro runs for ninety seconds, then the ad break starts."
+  - set: blind-3
+    probe: correction
+    input: "We land in Lisbon at nine, actually at ten past nine, and take the metro."
+    expect: "We land in Lisbon at ten past nine, and take the metro."
+  - set: blind-3
+    probe: correction
+    input: "Check in at the hotel on Saturday, wait, on Sunday afternoon after the tour."
+    expect: "Check in at the hotel on Sunday afternoon after the tour."
+  - set: blind-3
+    probe: correction
+    input: "Take the train to Porto, sorry, take the bus to Porto, it's cheaper."
+    expect: "Take the bus to Porto, it's cheaper."
+  - set: blind-3
+    probe: correction
+    input: "The setup fee is $400 I mean $450 per site."
+    expect: "The setup fee is $450 per site."
+  - set: blind-3
+    probe: correction
+    input: "We can ship by the twelfth, or rather the fourteenth, if you sign today."
+    expect: "We can ship by the fourteenth, if you sign today."
+  - set: blind-3
+    probe: correction
+    input: "Fill the gap with expanding foam, no, with mortar, then trowel it flat."
+    expect: "Fill the gap with mortar, then trowel it flat."
+  - set: blind-3
+    probe: correction
+    input: "Is the meeting on Thursday I mean on Friday at two?"
+    expect: "Is the meeting on Friday at two?"
+  - set: blind-3
+    probe: correction
+    input: "can you cover the night shift no the day shift on the fourth"
+    expect: "can you cover the day shift on the fourth"
+  - set: blind-3
+    probe: correction
+    input: "The deadline is June 5 I mean June 12 for all forms."
+    expect: "The deadline is June 12 for all forms."
+  - set: blind-3
+    probe: correction
+    input: "Please copy Dana I mean Priya on the reply."
+    expect: "Please copy Priya on the reply."
+  - set: blind-3
+    probe: correction
+    input: "The hearing is set for the ninth, actually the sixteenth, in courtroom four."
+    expect: "The hearing is set for the sixteenth, in courtroom four."
+  - set: blind-3
+    probe: correction
+    input: "Our fiscal year ends in March, no, in June, so plan accordingly."
+    expect: "Our fiscal year ends in June, so plan accordingly."
+  - set: blind-3
+    probe: correction
+    input: "Book the window seat, sorry, the aisle seat for the return leg."
+    expect: "Book the aisle seat for the return leg."
+  - set: blind-3
+    probe: correction
+    input: "Plant the bulbs about six inches down, no, about eight inches down, then cover them."
+    expect: "Plant the bulbs about eight inches down, then cover them."
+  - set: blind-3
+    probe: correction
+    input: "Send the draft to the board on Monday, wait, to the auditors on Monday."
+    expect: "Send the draft to the auditors on Monday."
+  - set: blind-3
+    probe: correction
+    input: "The tile adhesive needs to cure for a day, or rather for two days, before grouting."
+    expect: "The tile adhesive needs to cure for two days, before grouting."
+  - set: blind-3
+    probe: correction
+    input: "We recommend the starter bundle, no, the team bundle, for your size."
+    expect: "We recommend the team bundle, for your size."
+  - set: blind-3
+    probe: restart
+    input: "Thanks for the update on the audit. Let me start over. Thanks for the update on the filing."
+    expect: "Thanks for the update on the filing."
+  - set: blind-3
+    probe: restart
+    input: "Mulch the beds in October. Scratch that. Mulch the beds in November, after the first frost."
+    expect: "Mulch the beds in November, after the first frost."
+  - set: blind-3
+    probe: restart
+    input: "The patient is stable. Let me restart. The patient is stable but tired."
+    expect: "The patient is stable but tired."
+  - set: blind-3
+    probe: restart
+    input: "ok team push b site. let me restart. ok team hold a site until smoke"
+    expect: "ok team hold a site until smoke"
+  - set: blind-3
+    probe: restart
+    input: "Your flight leaves at noon. Let me start again. Your flight leaves at one."
+    expect: "Your flight leaves at one."
+  - set: blind-3
+    probe: restart
+    input: "Welcome back to the show. Scratch that. Welcome to episode forty."
+    expect: "Welcome to episode forty."
+  - set: blind-3
+    probe: restart
+    input: "Please confirm the Tuesday slot. Let me restart. Please confirm the Thursday slot."
+    expect: "Please confirm the Thursday slot."
+  - set: blind-3
+    probe: keep
+    input: "I mean that sincerely, thank you for your patience."
+  - set: blind-3
+    probe: keep
+    input: "No, we cannot extend the filing deadline."
+  - set: blind-3
+    probe: keep
+    input: "Sorry, the office is closed on Mondays."
+  - set: blind-3
+    probe: keep
+    input: "I mean it when I say the roses need more light."
+  - set: blind-3
+    probe: keep
+    input: "No, with the blue handle."
+  - set: blind-3
+    probe: keep
+    input: "We'll let you know by Friday whether the permit is approved."
+  - set: blind-3
+    probe: keep
+    input: "The estimate is like two hundred dollars for the fence."
+  - set: blind-3
+    probe: keep
+    input: "It's a small plot, I mean it's barely ten square feet."
+  - set: blind-3
+    probe: keep
+    input: "Did you pay the invoice? No, I paid the deposit."
+  - set: blind-3
+    probe: keep
+    input: "Sorry, I missed the call, I was at the dentist."
+  - set: blind-3
+    probe: keep
+    input: "Actually, the shop opens at nine."
+  - set: blind-3
+    probe: keep
+    input: "Wait for the paint to dry before you add a second coat."
+  - set: blind-3
+    probe: keep
+    input: "The patient said no, she has no allergies."
+  - set: blind-3
+    probe: keep
+    input: "Bring tape, gloves, glue, and more tape for the trim."
+  - set: blind-3
+    probe: keep
+    input: "Rather than call, send an email to the registrar."
+  - set: blind-3
+    probe: keep
+    input: "Let me restart the router and then try again."
+  - set: blind-3
+    probe: keep
+    input: "Please scratch that surface lightly with sandpaper before staining."
+  - set: blind-3
+    probe: keep
+    input: "He said no no no, that is the wrong cable."
+  - set: blind-3
+    probe: keep
+    input: "Our offer is open until the fifth, which I mean to confirm in writing."
+  - set: blind-3
+    probe: keep
+    input: "The grant is for two hundred and fifty thousand dollars, no more than that."
+  - set: blind-3
+    probe: keep
+    input: "I mean, the pricing looks fine to me."
+  - set: blind-3
+    probe: keep
+    input: "Sorry for the delay, we are still waiting on the parts."
+  - set: blind-3
+    probe: keep
+    input: "If the ping is over a hundred, no one can hit those shots."
+  - set: blind-3
+    probe: keep
+    input: "The meeting is at three, I mean three sharp, so please be on time."
+  - set: blind-3
+    probe: keep
+    input: "It's a two bedroom flat, I mean it has a study as well, near the station."
+  - set: blind-3
+    probe: keep
+    input: "The tour is free, actually it includes lunch."
+  - set: blind-3
+    probe: keep
+    input: "Yes, I mean yes to the second option."
+  - set: blind-3
+    probe: keep
+    input: "Add a teaspoon of salt, a teaspoon of sugar, and a teaspoon of lemon juice."
+  - set: blind-3
+    probe: keep
+    input: "Call me at 555 0142, no later than six, please."
+  - set: blind-3
+    probe: keep
+    input: "The total is 40 dollars, no tax included."
+  - set: blind-3
+    probe: keep
+    input: "We will meet on the fourth, then on the eleventh, then on the eighteenth."
+  - set: blind-3
+    probe: keep
+    input: "I want to go to Rome, and then I mean to go to Naples."
+  - set: blind-3
+    probe: keep
+    input: "Sorry to hear that, I'm sorry about the delay with the refund."

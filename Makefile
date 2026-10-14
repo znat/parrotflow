@@ -87,7 +87,7 @@ release-certificate:
 ## Not here, and not skippable if you touched a prompt: check-grammar,
 ## check-routing and check-spelling need Ollama and gemma4:e4b, and
 ## check-inplace needs a real screen, the Accessibility grant and tmux.
-## check-disfluency-markers needs the 519 MB parser. Run those by hand and put
+## check-disfluency-corrections needs the 519 MB parser. Run those by hand and put
 ## the numbers in the pull request.
 CHECKS := replacements pipeline pipeline-config wake split dates keyed \
           transform-folders eval audio-recovery possessive word-gate suggest input join \

@@ -325,12 +325,10 @@ transforms:
       "": ['/[,]?\s*\b(?:{{fillers_fr}})\b[,]?/',
            '/[,]?\s*\be+u+h+\b[,]?/']
 
-  # Repeats and false starts, in process.
-  #
-  # `fillers:` also removes "I mean", "you know" and "like" where they carry
-  # nothing, and keeps them where they are real verbs ("we'll let you know").
-  # Off unless listed: it fetches a 519 MB parser after launch, and English
-  # only. Any subset works.
+  # Repeats, false starts and spoken corrections, in process. In English,
+  # "with Peter, no, with James" becomes "with James" and "Scratch that."
+  # drops the sentence before it. The corrections read a 519 MB parser the
+  # app fetches at launch, with the speech model.
   - name: disfluency
     description: delete hesitations, repeats and false starts
     # Nobody asks for "disfluency" out loud. `say:` is what the keyed path
@@ -338,7 +336,6 @@ transforms:
     # catch-all instead of this — which the rename broke, 25/26.
     say: [repetitions, hesitations, false starts]
     native: disfluency
-    # fillers: [i mean, you know, like]
     tests: { path: built-in/disfluency/cases.yaml }
 
   # Opens the last dictation's timeline in a text editor: every step, every
