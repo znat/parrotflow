@@ -454,3 +454,154 @@ cases:
   - probe: blind
     parse: true
     input: "I want to make sure you know the release date moved to thursday"
+
+  # --- fresh ---
+  # 40 dictations a separate agent wrote on 2026-10-14 from the rule's
+  # description alone. Unlike the blind block, these were used to tune the
+  # clause-start, subordinator and same-shape rules, so they are not blind.
+  # Score them alone with `--eval disfluency --probe fresh`.
+  - probe: fresh
+    parse: true
+    input: "Before you touch the tests can you like split the tokenizer into its own file, it's way too long right now."
+    expect: "Before you touch the tests can you split the tokenizer into its own file, it's way too long right now."
+  - probe: fresh
+    parse: true
+    input: "So like, you know, the tests in the auth module are flaky and I want you to find out why they fail on CI but not locally."
+    expect: "So the tests in the auth module are flaky and I want you to find out why they fail on CI but not locally."
+  - probe: fresh
+    parse: true
+    input: "I'd like you to add retries to the upload client and cap it at like five attempts with exponential backoff."
+    expect: "I'd like you to add retries to the upload client and cap it at five attempts with exponential backoff."
+  - probe: fresh
+    parse: true
+    input: "Deploy took like 40 minutes again this morning. I think the docker cache is busted."
+    expect: "Deploy took 40 minutes again this morning. I think the docker cache is busted."
+  - probe: fresh
+    parse: true
+    input: "I'm going to push the hotfix after lunch, it's a one line change, you know."
+    expect: "I'm going to push the hotfix after lunch, it's a one line change."
+  - probe: fresh
+    parse: true
+    input: "Honestly you know better than me how the cache invalidation works, so your call."
+  - probe: fresh
+    parse: true
+    input: "Like last time, run the migration against a copy of the database first and show me the diff."
+  - probe: fresh
+    parse: true
+    input: "This looks like a race condition between the cache warmup and the first request, can you add a lock around it."
+  - probe: fresh
+    parse: true
+    input: "I mean we still don't have an owner for the billing alerts."
+    expect: "We still don't have an owner for the billing alerts."
+  - probe: fresh
+    parse: true
+    input: "When I say end of week I mean Thursday, since Friday is a holiday for the Berlin team."
+  - probe: fresh
+    parse: true
+    input: "Can you ask Marco I mean Daniela to review the infra PR, she wrote the terraform module."
+  - probe: fresh
+    parse: true
+    input: "Hey sorry I'm running like like 15 minutes late, the train is stuck outside the station."
+    expect: "Hey sorry I'm running 15 minutes late, the train is stuck outside the station."
+  - probe: fresh
+    parse: true
+    input: "Keep the guest room like it is for now, it looks nothing like the photos anyway."
+  - probe: fresh
+    parse: true
+    input: "You know, I think the vendor contract renewal can wait until Q1, the usage numbers don't justify the upgrade yet."
+    expect: "I think the vendor contract renewal can wait until Q1, the usage numbers don't justify the upgrade yet."
+  - probe: fresh
+    parse: true
+    input: "Priya wants the dashboard to look like the old Grafana one, and we need like two hundred more test accounts before load testing."
+    expect: "Priya wants the dashboard to look like the old Grafana one, and we need two hundred more test accounts before load testing."
+  - probe: fresh
+    parse: true
+    input: "Okay so I mean the problem is that the webhook handler does everything synchronously and like Stripe retries after a few seconds so we end up processing the same event twice, can you make it idempotent by storing the event ID and you know skipping it if we've already seen it."
+    expect: "Okay so the problem is that the webhook handler does everything synchronously and Stripe retries after a few seconds so we end up processing the same event twice, can you make it idempotent by storing the event ID and skipping it if we've already seen it."
+  - probe: fresh
+    parse: true
+    input: "I know you know this already, but the release branch gets cut at noon tomorrow."
+  - probe: fresh
+    parse: true
+    input: "The new runner is faster and I mean it's not even close, builds went from 12 minutes to 4."
+    expect: "The new runner is faster and it's not even close, builds went from 12 minutes to 4."
+  - probe: fresh
+    parse: true
+    input: "I mean every word of what I said last night, I'm proud of you."
+  - probe: fresh
+    parse: true
+    input: "Going forward, please treat a timeout from the payment provider like a 500, which means it pages on-call."
+  - probe: fresh
+    parse: true
+    input: "Nobody wants to own the flaky test dashboard, like, at all."
+    expect: "Nobody wants to own the flaky test dashboard, at all."
+  - probe: fresh
+    parse: true
+    input: "Write a helper that formats the duration, something like 2h 15m, and you know make it handle negative values too."
+    expect: "Write a helper that formats the duration, something like 2h 15m, and make it handle negative values too."
+  - probe: fresh
+    parse: true
+    input: "Like, who approved merging this without a single test? The coverage job is red on main."
+    expect: "Who approved merging this without a single test? The coverage job is red on main."
+  - probe: fresh
+    parse: true
+    input: "If you like the place we can book it for Saturday, they have a table for six at 8."
+  - probe: fresh
+    parse: true
+    input: "Thanks for the quick turnaround on the design doc. I mean, the section on rollback is exactly what we needed."
+    expect: "Thanks for the quick turnaround on the design doc. The section on rollback is exactly what we needed."
+  - probe: fresh
+    parse: true
+    input: "Ask anyone you know on the data team whether the export job still runs nightly."
+  - probe: fresh
+    parse: true
+    input: "Rename the function to parse config I mean load config, and like update every call site in the CLI package."
+    expect: "Rename the function to parse config I mean load config, and update every call site in the CLI package."
+  - probe: fresh
+    parse: true
+    input: "ok I'll take the on-call swap next week, no worries you know like"
+    expect: "ok I'll take the on-call swap next week, no worries"
+  - probe: fresh
+    parse: true
+    input: "Dinner was great but we spent like two hundred euros, so next time I'm picking the restaurant."
+    expect: "Dinner was great but we spent two hundred euros, so next time I'm picking the restaurant."
+  - probe: fresh
+    parse: true
+    input: "I think there's a misunderstanding about what I mean by rate limit. It should apply per workspace, not per user."
+  - probe: fresh
+    parse: true
+    input: "Standup notes. Backend is blocked on the schema review. Frontend is like 80 percent done with the settings page. I mean, we might still make the Friday cut."
+    expect: "Standup notes. Backend is blocked on the schema review. Frontend is 80 percent done with the settings page. We might still make the Friday cut."
+  - probe: fresh
+    parse: true
+    input: "You know the retry wrapper we added to the S3 client last week? Use the same pattern for the Redis calls."
+  - probe: fresh
+    parse: true
+    input: "Like you suggested, I'll take the search ticket, and you know, I can probably pair with Ana on the indexing part."
+    expect: "Like you suggested, I'll take the search ticket, and I can probably pair with Ana on the indexing part."
+  - probe: fresh
+    parse: true
+    input: "I mean I'm fine with either date. Just tell me which one works for your parents, you know."
+    expect: "I'm fine with either date. Just tell me which one works for your parents."
+  - probe: fresh
+    parse: true
+    input: "Can you look at the pagination in the orders endpoint because it returns like 50 items even when I pass limit equals 10 and I'd like it to respect the limit but cap it at 100 so that nobody can you know pull the whole table in one request."
+    expect: "Can you look at the pagination in the orders endpoint because it returns 50 items even when I pass limit equals 10 and I'd like it to respect the limit but cap it at 100 so that nobody can pull the whole table in one request."
+  - probe: fresh
+    parse: true
+    input: "Plan is to move the cron jobs to the queue workers by end of sprint, or something like that."
+  - probe: fresh
+    parse: true
+    input: "Hi Jordan, I went through the invoice and you know there are a couple of line items I don't recognize, like the 450 dollar support fee."
+    expect: "Hi Jordan, I went through the invoice and there are a couple of line items I don't recognize, like the 450 dollar support fee."
+  - probe: fresh
+    parse: true
+    input: "So I mean, should we just roll back? The error rate is at five percent and climbing."
+    expect: "So should we just roll back? The error rate is at five percent and climbing."
+  - probe: fresh
+    parse: true
+    input: "If you know a cleaner way to mock the clock in these tests go for it, I don't like the sleep calls."
+  - probe: fresh
+    parse: true
+    input: "Honestly, you know, we should plan the trip before prices go up. Flights to Lisbon are already like 300 each."
+    expect: "Honestly, we should plan the trip before prices go up. Flights to Lisbon are already 300 each."

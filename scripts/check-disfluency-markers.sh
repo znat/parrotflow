@@ -11,6 +11,8 @@
 #                   from its `expect` only by a marker left in
 #   blind probe     the total is at least spaCy's 25/30 and no more than
 #                   spaCy's 3 keeps are lost
+#   fresh probe     no more than 2 wrong cuts, the count before it was used
+#                   to tune the rules
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
@@ -43,10 +45,16 @@ def bare(s):
 
 failed = 0
 blind = {"cut": [0, 0], "keep": [0, 0]}
+fresh = [0, 0, 0]
 for case in cases:
     want = case.get("expect", case["input"])
     out = got.get(case["input"], want)
     kind = "keep" if "expect" not in case else "cut"
+    if case.get("probe") == "fresh":
+        fresh[0] += out == want
+        fresh[1] += 1
+        fresh[2] += out != want and len(out.split()) < len(want.split())
+        continue
     if case.get("probe") == "blind":
         blind[kind][0] += out == want
         blind[kind][1] += 1
@@ -63,6 +71,10 @@ print("\n  blind  cut %d/%d  keep %d/%d  total %d/30, spaCy 25/30 with 3 keeps l
       % (*blind["cut"], *blind["keep"], total))
 if total < 25 or lost > 3:
     print("  ✗ the blind probe is below spaCy")
+    failed += 1
+print("  fresh  %d/%d  wrong cuts %d, at most 2" % tuple(fresh))
+if fresh[2] > 2:
+    print("  ✗ the fresh probe cuts more than it did")
     failed += 1
 print("  ✓ every original miss is a filler left in" if not failed else "  ✗ %d failure(s)" % failed)
 sys.exit(1 if failed else 0)
