@@ -595,6 +595,40 @@ English-only. It is not cheaper — the same cache size, and 18 ms per pass
 against 11, because its head is five times wider. Multilingual is the whole
 reason for the swap.
 
+## How a sentence parses
+
+```sh
+$PF --parse "<text>" [--lang en]                         # one line per word: head, label, part of speech
+$PF --parse --batch <items.json>                         # many inputs in one loaded process, JSON lines
+$PF --parse --batch <items.json> --split                 # the word split alone, no model
+```
+
+`--parse` runs parrot-syrinx, our dependency parser, in Core ML. The first call
+fetches it from `znaat/parrot-syrinx-coreml` at a pinned revision, about 530 MB.
+English only, because only English has a word splitter. `don't` is two words,
+`do` and `n't`, as in the treebanks the parser learned from.
+
+```
+$PF --parse "don't you know it's fine"
+parser ready in 0.73 s
+1	do	4	aux	AUX	0-2
+2	n't	4	advmod	PART	2-5
+3	you	4	nsubj	PRON	6-9
+4	know	0	root	VERB	10-14
+...
+```
+
+The columns are the word's index, the word, the index of its head (0 for the
+root), the relation, the part of speech, and its UTF-16 range in the text. Over
+256 subwords it abstains and says so. It never cuts the text.
+
+`--batch` reads `[{"id", "text"} | {"id", "words"}]`, each with an optional
+`"language"`, and prints one JSON line per item with its time and memory, then
+a summary. `scripts/check-parser-parity.sh` compares it with the PyTorch
+reference on `tests/parser-parity.json`; it needs the model, so it is not in
+`make test`. `PARROTFLOW_SYRINX_ENDPOINT` points this one download at a mirror
+for tests, and what the mirror serves must still match the pinned hashes.
+
 ## Is this sentence mark real
 
 ```sh
@@ -1155,6 +1189,7 @@ scripts/check-sentence-probe.sh    # the three readings of a boundary (needs the
 scripts/check-sentence-window.sh   # the window a boundary is read over, against hand-written cases
 scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
 scripts/check-slot-gap.sh          # what the slot says about a rewrite (needs both models)
+scripts/check-parser-parity.sh     # the parser against its PyTorch reference (needs the model)
 scripts/check-sentence-case.sh     # the capital after a mark the join removes
 scripts/check-invented-tail.sh     # the endings the decoder wrote over silence
 scripts/check-sentence-join.sh     # which sentence marks the join removes (needs the model)
