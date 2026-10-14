@@ -3453,7 +3453,7 @@ struct Config: Decodable, Equatable {
     }
 
     /// Whether anything will read the 519 MB parser: a `transform` step runs the native `disfluency`, and
-    /// English is dictated. The marker rule is English only.
+    /// English is dictated.
     var readsParser: Bool {
         transcription.languages.contains("en") && Pipeline.resolved(config: self).steps.contains {
             $0.stage == .transform && $0.transform.flatMap(transform(named:))?.body == .native(.disfluency)

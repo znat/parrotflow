@@ -24,8 +24,8 @@ enum Disfluency {
         var declined: String
     }
 
-    /// Every rule, in order. The marker rule runs last: by then "I mean I mean" is one marker. `parser` is
-    /// asked only for English text that holds a marker, and nil means it is not loaded yet.
+    /// The marker rule runs last: by then "I mean I mean" is one marker. `parser` is asked only for English
+    /// text that holds a marker, and nil means it is not loaded yet.
     static func clean(_ text: String, language: String, parser: () async -> Parser?) async -> Cleaned {
         let done = collapse(text)
         var cleaned = Cleaned(text: done.text, applied: done.cuts.map(\.rawValue), declined: "")
@@ -61,7 +61,8 @@ enum Disfluency {
     static func mentionsMarker(_ text: String) -> Bool {
         let scalars = Array(text.unicodeScalars)
         return Marker.allCases.contains { marker in
-            scalars.indices.contains { matchEnd(marker.scalars, in: scalars, at: $0) != nil }
+            let spelled = marker.scalars
+            return scalars.indices.contains { matchEnd(spelled, in: scalars, at: $0) != nil }
         }
     }
 
@@ -292,8 +293,7 @@ enum Disfluency {
         "k": ["\u{212A}"],
     ]
 
-    /// `\b` + marker + `\b` with `re.I`, starting at `start`. A space in the marker is `\s+`. Returns where
-    /// the match ends.
+    /// `\b` + marker + `\b` with `re.I`, starting at `start`. A space in the marker is `\s+`.
     fileprivate static func matchEnd(
         _ marker: [Unicode.Scalar], in text: [Unicode.Scalar], at start: Int
     ) -> Int? {
@@ -430,9 +430,10 @@ extension Disfluency {
         var trees: [Int: Tree?] = [:]
         var cuts: [Int: (sentence: Range<Int>, spans: [(Range<Int>, Marker)])] = [:]
         for marker in Marker.allCases {
+            let spelled = marker.scalars
             var at = 0
             while at < scalars.count {
-                guard let end = matchEnd(marker.scalars, in: scalars, at: at) else {
+                guard let end = matchEnd(spelled, in: scalars, at: at) else {
                     at += 1
                     continue
                 }
@@ -538,7 +539,6 @@ extension Disfluency {
     }
 }
 
-/// One sentence, its words and their parse, read in UTF-16 like `Words`.
 private struct Tree {
     let words: [Words.Word]
     let parse: [Parse.Word]
@@ -568,7 +568,9 @@ private struct Tree {
     func wantsCut(_ marker: Disfluency.Marker, at scalars: Range<Int>) -> Bool {
         let a = utf16[scalars.lowerBound], b = utf16[scalars.upperBound]
         guard let forms = marker.verbForms else {
-            guard let like = words.firstIndex(where: { $0.utf16.lowerBound <= a && a < $0.utf16.upperBound })
+            // "like-minded" is one word, and cutting its first half leaves "-minded".
+            guard let like = words.firstIndex(where: { $0.utf16.lowerBound <= a && a < $0.utf16.upperBound }),
+                  words[like].string.lowercased() == "like"
             else { return false }
             return !Self.likeKeeps.contains(parse[like].tag) || approximates(like)
         }
@@ -579,7 +581,8 @@ private struct Tree {
                 && forms.contains(words[$0].string.lowercased()) && [.verb, .aux].contains(parse[$0].tag)
         }) else { return false }
         let objects = children(of: verb).filter { Self.object.contains(parse[$0].label) }
-        if !objects.isEmpty, !(words.first?.utf16.lowerBound == a && objects.allSatisfy(isPlainClause)) {
+        let leadingIMean = marker == .iMean && words.first?.utf16.lowerBound == a
+        if !objects.isEmpty, !(leadingIMean && objects.allSatisfy(isPlainClause)) {
             return false
         }
         if Self.argument.contains(parse[verb].label) { return false }

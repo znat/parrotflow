@@ -77,10 +77,9 @@ actor SyrinxModel {
     private var retryAfter: Date?
     private static let backoff: TimeInterval = 300
 
-    /// The parser if it is in memory. A dictation never waits for it.
+    /// A dictation never waits for the parser.
     var loaded: Parser? { parser }
 
-    /// Starts the load if nothing is doing it, and returns at once.
     func warm() {
         guard parser == nil, loading == nil else { return }
         if let retryAfter, Date() < retryAfter { return }
@@ -90,20 +89,15 @@ actor SyrinxModel {
                 _ = try await self?.prepare()
                 Log.write(String(format: "parser: warmed in %.1fs", Date().timeIntervalSince(started)))
             } catch {
-                await self?.hold(after: error)
+                Log.write("parser: \(error.localizedDescription); word fillers stay until it loads")
             }
         }
     }
 
-    /// Forgets the backoff and starts the load, for the setup screen's repair button.
+    /// For the setup screen's repair button.
     func retryNow() {
         retryAfter = nil
         warm()
-    }
-
-    private func hold(after error: Error) {
-        retryAfter = Date().addingTimeInterval(Self.backoff)
-        Log.write("parser: \(error.localizedDescription); word fillers stay until it loads")
     }
 
     static func discardCache() {
@@ -122,6 +116,8 @@ actor SyrinxModel {
             ModelDownloads.report(Self.download.id, .installed)
             return loaded
         } catch {
+            // Here and not in `warm`, so no `warm` can slip in between the failure and the backoff.
+            retryAfter = Date().addingTimeInterval(Self.backoff)
             ModelDownloads.report(
                 Self.download.id, .failed(ModelDownloads.failure(error, needs: Self.download.peakLabel))
             )
