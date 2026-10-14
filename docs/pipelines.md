@@ -792,7 +792,8 @@ fetches at launch with the speech model and keeps in memory. It is asked only
 when the text says a marker or a command. A dictation that does before the
 parser is loaded waits for it, as a dictation waits for the speech model. If
 the download or the load failed, the text goes through with the other rules
-applied, `declined` says why, and the setup screen's retry fetches it again.
+applied and `declined` says why. The first dictation that says a correction
+five minutes later tries again.
 
 It publishes `disfluency.applied`, `disfluency.edits` and `disfluency.declined`,
 like the script does with `returns: json`. `applied` names `self-correction`

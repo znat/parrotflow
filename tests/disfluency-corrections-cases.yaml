@@ -5,9 +5,10 @@
 # gone. Left unchanged is a miss; any other text is a wrong cut.
 # `keep` (no `expect`): must come back byte for byte.
 #
-# `set: blind-1` and `set: blind-2` were written by a fresh agent from the rule
-# description alone, before it saw the code. `set: user` is what the user
-# dictated.
+# `blind-1`, `blind-2` and `blind-3` were each written by a fresh agent from
+# the rule description alone, without the code. The rule was tuned on blind-1
+# and blind-2 after their first run, and blind-3 added one guard. `user` is
+# what the user dictated.
 
 cases:
   - set: user
