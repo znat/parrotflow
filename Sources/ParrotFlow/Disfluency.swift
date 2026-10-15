@@ -686,10 +686,12 @@ extension Disfluency {
         // "The score was 2 to 1, no, 3 to 1": the number is the end of a range.
         let ranged = from >= 2 && connectors.contains(t.bare[from - 1]) && (isNumber(t, from - 2)
             || tree.node(t, from - 2).map { tree.tag($0) == .num } == true)
+        // "add milk to the list umm no oat milk" takes back the milk, not the list.
+        let echoed = (t.sentenceStart(from)..<from).contains { (e...to).map { t.bare[$0] }.contains(t.bare[$0]) }
         // "Peter um James and Mary": a list said slowly, when nothing but the hesitation marks it.
         let listed = !cue.spoken && from > 0 && (conjunctions.contains(t.bare[from - 1]) || t.pauses(after: from - 1)
             || (to + 1 < t.words.count && conjunctions.contains(t.bare[to + 1])))
-        guard from > start, !listed, next.map({ ![.verb, .aux].contains(tree.tag($0)) }) ?? true, !isNumber(t, from - 1),
+        guard from > start, !listed, !echoed, next.map({ ![.verb, .aux].contains(tree.tag($0)) }) ?? true, !isNumber(t, from - 1),
               !ranged, !defines(t, before: from, marker: m..<e), !crossing || to + 1 == t.words.count || t.stops(after: to),
               !subjects.contains(tree.relation(x)),
               !subjects.contains(tree.relation(y)),

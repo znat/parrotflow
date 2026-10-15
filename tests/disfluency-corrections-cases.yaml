@@ -13,7 +13,7 @@
 # and blind-2 after their first run, and blind-3 added one guard. `user` is
 # what the user dictated. `audit` is an independent audit's adversarial inputs,
 # labelled here; a `#` line above a case says why when it is debatable.
-# `adversarial-1` and `adversarial-2` were written by fresh agents to break the
+# `adversarial-1` to `adversarial-3` were written by fresh agents to break the
 # rule; their first runs are in the pull request.
 
 cases:
@@ -2027,3 +2027,242 @@ cases:
   - set: user-live
     probe: keep
     input: "we need 3 um 4 chairs"
+  - set: adversarial-3
+    probe: correction
+    input: "we should book the train I mean the bus for friday"
+    expect: "we should book the bus for friday"
+  - set: adversarial-3
+    probe: correction
+    input: "please send it to Maria I mean Elena"
+    expect: "please send it to Elena"
+  - set: adversarial-3
+    probe: correction
+    input: "Let's meet on Tuesday. I mean Thursday."
+    expect: "Let's meet on Thursday."
+  - set: adversarial-3
+    probe: correction
+    input: "The file is in the blue folder. No, the red folder."
+    expect: "The file is in the red folder."
+  - set: adversarial-3
+    probe: correction
+    input: "i bought apples. sorry, pears."
+    expect: "i bought pears."
+  - set: adversarial-3
+    probe: correction
+    input: "we leave at nine or rather ten"
+    expect: "we leave at ten"
+  - set: adversarial-3
+    probe: correction
+    input: "turn left at the bank actually the library"
+    expect: "turn left at the library"
+  - set: adversarial-3
+    probe: correction
+    input: "the cat sat on the sofa. Ah no, the chair."
+    expect: "the cat sat on the chair."
+  - set: adversarial-3
+    probe: correction
+    input: "pick me up at the station um at the airport"
+    expect: "pick me up at the airport"
+  - set: adversarial-3
+    probe: correction
+    input: "we ordered soup uh salad"
+    expect: "we ordered salad"
+  - set: adversarial-3
+    probe: correction
+    input: "book a table for six er for eight"
+    expect: "book a table for eight"
+  - set: adversarial-3
+    probe: correction
+    input: "the meeting is on monday. Um no, tuesday."
+    expect: "the meeting is on tuesday."
+  - set: adversarial-3
+    probe: correction
+    input: "she lives in Leeds erm Bristol now"
+    expect: "she lives in Bristol now"
+  - set: adversarial-3
+    probe: correction
+    input: "add milk to the list umm no oat milk"
+    expect: "add oat milk to the list"
+  - set: adversarial-3
+    probe: correction
+    input: "i'll take the red one uh the blue one"
+    expect: "i'll take the blue one"
+  - set: adversarial-3
+    probe: correction
+    input: "Open the drawer on the left. Uh no, on the right."
+    expect: "Open the drawer on the right."
+  - set: adversarial-3
+    probe: correction
+    input: "tell Anna um tell Rosa the meeting moved"
+    expect: "tell Rosa the meeting moved"
+  - set: adversarial-3
+    probe: correction
+    input: "I'll text Tom, no, I'll text Ben"
+    expect: "I'll text Ben"
+  - set: adversarial-3
+    probe: correction
+    input: "The red car, no, the blue car is mine"
+    expect: "The blue car is mine"
+  - set: adversarial-3
+    probe: correction
+    input: "The bus um the train leaves at noon"
+    expect: "The train leaves at noon"
+  - set: adversarial-3
+    probe: correction
+    input: "We drove to Dover, no, we drove to Calais"
+    expect: "We drove to Calais"
+  - set: adversarial-3
+    probe: correction
+    input: "i need two tickets I mean three tickets"
+    expect: "i need three tickets"
+  - set: adversarial-3
+    probe: correction
+    input: "put it on the shelf, sorry, on the table"
+    expect: "put it on the table"
+  - set: adversarial-3
+    probe: correction
+    input: "They arrive in March, or rather in April."
+    expect: "They arrive in April."
+  - set: adversarial-3
+    probe: correction
+    input: "Thanks for the update. The call is at noon, I mean one."
+    expect: "Thanks for the update. The call is at one."
+  - set: adversarial-3
+    probe: correction
+    input: "So um the invoice goes to Dana uh Priya today"
+    expect: "So um the invoice goes to Priya today"
+  - set: adversarial-3
+    probe: correction
+    input: "we'll fly from Madrid er from Lisbon on sunday"
+    expect: "we'll fly from Lisbon on sunday"
+  - set: adversarial-3
+    probe: correction
+    input: "the form is due on the tenth. No, the twelfth."
+    expect: "the form is due on the twelfth."
+  - set: adversarial-3
+    probe: correction
+    input: "set an alarm for six no seven"
+    expect: "set an alarm for seven"
+  - set: adversarial-3
+    probe: restart
+    input: "Send the report on Thursday. Scratch that. Send the report on Friday."
+    expect: "Send the report on Friday."
+  - set: adversarial-3
+    probe: restart
+    input: "We need to hire a designer. Let me restart. We need to hire two designers."
+    expect: "We need to hire two designers."
+  - set: adversarial-3
+    probe: keep
+    input: "I'd like a burger, no pickles"
+  - set: adversarial-3
+    probe: keep
+    input: "i like the new office, I mean it is bright and quiet"
+  - set: adversarial-3
+    probe: keep
+    input: "She sells apples, um, pears and plums at the market"
+  - set: adversarial-3
+    probe: keep
+    input: "we need eggs uh milk and bread"
+  - set: adversarial-3
+    probe: keep
+    input: "Is the store open? No, it closes at five."
+  - set: adversarial-3
+    probe: keep
+    input: "Oh no, the server is down."
+  - set: adversarial-3
+    probe: keep
+    input: "He said no to the offer."
+  - set: adversarial-3
+    probe: keep
+    input: "we sold forty uh five tickets"
+  - set: adversarial-3
+    probe: keep
+    input: "Anna and uh Carlos are on the team"
+  - set: adversarial-3
+    probe: keep
+    input: "I called Maria um and Elena"
+  - set: adversarial-3
+    probe: keep
+    input: "her sons are Jean Pierre and Paul"
+  - set: adversarial-3
+    probe: keep
+    input: "when we say draft, I mean the first version"
+  - set: adversarial-3
+    probe: keep
+    input: "She told me \"no, the other one\" and left."
+  - set: adversarial-3
+    probe: keep
+    input: "I mean, it works fine."
+  - set: adversarial-3
+    probe: keep
+    input: "Actually, I think it works."
+  - set: adversarial-3
+    probe: keep
+    input: "It is actually the cheaper plan"
+  - set: adversarial-3
+    probe: keep
+    input: "Sorry, I can't make it tomorrow."
+  - set: adversarial-3
+    probe: keep
+    input: "Sorry about the delay. The parcel ships Monday."
+  - set: adversarial-3
+    probe: keep
+    input: "Or rather than waiting, we could leave now."
+  - set: adversarial-3
+    probe: keep
+    input: "We finished the draft. Um, the client wants changes."
+  - set: adversarial-3
+    probe: keep
+    input: "Uh, the meeting starts at ten."
+  - set: adversarial-3
+    probe: keep
+    input: "we packed tents um sleeping bags uh stoves and food"
+  - set: adversarial-3
+    probe: keep
+    input: "it was very very good"
+  - set: adversarial-3
+    probe: keep
+    input: "She said that that was fine"
+  - set: adversarial-3
+    probe: keep
+    input: "No, no, no, that is fine."
+  - set: adversarial-3
+    probe: keep
+    input: "Not the red one, the blue one is better."
+  - set: adversarial-3
+    probe: keep
+    input: "Quiero café, no azúcar"
+    languages: [en, es]
+  - set: adversarial-3
+    probe: keep
+    input: "Il est parti euh avec Paul et Marie"
+    languages: [en, fr]
+  - set: adversarial-3
+    probe: keep
+    input: "I'm sorry, no one told me"
+  - set: adversarial-3
+    probe: keep
+    input: "the um quarterly report is late"
+  - set: adversarial-3
+    probe: keep
+    input: "Doctor uh Patel will see you now"
+  - set: adversarial-3
+    probe: keep
+    input: "we should uh review it first"
+  - set: adversarial-3
+    probe: keep
+    input: "Please scratch that sticker off the car."
+  - set: adversarial-3
+    probe: keep
+    input: "Let me restart the router."
+  # relabelled from keep: "Scratch that." as its own sentence drops the one before, as the brief asks.
+  - set: adversarial-3
+    probe: restart
+    input: "Send the report today. Scratch that. Call the bank tomorrow."
+    expect: "Call the bank tomorrow."
+  - set: adversarial-3
+    probe: keep
+    input: "It's cold today, no wind though"
+  - set: adversarial-3
+    probe: keep
+    input: "Do you want tea or coffee or water"
