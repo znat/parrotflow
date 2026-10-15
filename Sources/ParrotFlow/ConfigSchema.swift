@@ -667,11 +667,20 @@ enum ConfigSchema {
     struct Unknown: Equatable {
         let path: String
         let suggestion: String?
+        var removed: String?
 
         var said: String {
-            "\(path): not a setting." + (suggestion.map { " Did you mean \"\($0)\"?" } ?? "")
+            if let removed { return "\(path): \(removed)" }
+            return "\(path): not a setting." + (suggestion.map { " Did you mean \"\($0)\"?" } ?? "")
         }
     }
+
+    /// Keys a release removed, by section, with what happens now instead.
+    private static let removed: [String: [String: String]] = [
+        "Config.TransformEntry": [
+            "fillers": "removed. \"I mean\", \"you know\" and \"like\" now stay in the text. Delete the line",
+        ],
+    ]
 
     /// Every key in `text` the schema does not know, by full path.
     ///
@@ -694,7 +703,8 @@ enum ConfigSchema {
                 guard let key = keyNode.scalar?.string else { continue }
                 guard let field = section.field(key) else {
                     let current = section.fields.filter { $0.deprecated == nil }.map(\.name)
-                    found.append(Unknown(path: joined(key), suggestion: closest(to: key, in: current)))
+                    found.append(Unknown(path: joined(key), suggestion: closest(to: key, in: current),
+                                         removed: removed[section.source]?[key]))
                     continue
                 }
                 walk(value, field.kind, at: joined(key), into: &found)

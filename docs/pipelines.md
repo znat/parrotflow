@@ -778,14 +778,20 @@ In English it also takes back what the speaker corrected out loud:
 | I want to book a meeting with Peter. I mean James. | I want to book a meeting with James. |
 | Let's make the road cleaner. Let me restart. Let's make the road greener. | Let's make the road greener. |
 
-The markers are "I mean", "I meant", "no", "sorry", "wait", "or rather" and
-"actually". The words after the marker must repeat the start of what they
-replace ("with … with"), or replace a name or a number by another. The restart
-commands are "scratch that", "strike that" and "let me rephrase", and "let me
-restart", "let me start over" and the like when the next sentence starts like
-the one dropped. Each must be its own sentence or clause. "I mean it", "No, I
-don't think so" and "Sorry for the delay" stay. A clause that "I mean" restates
-stays too: "He is not rude, I mean he is just tired".
+The markers are "I mean", "I meant", "no", "sorry", "wait", "or rather",
+"actually", "scratch that" and "strike that". The words after the marker must
+repeat the start of what they replace ("with … with"), or replace a name or a
+number by another. After a full stop only "I mean" and a "no" that follows a
+statement count: "Is it ready? No, not yet." stays. The restart commands are
+"scratch that", "strike that" and "let me rephrase". "Let me restart", "let me
+start over" and the like also have a literal meaning, so they need the next
+sentence to say the dropped one again with one or two words changed. Each must
+be its own sentence or clause.
+
+These stay: "I mean it", "No, I don't think so", "Sorry for the delay", "He
+said no, he said it twice", "When I say Peter, I mean James", "The score was 2
+to 1, no, 3 to 1", "Go with the plan, no, the plan has a flaw", "He is not
+rude, I mean he is just tired", and anything inside quotation marks.
 
 The corrections read a tree from parrot-syrinx, the 519 MB parser the app
 fetches at launch with the speech model and keeps in memory. The setup screen

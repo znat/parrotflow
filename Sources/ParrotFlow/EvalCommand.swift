@@ -66,7 +66,11 @@ enum EvalCommand {
         // while the scoring loop ran a subset: `resolve:` is a `command:` like
         // any other, and an input somebody filtered out must not reach
         // someone's program by a side door.
-        let selected = probe.map { wanted in set.cases.filter { $0.probe == wanted } } ?? set.cases
+        var selected = probe.map { wanted in set.cases.filter { $0.probe == wanted } } ?? set.cases
+        // `parse: true` cases expect disfluency.py's spaCy marker rule, which the native stage does not have.
+        let native = transform.body == .native(.disfluency)
+        let pythonOnly = native ? selected.filter { $0.fields["parse"] == "true" }.count : 0
+        if native { selected.removeAll { $0.fields["parse"] == "true" } }
         guard !selected.isEmpty else {
             let known = Set(set.cases.map(\.probe)).filter { !$0.isEmpty }.sorted()
             print("✗ no case has probe \"\(probe ?? "")\""
@@ -87,8 +91,11 @@ enum EvalCommand {
         print("  cases    \(short(file.path))  (\(set.cases.count))"
             + (probe.map { "  — only probe \($0)" } ?? ""))
         print("  body     \(body(of: transform))")
+        if pythonOnly > 0 {
+            print("  skipped  \(pythonOnly) `parse: true` case(s), for disfluency.py's marker rule")
+        }
         // A parser that will not load is said here, not scored as a case set with no corrections.
-        if transform.body == .native(.disfluency) {
+        if native, config.transcription.languages.contains("en") {
             let failure = Blocking.run { () async -> String? in
                 do { _ = try await SyrinxModel.shared.prepare() } catch { return error.localizedDescription }
                 return nil

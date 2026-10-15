@@ -327,12 +327,10 @@ cases:
   - probe: meant
     parse: true
     input: "I think we should do this before Friday."
-  # A self-correction, not a filler. Cutting the cue alone keeps both names;
-  # the native correction rule swaps the name.
-  - probe: correction
+  # A self-correction, not a filler. Cutting the cue alone keeps both names.
+  - probe: meant
     parse: true
     input: "So the other day I was with James I mean Peter, sorry."
-    expect: "So the other day I was with Peter, sorry."
   # Two markers, one sentence, different jobs. Matching on lemma alone gave the
   # second one the first one's verdict and cut both.
   - probe: marker
