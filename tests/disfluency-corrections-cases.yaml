@@ -11,6 +11,8 @@
 # and blind-2 after their first run, and blind-3 added one guard. `user` is
 # what the user dictated. `audit` is an independent audit's adversarial inputs,
 # labelled here; a `#` line above a case says why when it is debatable.
+# `adversarial-1` and `adversarial-2` were written by fresh agents to break the
+# rule; their first runs are in the pull request.
 
 cases:
   - set: user
@@ -1379,3 +1381,276 @@ cases:
     probe: correction
     input: "So the other day I was with James I mean Peter, sorry."
     expect: "So the other day I was with Peter, sorry."
+  - set: adversarial-1
+    probe: correction
+    input: "I left the keys on the table, no, on the shelf"
+    expect: "I left the keys on the shelf"
+  - set: adversarial-1
+    probe: correction
+    input: "please ask Dana I mean Omar to sign it"
+    expect: "please ask Omar to sign it"
+  - set: adversarial-1
+    probe: correction
+    input: "the meeting starts at three, I mean four"
+    expect: "the meeting starts at four"
+  - set: adversarial-1
+    probe: correction
+    input: "we ship the beta on Monday, sorry, on Tuesday"
+    expect: "we ship the beta on Tuesday"
+  - set: adversarial-1
+    probe: correction
+    input: "we booked a table for four, or rather, a table for six"
+    expect: "we booked a table for six"
+  - set: adversarial-1
+    probe: correction
+    input: "the budget is twelve thousand, actually, the budget is fourteen thousand"
+    expect: "the budget is fourteen thousand"
+  - set: adversarial-1
+    probe: correction
+    input: "Please attach the report, no, attach the summary"
+    expect: "Please attach the summary"
+  - set: adversarial-1
+    probe: correction
+    input: "The package arrives Tuesday. I mean Wednesday."
+    expect: "The package arrives Wednesday."
+  - set: adversarial-1
+    probe: correction
+    input: "I think we should hire two engineers. No, three engineers."
+    expect: "I think we should hire three engineers."
+  - set: adversarial-1
+    probe: correction
+    input: "Let's paint the walls blue. I mean green."
+    expect: "Let's paint the walls green."
+  - set: adversarial-1
+    probe: correction
+    input: "The flight leaves from gate twelve. No, gate fourteen."
+    expect: "The flight leaves from gate fourteen."
+  - set: adversarial-1
+    probe: correction
+    input: "the cat I mean the dog has gone out"
+    expect: "the dog has gone out"
+  - set: adversarial-1
+    probe: correction
+    input: "we need to order more paper no more toner"
+    expect: "we need to order more toner"
+  - set: adversarial-1
+    probe: correction
+    input: "meet me at the station, no wait, at the airport"
+    expect: "meet me at the airport"
+  - set: adversarial-1
+    probe: correction
+    input: "Call me at 555 0142 I mean 555 0143"
+    expect: "Call me at 555 0143"
+  - set: adversarial-1
+    probe: correction
+    input: "the deadline is June fifth, or rather, June sixth"
+    expect: "the deadline is June sixth"
+  - set: adversarial-1
+    probe: correction
+    input: "he works for Acme, actually, for Globex"
+    expect: "he works for Globex"
+  - set: adversarial-1
+    probe: correction
+    input: "I'd like a large coffee, no, a small coffee"
+    expect: "I'd like a small coffee"
+  - set: adversarial-1
+    probe: correction
+    input: "Turn the heat up, no, turn the heat down"
+    expect: "Turn the heat down"
+  - set: adversarial-1
+    probe: correction
+    input: "she's from Spain, I mean Portugal"
+    expect: "she's from Portugal"
+  - set: adversarial-1
+    probe: correction
+    input: "Let's make the sauce spicier. I mean sweeter."
+    expect: "Let's make the sauce sweeter."
+  - set: adversarial-1
+    probe: correction
+    input: "I will email the vendor, sorry, I will email the client"
+    expect: "I will email the client"
+  - set: adversarial-1
+    probe: correction
+    input: "The patient takes 20 milligrams, no, 40 milligrams daily"
+    expect: "The patient takes 40 milligrams daily"
+  - set: adversarial-1
+    probe: correction
+    input: "Our office is on Elm Street. No, Oak Street."
+    expect: "Our office is on Oak Street."
+  - set: adversarial-1
+    probe: correction
+    input: "Add milk to the list no add oat milk to the list"
+    expect: "Add oat milk to the list"
+  - set: adversarial-1
+    probe: correction
+    input: "the invoice is due on the first, I meant on the fifteenth"
+    expect: "the invoice is due on the fifteenth"
+  - set: adversarial-1
+    probe: correction
+    input: "We should plant the roses near the fence. No, the tulips."
+    expect: "We should plant the tulips near the fence."
+  - set: adversarial-1
+    probe: correction
+    input: "the server is in Dublin, no wait, in Frankfurt"
+    expect: "the server is in Frankfurt"
+  - set: adversarial-1
+    probe: correction
+    input: "I want to rent a house with a garden, no, with a balcony"
+    expect: "I want to rent a house with a balcony"
+  - set: adversarial-1
+    probe: restart
+    input: "We should refactor the parser. Scratch that. We should rewrite the parser."
+    expect: "We should rewrite the parser."
+  - set: adversarial-1
+    probe: restart
+    input: "Thanks for the update. Let me start over. Thanks for the quick update."
+    expect: "Thanks for the quick update."
+  - set: adversarial-1
+    probe: restart
+    input: "The quarterly numbers look strong. Let me rephrase. The quarterly numbers look better than expected."
+    expect: "The quarterly numbers look better than expected."
+  - set: adversarial-1
+    probe: restart
+    input: "I'll send it Monday. Strike that. I'll send it Tuesday."
+    expect: "I'll send it Tuesday."
+  - set: adversarial-1
+    probe: restart
+    input: "The train was late. Let me restart. The train was late again by ten minutes."
+    expect: "The train was late again by ten minutes."
+  - set: adversarial-1
+    probe: keep
+    input: "Stick with the vendor, no, the vendor has not replied yet."
+  - set: adversarial-1
+    probe: keep
+    input: "Read the logs, no, the logs are empty."
+  - set: adversarial-1
+    probe: keep
+    input: "The router crashed. Let me restart the router. The wifi is back now."
+  - set: adversarial-1
+    probe: keep
+    input: "The update hung. Let me restart. The laptop works fine now."
+  - set: adversarial-1
+    probe: keep
+    input: "She said no, she said it quietly."
+  - set: adversarial-1
+    probe: keep
+    input: "The board answered no, the board met twice."
+  - set: adversarial-1
+    probe: keep
+    input: "When I write Q3, I mean the third quarter."
+  - set: adversarial-1
+    probe: keep
+    input: "By ASAP I mean today before noon."
+  - set: adversarial-1
+    probe: keep
+    input: "Pick two or three, actually four colours for the poster."
+  - set: adversarial-1
+    probe: keep
+    input: "It takes 5 or 6, actually 7 days to ship."
+  - set: adversarial-1
+    probe: keep
+    input: "I apologise for the mess. Sorry, I was rushed."
+  - set: adversarial-1
+    probe: keep
+    input: "We missed the call. Sorry, my phone died."
+  - set: adversarial-1
+    probe: keep
+    input: "She said, \"turn left, no, turn right,\" and drove off."
+  - set: adversarial-1
+    probe: keep
+    input: "I'll start over tomorrow. Let me start over again with the list. Item one is milk."
+  - set: adversarial-1
+    probe: keep
+    input: "No sé si es verdad, no, no lo creo."
+    languages: [en, es]
+  - set: adversarial-1
+    probe: keep
+    input: "Non, je ne veux pas, non merci."
+    languages: [en, fr]
+  - set: adversarial-1
+    probe: keep
+    input: "Voy a la tienda, no, voy a la playa."
+    languages: [en, es]
+  - set: adversarial-1
+    probe: keep
+    input: "Section I I guess covers the scope."
+  - set: adversarial-1
+    probe: keep
+    input: "Henry I I think was a king of England."
+  - set: adversarial-1
+    probe: keep
+    input: "Is it ready? No, not yet."
+  - set: adversarial-1
+    probe: keep
+    input: "It's cheap, I mean it's under ten dollars."
+  - set: adversarial-1
+    probe: keep
+    input: "We watched No Country for Old Men last night."
+  - set: adversarial-1
+    probe: keep
+    input: "Dr. No is my favourite Bond film."
+  - set: adversarial-1
+    probe: keep
+    input: "Sorry Seems to Be the Hardest Word was playing in the shop."
+  - set: adversarial-1
+    probe: keep
+    input: "We have no time, we have no budget, we have no plan."
+  - set: adversarial-1
+    probe: keep
+    input: "No one knows, no one cares."
+  - set: adversarial-1
+    probe: keep
+    input: "I feel sorry, so sorry for him."
+  # relabelled from keep: the repeat rule's own cut, as in "I can wait, I can wait all day"
+  - set: adversarial-1
+    probe: correction
+    input: "We wait, wait for the bell, then go."
+    expect: "We wait for the bell, then go."
+  - set: adversarial-1
+    probe: keep
+    input: "We sell shirts for men, for women, for kids."
+  - set: adversarial-1
+    probe: keep
+    input: "Send the file to Anna, to Ben, to Chloe."
+  - set: adversarial-1
+    probe: keep
+    input: "The defendant entered a plea of no contest, no contest to both counts."
+  - set: adversarial-1
+    probe: keep
+    input: "Rename the variable no_retry to retry_count."
+  - set: adversarial-1
+    probe: keep
+    input: "Call getUserNoWait with the flag set."
+  - set: adversarial-1
+    probe: keep
+    input: "The release is March 5, actually March 5 falls on a weekend so plan for the 6th."
+  - set: adversarial-1
+    probe: keep
+    input: "He told me the code was 4471 and I said no, the code is 4417."
+  - set: adversarial-1
+    probe: keep
+    input: "No doubt the team will deliver."
+  - set: adversarial-1
+    probe: keep
+    input: "Or rather not, I would skip the dessert."
+  - set: adversarial-1
+    probe: keep
+    input: "Actually, I think the plan works."
+  - set: adversarial-1
+    probe: keep
+    input: "I mean it, I really want the job."
+  - set: adversarial-1
+    probe: keep
+    input: "The soup is hot, I mean really hot."
+  - set: adversarial-1
+    probe: keep
+    input: "Wait, what time is it?"
+  - set: adversarial-1
+    probe: keep
+    input: "Yes or no, answer the question."
+  - set: adversarial-1
+    probe: keep
+    input: "Please wait for the signal, wait for the green light."
+  - set: adversarial-1
+    probe: keep
+    input: "Visit us at 12 Park Lane, no later than noon."

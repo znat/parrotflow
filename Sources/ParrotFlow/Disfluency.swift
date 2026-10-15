@@ -537,10 +537,16 @@ extension Disfluency {
                 let a = m - k - extra
                 guard a >= 0 else { break }
                 guard t.bare[a..<a + k] == t.bare[e..<e + k] else { continue }
+                if t.stops(after: m - 1), saidBefore(t, a..<a + k) { return nil }
                 return repairs(t, a: a, k: k, marker: m..<e, parse) ? Edit(first: a, upto: e, cut: .selfCorrection) : nil
             }
         }
         return nil
+    }
+
+    /// "…the roses near the fence. No, the tulips." does not say which "the" it takes back.
+    private static func saidBefore(_ t: Transcript, _ anchor: Range<Int>) -> Bool {
+        (t.sentenceStart(anchor.lowerBound)..<anchor.lowerBound).contains { t.bare[$0...].starts(with: t.bare[anchor]) }
     }
 
     private static func repairs(
@@ -614,8 +620,9 @@ extension Disfluency {
         guard from > start, next.map({ ![.verb, .aux].contains(tree.tag($0)) }) ?? true, !isNumber(t, from - 1),
               !ranged, !defines(t, before: from, marker: m..<e), !crossing || to + 1 == t.words.count || t.stops(after: to),
               !subjects.contains(tree.relation(x)),
+              !subjects.contains(tree.relation(y)),
               // "at eight, or rather one if you feel fine" is a second option.
-              !subjects.union(["conj"]).contains(tree.relation(y))
+              !(tree.relation(y) == "conj" && tree.children(of: y).contains { tree.relation($0) == "cc" })
         else { return nil }
         return Edit(first: from, upto: e, cut: .selfCorrection)
     }
