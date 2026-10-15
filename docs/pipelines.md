@@ -780,8 +780,17 @@ In English it also takes back what the speaker corrected out loud:
 
 The markers are "I mean", "I meant", "no", "sorry", "wait", "or rather",
 "actually", "scratch that" and "strike that". The words after the marker must
-repeat the start of what they replace ("with … with"), or replace a name or a
-number by another. After a full stop only "I mean" and a "no" that follows a
+repeat the start of what they replace ("with … with"), or put a name, number,
+noun or adjective in place of one of the same kind ("some pork, I mean
+chicken"). A hesitation is a marker too: "with Peter um with James" and "with
+Peter uh James" both give "with James". On its own it only swaps a name, so
+"two hundred uh fifty" stays one number.
+
+Keep the `fillers` table above the number stages: without it "two uh two
+three" comes out "two uh 23". The table removes the hesitations before this
+stage runs, and the stage finds them again in `asr.text`, the transcript before
+any stage. A hesitation the stage does not cut stays in the text when no table
+ran. After a full stop only "I mean" and a "no" that follows a
 statement count: "Is it ready? No, not yet." stays. The restart commands are
 "scratch that", "strike that" and "let me rephrase". "Let me restart", "let me
 start over" and the like also have a literal meaning, so they need the next
