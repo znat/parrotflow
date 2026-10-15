@@ -2544,23 +2544,23 @@ cases:
     input: "the crew bus leaves from terminal two uh terminal three"
     expect: "the crew bus leaves from terminal three"
   - set: adversarial-5
-    probe: correction
+    probe: restart
     input: "Pay the supplier in full. Scratch that. Pay half now."
     expect: "Pay half now."
   - set: adversarial-5
-    probe: correction
+    probe: restart
     input: "The roof beam is eight metres. Strike that. The roof beam is six metres."
     expect: "The roof beam is six metres."
   - set: adversarial-5
-    probe: correction
+    probe: restart
     input: "Welcome to the club. We meet on Mondays. Scratch that. We meet on Tuesdays."
     expect: "Welcome to the club. We meet on Tuesdays."
   - set: adversarial-5
-    probe: correction
+    probe: restart
     input: "The team meets at noon on Saturday. Let me restart. The team meets at ten on Saturday."
     expect: "The team meets at ten on Saturday."
   - set: adversarial-5
-    probe: correction
+    probe: restart
     input: "Our next guest writes about bees. Let me start over. Our next guest writes about wasps."
     expect: "Our next guest writes about wasps."
   - set: adversarial-5
@@ -2608,7 +2608,7 @@ cases:
     input: "reserve a table for four um for six"
     expect: "reserve a table for six"
   - set: adversarial-5
-    probe: correction
+    probe: restart
     input: "Move the match to the south field. Scratch that. Keep it on the north field."
     expect: "Keep it on the north field."
   - set: adversarial-5
