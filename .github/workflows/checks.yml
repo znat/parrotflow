@@ -228,6 +228,9 @@ jobs:
       - name: Money transform
         run: built-in/transforms/money/score.py
 
+      - name: PR links transform
+        run: built-in/transforms/github_refs/score.py
+
       # Where a transform's files are found, and where its command runs. Builds
       # whole config directories in /tmp and runs the real binary against them
       # with PARROTFLOW_CONFIG_DIR, so it needs no config on the machine and

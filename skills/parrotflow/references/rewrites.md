@@ -256,39 +256,27 @@ defined but not in the pipeline.
 
 ### Setting up `github_refs`
 
-Replace `OWNER/REPO` in both URLs. Then add `- transform: github_refs` below
-`numbers_en`. The shipped entry has no chip. For one, add `offer: true` and a
-free `key:` to it, as in the example above.
+It is a script, `built-in/github_refs/github_refs.py`, and the repository is
+its argument. Replace `OWNER/REPO` at the end of its `command:`. Then add
+`- transform: github_refs` below `numbers_en`. The shipped entry has no chip.
+For one, add `offer: true` and a free `key:` to it, as in the example above.
 
 - **Its step usually wants `app:`.** It writes a Markdown link. Slack renders
   it. A terminal or a plain text field gets the raw `[#123](…)`.
 - **It sees the text after `numbers_en`**, as a step and as a chip. "PR four
-  one two" and "PR four hundred twelve" become `PR 412` and link. "PR four
-  twelve" stays as words and does not link. "issue forty five" becomes
-  `issue 45` and links. Tell the user to say the number digit by digit, or in
-  full.
-- **The shipped issue pattern makes a false link.** "we fixed 2 issues 3 days
-  ago" becomes "we fixed 2 [#3](…) days ago". Tell the user. Put that sentence
-  in the keep cases.
+  one two" and "PR four hundred twelve" become `PR 412` and link. A number
+  said in two halves links too: "PR twenty-six thirty-four" and "PR 26, 34"
+  become `#2634`. "PR four twelve" stays as words and does not link.
+- **Lists give one link per number.** "PRs 26 and 74", "les PR 26, 27 et 28".
+  A plural with one number is left alone, so "we fixed 2 issues 3 days ago"
+  does not link.
 
-The cases go in `transforms/github_refs/cases.yaml`. `--eval github_refs` finds
-them there with no `tests:` key. It runs the transform alone, so write the
-numbers as digits. Quote an input with a `#`: YAML reads the rest as a comment.
-A starter, with your repository in place of `OWNER/REPO`:
-
-```yaml
-cases:
-  - probe: link
-    input:  "PR #17 and PR 18"
-    expect: "[#17](https://github.com/OWNER/REPO/pull/17) and [#18](https://github.com/OWNER/REPO/pull/18)"
-  - probe: link
-    input:  fixed in issue 45
-    expect: fixed in [#45](https://github.com/OWNER/REPO/issues/45)
-  - probe: keep
-    input:  we fixed 2 issues 3 days ago   # the shipped pattern fails this one
-  - probe: keep
-    input:  the PR is ready for review
-```
+The shipped cases are in `transforms/built-in/github_refs/cases.yaml`, and the
+entry's `tests:` points `--eval github_refs` at them. They expect
+`OWNER/REPO`, so once the user's repository is in the command, copy them to
+`transforms/github_refs/cases.yaml`, replace `OWNER/REPO` there, and delete
+the `tests:` line: `--eval` finds that file with no `tests:` key. Quote an
+input with a `#`: YAML reads the rest as a comment.
 
 ### Filling the Slack roster
 
