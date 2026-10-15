@@ -61,9 +61,7 @@ and a spoken price into digits.
 ```yaml
 transforms:
   - name: github_refs        # Turn PRs into links
-    replace:
-      '[#$1](https://github.com/OWNER/REPO/pull/$1)':
-        ['/\bPR\s*#?(\d+)\b/']
+    command: built-in/github_refs/github_refs.py https://github.com/OWNER/REPO
   - name: slack_mentions     # Add Slack mentions
     command: slack_mentions.py
   - name: money_en           # Format units

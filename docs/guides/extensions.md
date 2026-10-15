@@ -26,12 +26,13 @@ pipeline. Learn about it in [How vocabulary works](vocabulary.md).
 
 ## PR links: your repository, your rules
 
-The shipped `github_refs` definition recognizes references and turns them into
-links. It is not enabled in the default pipeline because the repository is yours
-to choose.
+The shipped `github_refs` script recognizes references and turns them into
+links. It reads a number said in two halves ("PR twenty-six thirty-four") and
+lists ("PRs 26 and 74"), in English and French. It is not enabled in the
+default pipeline because the repository is yours to choose.
 
 1. Open your config from **Settings → Edit Config…**.
-2. Find `github_refs` and replace `OWNER/REPO` in its URLs.
+2. Find `github_refs` and replace `OWNER/REPO` at the end of its `command:`.
 3. Add `- transform: github_refs` after `numbers_en` in your existing pipeline.
 4. Validate and test before using it in everyday dictation.
 

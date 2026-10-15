@@ -1,0 +1,137 @@
+# Validation set for `github_refs`.
+#
+#   ParrotFlow --eval github_refs
+#   built-in/transforms/github_refs/score.py      # from the tree
+#
+# Inputs are what `numbers_en` / `numbers_fr` hand on: most numbers are already
+# digits, but two halves side by side stay as words. The repository is
+# https://github.com/OWNER/REPO, the one the default config passes.
+#
+# `expect`: what must come out. No `expect` means "comes back byte for byte" —
+# the --eval contract, in docs/cli.md.
+
+transform: github_refs
+
+cases:
+  - probe: pr
+    input: "Can you review PR 412 before lunch?"
+    expect: "Can you review [#412](https://github.com/OWNER/REPO/pull/412) before lunch?"
+  - probe: pr
+    input: "PR412 is ready to merge."
+    expect: "[#412](https://github.com/OWNER/REPO/pull/412) is ready to merge."
+  - probe: pr
+    input: "pull request number 88 fixes the upload timeout"
+    expect: "[#88](https://github.com/OWNER/REPO/pull/88) fixes the upload timeout"
+  - probe: pr
+    input: "PR #17 and PR 18 are both merged"
+    expect: "[#17](https://github.com/OWNER/REPO/pull/17) and [#18](https://github.com/OWNER/REPO/pull/18) are both merged"
+  - probe: issue
+    input: "see issue 45 for the context"
+    expect: "see [#45](https://github.com/OWNER/REPO/issues/45) for the context"
+  - probe: issue
+    input: "this closes issue number 7"
+    expect: "this closes [#7](https://github.com/OWNER/REPO/issues/7)"
+
+  - probe: keep
+    input: "I'll open a PR this afternoon."
+  - probe: keep
+    input: "The PR is ready for review."
+  - probe: keep
+    input: "the issue is that 3 tests fail on main"
+  - probe: keep
+    input: "We have 45 open issues in the backlog."
+  - probe: keep
+    input: "Our PR team wrote 12 posts last month."
+  - probe: keep
+    input: "we fixed 2 issues 3 days ago"
+
+  # A number said in two halves: "twenty six, thirty four" is PR 2634.
+  - probe: split
+    input: "PR 26, 34."
+    expect: "[#2634](https://github.com/OWNER/REPO/pull/2634)."
+  - probe: split
+    input: "Can you check PR 26 34 before lunch?"
+    expect: "Can you check [#2634](https://github.com/OWNER/REPO/pull/2634) before lunch?"
+  - probe: split
+    input: "PR 1, 05 is merged"
+    expect: "[#105](https://github.com/OWNER/REPO/pull/105) is merged"
+  - probe: split
+    input: "issue 26, 12 is still open"
+    expect: "[#2612](https://github.com/OWNER/REPO/issues/2612) is still open"
+
+  # Several at once: a plural, or numbers joined by "and".
+  - probe: list
+    input: "hey, can you check PRs 26 and 74?"
+    expect: "hey, can you check [#26](https://github.com/OWNER/REPO/pull/26) and [#74](https://github.com/OWNER/REPO/pull/74)?"
+  - probe: list
+    input: "But also PRs 26, 27, 28, and 29."
+    expect: "But also [#26](https://github.com/OWNER/REPO/pull/26), [#27](https://github.com/OWNER/REPO/pull/27), [#28](https://github.com/OWNER/REPO/pull/28), and [#29](https://github.com/OWNER/REPO/pull/29)."
+  - probe: list
+    input: "PRs 2604 and 2601 And I think we should also implement the same"
+    expect: "[#2604](https://github.com/OWNER/REPO/pull/2604) and [#2601](https://github.com/OWNER/REPO/pull/2601) And I think we should also implement the same"
+  # Singular: a comma glues halves, "and" starts the next one.
+  - probe: list
+    input: "PR 26, 27 and 28 are stacked"
+    expect: "[#2627](https://github.com/OWNER/REPO/pull/2627) and [#28](https://github.com/OWNER/REPO/pull/28) are stacked"
+  - probe: list
+    input: "pull requests 12 or 13, either is fine"
+    expect: "[#12](https://github.com/OWNER/REPO/pull/12) or [#13](https://github.com/OWNER/REPO/pull/13), either is fine"
+  - probe: list
+    input: "issues 45 and 46 are the same bug"
+    expect: "[#45](https://github.com/OWNER/REPO/issues/45) and [#46](https://github.com/OWNER/REPO/issues/46) are the same bug"
+
+  # Only two-digit halves are glued, so a count after a full number stays.
+  - probe: pr
+    input: "PR 412, 300 tests failed"
+    expect: "[#412](https://github.com/OWNER/REPO/pull/412), 300 tests failed"
+  - probe: keep
+    input: "the PRs 3 people opened"
+
+  # Said as words: `numbers_en` leaves two halves side by side alone.
+  - probe: words
+    input: "Can you check the PR twenty-six thirty-four and forty-seven sixty-eight?"
+    expect: "Can you check the [#2634](https://github.com/OWNER/REPO/pull/2634) and [#4768](https://github.com/OWNER/REPO/pull/4768)?"
+  - probe: words
+    input: "P R twenty six thirty-four."
+    expect: "[#2634](https://github.com/OWNER/REPO/pull/2634)."
+  - probe: words
+    input: "This is for the PR twenty-six thirty-four."
+    expect: "This is for the [#2634](https://github.com/OWNER/REPO/pull/2634)."
+  - probe: words
+    input: "PR 26 oh four is ready"
+    expect: "[#2604](https://github.com/OWNER/REPO/pull/2604) is ready"
+  - probe: words
+    input: "PRs 26 04 and 26 01"
+    expect: "[#2604](https://github.com/OWNER/REPO/pull/2604) and [#2601](https://github.com/OWNER/REPO/pull/2601)"
+  - probe: keep
+    input: "I'll open a PR one day"
+
+  # French. The plural is on the article; "et" and "ou" split a list.
+  - probe: french
+    input: "Tu peux regarder la PR vingt-six trente-quatre ?"
+    expect: "Tu peux regarder la [#2634](https://github.com/OWNER/REPO/pull/2634) ?"
+  - probe: french
+    input: "la PR 26, 34."
+    expect: "la [#2634](https://github.com/OWNER/REPO/pull/2634)."
+  - probe: french
+    input: "les PR 26 et 74"
+    expect: "les [#26](https://github.com/OWNER/REPO/pull/26) et [#74](https://github.com/OWNER/REPO/pull/74)"
+  - probe: french
+    input: "les PR 26, 27, 28 et 29"
+    expect: "les [#26](https://github.com/OWNER/REPO/pull/26), [#27](https://github.com/OWNER/REPO/pull/27), [#28](https://github.com/OWNER/REPO/pull/28) et [#29](https://github.com/OWNER/REPO/pull/29)"
+  - probe: french
+    input: "la PR quatre-vingt-dix-sept soixante et onze"
+    expect: "la [#9771](https://github.com/OWNER/REPO/pull/9771)"
+  - probe: french
+    input: "la PR vingt-six zéro quatre"
+    expect: "la [#2604](https://github.com/OWNER/REPO/pull/2604)"
+  - probe: french
+    input: "Check la PR 2473"
+    expect: "Check la [#2473](https://github.com/OWNER/REPO/pull/2473)"
+  - probe: french
+    input: "la PR vingt et un"
+    expect: "la [#21](https://github.com/OWNER/REPO/pull/21)"
+  - probe: keep
+    input: "Sinon pour ta PR, je regarde demain."
+  - probe: keep
+    input: "trigger dot dev pour les PR fermés."

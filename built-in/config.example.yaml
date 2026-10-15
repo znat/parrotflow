@@ -176,9 +176,6 @@ commands:
 # `ctx["vars"]["lists"]` in a script. Quote every entry: `on`/`no`/`off` are
 # booleans in YAML 1.1.
 lists:
-  # What may sit between "PR" and its number. `github_refs` only.
-  ref_words: ["number", "nr", "no", "num", "hash", "numéro"]
-
   # Words that end in a full stop without ending a sentence. `sentence_repair`
   # reads a full stop in front of a lowercase word — "approx. ten euros" — and
   # the readings do not know what an abbreviation is: of twelve tried by hand
@@ -266,21 +263,13 @@ transforms:
     say: [slack mentions, mentions]
     command: slack_mentions.py
 
-  # "PR one two three is ready" -> a clickable #123. Defined, not in the
-  # pipeline: the repository is yours, not this file's. Put your own in both
-  # URLs and add `- transform: github_refs` after `numbers`, which has already
-  # turned the spoken digits into 123 by then.
-  #
-  # `\s*` and not `\s+` before the number, because the decoder writes "PR123"
-  # with no space when you say "P R one two three". Measured, and it is the
-  # most common spelling of the lot.
+  # "PR 412", "PR twenty-six thirty-four", "PRs 26 and 74" -> links, in
+  # English and French. Defined, not in the pipeline: put your repository in
+  # place of OWNER/REPO and add `- transform: github_refs` after `numbers_en`.
   - name: github_refs
     description: spoken PR and issue numbers as links
-    replace:
-      '[#$1](https://github.com/OWNER/REPO/pull/$1)':
-        ['/\b(?:pull request|PR|P\.R\.)\s*(?:(?:{{ref_words}})\s+)?#?(\d+)\b/']
-      '[#$1](https://github.com/OWNER/REPO/issues/$1)':
-        ['/\bissues?\s+(?:(?:{{ref_words}})\s+)?#?(\d+)\b/']
+    command: built-in/github_refs/github_refs.py https://github.com/OWNER/REPO
+    tests: { path: built-in/github_refs/cases.yaml }
 
   # "at ten fifteen" -> at 10:15, "March third" -> March 3. One script per
   # language. `tests:` is what sends --eval to the right case file.
