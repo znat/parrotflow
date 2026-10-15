@@ -11,7 +11,7 @@ actor SyrinxModel {
     /// The peak holds the package and its compile at once.
     static let download = ModelDownload(
         id: "parser", name: "parrot-syrinx", megabytes: 519, peak: 640,
-        group: .language, blocking: false,
+        group: .language, blocking: true,
         costOfFailure: "spoken corrections (\"with Peter, no, with James\") are left in"
     )
 
@@ -19,12 +19,16 @@ actor SyrinxModel {
         case busy
         case damaged(String)
         case stale
+        case notFetched
+        case slow
 
         var errorDescription: String? {
             switch self {
             case .busy: return "another ParrotFlow process is fetching the parser"
             case .damaged(let file): return "the parser cache is damaged: \(file)"
             case .stale: return "the parser cache is from another release"
+            case .notFetched: return "the parser is not downloaded yet"
+            case .slow: return "the parser took more than \(Int(SyrinxModel.patience)) s to load"
             }
         }
     }
@@ -73,17 +77,54 @@ actor SyrinxModel {
 
     private var parser: Parser?
     private var loading: Task<Parser, Error>?
-    /// When a failed load may be tried again. A damaged cache re-fetches 519 MB, so not on every dictation.
+    /// When `warm` may fetch again after a failed load: a damaged cache re-fetches 519 MB.
     private var retryAfter: Date?
-    private var failure: Error?
     private static let backoff: TimeInterval = 300
+    /// How long a dictation waits for a load from the cache. It never waits for a download.
+    static let patience: TimeInterval = 3
 
-    /// What a dictation waits on, as it waits for the speech model. A load that failed less than `backoff`
-    /// ago is not tried again here: the dictation goes on without the parser, and `retryNow` tries.
+    /// What a dictation waits on: a load from the cache, for at most `patience`. Fetching is `warm`'s job, and
+    /// the setup screen holds the first dictation until it is done.
     func ready() async -> Result<Parser, Error> {
         if let parser { return .success(parser) }
-        if loading == nil, let failure, let retryAfter, Date() < retryAfter { return .failure(failure) }
-        do { return .success(try await prepare()) } catch { return .failure(error) }
+        // A fetch deletes digests.json first, so one in progress reads as not cached.
+        guard Self.isCached else { return .failure(Failure.notFetched) }
+        let task = loading ?? Task { try await self.prepare(fetch: false) }
+        return await Self.first(of: task, within: Self.patience)
+    }
+
+    private static func first(of task: Task<Parser, Error>, within seconds: TimeInterval) async -> Result<Parser, Error> {
+        let once = Once()
+        return await withCheckedContinuation { continuation in
+            once.hold(continuation)
+            Task {
+                do { once.resume(.success(try await task.value)) } catch { once.resume(.failure(error)) }
+            }
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                once.resume(.failure(Failure.slow))
+            }
+        }
+    }
+
+    /// Whichever of the load and the deadline comes first.
+    private final class Once: @unchecked Sendable {
+        private var continuation: CheckedContinuation<Result<Parser, Error>, Never>?
+        private let lock = NSLock()
+
+        func hold(_ continuation: CheckedContinuation<Result<Parser, Error>, Never>) {
+            lock.lock()
+            self.continuation = continuation
+            lock.unlock()
+        }
+
+        func resume(_ result: Result<Parser, Error>) {
+            lock.lock()
+            let continuation = self.continuation
+            self.continuation = nil
+            lock.unlock()
+            continuation?.resume(returning: result)
+        }
     }
 
     func warm() {
@@ -103,7 +144,6 @@ actor SyrinxModel {
     /// For the setup screen's repair button.
     func retryNow() {
         retryAfter = nil
-        failure = nil
         warm()
     }
 
@@ -111,10 +151,11 @@ actor SyrinxModel {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    func prepare(progress: (@Sendable (String) -> Void)? = nil) async throws -> Parser {
+    /// `fetch: false` loads the cache and throws when there is none to load.
+    func prepare(fetch: Bool = true, progress: (@Sendable (String) -> Void)? = nil) async throws -> Parser {
         if let parser { return parser }
         if let loading { return try await loading.value }
-        let task = Task<Parser, Error> { try await Self.build(progress: progress) }
+        let task = Task<Parser, Error> { try await Self.build(fetch: fetch, progress: progress) }
         loading = task
         defer { loading = nil }
         do {
@@ -122,10 +163,14 @@ actor SyrinxModel {
             parser = loaded
             ModelDownloads.report(Self.download.id, .installed)
             return loaded
+        } catch Failure.busy {
+            // Another process holds the cache. Nothing is broken, so nothing waits five minutes.
+            throw Failure.busy
+        } catch Failure.notFetched {
+            throw Failure.notFetched
         } catch {
             // Here and not in `warm`, so no `warm` can slip in between the failure and the backoff.
             retryAfter = Date().addingTimeInterval(Self.backoff)
-            failure = error
             ModelDownloads.report(
                 Self.download.id, .failed(ModelDownloads.failure(error, needs: Self.download.peakLabel))
             )
@@ -134,24 +179,26 @@ actor SyrinxModel {
     }
 
     /// Off the actor, so a dictation that finds the parser loaded never waits on a load.
-    private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
-        let parser = try await openOrFetch(progress: progress)
+    private static func build(fetch: Bool, progress: (@Sendable (String) -> Void)?) async throws -> Parser {
+        let parser = try await openOrFetch(fetch: fetch, progress: progress)
         // The first prediction after a load took 167 to 223 ms against 10 to 16 ms warm.
         _ = parser.parse(words: Words(joining: ["I", "mean", "it"]), language: "en")
         return parser
     }
 
-    private static func openOrFetch(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
+    private static func openOrFetch(fetch: Bool, progress: (@Sendable (String) -> Void)?) async throws -> Parser {
         if isCached {
             ModelDownloads.report(download.id, .loading)
             do { return try load() } catch Failure.busy { throw Failure.busy } catch {
+                if !fetch { throw error }
                 Log.write("parser: the cached copy will not load (\(error.localizedDescription)); fetching it again")
                 progress?("\(error.localizedDescription); fetching it again")
             }
         }
+        guard fetch else { throw Failure.notFetched }
         let handle = try lock(LOCK_EX)
         defer { close(handle) }
-        try await fetch(progress: progress)
+        try await Self.fetch(progress: progress)
         ModelDownloads.report(download.id, .loading)
         return try openCache()
     }

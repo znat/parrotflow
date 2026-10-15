@@ -788,12 +788,12 @@ don't think so" and "Sorry for the delay" stay. A clause that "I mean" restates
 stays too: "He is not rude, I mean he is just tired".
 
 The corrections read a tree from parrot-syrinx, the 519 MB parser the app
-fetches at launch with the speech model and keeps in memory. It is asked only
-when the text says a marker or a command. A dictation that does before the
-parser is loaded waits for it, as a dictation waits for the speech model. If
-the download or the load failed, the text goes through with the other rules
-applied and `declined` says why. The first dictation that says a correction
-five minutes later tries again.
+fetches at launch with the speech model and keeps in memory. The setup screen
+waits for it as it waits for the speech model, and offers a retry if the
+download fails. It is asked only when the text says a marker or a command, in a
+text that reads as English. A dictation never waits for a download: it waits
+at most 3 s for a load from the cache. Past that, or with no parser on disk,
+the text goes through with the other rules applied and `declined` says why.
 
 It publishes `disfluency.applied`, `disfluency.edits` and `disfluency.declined`,
 like the script does with `returns: json`. `applied` names `self-correction`
