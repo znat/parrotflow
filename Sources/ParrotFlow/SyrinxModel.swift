@@ -77,8 +77,10 @@ actor SyrinxModel {
 
     private var parser: Parser?
     private var loading: Task<Parser, Error>?
-    /// When `warm` may fetch again after a failed load: a damaged cache re-fetches 519 MB.
+    /// When `warm` may fetch again after a failed load: a damaged cache re-fetches 519 MB. Until then a
+    /// dictation does not hash the same damaged cache again either.
     private var retryAfter: Date?
+    private var failure: Error?
     private static let backoff: TimeInterval = 300
     /// How long a dictation waits for a load from the cache. It never waits for a download.
     static let patience: TimeInterval = 3
@@ -89,6 +91,7 @@ actor SyrinxModel {
         if let parser { return .success(parser) }
         // A fetch deletes digests.json first, so one in progress reads as not cached.
         guard Self.isCached else { return .failure(Failure.notFetched) }
+        if loading == nil, let failure, let retryAfter, Date() < retryAfter { return .failure(failure) }
         let task = loading ?? Task { try await self.prepare(fetch: false) }
         return await Self.first(of: task, within: Self.patience)
     }
@@ -144,6 +147,7 @@ actor SyrinxModel {
     /// For the setup screen's repair button.
     func retryNow() {
         retryAfter = nil
+        failure = nil
         warm()
     }
 
@@ -171,6 +175,7 @@ actor SyrinxModel {
         } catch {
             // Here and not in `warm`, so no `warm` can slip in between the failure and the backoff.
             retryAfter = Date().addingTimeInterval(Self.backoff)
+            failure = error
             ModelDownloads.report(
                 Self.download.id, .failed(ModelDownloads.failure(error, needs: Self.download.peakLabel))
             )
