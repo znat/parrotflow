@@ -58,10 +58,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
 
 tally = collections.defaultdict(collections.Counter)
 wrong = 0
-slowest = 0.0
+slowest = (0.0, "")
 for case, (got, found) in zip(cases, results):
     counts = tally[case.get("set", "")]
-    slowest = max(slowest, float(found.get("disfluency.ms", "0")))
+    slowest = max(slowest, (float(found.get("disfluency.ms", "0")), case["input"]))
     declined = found.get("disfluency.declined", "<absent>")
     if declined != '""' and not case.get("languages"):
         print("  ✗ %r declined %s" % (case["input"], declined))
@@ -88,7 +88,7 @@ print()
 for name, counts in tally.items():
     print("  %-8s corrections fixed %d, missed %d, wrong %d   keeps kept %d, changed %d"
           % (name, counts["fixed"], counts["missed"], counts["wrong"], counts["kept"], counts["changed"]))
-print("  slowest stage %.0f ms" % slowest)
+print("  slowest stage %.0f ms: %s" % (slowest[0], slowest[1][:80]))
 print("\n  ✓ no wrong cut" if not wrong else "\n  ✗ %d wrong" % wrong)
 sys.exit(1 if wrong else 0)
 PY
