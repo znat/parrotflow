@@ -44,7 +44,10 @@ CUES = [c.split() for c in (
 ENGLISH = {
     "the", "to", "with", "and", "is", "it", "you", "of", "for", "that", "we", "my", "this", "be", "are",
     "was", "in", "have", "do", "not", "can", "will", "i", "i'm", "it's", "what", "at", "he", "she", "they",
-    "but", "just", "from", "your", "our", "if", "so",
+    "but", "just", "from", "your", "our", "if", "so", "his", "him", "her", "them", "us", "their", "were",
+    "been", "has", "had", "would", "could", "should", "don't", "i'll", "we'll", "that's", "who", "how",
+    "there", "about", "up", "out", "please", "let", "let's", "send", "call", "need", "want", "tell", "ask",
+    "use", "put", "move", "open", "check", "get", "make", "take", "meet", "book", "set", "add",
 }
 
 _spec = importlib.util.spec_from_file_location("disfluency", SOURCE)
@@ -56,7 +59,7 @@ _spec.loader.exec_module(disfluency)
 def says_correction(text):
     words = [disfluency.bare(w.group()) for w in disfluency.WORD.finditer(text)]
     english = sum(w in ENGLISH for w in words)
-    if english == 0 or english * 100 < len(words) * 15:
+    if english == 0 or english * 100 < len(words) * 10:
         return False
     return any(words[i:i + len(cue)] == cue for i in range(len(words)) for cue in CUES)
 
