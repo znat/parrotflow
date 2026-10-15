@@ -3,12 +3,14 @@
 #
 # `correction` and `restart`: `expect` is the text with the taken-back words
 # gone. Left unchanged is a miss; any other text is a wrong cut.
-# `keep` (no `expect`): must come back byte for byte.
+# `keep` (no `expect`): must come back byte for byte. `unscored` runs for time
+# and for no crash only. `languages:` stands in for the fixture's `[en]`.
 #
 # `blind-1`, `blind-2` and `blind-3` were each written by a fresh agent from
 # the rule description alone, without the code. The rule was tuned on blind-1
 # and blind-2 after their first run, and blind-3 added one guard. `user` is
-# what the user dictated.
+# what the user dictated. `audit` is an independent audit's adversarial inputs,
+# labelled here; a `#` line above a case says why when it is debatable.
 
 cases:
   - set: user
@@ -871,3 +873,509 @@ cases:
   - set: blind-3
     probe: keep
     input: "Sorry to hear that, I'm sorry about the delay with the refund."
+  - set: audit
+    probe: keep
+    input: "Tell him no, tell her yes."
+  - set: audit
+    probe: keep
+    input: "I said no to the offer, sorry Mark."
+  - set: audit
+    probe: keep
+    input: "He said, \"No, I won't go.\""
+  - set: audit
+    probe: keep
+    input: "She told me \"wait, I mean it\" yesterday."
+  - set: audit
+    probe: keep
+    input: "The answer is no, the answer was always no."
+  - set: audit
+    probe: correction
+    input: "Send it to Peter, no, to James, no, to Mary."
+    expect: "Send it to Mary."
+  - set: audit
+    probe: correction
+    input: "We pay $50, sorry, $60 per month."
+    expect: "We pay $60 per month."
+  - set: audit
+    probe: correction
+    input: "The meeting is on March 3, I mean March 4."
+    expect: "The meeting is on March 4."
+  - set: audit
+    probe: keep
+    input: "I like Paris, actually I love Paris."
+  - set: audit
+    probe: keep
+    input: "No, no, no, that's not what I meant."
+  - set: audit
+    probe: keep
+    input: "Peter, sorry, Pete will call you."
+  - set: audit
+    probe: keep
+    input: "I'm sorry, Dave, I'm afraid I can't do that."
+  - set: audit
+    probe: keep
+    input: "Is it Peter? No, it's James."
+  - set: audit
+    probe: keep
+    input: "Do you want tea or no tea?"
+  - set: audit
+    probe: keep
+    input: "The code has no tests, no docs, and no owner."
+  - set: audit
+    probe: keep
+    input: "I called Peter, no answer, so I called James."
+  - set: audit
+    probe: keep
+    input: "I met John. Actually John is great."
+  - set: audit
+    probe: correction
+    input: "Call Mom, sorry Dad, tonight."
+    expect: "Call Dad, tonight."
+  - set: audit
+    probe: keep
+    input: "Ask Sarah, she said no, Tom agreed."
+  - set: audit
+    probe: correction
+    input: "The car was red, sorry, blue."
+    expect: "The car was blue."
+  - set: audit
+    probe: correction
+    input: "Book the room for 3, I mean 4 people."
+    expect: "Book the room for 4 people."
+  # a range: cutting only 4 leaves 3 or 5
+  - set: audit
+    probe: correction
+    input: "We need 3 or 4, actually 5 servers."
+    expect: "We need 5 servers."
+  - set: audit
+    probe: keep
+    input: "The server froze. Let me restart. The server works now."
+  - set: audit
+    probe: keep
+    input: "I failed the exam. Let me try again. I will pass this time."
+  - set: audit
+    probe: keep
+    input: "My laptop crashed, let me restart, my laptop is slow."
+  - set: audit
+    probe: keep
+    input: "You should scratch that, it helps."
+  - set: audit
+    probe: keep
+    input: "When I say Peter, I mean James."
+  - set: audit
+    probe: keep
+    input: "By John I mean Johnny."
+  - set: audit
+    probe: keep
+    input: "He said no, he said it twice."
+  - set: audit
+    probe: keep
+    input: "I said no, I said it clearly."
+  - set: audit
+    probe: keep
+    input: "They voted no, they voted twice."
+  - set: audit
+    probe: keep
+    input: "I need the red one, actually, the red one is fine."
+  - set: audit
+    probe: keep
+    input: "Go with the plan, no, the plan has a flaw."
+  - set: audit
+    probe: keep
+    input: "I'm sorry I was late. Sorry, I was busy."
+  - set: audit
+    probe: keep
+    input: "I cannot wait, I cannot sleep."
+  - set: audit
+    probe: correction
+    input: "Put the box on the table, no wait, on the shelf."
+    expect: "Put the box on the shelf."
+  # debatable: unchanged is a miss
+  - set: audit
+    probe: correction
+    input: "I want to stay, actually, I want to stay longer."
+    expect: "I want to stay longer."
+  - set: audit
+    probe: keep
+    input: "I think it works, actually it works well."
+  - set: audit
+    probe: correction
+    input: "We waited for Peter, wait, for James."
+    expect: "We waited for James."
+  - set: audit
+    probe: keep
+    input: "Wait, the build is broken, wait, the tests pass."
+  # the repeat rule's own cut, not a correction
+  - set: audit
+    probe: correction
+    input: "I can wait, I can wait all day."
+    expect: "I can wait all day."
+  - set: audit
+    probe: keep
+    input: "Please wait, Sam is on the phone."
+  # debatable: the no confirms rather than corrects
+  - set: audit
+    probe: keep
+    input: "She is not here, no, she is at home."
+  - set: audit
+    probe: keep
+    input: "Move the meeting to Monday, no, Monday works, keep it."
+  - set: audit
+    probe: keep
+    input: "The file is in the docs folder, sorry, the docs folder is empty."
+  - set: audit
+    probe: keep
+    input: "Use the old key, I mean the old key expired."
+  - set: audit
+    probe: keep
+    input: "Send the report to Anna, I mean, Anna will read it."
+  - set: audit
+    probe: correction
+    input: "It costs $50, no, $500."
+    expect: "It costs $500."
+  - set: audit
+    probe: correction
+    input: "Call 555 1234, sorry, 555 1235."
+    expect: "Call 555 1235."
+  - set: audit
+    probe: correction
+    input: "Born in 1990, no, 1991."
+    expect: "Born in 1991."
+  - set: audit
+    probe: correction
+    input: "The score was 2 to 1, no, 3 to 1."
+    expect: "The score was 3 to 1."
+  - set: audit
+    probe: correction
+    input: "Meet on May 5, sorry, May 6."
+    expect: "Meet on May 6."
+  # debatable: the last instruction wins
+  - set: audit
+    probe: correction
+    input: "Turn left, no, right, no, left again."
+    expect: "Turn left again."
+  - set: audit
+    probe: keep
+    input: "I love New York, actually, New Jersey is better."
+  # debatable: Carol replaces Bob
+  - set: audit
+    probe: correction
+    input: "Invite Alice and Bob, sorry, Carol."
+    expect: "Invite Alice and Carol."
+  - set: audit
+    probe: correction
+    input: "with Peter... no... with James"
+    expect: "with James"
+  - set: audit
+    probe: correction
+    input: "with Peter; no; with James"
+    expect: "with James"
+  - set: audit
+    probe: correction
+    input: "with Peter - no - with James"
+    expect: "with James"
+  - set: audit
+    probe: keep
+    input: "Do you know Peter? No, I mean Paul."
+  - set: audit
+    probe: keep
+    input: "It was great. I mean, it was really great."
+  # debatable: unchanged is a miss
+  - set: audit
+    probe: correction
+    input: "He was late. Sorry, he was early."
+    expect: "He was early."
+  - set: audit
+    probe: keep
+    input: "Sorry, sorry, I forgot."
+  - set: audit
+    probe: correction
+    input: "I I want to go."
+    expect: "I want to go."
+  - set: audit
+    probe: keep
+    input: "My initials are I I."
+  - set: audit
+    probe: keep
+    input: "The letters are A, I, I, B."
+  - set: audit
+    probe: keep
+    input: "Press I I to toggle."
+  - set: audit
+    probe: keep
+    input: "Thanks Peter. Sorry, Peter, I forgot."
+  - set: audit
+    probe: keep
+    input: "I asked for coffee, no sugar, no milk."
+  - set: audit
+    probe: correction
+    input: "Let's meet at the cafe, scratch that, at the office."
+    expect: "Let's meet at the office."
+  - set: audit
+    probe: correction
+    input: "I wrote the essay. Scratch that. I wrote the poem."
+    expect: "I wrote the poem."
+  - set: audit
+    probe: keep
+    input: "I wrote the essay. Strike that from the record. It was bad."
+  - set: audit
+    probe: keep
+    input: "I'll rephrase. Let me rephrase. I will say it again."
+  # Too long to parse in one window: run for time and for no crash, not scored.
+  - set: audit
+    probe: unscored
+    input: "so the plan is that we ship the build on Monday, no, on Tuesday, and actually the team agreed that I mean the release notes need work, sorry, need review and so the plan is that we ship the build on Monday, no, on Tuesday, and actually the team agreed that I mean the release notes need work, sorry, need review and so the plan is that we ship the build on Monday, no, on Tuesday, and actually the team agreed that I mean the release notes need work, sorry, need review and so the plan is that we ship the build on Monday, no, on Tuesday, and actually the team agreed that I mean the release notes need work, sorry, need review and so the plan is that we ship the build on Monday, no, on Tuesday, and actually the team agreed that I mean the release notes need work, sorry, need review and so the plan is that we ship the build on Monday, no, on Tuesday, and actually the team agreed that I mean the release notes need work, sorry, need review and so the plan is that we ship the build on Monday, no, on Tuesday, and actually the team agreed that I mean the release notes need work, sorry, need review and so the plan is that we ship the build on Monday, no, on Tuesday, and actually the team agreed that I mean the release notes need work, sorry, need review and so the plan is that we ship the build on Monday, no, on Tuesday, and actually the team agreed that I mean the release notes need work, sorry, need review and so the plan is that we ship the build on Monday, no, on Tuesday, and actually the team agreed that I mean the release notes need work, sorry, need review and so the plan is that we ship the build on Monday, no, on Tuesday, and actually the team agreed that I mean the release notes need work, sorry, need review and so the plan is that we ship the build on Monday, no, on Tuesday, and actually the team agreed that I mean the release notes need work, sorry, need review and that is all."
+  - set: audit
+    probe: correction
+    input: "We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Monday, no, on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay."
+    expect: "We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay. We ship on Tuesday. Actually the team is fine. I mean the notes need work. Sorry for the delay."
+  - set: audit
+    probe: correction
+    input: "Send it to Peter, no, to James, and invite Mary, sorry, invite Anna, on Monday, I mean on Tuesday."
+    expect: "Send it to James, and invite Anna, on Tuesday."
+  - set: audit
+    probe: keep
+    input: "He told me, \"with Peter, no, with James,\" and left."
+  - set: audit
+    probe: keep
+    input: "The quote was \"I mean the rain, I mean the sun.\""
+  - set: audit
+    probe: keep
+    input: "I actually like the old design, actually the old design is better."
+  - set: audit
+    probe: keep
+    input: "She actually said it was twenty, actually twenty five."
+  - set: audit
+    probe: correction
+    input: "Add two hundred, no, three hundred dollars."
+    expect: "Add three hundred dollars."
+  - set: audit
+    probe: correction
+    input: "It's two fifteen, sorry, two thirty."
+    expect: "It's two thirty."
+  - set: audit
+    probe: correction
+    input: "I need twenty two, no, twenty three copies."
+    expect: "I need twenty three copies."
+  - set: audit
+    probe: correction
+    input: "Ship version 2.1, no, version 2.2."
+    expect: "Ship version 2.2."
+  - set: audit
+    probe: correction
+    input: "Email bob@example.com, no, alice@example.com."
+    expect: "Email alice@example.com."
+  - set: audit
+    probe: correction
+    input: "Open the file main.swift, no, the file app.swift."
+    expect: "Open the file app.swift."
+  - set: audit
+    probe: correction
+    input: "Set it to true, no, false."
+    expect: "Set it to false."
+  - set: audit
+    probe: keep
+    input: "The rain, I mean, the rain was heavy."
+  # debatable: a clarification that narrows; unchanged is a miss
+  - set: audit
+    probe: correction
+    input: "Meet me in Paris, I mean in Paris, Texas."
+    expect: "Meet me in Paris, Texas."
+  - set: audit
+    probe: correction
+    input: "I'm going with Peter, no, I'm going with James."
+    expect: "I'm going with James."
+  - set: audit
+    probe: correction
+    input: "Don't tell Peter, no, don't tell anyone."
+    expect: "Don't tell anyone."
+  - set: audit
+    probe: keep
+    input: "Peter, no! Don't touch that."
+  - set: audit
+    probe: keep
+    input: "I'll take the train, sorry to bother you, the train at six."
+  - set: audit
+    probe: keep
+    input: "I have no idea, no clue at all."
+  - set: audit
+    probe: correction
+    input: "Choose yes or no, no, choose maybe."
+    expect: "Choose maybe."
+  - set: audit
+    probe: correction
+    input: "The answer was no, no, the answer was yes."
+    expect: "The answer was yes."
+  # the repeat rule's own cut, not a correction
+  - set: audit
+    probe: correction
+    input: "I'm going to wait, I'm going to wait here."
+    expect: "I'm going to wait here."
+  - set: audit
+    probe: keep
+    input: "I wanted to call Peter, actually, Peter called me."
+  - set: audit
+    probe: correction
+    input: "I'm sorry I'm sorry I was late."
+    expect: "I'm sorry I was late."
+  - set: audit
+    probe: correction
+    input: "I'm so sorry so sorry about that."
+    expect: "I'm so sorry about that."
+  - set: audit
+    probe: keep
+    input: "Sorry sorry sorry."
+  - set: audit
+    probe: correction
+    input: "I I I think so."
+    expect: "I think so."
+  - set: audit
+    probe: correction
+    input: "and I I mean it"
+    expect: "and I mean it"
+  - set: audit
+    probe: correction
+    input: "I, I want to go."
+    expect: "I want to go."
+  - set: audit
+    probe: keep
+    input: "Henry I I was king."
+  - set: audit
+    probe: keep
+    input: "World War I I think ended in 1918."
+  - set: audit
+    probe: keep
+    input: "Type A I I B."
+  - set: audit
+    probe: keep
+    input: "Use option I I guess."
+  - set: audit
+    probe: keep
+    input: "Je veux voir Pierre, non, je veux voir Jacques."
+    languages: [en, es]
+  - set: audit
+    probe: keep
+    input: "On se voit lundi, pardon, mardi, sorry je voulais dire mardi."
+    languages: [en, es]
+  - set: audit
+    probe: keep
+    input: "Avec Pierre, no, avec Jacques."
+    languages: [en, es]
+  - set: audit
+    probe: keep
+    input: "Le prix est de 50 euros, enfin, 60 euros."
+    languages: [en, es]
+  - set: audit
+    probe: keep
+    input: "Il a dit no, il a dit oui."
+    languages: [en, es]
+  - set: audit
+    probe: keep
+    input: "Quiero ir con Pedro, no, con Juan."
+    languages: [en, es]
+  - set: audit
+    probe: keep
+    input: "Juan dijo que no, Juan dijo que sí."
+    languages: [en, es]
+  - set: audit
+    probe: keep
+    input: "No, no quiero ir, no tengo tiempo."
+    languages: [en, es]
+  - set: audit
+    probe: keep
+    input: "Lo siento, no puedo, no puedo ir hoy."
+    languages: [en, es]
+  - set: audit
+    probe: keep
+    input: "Yo no sé, yo no quiero saber."
+    languages: [en, es]
+  - set: audit
+    probe: keep
+    input: "Ella dice no, ella dice sí."
+    languages: [en, es]
+  - set: audit
+    probe: keep
+    input: "Je veux voir Pierre, non, je veux voir Jacques."
+    languages: [en, fr]
+  - set: audit
+    probe: keep
+    input: "On se voit lundi, pardon, mardi, sorry je voulais dire mardi."
+    languages: [en, fr]
+  - set: audit
+    probe: keep
+    input: "Avec Pierre, no, avec Jacques."
+    languages: [en, fr]
+  - set: audit
+    probe: keep
+    input: "Le prix est de 50 euros, enfin, 60 euros."
+    languages: [en, fr]
+  - set: audit
+    probe: keep
+    input: "Il a dit no, il a dit oui."
+    languages: [en, fr]
+  - set: audit
+    probe: keep
+    input: "Quiero ir con Pedro, no, con Juan."
+    languages: [en, fr]
+  - set: audit
+    probe: keep
+    input: "Juan dijo que no, Juan dijo que sí."
+    languages: [en, fr]
+  - set: audit
+    probe: keep
+    input: "No, no quiero ir, no tengo tiempo."
+    languages: [en, fr]
+  - set: audit
+    probe: keep
+    input: "Lo siento, no puedo, no puedo ir hoy."
+    languages: [en, fr]
+  - set: audit
+    probe: keep
+    input: "Yo no sé, yo no quiero saber."
+    languages: [en, fr]
+  - set: audit
+    probe: keep
+    input: "Ella dice no, ella dice sí."
+    languages: [en, fr]
+  - set: user
+    probe: correction
+    input: "I think I want to eat some chicken. No some pork."
+    expect: "I think I want to eat some pork."
+  - set: user
+    probe: correction
+    input: "I think I want to eat some chicken. No, some pork."
+    expect: "I think I want to eat some pork."
+  - set: user
+    probe: correction
+    input: "I think I want to eat some chicken. No, I want to eat some pork."
+    expect: "I think I want to eat some pork."
+  - set: user
+    probe: correction
+    input: "Let's make the road cleaner. I mean greener."
+    expect: "Let's make the road greener."
+  - set: user
+    probe: correction
+    input: "How long does it take how long does it take to get some water with my tea my coffee?"
+    expect: "How long does it take to get some water with my tea my coffee?"
+  - set: user
+    probe: keep
+    input: "I think I want to eat some chicken pork."
+  - set: user
+    probe: correction
+    input: "Let me book a meeting with Peter. I mean James."
+    expect: "Let me book a meeting with James."
+  - set: user
+    probe: correction
+    input: "He said he was going to the river. I mean to the sea."
+    expect: "He said he was going to the sea."
+  - set: user
+    probe: correction
+    input: "How long does it take to get to get some water on the lake or on on the sea?"
+    expect: "How long does it take to get some water on the lake or on the sea?"
+  - set: user
+    probe: keep
+    input: "Is it ready? No, not yet."
+  - set: user
+    probe: correction
+    input: "So the other day I was with James I mean Peter, sorry."
+    expect: "So the other day I was with Peter, sorry."

@@ -22,24 +22,35 @@ export PARROTFLOW_CONFIG_DIR="$WORK"
 "$BIN" --pipeline "$ROOT/tests/pipelines/disfluency-native.yaml" "no, I mean it" --quiet --warm >/dev/null 2>&1 \
   || { echo "  ✗ the parser did not load"; exit 1; }
 
-python3 - "$BIN" "$ROOT/tests/pipelines/disfluency-native.yaml" "$CASES" <<'PY'
-import collections, concurrent.futures, re, subprocess, sys
+python3 - "$BIN" "$ROOT/tests/pipelines/disfluency-native.yaml" "$CASES" "$WORK" <<'PY'
+import collections, concurrent.futures, os, re, subprocess, sys
 import yaml
 
-binary, fixture, path = sys.argv[1:4]
+binary, fixture, path, work = sys.argv[1:5]
 cases = yaml.safe_load(open(path, encoding="utf-8"))["cases"]
-DECLINED = re.compile(r"var   disfluency\.declined = (.*)")
+VAR = re.compile(r"var   (\S+) = (.*)")
+base = open(fixture, encoding="utf-8").read()
+
+
+def fixture_for(languages):
+    if not languages:
+        return fixture
+    name = os.path.join(work, "fixture-%s.yaml" % "-".join(languages))
+    if not os.path.exists(name):
+        with open(name, "w", encoding="utf-8") as out:
+            out.write(base.replace("languages: [en]", "languages: [%s]" % ", ".join(languages)))
+    return name
 
 
 def run(case):
     out = subprocess.run(
-        [binary, "--pipeline", fixture, case["input"], "--quiet", "--warm", "--vars"],
+        [binary, "--pipeline", fixture_for(case.get("languages")), case["input"], "--quiet", "--warm", "--vars"],
         capture_output=True, text=True, encoding="utf-8", timeout=120,
     ).stdout
     lines = out.split("\n")
-    declined = next((m.group(1) for m in map(DECLINED.fullmatch, lines) if m), "<absent>")
+    found = dict(m.groups() for m in map(VAR.fullmatch, lines) if m)
     text = "\n".join(line for line in lines if not line.startswith("var   "))
-    return (text[:-1] if text.endswith("\n") else text), declined
+    return (text[:-1] if text.endswith("\n") else text), found
 
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
@@ -47,11 +58,17 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
 
 tally = collections.defaultdict(collections.Counter)
 wrong = 0
-for case, (got, declined) in zip(cases, results):
+slowest = 0.0
+for case, (got, found) in zip(cases, results):
     counts = tally[case.get("set", "")]
-    if declined != '""':
+    slowest = max(slowest, float(found.get("disfluency.ms", "0")))
+    declined = found.get("disfluency.declined", "<absent>")
+    if declined != '""' and not case.get("languages"):
         print("  ✗ %r declined %s" % (case["input"], declined))
         wrong += 1
+    if case.get("probe") == "unscored":
+        counts["unscored"] += 1
+        continue
     if "expect" not in case:
         verdict = "kept" if got == case["input"] else "changed"
     elif got == case["expect"]:
@@ -71,6 +88,7 @@ print()
 for name, counts in tally.items():
     print("  %-8s corrections fixed %d, missed %d, wrong %d   keeps kept %d, changed %d"
           % (name, counts["fixed"], counts["missed"], counts["wrong"], counts["kept"], counts["changed"]))
+print("  slowest stage %.0f ms" % slowest)
 print("\n  ✓ no wrong cut" if not wrong else "\n  ✗ %d wrong" % wrong)
 sys.exit(1 if wrong else 0)
 PY

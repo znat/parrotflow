@@ -417,10 +417,10 @@ extension Disfluency {
     }
 
     private static let correctionMarkers = phrases([
-        "i mean", "i meant", "no", "sorry", "or rather", "wait", "actually",
+        "i mean", "i meant", "no", "sorry", "or rather", "wait", "actually", "scratch that", "strike that",
     ])
-    /// After a full stop "no" answers a question: "Is it Peter? No, James."
-    private static let afterStop = phrases(["i mean", "i meant", "sorry"])
+    /// After a full stop. "Sorry" there apologises again, and "no" after a question answers it.
+    private static let afterStop = phrases(["i mean", "i meant", "no"])
     /// The marker in its ordinary sense, said before the very word a restart would repeat.
     private static let idioms = phrases([
         "sorry for", "sorry about", "sorry to", "sorry if", "sorry that", "no matter", "no longer", "no more",
@@ -430,18 +430,37 @@ extension Disfluency {
     private static let restartCommands = phrases([
         "scratch that", "strike that", "let me rephrase", "let me rephrase that",
     ])
-    /// These also say what they mean literally ("The app froze. Let me restart."), so the next sentence must
-    /// start like the one dropped.
+    /// These also say what they mean literally ("The server froze. Let me restart."), so the next sentence
+    /// must say the dropped one again with a word or two changed.
     private static let ambiguousRestartCommands = phrases([
         "let me restart", "let me start over", "let me start again", "let me try again", "let me say that again",
         "start over",
     ])
+    /// A sentence that says one of these is not one a restart command takes back: "I'll rephrase."
+    private static let commandWords = words(["restart", "rephrase", "scratch", "strike"])
+    /// Common English words that French and Spanish do not share. `DictationLanguage` knows only English and
+    /// French, so "con Pedro, no, con Juan" arrives as English.
+    private static let englishWords = words([
+        "the", "to", "with", "and", "is", "it", "you", "of", "for", "that", "we", "my", "this", "be", "are",
+        "was", "in", "have", "do", "not", "can", "will", "i", "i'm", "it's", "what", "at", "he", "she", "they",
+        "but", "just", "from", "your", "our", "if", "so", "his", "him", "her", "them", "us", "their", "were",
+        "been", "has", "had", "would", "could", "should", "don't", "i'll", "we'll", "that's", "who", "how",
+        "there", "about", "up", "out", "please", "let", "let's", "send", "call", "need", "want", "tell", "ask",
+        "use", "put", "move", "open", "check", "get", "make", "take", "meet", "book", "set", "add",
+    ])
+    /// "When I say Peter, I mean James" and "By John I mean Johnny" define a word.
+    private static let defining = words(["say", "says", "said", "saying", "by"])
+    private static let connectors = words(["to", "or", "and", "through", "by", "until", "till", "x"])
+    private static let subjects: Set<String> = ["nsubj", "csubj", "expl"]
+    private static let quotes: Set<Unicode.Scalar> = ["\"", "\u{201C}", "\u{201D}", "\u{AB}", "\u{BB}"]
 
-    /// The parser is asked only when one of these is said.
+    /// The parser is asked only when one of these is said, in a text that reads as English.
     static func mentionsCorrection(_ text: String) -> Bool {
         let t = Transcript(Array(text.unicodeScalars))
         let cues = correctionMarkers + restartCommands + ambiguousRestartCommands
-        return t.bare.indices.contains { i in cues.contains { t.bare[i...].starts(with: $0) } }
+        let english = t.bare.filter(englishWords.contains).count
+        return english > 0 && english * 100 >= t.bare.count * 10
+            && t.bare.indices.contains { i in cues.contains { t.bare[i...].starts(with: $0) } }
     }
 
     static func correct(_ text: String, parse: (Words) -> Parse?) -> (text: String, cuts: [Cut]) {
@@ -470,7 +489,7 @@ extension Disfluency {
                 continue
             }
             if m > 0, !saysIdiom(t, m), afterStopAllowed(t, m),
-               let edit = anchored(t, m, e, parse) ?? bare(t, m, e, parse) {
+               let edit = anchored(t, m, e, parse) ?? bare(t, m, e, parse), !quoted(t, edit) {
                 return edit
             }
             m = e
@@ -503,6 +522,13 @@ extension Disfluency {
             && afterStop.contains { t.bare[m...].starts(with: $0) }
     }
 
+    /// Inside a quotation, or across a quote mark: what someone else said stays as they said it.
+    private static func quoted(_ t: Transcript, _ edit: Edit) -> Bool {
+        let start = t.words[edit.first].lowerBound, end = t.words[edit.upto].lowerBound
+        return t.scalars[..<start].filter(quotes.contains).count % 2 == 1
+            || t.scalars[start..<end].contains(where: quotes.contains)
+    }
+
     /// "the rain I mean the sun": the words after the marker repeat the first words of what they replace.
     /// The nearest, longest anchor only: when it fails, a farther one is a weaker reading of the same marker.
     private static func anchored(_ t: Transcript, _ m: Int, _ e: Int, _ parse: (Words) -> Parse?) -> Edit? {
@@ -511,38 +537,67 @@ extension Disfluency {
                 let a = m - k - extra
                 guard a >= 0 else { break }
                 guard t.bare[a..<a + k] == t.bare[e..<e + k] else { continue }
-                let last = t.bare[m - 1]
-                guard !(a..<m - 1).contains(where: t.stops(after:)),
-                      // "tea or no tea", "I'm sorry I'm late": the marker belongs to the sentence.
-                      !closingWords.contains(last),
-                      !last.contains("'"), !last.contains("\u{2019}"),
-                      !(a..<a + k).contains(where: { isNumber(t, $0) }),
-                      let tree = Tree(t, from: t.sentenceStart(a), to: t.sentenceEnd(e), parse: parse),
-                      isMarker(tree, t, m..<e),
-                      let replaced = tree.phrase(t, a..<m), let first = tree.node(t, e), let anchor = tree.node(t, a),
-                      !tree.splitsNumber(tree.nodes(t, a..<m)),
-                      // "into main, I mean into develop": one preposition, two objects.
-                      tree.relation(anchor) == "case" && tree.relation(first) == "case"
-                        || tree.chain(from: first).contains(where: { sameKind(tree.tag($0), tree.tag(replaced)) }),
-                      !restatesClause(tree, t, a..<m, replaced, marker: m..<e)
-                else { return nil }
-                return Edit(first: a, upto: e, cut: .selfCorrection)
+                return repairs(t, a: a, k: k, marker: m..<e, parse) ? Edit(first: a, upto: e, cut: .selfCorrection) : nil
             }
         }
         return nil
     }
 
-    /// "with Peter I mean James": a name or a number, then another of the same kind that ends the clause.
+    private static func repairs(
+        _ t: Transcript, a: Int, k: Int, marker: Range<Int>, _ parse: (Words) -> Parse?
+    ) -> Bool {
+        let m = marker.lowerBound, e = marker.upperBound
+        let last = t.bare[m - 1]
+        // The repair says something the words it replaces did not: "There is no way, no, there is no way".
+        let taken = Set(t.bare[a..<m])
+        let repair = e + k..<max(e + k, min(t.sentenceEnd(e) + 1, e + (m - a) + 2))
+        guard !(a..<m - 1).contains(where: t.stops(after:)),
+              // "tea or no tea", "I'm sorry I'm late": the marker belongs to the sentence.
+              !closingWords.contains(last), !last.contains("'"), !last.contains("\u{2019}"),
+              !(a..<a + k).contains(where: { isNumber(t, $0) }),
+              !repair.isEmpty, repair.contains(where: { !taken.contains(t.bare[$0]) }),
+              !defines(t, before: a, marker: marker),
+              let tree = Tree(t, from: t.sentenceStart(a), to: t.sentenceEnd(e), parse: parse),
+              isMarker(tree, t, marker),
+              let replaced = tree.phrase(t, a..<m), let first = tree.node(t, e), let anchor = tree.node(t, a),
+              !tree.splitsNumber(tree.nodes(t, a..<m))
+        else { return false }
+        // "Wait, the build is broken, wait, the tests pass": a whole clause needs more than "the" to anchor it.
+        if k < 2, tree.nodes(t, a + k..<m).contains(where: { [.verb, .aux].contains(tree.tag($0)) }) { return false }
+        let chain = tree.chain(from: first)
+        // "into main, I mean into develop": one preposition, two objects.
+        let preposition = tree.relation(anchor) == "case" && tree.relation(first) == "case"
+        guard let parallel = chain.first(where: { sameKind(tree.tag($0), tree.tag(replaced)) })
+                ?? (preposition ? chain.dropFirst().first : nil)
+        else { return false }
+        // "Go with the plan, no, the plan has a flaw": the repair starts a clause of its own. After "actually"
+        // or "I mean" only a subject may be replaced by one: "I love New York, actually, New Jersey is better".
+        let subjectLike = explains(t, marker) ? subjects : subjects.union(["dislocated", "reparandum"])
+        if subjects.contains(tree.relation(parallel)) {
+            // A preposition left behind ("in the docs folder, sorry, the docs folder is empty") cannot take a
+            // subject. With any other repair it takes the new object.
+            if !subjectLike.contains(tree.relation(replaced)) || tree.orphans(t, a..<m, from: t.sentenceStart(a)) {
+                return false
+            }
+        }
+        return !restatesClause(tree, t, a..<m, replaced, marker: marker)
+    }
+
+    /// "with Peter I mean James": a name or a number, then another of the same kind that ends the clause. After
+    /// a full stop, "Let's make the road cleaner. I mean greener." swaps any noun or adjective, when the repair
+    /// is all the sentence says.
     private static func bare(_ t: Transcript, _ m: Int, _ e: Int, _ parse: (Words) -> Parse?) -> Edit? {
         let start = t.sentenceStart(m - 1)
+        let crossing = t.stops(after: m - 1)
         // Before the parse, which costs 5 to 15 ms: two capitalised words or two numbers.
         let capitalised = { (i: Int) in t.raw(i).first?.properties.isUppercase == true }
-        guard capitalised(m - 1) && capitalised(e) || isNumber(t, m - 1) && isNumber(t, e),
-              let tree = Tree(t, from: start, to: t.sentenceEnd(e), parse: parse),
-              let x = tree.node(t, m - 1), let y = tree.node(t, e),
-              tree.tag(x) == tree.tag(y), [.propn, .num].contains(tree.tag(x)),
+        guard crossing || capitalised(m - 1) && capitalised(e) || isNumber(t, m - 1) && isNumber(t, e),
               // "at three, I mean three sharp" swaps nothing.
               t.bare[m - 1] != t.bare[e],
+              let tree = Tree(t, from: start, to: t.sentenceEnd(e), parse: parse),
+              let x = tree.node(t, m - 1), let y = tree.node(t, e),
+              tree.tag(x) == tree.tag(y),
+              (crossing ? [.propn, .num, .noun, .adj] : [.propn, .num]).contains(tree.tag(x)),
               isMarker(tree, t, m..<e)
         else { return nil }
         let kind = tree.tag(x)
@@ -553,12 +608,23 @@ extension Disfluency {
         while to + 1 < t.words.count, !t.pauses(after: to), same(to + 1) { to += 1 }
         // A verb after the repair makes it a subject: "I told Peter, I mean, John was right".
         let next = to + 1 < t.words.count && !t.pauses(after: to) ? tree.node(t, to + 1) : nil
+        // "The score was 2 to 1, no, 3 to 1": the number is the end of a range.
+        let ranged = from >= 2 && connectors.contains(t.bare[from - 1]) && (isNumber(t, from - 2)
+            || tree.node(t, from - 2).map { tree.tag($0) == .num } == true)
         guard from > start, next.map({ ![.verb, .aux].contains(tree.tag($0)) }) ?? true, !isNumber(t, from - 1),
-              !["nsubj", "csubj", "expl"].contains(tree.relation(x)),
+              !ranged, !defines(t, before: from, marker: m..<e), !crossing || to + 1 == t.words.count || t.stops(after: to),
+              !subjects.contains(tree.relation(x)),
               // "at eight, or rather one if you feel fine" is a second option.
-              !["nsubj", "csubj", "expl", "conj"].contains(tree.relation(y))
+              !subjects.union(["conj"]).contains(tree.relation(y))
         else { return nil }
         return Edit(first: from, upto: e, cut: .selfCorrection)
+    }
+
+    /// "When I say Peter, I mean James", "By John I mean Johnny": "I mean" gives a meaning, it corrects nothing.
+    private static func defines(_ t: Transcript, before first: Int, marker: Range<Int>) -> Bool {
+        let mean = words(["mean", "meant"])
+        guard marker.contains(where: { mean.contains(t.bare[$0]) }) else { return false }
+        return first > 0 && defining.contains(t.bare[first - 1])
     }
 
     /// "He is not rude, I mean he is just tired": a whole clause again, after a marker that also explains.
@@ -566,18 +632,26 @@ extension Disfluency {
     private static func restatesClause(
         _ tree: Tree, _ t: Transcript, _ span: Range<Int>, _ replaced: Int, marker: Range<Int>
     ) -> Bool {
-        let explains = marker.contains { ["mean", "actually", "rather"].map { Array($0.unicodeScalars) }.contains(t.bare[$0]) }
-        return explains && tree.nodes(t, span).contains {
-            tree.head($0) == replaced && ["nsubj", "csubj", "expl"].contains(tree.relation($0))
+        explains(t, marker) && tree.nodes(t, span).contains {
+            tree.head($0) == replaced && subjects.contains(tree.relation($0))
         }
     }
 
-    /// "no" as a discourse word, not a determiner ("no way") or an answer ("I said no"); "I mean" with no
-    /// "that" or wh-word of its own ("what I mean is").
+    /// "I mean", "actually" and "or rather" also introduce an explanation; "no" and "sorry" only correct.
+    private static func explains(_ t: Transcript, _ marker: Range<Int>) -> Bool {
+        marker.contains { explaining.contains(t.bare[$0]) }
+    }
+
+    private static let explaining = words(["mean", "actually", "rather"])
+
+    /// "no" as a discourse word, not a determiner ("no way") or what a verb says ("He said no"); "I mean"
+    /// with no "that" or wh-word of its own ("what I mean is").
     private static func isMarker(_ tree: Tree, _ t: Transcript, _ run: Range<Int>) -> Bool {
         let repair = run.upperBound < t.words.count ? tree.node(t, run.upperBound) ?? Int.max : Int.max
         return run.allSatisfy { i in
             guard let n = tree.node(t, i) else { return false }
+            // A correction's "no" hangs on the repair after it. "He said no" and "voted no" hang it on the verb.
+            if t.bare[i] == Array("no".unicodeScalars), let up = tree.head(n), up < n { return false }
             let word = String(String.UnicodeScalarView(t.bare[i]))
             if tree.tag(n) == .intj || ["discourse", "reparandum"].contains(tree.relation(n)) { return true }
             switch word {
@@ -622,19 +696,40 @@ extension Disfluency {
             else { continue }
             var s = c - 1
             while s > 0, !t.stops(after: s - 1) { s -= 1 }
-            guard t.bare[s] == t.bare[d] || (t.stops(after: c - 1) && strong == d - c),
-                  let tree = Tree(t, from: t.sentenceStart(c), to: t.sentenceEnd(c), parse: parse)
-            else { continue }
-            // "let me restart, the server" is still the server.
+            let dropped = s..<c
+            guard !dropped.contains(where: { commandWords.contains(t.bare[$0]) }) else { continue }
+            let afterStop = t.stops(after: c - 1)
+            if strong == d - c {
+                guard t.bare[s] == t.bare[d] || afterStop else { continue }
+            } else {
+                guard afterStop, saysAgain(t, dropped, from: d) else { continue }
+            }
+            guard let tree = Tree(t, from: s, to: t.sentenceEnd(d), parse: parse) else { continue }
             let command = tree.nodes(t, c..<d)
+            // "let me restart, the server" is still the server.
             let takes = command.contains { w in
                 tree.children(of: w).contains {
                     !command.contains($0) && ["obj", "iobj", "obl", "xcomp", "ccomp"].contains(tree.relation($0))
                 }
             }
-            if !takes { return Edit(first: s, upto: d, cut: .restartCommand) }
+            // "The server is down. Let me restart. The server is up." restarts the server.
+            let thing = strong != d - c && tree.nodes(t, dropped).contains {
+                subjects.contains(tree.relation($0)) && [.noun, .propn].contains(tree.tag($0))
+            }
+            let edit = Edit(first: s, upto: d, cut: .restartCommand)
+            if !takes, !thing, !quoted(t, edit) { return edit }
         }
         return nil
+    }
+
+    /// The sentence after the command says the dropped one again with one or two words changed: "Let's make
+    /// the road cleaner. Let me restart. Let's make the road greener."
+    private static func saysAgain(_ t: Transcript, _ dropped: Range<Int>, from next: Int) -> Bool {
+        let again = next..<t.sentenceEnd(next) + 1
+        guard again.count == dropped.count, dropped.count >= 3 else { return false }
+        let pairs = zip(t.bare[dropped], t.bare[again])
+        let shared = pairs.prefix { $0 == $1 }.count
+        return shared >= 3 && pairs.filter { $0 != $1 }.count <= 2
     }
 }
 
@@ -696,6 +791,16 @@ private struct Tree {
         var chain = [word]
         while chain.count <= parse.count, let up = head(chain[chain.count - 1]), up >= word { chain.append(up) }
         return chain
+    }
+
+    /// A preposition or modifier said before transcript words `range` that belongs to their noun: cutting them
+    /// strands it. "in the docs folder, sorry, the docs folder is empty" strands "in".
+    func orphans(_ t: Transcript, _ range: Range<Int>, from start: Int) -> Bool {
+        let span = Set(nodes(t, range))
+        let modifiers: Set<String> = ["case", "det", "nummod", "amod", "compound", "nmod"]
+        return nodes(t, start..<range.lowerBound).contains { word in
+            modifiers.contains(relation(word)) && head(word).map(span.contains) == true
+        }
     }
 
     /// A number link from inside `span` to outside it: cutting there splits "two hundred".
