@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.19.0](https://github.com/znat/parrotflow/compare/v0.18.0...v0.19.0) (2026-10-15)
+
+
+### Features
+
+* **transforms:** ship github_refs as a script for split numbers and lists ([70530d6](https://github.com/znat/parrotflow/commit/70530d6b387e6d2a7c0bc28da6f08e811cebce6f))
+* **transforms:** ship github_refs as a script for split numbers and lists ([bb75abd](https://github.com/znat/parrotflow/commit/bb75abdfe5ef98661ad5d61922854d944ca8fe02))
+
+
+### Fixes
+
+* **transforms:** github_refs keeps lists that grow a digit ([b62b144](https://github.com/znat/parrotflow/commit/b62b1442a7df74d23055ceb50b539083c316bfd4))
+* **transforms:** github_refs leaves unlinked text and trailing counts alone ([328e2bd](https://github.com/znat/parrotflow/commit/328e2bd175e25f7146bde1bfe07e68d5983f61b5))
+
 ## [0.18.0](https://github.com/znat/parrotflow/compare/v0.17.0...v0.18.0) (2026-10-12)
 
 
