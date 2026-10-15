@@ -108,7 +108,12 @@ def rewriter(repo):
         parts = []
         for item in ITEM.finditer(run):
             sep = item.group("sep") or ""
-            if not parts or re.search(r"[a-z&]", sep) or (plural and "," in sep):
+            if not parts or re.search(r"[a-z&]", sep):
+                parts.append([item])
+            elif plural and "," in sep:
+                # "PRs 2604, 300 tests failed": a count, not a third reference.
+                if len(item.group("num")) != len(parts[-1][0].group("num")):
+                    break
                 parts.append([item])
             else:
                 parts[-1].append(item)
@@ -132,14 +137,23 @@ def rewriter(repo):
     return rewrite
 
 
+def linker(repo):
+    rewrite = rewriter(repo)
+
+    def replace(match):
+        spelled = spell(match)
+        linked = PATTERN.sub(rewrite, spelled)
+        return linked if linked != spelled else match.group(0)
+
+    return replace
+
+
 def main():
     if len(sys.argv) < 2 or not sys.argv[1].strip():
         sys.exit("github_refs: pass the repository URL, e.g. "
                  "github_refs.py https://github.com/OWNER/REPO")
     repo = sys.argv[1].strip().rstrip("/")
-    text = sys.stdin.read().rstrip("\n")
-    text = SPOKEN.sub(spell, text)
-    sys.stdout.write(PATTERN.sub(rewriter(repo), text))
+    sys.stdout.write(SPOKEN.sub(linker(repo), sys.stdin.read()))
 
 
 if __name__ == "__main__":

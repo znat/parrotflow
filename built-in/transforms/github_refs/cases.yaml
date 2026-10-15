@@ -86,6 +86,10 @@ cases:
     expect: "[#412](https://github.com/OWNER/REPO/pull/412), 300 tests failed"
   - probe: keep
     input: "the PRs 3 people opened"
+  - probe: keep
+    input: "the PRs twenty-six people opened"
+  - probe: keep
+    input: "PRs 2604, 300 tests failed"
 
   # Said as words: `numbers_en` leaves two halves side by side alone.
   - probe: words

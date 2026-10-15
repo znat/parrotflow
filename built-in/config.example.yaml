@@ -265,7 +265,8 @@ transforms:
 
   # "PR 412", "PR twenty-six thirty-four", "PRs 26 and 74" -> links, in
   # English and French. Defined, not in the pipeline: put your repository in
-  # place of OWNER/REPO and add `- transform: github_refs` after `numbers_en`.
+  # place of OWNER/REPO and add `- transform: github_refs` after the number
+  # stages (`numbers_en`, and `numbers_fr` if you use it).
   - name: github_refs
     description: spoken PR and issue numbers as links
     command: built-in/github_refs/github_refs.py https://github.com/OWNER/REPO
