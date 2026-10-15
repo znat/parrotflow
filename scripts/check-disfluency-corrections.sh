@@ -37,8 +37,11 @@ def fixture_for(languages):
         return fixture
     name = os.path.join(work, "fixture-%s.yaml" % "-".join(languages))
     if not os.path.exists(name):
+        text = base.replace("languages: [en]", "languages: [%s]" % ", ".join(languages))
+        if text == base:
+            sys.exit("  ✗ %s has no `languages: [en]` line to override" % fixture)
         with open(name, "w", encoding="utf-8") as out:
-            out.write(base.replace("languages: [en]", "languages: [%s]" % ", ".join(languages)))
+            out.write(text)
     return name
 
 
