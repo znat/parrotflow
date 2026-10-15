@@ -178,6 +178,13 @@ ODD = [
     "a b a b c",
 ]
 
+# "I I" as a stutter and as the letter: both ports must agree on each.
+LETTER_I = [
+    "World War I I think ended in 1918.", "Henry I I was king.", "Use option I I guess.",
+    "My initials are I I.", "Press I I to toggle.", "Type A I I B.", "The letters are A, I, I, B.",
+    "I I I think so.", "and I I mean it", "I, I want to go.", "so, I I guess it works",
+]
+
 # Characters Python 3.10 (Unicode 13) and Swift agree on, plus the ones the
 # rules treat specially. No scalar assigned after Unicode 13.
 SOUP = list("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") + list(
@@ -280,6 +287,8 @@ def inputs(extra):
         made.append(dress(mutate(text, rng), rng))
     made += [soup(rng) for _ in range(300)]
     made += [long_dictation(docs, rng) for _ in range(5)]
+    # After every draw from rng, so adding to it moves no other case.
+    made += LETTER_I
     made += extra
     seen = set()
     kept = []
