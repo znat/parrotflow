@@ -77,8 +77,8 @@ enum Disfluency {
         { firstRepeat($0) },
     ]
 
-    /// Longest repeated phrase considered; longer than 3 words is unseen in the archive.
-    private static let maxPhrase = 4
+    /// Longest repeated phrase considered: "how long does it take how long does it take" is five words.
+    private static let maxPhrase = 6
 
     /// A single letter begun and restarted: "I mean w we can try". A longer fragment ("in the tr in the
     /// terminal") is not reached. 2 examples in the archive, one a counter-example, so this is tuned to miss.
@@ -163,6 +163,19 @@ enum Disfluency {
         var raw: [[Unicode.Scalar]] { (i..<i + n).map(transcript.raw) }
         var neighbours: [[Unicode.Scalar]] { [transcript.raw(i - 1), transcript.raw(i + 2 * n)] }
         var stops: Bool { transcript.stops(after: i + n - 1) }
+
+        /// "I I want": the pronoun twice, not the letter. The run of "I" opens a clause and a lowercase word
+        /// follows it. "World War I I think", "Use option I I guess" and "My initials are I I." are letters.
+        var isPronounStutter: Bool {
+            guard n == 1, raw == [["I"]] else { return false }
+            var first = i, last = i + 1
+            while first > 0, transcript.raw(first - 1) == ["I"] { first -= 1 }
+            while transcript.raw(last + 1) == ["I"] { last += 1 }
+            let after = transcript.raw(last + 1)
+            guard after.count >= 2, after.first?.properties.isLowercase == true else { return false }
+            guard first > 0 else { return true }
+            return transcript.pauses(after: first - 1) || stutterBefore.contains(transcript.bare[first - 1])
+        }
     }
 
     /// Reasons to keep a repeat. Every one of these was a real transcript the naive rule damaged.
@@ -173,16 +186,18 @@ enum Disfluency {
         { $0.n > 1 && $0.unit.contains(where: conjunctions.contains) },
         // Spelled aloud: one doubled capital, or a run of letters. The capital test is n == 1 only: scanning
         // a longer run kept every English repeat holding "I", as in "I mean I mean".
-        // "I I want" is the pronoun twice: it is a spelling only among letters.
         { pair in
             (pair.n == 1 && pair.raw.allSatisfy { isLetter($0) && $0.first?.properties.isUppercase == true }
-                && (pair.raw != [["I"]] || pair.neighbours.contains(where: isLetter)))
+                && !pair.isPronounStutter)
                 || (pair.n > 1 && pair.raw.allSatisfy(isLetter))
         },
         // A lone lower-case letter is only a spelling if it sits among letters.
         { pair in
             pair.n == 1 && pair.raw.allSatisfy(isLetter) && pair.neighbours.contains(where: isLetter)
+                && !pair.isPronounStutter
         },
+        // "Sorry, sorry, I forgot" apologises once. A longer repeat holding it is a stutter.
+        { $0.n == 1 && $0.unit.first == Array("sorry".unicodeScalars) },
         { $0.stops },
     ]
 
@@ -194,7 +209,6 @@ enum Disfluency {
     private static let neverCollapse = words([
         "blah", "dot",                      // idiom, dictated ellipsis
         "yeah", "oui", "non", "si", "no",   // doubled is still one
-        "sorry",                            // "Sorry, sorry, I forgot"
         "that", "had",                      // "that that person said", "I had had enough"
         "very", "très", "tres",             // emphasis is the second copy
         "vous", "nous",                     // French reflexive: "vous vous êtes" needs both
@@ -251,6 +265,10 @@ enum Disfluency {
         "déjà", "encore", "peut", "veut", "doit", "faut", "peux", "veux", "dois",
         "vais", "va", "vont", "fait", "font",
     ])
+
+    /// What may come before a stuttered "I I": a function word or a filler opens a clause, a content word
+    /// ("option I I") names a letter.
+    private static let stutterBefore = functionWords.union(words(["well", "okay", "ok", "yeah", "um", "uh", "oh", "like"]))
 
     /// Short words this speaker says that no function-word list holds: "the sequence of pr proposed" is a
     /// pull request. The transform cannot read vocabulary.yaml, so the escape hatch is here.

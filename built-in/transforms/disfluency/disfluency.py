@@ -46,8 +46,9 @@ import re
 import sys
 from collections import namedtuple
 
-# Longest repeated phrase considered; longer than 3 words is unseen in the archive.
-MAX_PHRASE = 4
+# Longest repeated phrase considered: "how long does it take how long does it
+# take" is five words.
+MAX_PHRASE = 6
 
 # A word: apostrophes/accents included ("what's", "très"); a dot is not, so
 # "x.y" is two tokens.
@@ -56,13 +57,12 @@ WORD = re.compile(r"[\wÀ-ɏ'’-]+")
 # Said twice on purpose — collapsing changes the meaning.
 #   blah, dot            idiom / dictated ellipsis
 #   yeah/oui/non/si/no   affirmation or denial, doubled is still one
-#   sorry                "Sorry, sorry, I forgot" apologises once
 #   that, had            "that that person said", "I had had enough"
 #   very, très           emphasis is the second copy
 #   vous, nous           French reflexive: "vous vous êtes" needs both
 #   ha, la               laughter / singing
 NEVER_COLLAPSE = {
-    "blah", "dot", "yeah", "oui", "non", "si", "no", "sorry",
+    "blah", "dot", "yeah", "oui", "non", "si", "no",
     "that", "had", "very", "très", "tres", "vous", "nous", "ha", "la",
 }
 
@@ -86,6 +86,7 @@ CONJUNCTIONS = {"and", "or", "et", "ou", "but", "mais", "nor", "ni"}
 
 # Sentence boundary — two copies either side are two different sentences.
 SENTENCE_END = re.compile(r"[.!?…]")
+PAUSE = re.compile(r"[.!?…,;:]")
 
 
 def bare(word):
@@ -149,17 +150,42 @@ KEPT = (
     # A spelled name: one doubled capital letter, or a run that is all letters.
     # The capital-letter test is n == 1 only. Scanning a longer run with `any`
     # kept every English repeat holding "I" — "I mean I mean".
-    # "I I want" is the pronoun twice: it is a spelling only among letters.
     Guard("spelled aloud",
           lambda r: (r.n == 1 and is_letter(r.raw[0]) and r.raw[0].isupper()
-                     and (r.raw[0] != "I" or any(is_letter(x) for x in r.neighbours)))
+                     and not pronoun_stutter(r))
           or (r.n > 1 and all(is_letter(x) for x in r.raw))),
     # A lone lower-case letter is only a spelling if it sits among letters.
     Guard("a letter among letters",
           lambda r: r.n == 1 and is_letter(r.raw[0])
-          and any(is_letter(x) for x in r.neighbours)),
+          and any(is_letter(x) for x in r.neighbours) and not pronoun_stutter(r)),
+    # "Sorry, sorry, I forgot" apologises once. A longer repeat holding it is a
+    # stutter: "I'm sorry I'm sorry I was late".
+    Guard("an apology", lambda r: r.n == 1 and r.unit[0] == "sorry"),
     Guard("across a stop", lambda r: bool(SENTENCE_END.search(r.between))),
 )
+
+
+def pronoun_stutter(r):
+    """"I I want": the pronoun twice, not the letter. The run of "I" opens a
+    clause and a lowercase word follows it. "World War I I think", "Use option
+    I I guess" and "My initials are I I." are letters."""
+    if r.n != 1 or r.raw[0] != "I":
+        return False
+    words = r.words
+    first, last = r.i, r.i + 1
+    while first > 0 and words[first - 1].group() == "I":
+        first -= 1
+    while last + 1 < len(words) and words[last + 1].group() == "I":
+        last += 1
+    if last + 1 >= len(words):
+        return False
+    after = words[last + 1].group()
+    if len(after) < 2 or not after[0].islower():
+        return False
+    if first == 0:
+        return True
+    gap = r.text[words[first - 1].end():words[first].start()]
+    return bool(PAUSE.search(gap)) or bare(words[first - 1].group()) in STUTTER_BEFORE
 
 
 def protecting(tokens, i, n, text, words):
@@ -207,6 +233,10 @@ FUNCTION_WORDS = {
     "déjà", "encore", "peut", "veut", "doit", "faut", "peux", "veux", "dois",
     "vais", "va", "vont", "fait", "font",
 }
+
+# What may come before a stuttered "I I": a function word or a filler opens a
+# clause, a content word ("option I I") names a letter.
+STUTTER_BEFORE = FUNCTION_WORDS | {"well", "okay", "ok", "yeah", "um", "uh", "oh", "like"}
 
 # Short words this speaker says that no list of function words holds. `pr` in
 # "the sequence of pr proposed" is a pull request, not the start of "proposed".

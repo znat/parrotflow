@@ -33,13 +33,19 @@ DOC_SENTENCES = 300
 # parser will not load, which is how the check runs it.
 DECLINED = "corrections: the parser did not load"
 # Disfluency.correctionMarkers and the restart commands: the native stage asks
-# the parser only when one of these is said.
+# the parser only when one of these is said, in a text that reads as English.
 CUES = [c.split() for c in (
     "i mean", "i meant", "no", "sorry", "or rather", "wait", "actually",
     "scratch that", "strike that", "let me rephrase", "let me rephrase that",
     "let me restart", "let me start over", "let me start again", "let me try again",
     "let me say that again", "start over",
 )]
+# Disfluency.englishWords.
+ENGLISH = {
+    "the", "to", "with", "and", "is", "it", "you", "of", "for", "that", "we", "my", "this", "be", "are",
+    "was", "in", "have", "do", "not", "can", "will", "i", "i'm", "it's", "what", "at", "he", "she", "they",
+    "but", "just", "from", "your", "our", "if", "so",
+}
 
 _spec = importlib.util.spec_from_file_location("disfluency", SOURCE)
 disfluency = importlib.util.module_from_spec(_spec)
@@ -49,6 +55,9 @@ _spec.loader.exec_module(disfluency)
 
 def says_correction(text):
     words = [disfluency.bare(w.group()) for w in disfluency.WORD.finditer(text)]
+    english = sum(w in ENGLISH for w in words)
+    if english == 0 or english * 100 < len(words) * 15:
+        return False
     return any(words[i:i + len(cue)] == cue for i in range(len(words)) for cue in CUES)
 
 
