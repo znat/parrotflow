@@ -13,7 +13,7 @@
 # and blind-2 after their first run, and blind-3 added one guard. `user` is
 # what the user dictated. `audit` is an independent audit's adversarial inputs,
 # labelled here; a `#` line above a case says why when it is debatable.
-# `adversarial-1` to `adversarial-5` were written by fresh agents to break the
+# `adversarial-1` to `adversarial-6` were written by fresh agents to break the
 # rule; their first runs are in the pull request.
 
 cases:
@@ -2716,3 +2716,251 @@ cases:
   - set: adversarial-5
     probe: keep
     input: "the coaches are Dana uh Marcus uh Priya this season"
+  - set: adversarial-6
+    probe: correction
+    input: "the dog goes in room two, no, room three"
+    expect: "the dog goes in room three"
+  - set: adversarial-6
+    probe: correction
+    input: "bring the cat to Patel, sorry, to Nguyen"
+    expect: "bring the cat to Nguyen"
+  - set: adversarial-6
+    probe: correction
+    input: "we rehearse act two at six, no, at seven"
+    expect: "we rehearse act two at seven"
+  - set: adversarial-6
+    probe: correction
+    input: "the hike starts at the car park, I mean, at the lake"
+    expect: "the hike starts at the lake"
+  - set: adversarial-6
+    probe: correction
+    input: "I need a dozen rolls, actually, a dozen croissants"
+    expect: "I need a dozen croissants"
+  - set: adversarial-6
+    probe: correction
+    input: "file the return by Friday, no, by Monday"
+    expect: "file the return by Monday"
+  - set: adversarial-6
+    probe: correction
+    input: "the altos sit on the left, or rather, on the right"
+    expect: "the altos sit on the right"
+  - set: adversarial-6
+    probe: correction
+    input: "take the bus on Elm Street, no, on Oak Street"
+    expect: "take the bus on Oak Street"
+  - set: adversarial-6
+    probe: correction
+    input: "replace the front brake pads, sorry, the rear brake pads"
+    expect: "replace the rear brake pads"
+  - set: adversarial-6
+    probe: correction
+    input: "Pick up Max at noon, no, at one"
+    expect: "Pick up Max at one"
+  - set: adversarial-6
+    probe: correction
+    input: "Rex has a limp in his left leg, no, in his right leg"
+    expect: "Rex has a limp in his right leg"
+  - set: adversarial-6
+    probe: correction
+    input: "we need flour, I mean sugar"
+    expect: "we need sugar"
+  - set: adversarial-6
+    probe: correction
+    input: "book the vet for Tuesday. No, Thursday."
+    expect: "book the vet for Thursday."
+  - set: adversarial-6
+    probe: correction
+    input: "the bus leaves from gate four. Sorry, gate six."
+    expect: "the bus leaves from gate six."
+  - set: adversarial-6
+    probe: correction
+    input: "we start with the sopranos, or rather the tenors"
+    expect: "we start with the tenors"
+  - set: adversarial-6
+    probe: correction
+    input: "the loaf is rye, actually sourdough"
+    expect: "the loaf is sourdough"
+  - set: adversarial-6
+    probe: correction
+    input: "the booster is for Cleo. Ah no, Milo."
+    expect: "the booster is for Milo."
+  - set: adversarial-6
+    probe: correction
+    input: "the invoice goes to Ellis. Sorry, Marsh."
+    expect: "the invoice goes to Marsh."
+  - set: adversarial-6
+    probe: correction
+    input: "we meet at the trailhead, I mean the ridge"
+    expect: "we meet at the ridge"
+  - set: adversarial-6
+    probe: correction
+    input: "I'll bring the lemon tart. No, the plum tart."
+    expect: "I'll bring the plum tart."
+  - set: adversarial-6
+    probe: correction
+    input: "The clinic opens on Monday, I mean Tuesday."
+    expect: "The clinic opens on Tuesday."
+  - set: adversarial-6
+    probe: correction
+    input: "the van goes to Hill Road um to Mill Road"
+    expect: "the van goes to Mill Road"
+  - set: adversarial-6
+    probe: correction
+    input: "send it to Rosa uh Teresa"
+    expect: "send it to Teresa"
+  - set: adversarial-6
+    probe: correction
+    input: "the tenors enter on bar nine um no bar twelve"
+    expect: "the tenors enter on bar twelve"
+  - set: adversarial-6
+    probe: correction
+    input: "we pay the deposit in May er in June"
+    expect: "we pay the deposit in June"
+  - set: adversarial-6
+    probe: correction
+    input: "the cake needs butter erm no margarine"
+    expect: "the cake needs margarine"
+  - set: adversarial-6
+    probe: correction
+    input: "the route um goes to the weir uh to the bridge"
+    expect: "the route um goes to the bridge"
+  - set: adversarial-6
+    probe: correction
+    input: "Check the oil level. Scratch that. Check the coolant level."
+    expect: "Check the coolant level."
+  - set: adversarial-6
+    probe: correction
+    input: "the rehearsal is at nine. Strike that. The rehearsal is at ten."
+    expect: "The rehearsal is at ten."
+  - set: adversarial-6
+    probe: correction
+    input: "Route four stops at the school. Let me restart. Route five stops at the school."
+    expect: "Route five stops at the school."
+  - set: adversarial-6
+    probe: correction
+    input: "the audit is in June. scratch that. the audit is in July"
+    expect: "the audit is in July"
+  - set: adversarial-6
+    probe: correction
+    input: "Add rye to the order. Scratch that. Add spelt to the order."
+    expect: "Add spelt to the order."
+  - set: adversarial-6
+    probe: correction
+    input: "they sing the second verse, no, the third verse"
+    expect: "they sing the third verse"
+  - set: adversarial-6
+    probe: keep
+    input: "we have no spare tyres in the shop"
+  - set: adversarial-6
+    probe: keep
+    input: "there are no more seats on route nine"
+  - set: adversarial-6
+    probe: keep
+    input: "I mean it, the brakes are shot"
+  - set: adversarial-6
+    probe: keep
+    input: "it was, I mean, a long rehearsal"
+  - set: adversarial-6
+    probe: keep
+    input: "the dog said no to the treat"
+  - set: adversarial-6
+    probe: keep
+    input: "she said no, then walked out of the clinic"
+  - set: adversarial-6
+    probe: keep
+    input: "bring the tarts, the rolls, um the loaves, and the buns"
+  - set: adversarial-6
+    probe: keep
+    input: "the fare is ten to fifteen dollars"
+  - set: adversarial-6
+    probe: keep
+    input: "the bill was one hundred um twenty dollars"
+  - set: adversarial-6
+    probe: keep
+    input: "Is it the red bus? No, it is the blue one."
+  - set: adversarial-6
+    probe: keep
+    input: "Oh no, Bella is sick."
+  - set: adversarial-6
+    probe: keep
+    input: "ask Pia Moreno about the form"
+  - set: adversarial-6
+    probe: keep
+    input: "the bread has no salt and no sugar"
+  - set: adversarial-6
+    probe: keep
+    input: "the sign says 'no parking' by the barn"
+  - set: adversarial-6
+    probe: keep
+    input: "he told me 'I mean business' at the garage"
+  - set: adversarial-6
+    probe: keep
+    input: "I take the bus to school, no, I walk now"
+  - set: adversarial-6
+    probe: keep
+    input: "the van and the bus leave at six, no, the van leaves at seven"
+  - set: adversarial-6
+    probe: keep
+    input: "the repair is due on the fourth, I mean the fourth of May"
+  - set: adversarial-6
+    probe: keep
+    input: "I'm not sure, um, about the tax code"
+  - set: adversarial-6
+    probe: keep
+    input: "Actually, the bus is on time"
+  - set: adversarial-6
+    probe: keep
+    input: "Sorry, the bakery is closed on Mondays."
+  - set: adversarial-6
+    probe: keep
+    input: "I mean, the choir is great"
+  - set: adversarial-6
+    probe: keep
+    input: "submit the form no later than Friday"
+  - set: adversarial-6
+    probe: keep
+    input: "the cat likes to scratch that old post"
+  - set: adversarial-6
+    probe: keep
+    input: "Route one serves the west side. Let me start over. Tell the drivers about the new rota for the holidays."
+  - set: adversarial-6
+    probe: keep
+    input: "The bus is late. Let me restart the engine. It is cold."
+  - set: adversarial-6
+    probe: keep
+    input: "meet at nine um thirty at the rink"
+  - set: adversarial-6
+    probe: keep
+    input: "the dog and the cat uh the rabbit need shots"
+  - set: adversarial-6
+    probe: keep
+    input: "we walk for two hours, or rather a little more"
+  - set: adversarial-6
+    probe: keep
+    input: "I would rather walk than ride the bus"
+  - set: adversarial-6
+    probe: keep
+    input: "what I mean is the second bar"
+  - set: adversarial-6
+    probe: keep
+    input: "we bake rye um and sourdough"
+  - set: adversarial-6
+    probe: keep
+    input: "uh the vet closes at five"
+  - set: adversarial-6
+    probe: keep
+    input: "no way, the bus is full"
+  - set: adversarial-6
+    probe: keep
+    input: "the rolls are actually better warm"
+  - set: adversarial-6
+    probe: keep
+    input: "it takes twenty to thirty minutes"
+  - set: adversarial-6
+    probe: keep
+    input: "ponga el perro en la sala, no, en la cocina"
+    languages: [en, es]
+  - set: adversarial-6
+    probe: keep
+    input: "on part à huit heures, euh, à neuf heures"
+    languages: [en, fr]
