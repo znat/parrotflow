@@ -90,6 +90,12 @@ cases:
     input: "the PRs twenty-six people opened"
   - probe: keep
     input: "PRs 2604, 300 tests failed"
+  - probe: list
+    input: "PRs 9, 10, 11 are stacked"
+    expect: "[#9](https://github.com/OWNER/REPO/pull/9), [#10](https://github.com/OWNER/REPO/pull/10), [#11](https://github.com/OWNER/REPO/pull/11) are stacked"
+  - probe: list
+    input: "PRs 98, 99, 100, and 101"
+    expect: "[#98](https://github.com/OWNER/REPO/pull/98), [#99](https://github.com/OWNER/REPO/pull/99), [#100](https://github.com/OWNER/REPO/pull/100), and [#101](https://github.com/OWNER/REPO/pull/101)"
 
   # Said as words: `numbers_en` leaves two halves side by side alone.
   - probe: words

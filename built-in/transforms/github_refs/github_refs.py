@@ -111,8 +111,9 @@ def rewriter(repo):
             if not parts or re.search(r"[a-z&]", sep):
                 parts.append([item])
             elif plural and "," in sep:
-                # "PRs 2604, 300 tests failed": a count, not a third reference.
-                if len(item.group("num")) != len(parts[-1][0].group("num")):
+                # "PRs 2604, 300 tests failed": a shorter number is a count.
+                # A longer one is the next reference: "PRs 98, 99, 100".
+                if len(item.group("num")) < len(parts[-1][0].group("num")):
                     break
                 parts.append([item])
             else:
