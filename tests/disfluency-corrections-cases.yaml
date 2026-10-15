@@ -13,7 +13,7 @@
 # and blind-2 after their first run, and blind-3 added one guard. `user` is
 # what the user dictated. `audit` is an independent audit's adversarial inputs,
 # labelled here; a `#` line above a case says why when it is debatable.
-# `adversarial-1` to `adversarial-4` were written by fresh agents to break the
+# `adversarial-1` to `adversarial-5` were written by fresh agents to break the
 # rule; their first runs are in the pull request.
 
 cases:
@@ -2491,3 +2491,228 @@ cases:
     probe: keep
     input: "on se retrouve chez Paul, enfin, chez Luc"
     languages: [en, fr]
+  - set: adversarial-5
+    probe: correction
+    input: "book the crown fitting for Tuesday, no, for Thursday"
+    expect: "book the crown fitting for Thursday"
+  - set: adversarial-5
+    probe: correction
+    input: "we cut the rafters at forty degrees, sorry, at thirty degrees"
+    expect: "we cut the rafters at thirty degrees"
+  - set: adversarial-5
+    probe: correction
+    input: "send the invoice to Marta, actually Priya"
+    expect: "send the invoice to Priya"
+  - set: adversarial-5
+    probe: correction
+    input: "plant the tulips by the fence, I mean by the shed"
+    expect: "plant the tulips by the shed"
+  - set: adversarial-5
+    probe: correction
+    input: "The plane parks at gate twelve. Sorry, gate fourteen."
+    expect: "The plane parks at gate fourteen."
+  - set: adversarial-5
+    probe: correction
+    input: "i booked the room for the podcast on Monday no on Friday"
+    expect: "i booked the room for the podcast on Friday"
+  - set: adversarial-5
+    probe: correction
+    input: "we need three coaches, I mean four coaches"
+    expect: "we need four coaches"
+  - set: adversarial-5
+    probe: correction
+    input: "The library closes at six. No, seven."
+    expect: "The library closes at seven."
+  - set: adversarial-5
+    probe: correction
+    input: "order a box of gloves, or rather masks"
+    expect: "order a box of masks"
+  - set: adversarial-5
+    probe: correction
+    input: "the patient is allergic to latex um to penicillin"
+    expect: "the patient is allergic to penicillin"
+  - set: adversarial-5
+    probe: correction
+    input: "pass me the chisel uh the mallet"
+    expect: "pass me the mallet"
+  - set: adversarial-5
+    probe: correction
+    input: "we record on Wednesday um no Thursday"
+    expect: "we record on Thursday"
+  - set: adversarial-5
+    probe: correction
+    input: "the crew bus leaves from terminal two uh terminal three"
+    expect: "the crew bus leaves from terminal three"
+  - set: adversarial-5
+    probe: correction
+    input: "Pay the supplier in full. Scratch that. Pay half now."
+    expect: "Pay half now."
+  - set: adversarial-5
+    probe: correction
+    input: "The roof beam is eight metres. Strike that. The roof beam is six metres."
+    expect: "The roof beam is six metres."
+  - set: adversarial-5
+    probe: correction
+    input: "Welcome to the club. We meet on Mondays. Scratch that. We meet on Tuesdays."
+    expect: "Welcome to the club. We meet on Tuesdays."
+  - set: adversarial-5
+    probe: correction
+    input: "The team meets at noon on Saturday. Let me restart. The team meets at ten on Saturday."
+    expect: "The team meets at ten on Saturday."
+  - set: adversarial-5
+    probe: correction
+    input: "Our next guest writes about bees. Let me start over. Our next guest writes about wasps."
+    expect: "Our next guest writes about wasps."
+  - set: adversarial-5
+    probe: correction
+    input: "wear the retainer for ten hours no for twelve hours"
+    expect: "wear the retainer for twelve hours"
+  - set: adversarial-5
+    probe: correction
+    input: "on Monday no on Tuesday the pitch is free"
+    expect: "on Tuesday the pitch is free"
+  - set: adversarial-5
+    probe: correction
+    input: "On Monday, no, on Tuesday the pitch is free."
+    expect: "On Tuesday the pitch is free."
+  - set: adversarial-5
+    probe: correction
+    input: "ask Dr Patel erm Dr Okafor to sign it"
+    expect: "ask Dr Okafor to sign it"
+  - set: adversarial-5
+    probe: correction
+    input: "water the roses every day, I mean every other day"
+    expect: "water the roses every other day"
+  - set: adversarial-5
+    probe: correction
+    input: "add the deposit to the ledger sorry to the journal"
+    expect: "add the deposit to the journal"
+  - set: adversarial-5
+    probe: correction
+    input: "I'll bring the oranges. No, lemons."
+    expect: "I'll bring the lemons."
+  - set: adversarial-5
+    probe: correction
+    input: "the hygienist is Dana. Actually, Carla."
+    expect: "the hygienist is Carla."
+  - set: adversarial-5
+    probe: correction
+    input: "we sand it with 120 grit, I mean 180 grit"
+    expect: "we sand it with 180 grit"
+  - set: adversarial-5
+    probe: correction
+    input: "the audit is due Friday uh no Monday"
+    expect: "the audit is due Monday"
+  - set: adversarial-5
+    probe: correction
+    input: "reserve a table for four um for six"
+    expect: "reserve a table for six"
+  - set: adversarial-5
+    probe: correction
+    input: "Move the match to the south field. Scratch that. Keep it on the north field."
+    expect: "Keep it on the north field."
+  - set: adversarial-5
+    probe: correction
+    input: "tell the crew to board at gate B, no, gate C"
+    expect: "tell the crew to board at gate C"
+  - set: adversarial-5
+    probe: keep
+    input: "we have no volunteers for the Saturday shift"
+  - set: adversarial-5
+    probe: keep
+    input: "send the claim no later than Friday"
+  - set: adversarial-5
+    probe: keep
+    input: "I mean it when I say the saw stays locked"
+  - set: adversarial-5
+    probe: keep
+    input: "we sell pansies uh petunias uh marigolds and geraniums"
+  - set: adversarial-5
+    probe: keep
+    input: "the dentist and the hygienist or the receptionist will call you"
+  - set: adversarial-5
+    probe: keep
+    input: "a mortise means a slot cut into the wood"
+  - set: adversarial-5
+    probe: keep
+    input: "she said \"no, the other one\" and walked off"
+  - set: adversarial-5
+    probe: keep
+    input: "the committee said no to the budget"
+  - set: adversarial-5
+    probe: keep
+    input: "the kids in this league are aged six to eight"
+  - set: adversarial-5
+    probe: keep
+    input: "the invoice total is one hundred uh twenty five dollars"
+  - set: adversarial-5
+    probe: keep
+    input: "the flight was late, actually the whole rotation was late"
+  - set: adversarial-5
+    probe: keep
+    input: "please call Anna Marie about the loan"
+  - set: adversarial-5
+    probe: keep
+    input: "Did you lock the shed? No, the key is with Sam."
+  - set: adversarial-5
+    probe: keep
+    input: "Oh no, the goalkeeper is sick."
+  - set: adversarial-5
+    probe: keep
+    input: "put chalk on the list um no blue chalk"
+  - set: adversarial-5
+    probe: keep
+    input: "quiero la mesa para el jueves, no, para el viernes"
+    languages: [en, es]
+  - set: adversarial-5
+    probe: keep
+    input: "je veux le rendez-vous mardi, non, jeudi"
+    languages: [en, fr]
+  - set: adversarial-5
+    probe: keep
+    input: "Sorry, the printer in the library is jammed."
+  - set: adversarial-5
+    probe: keep
+    input: "the new pump actually works better than the old pump"
+  - set: adversarial-5
+    probe: keep
+    input: "we use screws, not nails, for the deck"
+  - set: adversarial-5
+    probe: keep
+    input: "the guest today is um Professor Okoye"
+  - set: adversarial-5
+    probe: keep
+    input: "the cat will scratch that sofa again"
+  - set: adversarial-5
+    probe: keep
+    input: "Let me restart the router before the flight briefing."
+  - set: adversarial-5
+    probe: keep
+    input: "We numb the gum. Let me start over. First we explain the procedure to the patient."
+  - set: adversarial-5
+    probe: keep
+    input: "please scratch that item off the agenda"
+  - set: adversarial-5
+    probe: keep
+    input: "no no that door opens outward"
+  - set: adversarial-5
+    probe: keep
+    input: "We closed the books on time. Actually the auditor found two errors."
+  - set: adversarial-5
+    probe: keep
+    input: "we ship on the thirtieth, I mean the thirtieth of October"
+  - set: adversarial-5
+    probe: keep
+    input: "The board gave a firm no. Next item."
+  - set: adversarial-5
+    probe: keep
+    input: "pull the cart about um fifty or sixty feet"
+  - set: adversarial-5
+    probe: keep
+    input: "do you want the gold crown or the porcelain crown?"
+  - set: adversarial-5
+    probe: keep
+    input: "a very um sharp blade is best for the dovetail"
+  - set: adversarial-5
+    probe: keep
+    input: "the coaches are Dana uh Marcus uh Priya this season"

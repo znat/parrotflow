@@ -629,6 +629,8 @@ extension Disfluency {
               !closingWords.contains(last), !last.contains("'"), !last.contains("\u{2019}"),
               !(a..<a + k).contains(where: { isNumber(t, $0) }),
               !repair.isEmpty, repair.contains(where: { !taken.contains(t.bare[$0]) }),
+              // "the thirtieth, I mean the thirtieth of October" says it again and adds; it takes nothing back.
+              !t.bare[e...].starts(with: t.bare[a..<m]),
               !defines(t, before: a, marker: marker),
               let tree = Tree(t, from: t.sentenceStart(a), to: t.sentenceEnd(e), parse: parse),
               isMarker(tree, t, cue),
