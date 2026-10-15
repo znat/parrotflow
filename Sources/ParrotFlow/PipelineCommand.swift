@@ -304,7 +304,7 @@ enum PipelineCommand {
     /// a multi-line email in the middle of a variable listing makes the listing
     /// unreadable for the one value nobody needed it for.
     private static func printVars(_ scope: Scope) {
-        for path in scope.paths where path != "text" {
+        for path in scope.paths where path != "text" && path != "asr.text" {
             guard let value = scope[path] else { continue }
             print("var   \(path) = \(value.described)")
         }

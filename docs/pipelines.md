@@ -1208,7 +1208,8 @@ work. `tests/pipelines/protected.yaml` holds both halves down.
 Before any stage runs, the scope already holds `text`, `app`, `bundle_id`,
 `language`, every named word list under `lists.*` — see
 [configuration.md](configuration.md#lists) — and what transcription measured:
-`asr.confidence`, `asr.duration`, `asr.processing`, `asr.words`. On a dictation
+`asr.confidence`, `asr.duration`, `asr.processing`, `asr.words`, and `asr.text`,
+the transcript before any stage changed it. On a dictation
 it also holds `press.run`, which says which hotkey press this transcript came
 from. Dictations overlap, so a stage that reads something captured at the press
 has to ask for its own — `input` does. It is absent off the hotkey path,

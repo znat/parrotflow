@@ -711,6 +711,7 @@ struct Pipeline: Equatable, Codable {
         // app agrees about what a condition can read. `--pipeline` and a live
         // dictation differ only in what they know, never in what they call it.
         scope.set("text", .string(output))
+        if scope["asr.text"] == nil { scope.set("asr.text", .string(output)) }
         if let app {
             scope.set("app", .string(app.name))
             scope.set("bundle_id", .string(app.bundleID))
@@ -1440,7 +1441,11 @@ struct Pipeline: Equatable, Codable {
         case .native(.disfluency):
             var language = "en"
             if case .string(let detected)? = scope["language"] { language = detected }
-            let done = await Disfluency.clean(text, language: language) { await SyrinxModel.shared.ready() }
+            var original: String?
+            if case .string(let said)? = scope["asr.text"] { original = said }
+            let done = await Disfluency.clean(text, original: original, language: language) {
+                await SyrinxModel.shared.ready()
+            }
             Pipeline.logRewrite(by: "transform \(name)", from: text, to: done.text)
             var applied: [String] = []
             for cut in done.applied where !applied.contains(cut) { applied.append(cut) }

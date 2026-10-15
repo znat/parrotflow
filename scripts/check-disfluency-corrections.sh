@@ -29,17 +29,20 @@ import yaml
 binary, fixture, path, work = sys.argv[1:5]
 cases = yaml.safe_load(open(path, encoding="utf-8"))["cases"]
 VAR = re.compile(r"var   (\S+) = (.*)")
-base = open(fixture, encoding="utf-8").read()
 
 
-def fixture_for(languages):
+def fixture_for(case):
+    """`pipeline: fillers` runs tests/pipelines/disfluency-fillers.yaml; `languages:` overrides `[en]`."""
+    chosen = fixture.replace("disfluency-native", "disfluency-" + case.get("pipeline", "native"))
+    languages = case.get("languages")
     if not languages:
-        return fixture
-    name = os.path.join(work, "fixture-%s.yaml" % "-".join(languages))
+        return chosen
+    name = os.path.join(work, "fixture-%s-%s.yaml" % (case.get("pipeline", "native"), "-".join(languages)))
     if not os.path.exists(name):
-        text = base.replace("languages: [en]", "languages: [%s]" % ", ".join(languages))
-        if text == base:
-            sys.exit("  ✗ %s has no `languages: [en]` line to override" % fixture)
+        source = open(chosen, encoding="utf-8").read()
+        text = source.replace("languages: [en]", "languages: [%s]" % ", ".join(languages))
+        if text == source:
+            sys.exit("  ✗ %s has no `languages: [en]` line to override" % chosen)
         with open(name, "w", encoding="utf-8") as out:
             out.write(text)
     return name
@@ -47,7 +50,7 @@ def fixture_for(languages):
 
 def run(case):
     out = subprocess.run(
-        [binary, "--pipeline", fixture_for(case.get("languages")), case["input"], "--quiet", "--warm", "--vars"],
+        [binary, "--pipeline", fixture_for(case), case["input"], "--quiet", "--warm", "--vars"],
         capture_output=True, text=True, encoding="utf-8", timeout=120,
     ).stdout
     lines = out.split("\n")
@@ -72,8 +75,8 @@ for case, (got, found) in zip(cases, results):
     if case.get("probe") == "unscored":
         counts["unscored"] += 1
         continue
-    if "expect" not in case:
-        verdict = "kept" if got == case["input"] else "changed"
+    if case.get("probe") == "keep" or "expect" not in case:
+        verdict = "kept" if got == case.get("expect", case["input"]) else "changed"
     elif got == case["expect"]:
         verdict = "fixed"
     elif got == case["input"]:

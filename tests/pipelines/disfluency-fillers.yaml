@@ -1,0 +1,20 @@
+# The shipped order: the `fillers` table removes hesitations before the
+# native stage, which reads them back from the transcript the pipeline was
+# handed. scripts/check-disfluency-corrections.sh runs a case here when it
+# says `pipeline: fillers`.
+languages: [en]
+lists:
+  fillers_en: ["uh-huh", "mm-hmm", "erm", "mhm", "um", "uh", "hm"]
+transforms:
+  - name: fillers
+    description: delete hesitation sounds
+    replace:
+      "": ['/[,]?\s*\b(?:{{fillers_en}})\b[,]?/',
+           '/[,]?\s*\bu+[hm]+\b[,]?/']
+  - name: disfluency
+    description: delete repeats and false starts
+    native: disfluency
+
+pipeline:
+  - transform: fillers
+  - transform: disfluency

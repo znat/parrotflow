@@ -29,17 +29,18 @@ enum Disfluency {
 
     /// The corrections run last: by then "I mean I mean" is one marker. `parser` is asked only for English
     /// text that says a marker or a restart command. It waits for the parser, and fails only when the load did.
+    /// `original` is the transcript before any stage: the hesitations a `fillers` table removed are cues.
     static func clean(
-        _ text: String, language: String, parser: () async -> Result<Parser, Error>
+        _ text: String, original: String? = nil, language: String, parser: () async -> Result<Parser, Error>
     ) async -> Cleaned {
         let done = collapse(text)
         var cleaned = Cleaned(text: done.text, applied: done.cuts.map(\.rawValue), declined: "")
-        guard language == "en", mentionsCorrection(done.text) else { return cleaned }
+        guard language == "en", mentionsCorrection(done.text, original: original) else { return cleaned }
         switch await parser() {
         case .failure(let error):
             cleaned.declined = "corrections: the parser did not load (\(error.localizedDescription))"
         case .success(let parser):
-            let fixed = correct(done.text) { parser.parse(words: $0, language: "en") }
+            let fixed = correct(done.text, original: original) { parser.parse(words: $0, language: "en") }
             cleaned.text = fixed.text
             cleaned.applied += fixed.cuts.map(\.rawValue)
         }
@@ -419,6 +420,20 @@ extension Disfluency {
     private static let correctionMarkers = phrases([
         "i mean", "i meant", "no", "sorry", "or rather", "wait", "actually", "scratch that", "strike that",
     ])
+    /// Heard between a slip and its repair: "uh", "umm", "uhm", "er", "erm", "hm". A `fillers` table may have
+    /// removed them before this stage runs.
+    private static func hesitates(_ word: [Unicode.Scalar]) -> Bool {
+        if [["e", "r"], ["e", "r", "m"], ["h", "m"], ["h", "m", "m"]].contains(word) { return true }
+        let held = word.drop { $0 == "u" }
+        return held.count < word.count && !held.isEmpty && held.allSatisfy { $0 == "h" || $0 == "m" }
+    }
+    /// They may open a marker, "Ah no, James.", but say nothing on their own.
+    private static let openers = words(["ah", "oh"])
+    /// A word right after "no" that "no" cannot be the determiner of: "some pork no some chicken".
+    private static let determiners = words([
+        "the", "a", "an", "some", "this", "that", "these", "those", "my", "your", "his", "her", "its", "our",
+        "their", "any",
+    ])
     /// After a full stop. "Sorry" there apologises again, and "no" after a question answers it.
     private static let afterStop = phrases(["i mean", "i meant", "no"])
     /// The marker in its ordinary sense, said before the very word a restart would repeat.
@@ -454,16 +469,21 @@ extension Disfluency {
     private static let subjects: Set<String> = ["nsubj", "csubj", "expl"]
     private static let quotes: Set<Unicode.Scalar> = ["\"", "\u{201C}", "\u{201D}", "\u{AB}", "\u{BB}"]
 
-    /// The parser is asked only when one of these is said, in a text that reads as English.
-    static func mentionsCorrection(_ text: String) -> Bool {
+    /// The parser is asked only when one of these is said or a hesitation was heard, in a text that reads as
+    /// English.
+    static func mentionsCorrection(_ text: String, original: String? = nil) -> Bool {
         let t = Transcript(Array(text.unicodeScalars))
         let cues = correctionMarkers + restartCommands + ambiguousRestartCommands
         let english = t.bare.filter(englishWords.contains).count
+        let heard = (original.map { Transcript(Array($0.unicodeScalars)).bare } ?? t.bare).contains(where: hesitates)
         return english > 0 && english * 100 >= t.bare.count * 10
-            && t.bare.indices.contains { i in cues.contains { t.bare[i...].starts(with: $0) } }
+            && (heard || t.bare.indices.contains { i in cues.contains { t.bare[i...].starts(with: $0) } })
     }
 
-    static func correct(_ text: String, parse: (Words) -> Parse?) -> (text: String, cuts: [Cut]) {
+    static func correct(
+        _ text: String, original: String? = nil, parse: (Words) -> Parse?
+    ) -> (text: String, cuts: [Cut]) {
+        let said = original.map { Transcript(Array($0.unicodeScalars)) }
         var t = Transcript(Array(text.unicodeScalars))
         var cuts: [Cut] = []
         // A sentence a cut did not touch is asked about again after it.
@@ -474,27 +494,61 @@ extension Disfluency {
             parsed[words.text] = .some(tree)
             return tree
         }
-        while let edit = firstCorrection(t, remembered) ?? firstRestartCommand(t, remembered) {
+        while let edit = firstCorrection(t, heard: said.map { removedHesitations(t, said: $0) } ?? [], remembered)
+                ?? firstRestartCommand(t, remembered) {
             cuts.append(edit.cut)
             t = t.cut(edit.first, upto: edit.upto)
         }
         return (String(String.UnicodeScalarView(t.scalars)), cuts)
     }
 
-    private static func firstCorrection(_ t: Transcript, _ parse: (Words) -> Parse?) -> Edit? {
-        var m = 0
-        while m < t.words.count {
-            guard let e = markerEnd(t, at: m) else {
-                m += 1
-                continue
-            }
-            if m > 0, !saysIdiom(t, m), afterStopAllowed(t, m),
-               let edit = anchored(t, m, e, parse) ?? bare(t, m, e, parse), !quoted(t, edit) {
-                return edit
-            }
-            m = e
+    /// Where the speaker signalled a correction: the marker words, none when the only sign is a hesitation a
+    /// `fillers` table removed, and whether a hesitation was heard there.
+    private struct Cue {
+        let run: Range<Int>
+        let hesitated: Bool
+        /// A marker word was said, not only a hesitation.
+        let spoken: Bool
+    }
+
+    private static func firstCorrection(_ t: Transcript, heard: Set<Int>, _ parse: (Words) -> Parse?) -> Edit? {
+        for cue in cues(t, heard: heard) {
+            let m = cue.run.lowerBound, e = cue.run.upperBound
+            guard m > 0, e < t.words.count, !saysIdiom(t, m), afterStopAllowed(t, cue) else { continue }
+            let edit = anchored(t, cue, parse) ?? bare(t, cue, parse)
+            if let edit, !quoted(t, edit) { return edit }
         }
         return nil
+    }
+
+    private static func cues(_ t: Transcript, heard: Set<Int>) -> [Cue] {
+        var found: [Cue] = []
+        var m = 0
+        while m < t.words.count {
+            if let e = markerEnd(t, at: m) {
+                let run = m..<e
+                let spoken = run.contains { !hesitates(t.bare[$0]) && !openers.contains(t.bare[$0]) }
+                let hesitated = heard.contains(m - 1) || run.contains { hesitates(t.bare[$0]) }
+                found.append(Cue(run: run, hesitated: hesitated, spoken: spoken))
+                m = e
+            } else {
+                if heard.contains(m - 1) { found.append(Cue(run: m..<m, hesitated: true, spoken: false)) }
+                m += 1
+            }
+        }
+        return found
+    }
+
+    /// Gaps after word `i` of `t` where the original transcript said a hesitation that an earlier stage removed:
+    /// its two neighbours sit side by side now, once in the whole text.
+    private static func removedHesitations(_ t: Transcript, said: Transcript) -> Set<Int> {
+        let kept = said.bare.indices.filter { !hesitates(said.bare[$0]) }
+        var gaps = Set<Int>()
+        for (left, right) in zip(kept, kept.dropFirst()) where right > left + 1 {
+            let at = t.bare.indices.dropLast().filter { t.bare[$0] == said.bare[left] && t.bare[$0 + 1] == said.bare[right] }
+            if at.count == 1 { gaps.insert(at[0]) }
+        }
+        return gaps
     }
 
     /// "sorry for the delay", but not "sorry, to Tim".
@@ -507,19 +561,29 @@ extension Disfluency {
     /// Where a run of markers starting at `m` ends: "no, sorry, I mean" is one. Nil when no word follows it.
     private static func markerEnd(_ t: Transcript, at m: Int) -> Int? {
         var end = m
-        while let marker = correctionMarkers.first(where: { t.bare[end...].starts(with: $0) }) {
-            end += marker.count
+        while end < t.words.count, openers.contains(t.bare[end]) { end += 1 }
+        let opened = end
+        while end < t.words.count {
+            if hesitates(t.bare[end]) {
+                end += 1
+            } else if let marker = correctionMarkers.first(where: { t.bare[end...].starts(with: $0) }) {
+                end += marker.count
+            } else {
+                break
+            }
         }
-        guard end > m, end < t.words.count, !(m..<end).contains(where: t.stops(after:)) else { return nil }
+        guard end > opened, end < t.words.count, !(m..<end).contains(where: t.stops(after:)) else { return nil }
         return end
     }
 
-    /// A stop before the marker is crossed only by a full stop and a marker that does not answer.
-    private static func afterStopAllowed(_ t: Transcript, _ m: Int) -> Bool {
+    /// A stop before the marker is crossed only by a full stop and a spoken marker that does not answer.
+    private static func afterStopAllowed(_ t: Transcript, _ cue: Cue) -> Bool {
+        let m = cue.run.lowerBound
         guard t.stops(after: m - 1) else { return true }
         let gap = t.scalars[t.words[m - 1].upperBound..<t.words[m].lowerBound]
-        return gap.allSatisfy { !$0.isSentenceEnd || $0 == "." }
-            && afterStop.contains { t.bare[m...].starts(with: $0) }
+        let said = cue.run.first { !hesitates(t.bare[$0]) && !openers.contains(t.bare[$0]) }
+        return cue.spoken && gap.allSatisfy { !$0.isSentenceEnd || $0 == "." }
+            && said.map { at in afterStop.contains { t.bare[at...].starts(with: $0) } } == true
     }
 
     /// Inside a quotation, or across a quote mark: what someone else said stays as they said it.
@@ -531,14 +595,15 @@ extension Disfluency {
 
     /// "the rain I mean the sun": the words after the marker repeat the first words of what they replace.
     /// The nearest, longest anchor only: when it fails, a farther one is a weaker reading of the same marker.
-    private static func anchored(_ t: Transcript, _ m: Int, _ e: Int, _ parse: (Words) -> Parse?) -> Edit? {
+    private static func anchored(_ t: Transcript, _ cue: Cue, _ parse: (Words) -> Parse?) -> Edit? {
+        let m = cue.run.lowerBound, e = cue.run.upperBound
         for k in stride(from: 3, through: 1, by: -1) where e + k <= t.words.count {
             for extra in 1...3 {
                 let a = m - k - extra
                 guard a >= 0 else { break }
                 guard t.bare[a..<a + k] == t.bare[e..<e + k] else { continue }
                 if t.stops(after: m - 1), saidBefore(t, a..<a + k) { return nil }
-                return repairs(t, a: a, k: k, marker: m..<e, parse) ? Edit(first: a, upto: e, cut: .selfCorrection) : nil
+                return repairs(t, a: a, k: k, cue: cue, parse) ? Edit(first: a, upto: e, cut: .selfCorrection) : nil
             }
         }
         return nil
@@ -549,10 +614,8 @@ extension Disfluency {
         (t.sentenceStart(anchor.lowerBound)..<anchor.lowerBound).contains { t.bare[$0...].starts(with: t.bare[anchor]) }
     }
 
-    private static func repairs(
-        _ t: Transcript, a: Int, k: Int, marker: Range<Int>, _ parse: (Words) -> Parse?
-    ) -> Bool {
-        let m = marker.lowerBound, e = marker.upperBound
+    private static func repairs(_ t: Transcript, a: Int, k: Int, cue: Cue, _ parse: (Words) -> Parse?) -> Bool {
+        let marker = cue.run, m = marker.lowerBound, e = marker.upperBound
         let last = t.bare[m - 1]
         // The repair says something the words it replaces did not: "There is no way, no, there is no way".
         let taken = Set(t.bare[a..<m])
@@ -564,7 +627,7 @@ extension Disfluency {
               !repair.isEmpty, repair.contains(where: { !taken.contains(t.bare[$0]) }),
               !defines(t, before: a, marker: marker),
               let tree = Tree(t, from: t.sentenceStart(a), to: t.sentenceEnd(e), parse: parse),
-              isMarker(tree, t, marker),
+              isMarker(tree, t, cue),
               let replaced = tree.phrase(t, a..<m), let first = tree.node(t, e), let anchor = tree.node(t, a),
               !tree.splitsNumber(tree.nodes(t, a..<m))
         else { return false }
@@ -576,6 +639,11 @@ extension Disfluency {
         guard let parallel = chain.first(where: { sameKind(tree.tag($0), tree.tag(replaced)) })
                 ?? (preposition ? chain.dropFirst().first : nil)
         else { return false }
+        // With only a hesitation to go on, "to Paris um to Rome and to Berlin" is a list said slowly.
+        if !cue.spoken, tree.relation(parallel) == "conj"
+            || (e + k..<max(e + k, t.sentenceEnd(e) + 1)).contains(where: { t.bare[$0...].starts(with: t.bare[a..<a + k]) }) {
+            return false
+        }
         // "Go with the plan, no, the plan has a flaw": the repair starts a clause of its own. After "actually"
         // or "I mean" only a subject may be replaced by one: "I love New York, actually, New Jersey is better".
         let subjectLike = explains(t, marker) ? subjects : subjects.union(["dislocated", "reparandum"])
@@ -592,19 +660,20 @@ extension Disfluency {
     /// "with Peter I mean James": a name or a number, then another of the same kind that ends the clause. After
     /// a full stop, "Let's make the road cleaner. I mean greener." swaps any noun or adjective, when the repair
     /// is all the sentence says.
-    private static func bare(_ t: Transcript, _ m: Int, _ e: Int, _ parse: (Words) -> Parse?) -> Edit? {
+    /// "with Peter I mean James", "some pork, I mean chicken": one name, number, noun or adjective for another
+    /// of the same kind, ending the clause. A hesitation alone swaps only a name: "with Peter uh James".
+    private static func bare(_ t: Transcript, _ cue: Cue, _ parse: (Words) -> Parse?) -> Edit? {
+        let m = cue.run.lowerBound, e = cue.run.upperBound
         let start = t.sentenceStart(m - 1)
         let crossing = t.stops(after: m - 1)
-        // Before the parse, which costs 5 to 15 ms: two capitalised words or two numbers.
-        let capitalised = { (i: Int) in t.raw(i).first?.properties.isUppercase == true }
-        guard crossing || capitalised(m - 1) && capitalised(e) || isNumber(t, m - 1) && isNumber(t, e),
-              // "at three, I mean three sharp" swaps nothing.
-              t.bare[m - 1] != t.bare[e],
+        // A hesitation inside a number is the number said slowly: "two hundred uh 50".
+        let kinds: [UPOS] = cue.spoken ? [.propn, .num, .noun, .adj] : [.propn]
+        // "at three, I mean three sharp" swaps nothing.
+        guard t.bare[m - 1] != t.bare[e],
               let tree = Tree(t, from: start, to: t.sentenceEnd(e), parse: parse),
               let x = tree.node(t, m - 1), let y = tree.node(t, e),
-              tree.tag(x) == tree.tag(y),
-              (crossing ? [.propn, .num, .noun, .adj] : [.propn, .num]).contains(tree.tag(x)),
-              isMarker(tree, t, m..<e)
+              tree.tag(x) == tree.tag(y), kinds.contains(tree.tag(x)),
+              isMarker(tree, t, cue)
         else { return nil }
         let kind = tree.tag(x)
         let same = { (i: Int) in tree.node(t, i).map { tree.tag($0) == kind } ?? false }
@@ -617,7 +686,10 @@ extension Disfluency {
         // "The score was 2 to 1, no, 3 to 1": the number is the end of a range.
         let ranged = from >= 2 && connectors.contains(t.bare[from - 1]) && (isNumber(t, from - 2)
             || tree.node(t, from - 2).map { tree.tag($0) == .num } == true)
-        guard from > start, next.map({ ![.verb, .aux].contains(tree.tag($0)) }) ?? true, !isNumber(t, from - 1),
+        // "Peter um James and Mary": a list said slowly, when nothing but the hesitation marks it.
+        let listed = !cue.spoken && from > 0 && (conjunctions.contains(t.bare[from - 1]) || t.pauses(after: from - 1)
+            || (to + 1 < t.words.count && conjunctions.contains(t.bare[to + 1])))
+        guard from > start, !listed, next.map({ ![.verb, .aux].contains(tree.tag($0)) }) ?? true, !isNumber(t, from - 1),
               !ranged, !defines(t, before: from, marker: m..<e), !crossing || to + 1 == t.words.count || t.stops(after: to),
               !subjects.contains(tree.relation(x)),
               !subjects.contains(tree.relation(y)),
@@ -653,7 +725,8 @@ extension Disfluency {
 
     /// "no" as a discourse word, not a determiner ("no way") or what a verb says ("He said no"); "I mean"
     /// with no "that" or wh-word of its own ("what I mean is").
-    private static func isMarker(_ tree: Tree, _ t: Transcript, _ run: Range<Int>) -> Bool {
+    private static func isMarker(_ tree: Tree, _ t: Transcript, _ cue: Cue) -> Bool {
+        let run = cue.run
         let repair = run.upperBound < t.words.count ? tree.node(t, run.upperBound) ?? Int.max : Int.max
         return run.allSatisfy { i in
             guard let n = tree.node(t, i) else { return false }
@@ -663,8 +736,10 @@ extension Disfluency {
             if tree.tag(n) == .intj || ["discourse", "reparandum"].contains(tree.relation(n)) { return true }
             switch word {
             case "no":
-                // "no wait" parses as a determiner and its noun.
-                return i + 1 < run.upperBound && t.bare[i + 1] == Array("wait".unicodeScalars)
+                // "no wait" parses as a determiner and its noun. Before "some" or "the", "no" cannot be one, and
+                // after a hesitation it is the speaker taking something back: "pork. Uh no chicken".
+                return cue.hesitated || (i + 1 < t.words.count && determiners.contains(t.bare[i + 1]))
+                    || (i + 1 < run.upperBound && t.bare[i + 1] == Array("wait".unicodeScalars))
             case "sorry":
                 return false
             case "wait":

@@ -56,11 +56,18 @@ _spec.loader.exec_module(disfluency)
 
 
 
+def hesitates(word):
+    """Disfluency.hesitates: "uh", "umm", "uhm", "er", "erm", "hm"."""
+    return word in ("er", "erm", "hm", "hmm") or re.fullmatch(r"u+[hm]+", word) is not None
+
+
 def says_correction(text):
     words = [disfluency.bare(w.group()) for w in disfluency.WORD.finditer(text)]
     english = sum(w in ENGLISH for w in words)
     if english == 0 or english * 100 < len(words) * 10:
         return False
+    if any(hesitates(w) for w in words):
+        return True
     return any(words[i:i + len(cue)] == cue for i in range(len(words)) for cue in CUES)
 
 

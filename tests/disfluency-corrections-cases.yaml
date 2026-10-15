@@ -3,8 +3,10 @@
 #
 # `correction` and `restart`: `expect` is the text with the taken-back words
 # gone. Left unchanged is a miss; any other text is a wrong cut.
-# `keep` (no `expect`): must come back byte for byte. `unscored` runs for time
-# and for no crash only. `languages:` stands in for the fixture's `[en]`.
+# `keep`: must come back byte for byte, or as its `expect` when the `fillers`
+# table before the stage changed it. `unscored` runs for time
+# and for no crash only. `languages:` stands in for the fixture's `[en]`, and
+# `pipeline: fillers` runs tests/pipelines/disfluency-fillers.yaml instead.
 #
 # `blind-1`, `blind-2` and `blind-3` were each written by a fresh agent from
 # the rule description alone, without the code. The rule was tuned on blind-1
@@ -1908,3 +1910,120 @@ cases:
   - set: adversarial-2
     probe: keep
     input: "Actually, the server did restart on its own."
+  # The user's live dictations on 6ca2bd4e, as heard and after the `fillers` table, and the traps around them.
+  # `pipeline: fillers` runs the table first, as the shipped config does. In "Is it Peter? Ah no, James." the
+  # "no" answers a question, so it stays. Without the table the stage leaves a hesitation it did not cut.
+  - set: user-live
+    probe: correction
+    input: "I think I'm gonna have some pork. Uh no chicken."
+    expect: "I think I'm gonna have some chicken."
+    pipeline: fillers
+  - set: user-live
+    probe: correction
+    input: "I think I'm gonna have some pork. Uh no chicken."
+    expect: "I think I'm gonna have some chicken."
+  - set: user-live
+    probe: keep
+    input: "I think I'm gonna have some pork. no chicken."
+  - set: user-live
+    probe: correction
+    input: "I think I'm gonna have some pork, I mean chicken."
+    expect: "I think I'm gonna have some chicken."
+  - set: user-live
+    probe: correction
+    input: "I'm gonna have some chicken. No, some pork."
+    expect: "I'm gonna have some pork."
+  - set: user-live
+    probe: correction
+    input: "I'll book a meeting with Peter um with James."
+    expect: "I'll book a meeting with James."
+    pipeline: fillers
+  - set: user-live
+    probe: correction
+    input: "I'll book a meeting with Peter um with James."
+    expect: "I'll book a meeting with James."
+  - set: user-live
+    probe: keep
+    input: "I'll book a meeting with Peter with James."
+  - set: user-live
+    probe: correction
+    input: "Um I think I'm gonna have some pork um no some chicken."
+    expect: "I think I'm gonna have some chicken."
+    pipeline: fillers
+  - set: user-live
+    probe: correction
+    input: "Um I think I'm gonna have some pork um no some chicken."
+    expect: "Um I think I'm gonna have some chicken."
+  - set: user-live
+    probe: correction
+    input: "I think I'm gonna have some pork no some chicken."
+    expect: "I think I'm gonna have some chicken."
+  - set: user-live
+    probe: correction
+    input: "Hey, let's uh see if we can meet with Peter uh James"
+    expect: "Hey, let's see if we can meet with James"
+    pipeline: fillers
+  - set: user-live
+    probe: correction
+    input: "Hey, let's uh see if we can meet with Peter uh James"
+    expect: "Hey, let's uh see if we can meet with James"
+  - set: user-live
+    probe: keep
+    input: "Hey, let's see if we can meet with Peter James"
+  - set: user-live
+    probe: correction
+    input: "Let's see if we can meet with Peter. Ah no, James."
+    expect: "Let's see if we can meet with James."
+  - set: user-live
+    probe: keep
+    input: "Oh no, James is sick."
+  - set: user-live
+    probe: keep
+    input: "Is it Peter? Ah no, James."
+  - set: user-live
+    probe: keep
+    input: "Can I get a pizza with ham, no onions?"
+  - set: user-live
+    probe: keep
+    input: "I want tea, no sugar."
+  - set: user-live
+    probe: keep
+    input: "I like Paris, I mean I really like it."
+  - set: user-live
+    probe: keep
+    input: "Peter, um, James and Mary are coming."
+    expect: "Peter James and Mary are coming."
+    pipeline: fillers
+  - set: user-live
+    probe: keep
+    input: "Peter, um, James and Mary are coming."
+  - set: user-live
+    probe: keep
+    input: "I'll go with Peter um and with James."
+    expect: "I'll go with Peter and with James."
+    pipeline: fillers
+  - set: user-live
+    probe: keep
+    input: "We flew to Paris um to Rome and to Berlin."
+    expect: "We flew to Paris to Rome and to Berlin."
+    pipeline: fillers
+  - set: user-live
+    probe: keep
+    input: "Invite Mary, Peter uh James and Anna."
+    expect: "Invite Mary, Peter James and Anna."
+    pipeline: fillers
+  - set: user-live
+    probe: keep
+    input: "two uh two three"
+    expect: "Two two three"
+    pipeline: fillers
+  # What numbers_en leaves when no `fillers` table ran before it.
+  - set: user-live
+    probe: keep
+    input: "it costs two hundred uh 50 dollars"
+  - set: user-live
+    probe: keep
+    input: "two uh 23"
+  - set: user-live
+    probe: keep
+    input: "we need 3 um 4 chairs"
