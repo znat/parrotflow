@@ -509,6 +509,8 @@ extension Disfluency {
         let hesitated: Bool
         /// A marker word was said, not only a hesitation.
         let spoken: Bool
+        /// Every gap in the text where a removed hesitation was heard, not only this one.
+        let heard: Set<Int>
     }
 
     private static func firstCorrection(_ t: Transcript, heard: Set<Int>, _ parse: (Words) -> Parse?) -> Edit? {
@@ -529,10 +531,12 @@ extension Disfluency {
                 let run = m..<e
                 let spoken = run.contains { !hesitates(t.bare[$0]) && !openers.contains(t.bare[$0]) }
                 let hesitated = heard.contains(m - 1) || run.contains { hesitates(t.bare[$0]) }
-                found.append(Cue(run: run, hesitated: hesitated, spoken: spoken))
+                found.append(Cue(run: run, hesitated: hesitated, spoken: spoken, heard: heard))
                 m = e
             } else {
-                if heard.contains(m - 1) { found.append(Cue(run: m..<m, hesitated: true, spoken: false)) }
+                if heard.contains(m - 1) {
+                    found.append(Cue(run: m..<m, hesitated: true, spoken: false, heard: heard))
+                }
                 m += 1
             }
         }
@@ -677,10 +681,12 @@ extension Disfluency {
         else { return nil }
         let kind = tree.tag(x)
         let same = { (i: Int) in tree.node(t, i).map { tree.tag($0) == kind } ?? false }
+        // A hesitation between two names separates them: "Cream uh Rush uh Yes".
+        let apart = { (i: Int) in t.pauses(after: i) || cue.heard.contains(i) || hesitates(t.bare[i]) }
         var from = m - 1
-        while from > start, !t.pauses(after: from - 1), same(from - 1) { from -= 1 }
+        while from > start, !apart(from - 1), same(from - 1) { from -= 1 }
         var to = e
-        while to + 1 < t.words.count, !t.pauses(after: to), same(to + 1) { to += 1 }
+        while to + 1 < t.words.count, !apart(to), same(to + 1) { to += 1 }
         // A verb after the repair makes it a subject: "I told Peter, I mean, John was right".
         let next = to + 1 < t.words.count && !t.pauses(after: to) ? tree.node(t, to + 1) : nil
         // "The score was 2 to 1, no, 3 to 1": the number is the end of a range.
@@ -689,8 +695,8 @@ extension Disfluency {
         // "add milk to the list umm no oat milk" takes back the milk, not the list.
         let echoed = (t.sentenceStart(from)..<from).contains { (e...to).map { t.bare[$0] }.contains(t.bare[$0]) }
         // "Peter um James and Mary": a list said slowly, when nothing but the hesitation marks it.
-        let listed = !cue.spoken && from > 0 && (conjunctions.contains(t.bare[from - 1]) || t.pauses(after: from - 1)
-            || (to + 1 < t.words.count && conjunctions.contains(t.bare[to + 1])))
+        let listed = !cue.spoken && from > 0 && (conjunctions.contains(t.bare[from - 1]) || apart(from - 1)
+            || (to + 1 < t.words.count && (conjunctions.contains(t.bare[to + 1]) || apart(to) || hesitates(t.bare[to + 1]))))
         guard from > start, !listed, !echoed, next.map({ ![.verb, .aux].contains(tree.tag($0)) }) ?? true, !isNumber(t, from - 1),
               !ranged, !defines(t, before: from, marker: m..<e), !crossing || to + 1 == t.words.count || t.stops(after: to),
               !subjects.contains(tree.relation(x)),

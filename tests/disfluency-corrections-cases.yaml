@@ -13,7 +13,7 @@
 # and blind-2 after their first run, and blind-3 added one guard. `user` is
 # what the user dictated. `audit` is an independent audit's adversarial inputs,
 # labelled here; a `#` line above a case says why when it is debatable.
-# `adversarial-1` to `adversarial-3` were written by fresh agents to break the
+# `adversarial-1` to `adversarial-4` were written by fresh agents to break the
 # rule; their first runs are in the pull request.
 
 cases:
@@ -2266,3 +2266,228 @@ cases:
   - set: adversarial-3
     probe: keep
     input: "Do you want tea or coffee or water"
+  - set: adversarial-4
+    probe: correction
+    input: "the claim number is on page two, no, on page three"
+    expect: "the claim number is on page three"
+  - set: adversarial-4
+    probe: correction
+    input: "please send the adjuster to the garage, sorry, to the warehouse"
+    expect: "please send the adjuster to the warehouse"
+  - set: adversarial-4
+    probe: correction
+    input: "we shelve the boxes in aisle four, I mean, in aisle nine"
+    expect: "we shelve the boxes in aisle nine"
+  - set: adversarial-4
+    probe: correction
+    input: "Ask the students to open their books, no, to close their books."
+    expect: "Ask the students to close their books."
+  - set: adversarial-4
+    probe: correction
+    input: "check the router in the closet actually in the basement"
+    expect: "check the router in the basement"
+  - set: adversarial-4
+    probe: correction
+    input: "we fly to Lisbon on Monday or rather on Tuesday"
+    expect: "we fly to Lisbon on Tuesday"
+  - set: adversarial-4
+    probe: correction
+    input: "start the oven at two hundred no at two twenty degrees"
+    expect: "start the oven at two twenty degrees"
+  - set: adversarial-4
+    probe: correction
+    input: "play it from bar twelve sorry from bar sixteen"
+    expect: "play it from bar sixteen"
+  - set: adversarial-4
+    probe: correction
+    input: "the viewing is with Dana, I mean Marcus"
+    expect: "the viewing is with Marcus"
+  - set: adversarial-4
+    probe: correction
+    input: "we need two cables, sorry, three cables"
+    expect: "we need three cables"
+  - set: adversarial-4
+    probe: correction
+    input: "Tonight we are making risotto. No, paella."
+    expect: "Tonight we are making paella."
+  - set: adversarial-4
+    probe: correction
+    input: "The pallet goes to dock six. Sorry, dock seven."
+    expect: "The pallet goes to dock seven."
+  - set: adversarial-4
+    probe: correction
+    input: "the meeting is in room twelve. Or rather, room fourteen."
+    expect: "the meeting is in room fourteen."
+  - set: adversarial-4
+    probe: correction
+    input: "Reset the password for Tomas. No, Teresa."
+    expect: "Reset the password for Teresa."
+  - set: adversarial-4
+    probe: correction
+    input: "Ship it to Denver. Sorry, Dallas."
+    expect: "Ship it to Dallas."
+  - set: adversarial-4
+    probe: correction
+    input: "the invoice goes to Carla um Brenda"
+    expect: "the invoice goes to Brenda"
+  - set: adversarial-4
+    probe: correction
+    input: "open the ticket for the printer uh for the scanner"
+    expect: "open the ticket for the scanner"
+  - set: adversarial-4
+    probe: correction
+    input: "sauté the onions um no the leeks"
+    expect: "sauté the leeks"
+  - set: adversarial-4
+    probe: correction
+    input: "the flight leaves from gate nine erm gate twelve"
+    expect: "the flight leaves from gate twelve"
+  - set: adversarial-4
+    probe: correction
+    input: "the lead singer is Rosa uh Elena"
+    expect: "the lead singer is Elena"
+  - set: adversarial-4
+    probe: correction
+    input: "we need a hotel in Kyoto um in Osaka"
+    expect: "we need a hotel in Osaka"
+  - set: adversarial-4
+    probe: correction
+    input: "the claimant is Mr Hall um Mr Hill"
+    expect: "the claimant is Mr Hill"
+  - set: adversarial-4
+    probe: correction
+    input: "um the hotel is in Rome uh in Milan"
+    expect: "um the hotel is in Milan"
+  # relabelled from "The toaster…": the set's prompt asked for a capital; the stage keeps the speaker's lowercase.
+  - set: adversarial-4
+    probe: correction
+    input: "the kettle um no the toaster is broken"
+    expect: "the toaster is broken"
+  - set: adversarial-4
+    probe: correction
+    input: "so the dish serves four no serves six"
+    expect: "so the dish serves six"
+  - set: adversarial-4
+    probe: restart
+    input: "The roof leaked in March. Scratch that. Pipes froze in May."
+    expect: "Pipes froze in May."
+  - set: adversarial-4
+    probe: restart
+    input: "Pick up the crates at noon. Strike that. Leave the crates for Monday."
+    expect: "Leave the crates for Monday."
+  - set: adversarial-4
+    probe: restart
+    input: "Hand in the essay on Friday. Let me restart. Hand in the essay on Thursday."
+    expect: "Hand in the essay on Thursday."
+  - set: adversarial-4
+    probe: restart
+    input: "We open with the chorus. Let me start over. We open with the bridge."
+    expect: "We open with the bridge."
+  - set: adversarial-4
+    probe: restart
+    input: "Welcome everyone. The unit has two bedrooms. Scratch that. It has three bedrooms."
+    expect: "Welcome everyone. It has three bedrooms."
+  - set: adversarial-4
+    probe: keep
+    input: "there is no damage to the bumper"
+  - set: adversarial-4
+    probe: keep
+    input: "I have no idea where the pallet went"
+  - set: adversarial-4
+    probe: keep
+    input: "the form is long, I mean really long"
+  - set: adversarial-4
+    probe: keep
+    input: "we need paper, um, pens, um, tape and glue"
+  - set: adversarial-4
+    probe: keep
+    input: "Do you want tea or coffee? No, thanks."
+  - set: adversarial-4
+    probe: keep
+    input: "When I say forte, I mean loud."
+  - set: adversarial-4
+    probe: keep
+    input: "she said no, then she said yes"
+  - set: adversarial-4
+    probe: keep
+    input: "read pages ten to twelve before class"
+  - set: adversarial-4
+    probe: keep
+    input: "the total is twenty um five dollars"
+  - set: adversarial-4
+    probe: keep
+    input: "Oh no, the server is down."
+  - set: adversarial-4
+    probe: keep
+    input: "order paper for the printer er no recycled paper"
+  - set: adversarial-4
+    probe: keep
+    input: "ask Anna Marie about the claim"
+  - set: adversarial-4
+    probe: keep
+    input: "the sign on the door says \"no, sorry, we are closed\""
+  - set: adversarial-4
+    probe: keep
+    input: "she hummed no no no all the way home"
+  - set: adversarial-4
+    probe: keep
+    input: "my manager said sorry and then explained the delay"
+  - set: adversarial-4
+    probe: keep
+    input: "it actually fits in the van"
+  - set: adversarial-4
+    probe: keep
+    input: "it is the red wire, not the blue wire"
+  - set: adversarial-4
+    probe: keep
+    input: "the second shelf is empty, no?"
+  - set: adversarial-4
+    probe: keep
+    input: "the students keep saying um in their talks"
+  - set: adversarial-4
+    probe: keep
+    input: "The train is delayed. Sorry, passengers must wait on the platform."
+  - set: adversarial-4
+    probe: keep
+    input: "the dog will scratch that sofa again"
+  - set: adversarial-4
+    probe: keep
+    input: "Let me restart the router. It takes two minutes."
+  - set: adversarial-4
+    probe: keep
+    input: "Let me start over. The weather changed."
+  - set: adversarial-4
+    probe: keep
+    input: "the bands are Cream uh Rush uh Yes"
+  - set: adversarial-4
+    probe: keep
+    input: "the policy number is four um seven two"
+  - set: adversarial-4
+    probe: keep
+    input: "No, no, no, stop the forklift."
+  - set: adversarial-4
+    probe: keep
+    input: "That is what I mean by hidden fees."
+  - set: adversarial-4
+    probe: keep
+    input: "Is the warranty valid? No, it expired in May."
+  - set: adversarial-4
+    probe: keep
+    input: "the rent is due um on the first"
+  - set: adversarial-4
+    probe: keep
+    input: "I tried the dish. Actually, it was great."
+  - set: adversarial-4
+    probe: keep
+    input: "she struck that chord twice and stopped"
+  - set: adversarial-4
+    probe: keep
+    input: "the film is called \"Oh No, Not Again\""
+  - set: adversarial-4
+    probe: keep
+    input: "quiero la mesa, no, la silla"
+    languages: [en, es]
+  - set: adversarial-4
+    probe: keep
+    input: "on se retrouve chez Paul, enfin, chez Luc"
+    languages: [en, fr]
