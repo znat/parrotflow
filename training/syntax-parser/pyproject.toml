@@ -1,0 +1,20 @@
+[project]
+name = "parrotflow-syntax-parser"
+version = "0.1.0"
+description = "Frozen mmBERT dependency parser experiments for English, French and Spanish"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+  "torch==2.14.1",
+  "transformers==5.19.0",
+  "stanza==1.15.0",
+  "huggingface-hub==2.2.0",
+  "numpy==2.2.6",
+  "pyarrow>=19,<25",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
