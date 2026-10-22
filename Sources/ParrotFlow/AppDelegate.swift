@@ -2458,6 +2458,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         downloads.expect(NeuralPhonemes.soundDownload)
         downloads.expect(
+            SyrinxModel.download,
+            off: config.readsTreeCutter ? nil : ModelDownload.gateOff
+        )
+        downloads.expect(
             WordVectors.download,
             off: config.readsSentenceGate ? nil : ModelDownload.gateOff
         )
@@ -2493,6 +2497,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // dictation: the stages that read them stand aside until they are
             // in memory.
             if config.readsSlots { await transcriber.warmSlotModel() }
+            if config.readsTreeCutter { await SyrinxModel.shared.warm() }
             // The boundary readings. 320 MB and a 1.3s load, and a dictation
             // never waits for either: without this the first few dictations of
             // a launch keep the periods a pause put in. Not fetched at all when
@@ -2552,6 +2557,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if damaged.contains(SentenceReadings.download.id) { SentenceReadings.discardCache() }
             if damaged.contains(WordVectors.download.id) { WordVectors.discardCache() }
         }
+        if damaged.contains(SyrinxModel.download.id) { SyrinxModel.discardCache() }
         ModelDownloads.shared.retrying()
         // `SentenceReadings.warm` holds a failed load for five minutes, and
         // `warmModels` below goes through it. Without this the row would go
@@ -2560,6 +2566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if #available(macOS 14, *), config.readsSentenceModel {
             Task { await SentenceReadings.shared.retryNow() }
         }
+        if config.readsTreeCutter { Task { await SyrinxModel.shared.retryNow() } }
         warmModels()
     }
 

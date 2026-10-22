@@ -194,6 +194,11 @@ enum PipelineCommand {
                         found.append("slot model — \(error.localizedDescription)")
                     }
                 }
+                if pipeline.stages.contains(.treeCutter) {
+                    do { _ = try await SyrinxModel.shared.prepare() } catch {
+                        found.append("parser — \(error.localizedDescription)")
+                    }
+                }
                 // Only for a pipeline that holds the step. It is 320 MB, and a
                 // fixture without the step has nothing to read them.
                 if pipeline.stages.contains(.sentenceRepair)
@@ -206,7 +211,7 @@ enum PipelineCommand {
             }
             for failure in failures { print("✗ --warm: \(failure)") }
             if !failures.isEmpty {
-                print("  the sentence gate would be skipped, and the run would not say so")
+                print("  the stage that reads it would stand aside, and the run would not say so")
                 return 1
             }
         }

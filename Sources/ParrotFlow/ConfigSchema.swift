@@ -207,6 +207,9 @@ enum ConfigSchema {
             key("vocabulary", .object(vocabulary),
                 "Matches vocabulary.yaml terms and settles each against its sentence."
                     + " Runs second, always."),
+            key("disfluency", .object(disfluency),
+                "Takes back self-corrections with the parser. English only. Runs after"
+                    + " vocabulary."),
             key("context_spelling", .object(contextSpelling),
                 "Spells a dictated word the way the screen writes it. Runs last."),
             key("context", .object(contextRead),
@@ -248,6 +251,18 @@ enum ConfigSchema {
                 default: true),
             key("pause", .number,
                 "Seconds of silence a bare capital needs first. 0 reads every one."),
+        ])
+    }
+
+    static var disfluency: Section {
+        Section(source: "Config.Transcription.Disfluency",
+                keys: Config.Transcription.Disfluency.CodingKeys.allCases.map(\.stringValue),
+                fields: [
+            key("enabled", .bool, "Downloads parrotflow-syrinx, about 530 MB, when on.",
+                default: false),
+            key("threshold", .range(Bounds(min: 0, max: 1)),
+                "The cut filter keeps a cut at P(real) at or above this, 0 to 1."
+                    + " Left out, 0.80."),
         ])
     }
 
