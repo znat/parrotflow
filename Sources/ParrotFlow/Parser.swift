@@ -51,6 +51,15 @@ struct Parse: Equatable, Sendable {
     let words: [Word]
 }
 
+/// A parse plus what the tree cutter reads per word: the tag head's
+/// P(abandoned) and P(cue), and `s_hidden10` pooled to words, `n * 384`.
+struct Analysis: Sendable {
+    let parse: Parse
+    let abandoned: [Float]
+    let cue: [Float]
+    let vectors: [Float]
+}
+
 /// Core ML runs the two encoder passes; everything after them runs here.
 /// Inside the Core ML graph, the heads changed 2 of 3312 fixture trees and took
 /// 17.4 ms against 10.5.
@@ -113,19 +122,23 @@ final class Parser: @unchecked Sendable {
     /// Nil means abstain: an untrained language, no words, more than 256
     /// subwords or a model error. Never truncates.
     func parse(words: Words, language: String) -> Parse? {
+        analyse(words: words, language: language)?.parse
+    }
+
+    func analyse(words: Words, language: String) -> Analysis? {
         guard Self.languages.contains(language), !words.all.isEmpty else { return nil }
         let (ids, spans) = subwords(words)
         guard ids.count <= Self.length, !spans.contains(where: \.isEmpty) else { return nil }
         do {
-            let (g, s) = try encode(ids)
-            return heads.parse(g: g, s: s, spans: spans)
+            let (g, s, s10) = try encode(ids)
+            return heads.analyse(g: g, s: s, s10: s10, spans: spans)
         } catch {
             Log.write("parser: \(error.localizedDescription)")
             return nil
         }
     }
 
-    private func encode(_ ids: [Int]) throws -> (g: [Float], s: [Float]) {
+    private func encode(_ ids: [Int]) throws -> (g: [Float], s: [Float], s10: [Float]) {
         let width = Self.width
         let embeddings = try MLMultiArray(
             shape: [1, NSNumber(value: Self.length), NSNumber(value: width)], dataType: .float32
@@ -154,7 +167,7 @@ final class Parser: @unchecked Sendable {
             else { throw Failure.malformed("\(name) is not a contiguous [1, 256, 384] float32") }
             return array.withUnsafeBufferPointer(ofType: Float.self) { Array($0.prefix(ids.count * width)) }
         }
-        return (try rows("g_hidden"), try rows("s_hidden"))
+        return (try rows("g_hidden"), try rows("s_hidden"), try rows("s_hidden10"))
     }
 
     /// First index of the largest value, like `numpy.argmax`.
@@ -207,6 +220,8 @@ private struct Heads {
     let relWide: [Float]
     let labels: [String]
     let rootLabel: Int
+    let tagHidden: Linear, tagOut: Linear
+    static let tagOrder = "other,abandoned,cue,repair"
 
     init(_ tensors: Tensors) throws {
         labels = try tensors.json([String].self, "relations")
@@ -245,9 +260,14 @@ private struct Heads {
         }
         relWide = wide
         self.rootLabel = rootLabel
+        guard tensors.string("tag_order") == Self.tagOrder else {
+            throw Parser.Failure.malformed("a tag head whose order is not \(Self.tagOrder)")
+        }
+        tagHidden = try Linear(tensors, "tags.net.0", inputs: width, outputs: 128)
+        tagOut = try Linear(tensors, "tags.net.3", inputs: 128, outputs: 4)
     }
 
-    func parse(g: [Float], s: [Float], spans: [Range<Int>]) -> Parse? {
+    func analyse(g: [Float], s: [Float], s10: [Float], spans: [Range<Int>]) -> Analysis? {
         let n = spans.count, width = Parser.width, relations = labels.count
         let logits = grammar(pool(g, spans), rows: n)
         let features = grammar.outputs
@@ -283,7 +303,14 @@ private struct Heads {
             scores[rootLabel] = -.infinity
             words.append(Parse.Word(upos: upos, head: head, label: labels[Parser.argmax(scores)]))
         }
-        return Parse(words: words)
+        var tags = tagOut(tagHidden(Array(x[width...]), rows: n).map(elu), rows: n)
+        for row in 0 ..< n { softmax(&tags[row * 4 ..< (row + 1) * 4]) }
+        return Analysis(
+            parse: Parse(words: words),
+            abandoned: (0 ..< n).map { tags[$0 * 4 + 1] },
+            cue: (0 ..< n).map { tags[$0 * 4 + 2] },
+            vectors: pool(s10, spans)
+        )
     }
 
     /// Rounded through float16, as the reference does right after pooling.
@@ -339,7 +366,7 @@ private func transpose(_ a: [Float], rows: Int, columns: Int) -> [Float] {
 
 /// The 393 MB embedding table is read through this mapping. Inside the Core ML
 /// model it held resident memory at 550 MB after 400 sentences; mapped, 195 MB.
-private final class MappedFile {
+final class MappedFile {
     let base: UnsafeRawPointer
     let count: Int
 
@@ -360,7 +387,7 @@ private final class MappedFile {
 }
 
 /// A safetensors file: an 8-byte header length, a JSON header, then data.
-private struct Tensors {
+struct Tensors {
     private struct Entry: Decodable {
         let dtype: String
         let shape: [Int]
@@ -396,6 +423,8 @@ private struct Tensors {
     }
 
     func shape(_ name: String) -> [Int]? { entries[name]?.shape }
+
+    func string(_ key: String) -> String? { metadata[key] }
 
     func json<T: Decodable>(_ type: T.Type, _ key: String) throws -> T {
         guard let text = metadata[key] else { throw Parser.Failure.malformed("no \(key) in the metadata") }
