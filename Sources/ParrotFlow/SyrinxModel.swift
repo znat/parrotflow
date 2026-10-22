@@ -65,21 +65,26 @@ actor SyrinxModel {
 
     static var isCached: Bool { FileManager.default.fileExists(atPath: digestsURL.path) }
 
-    private var parser: Parser?
-    private var loading: Task<Parser, Error>?
-
-    func prepare(progress: (@Sendable (String) -> Void)? = nil) async throws -> Parser {
-        if let parser { return parser }
-        if let loading { return try await loading.value }
-        let task = Task<Parser, Error> { try await Self.build(progress: progress) }
-        loading = task
-        defer { loading = nil }
-        let loaded = try await task.value
-        parser = loaded
-        return loaded
+    struct Loaded: Sendable {
+        let parser: Parser
+        let cutFilter: CutFilter
     }
 
-    private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
+    private var loaded: Loaded?
+    private var loading: Task<Loaded, Error>?
+
+    func prepare(progress: (@Sendable (String) -> Void)? = nil) async throws -> Loaded {
+        if let loaded { return loaded }
+        if let loading { return try await loading.value }
+        let task = Task<Loaded, Error> { try await Self.build(progress: progress) }
+        loading = task
+        defer { loading = nil }
+        let built = try await task.value
+        loaded = built
+        return built
+    }
+
+    private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Loaded {
         if isCached {
             do { return try load() } catch Failure.busy { throw Failure.busy } catch {
                 Log.write("parser: the cached copy will not load (\(error.localizedDescription)); fetching it again")
@@ -101,23 +106,25 @@ actor SyrinxModel {
         return .cpuAndGPU
     }
 
-    private static func load() throws -> Parser {
+    private static func load() throws -> Loaded {
         let handle = try lock(LOCK_SH)
         defer { close(handle) }
         return try openCache()
     }
 
     /// Callers hold the lock, shared or exclusive.
-    private static func openCache() throws -> Parser {
+    private static func openCache() throws -> Loaded {
         try verify()
         let configuration = MLModelConfiguration()
         configuration.computeUnits = computeUnits
         let model = try MLModel(contentsOf: compiledURL, configuration: configuration)
         let tokenizer = try ScalarBPE(contentsOf: directory.appendingPathComponent("tokenizer.json"))
-        return try Parser(
+        let parser = try Parser(
             model: model, tokenizer: tokenizer,
             weights: directory.appendingPathComponent("syrinx.safetensors")
         )
+        let filter = try CutFilter(contentsOf: directory.appendingPathComponent("cut-filter.safetensors"))
+        return Loaded(parser: parser, cutFilter: filter)
     }
 
     /// Core ML segfaults on a compiled model missing `model.mil` rather than
