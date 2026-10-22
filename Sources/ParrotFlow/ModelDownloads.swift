@@ -5,7 +5,7 @@ import Foundation
 ///
 /// The description of a model lives beside the code that fetches it — see
 /// `Transcriber.speechDownload`, `Transcriber.voiceDownload`,
-/// `SlotModel.download`, `SentenceReadings.download`, `WordVectors.download`
+/// `SlotModel.download`, `SyrinxModel.download`, `SentenceReadings.download`, `WordVectors.download`
 /// and `NeuralPhonemes.soundDownload`. No screen keeps a list of models. A
 /// model added later declares itself next to its own fetch and every surface
 /// that draws rows draws it.
@@ -379,6 +379,11 @@ final class ModelDownloads: ObservableObject {
         if error is CancellationError { return .stopped }
         if let failure = error as? SlotModel.Failure, case .busy = failure { return .busy }
         if let failure = error as? MLXModelCache.Failure, case .busy = failure { return .busy }
+        if let failure = error as? SyrinxModel.Failure {
+            if case .busy = failure { return .busy }
+            return .damaged
+        }
+        if error is Parser.Failure { return .damaged }
         // The weights loaded as something that is not Qwen3: the copy on disk
         // is not the model it is named after. Both MLX models check it.
         if let failure = error as? WordVectors.Failure, case .notQwen = failure { return .damaged }
