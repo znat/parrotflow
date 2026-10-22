@@ -270,6 +270,21 @@ if let at = arguments.firstIndex(of: "--parse") {
     exit(ParserCommand.run(text: arguments[at + 1], language: languageList(arguments)?.first ?? "en"))
 }
 
+if let at = arguments.firstIndex(of: "--tree-cut") {
+    let threshold = arguments.firstIndex(of: "--threshold").flatMap {
+        arguments.indices.contains($0 + 1) ? Double(arguments[$0 + 1]) : nil
+    }
+    if let batch = arguments.firstIndex(of: "--batch"), arguments.indices.contains(batch + 1) {
+        exit(TreeCutCommand.batch(path: arguments[batch + 1], threshold: threshold))
+    }
+    guard arguments.indices.contains(at + 1), !arguments[at + 1].hasPrefix("--") else {
+        print("usage: ParrotFlow --tree-cut \"<text>\" [--threshold <x>]")
+        print("       ParrotFlow --tree-cut --batch <items.json> [--threshold <x>]")
+        exit(2)
+    }
+    exit(TreeCutCommand.run(text: arguments[at + 1], threshold: threshold))
+}
+
 if let at = arguments.firstIndex(of: "--sentence-probe") {
     guard #available(macOS 14, *) else {
         print("✗ the sentence probe needs macOS 14 or later")

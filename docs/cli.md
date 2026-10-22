@@ -630,6 +630,36 @@ reference on `tests/parser-parity.json`; it needs the model, so it is not in
 `make test`. `PARROTFLOW_SYRINX_ENDPOINT` points this one download at a mirror
 for tests, and what the mirror serves must still match the pinned hashes.
 
+## Which self-corrections the parser would take back
+
+```sh
+$PF --tree-cut "<text>" [--threshold <x>]                # each candidate cut, its P(real), and the output
+$PF --tree-cut --batch <items.json> [--threshold <x>]    # many inputs in one loaded process, JSON lines
+```
+
+`--tree-cut` runs the tree cutter and the cut filter on English text. The text
+first loses the hesitation sounds the built-in `fillers` table removes; that
+is the text the parser reads, printed as `view:`. The tree cutter proposes
+each stretch the parse marks as a reparandum, with its cue words. The cut
+filter scores each one, and a cut is kept at P(real) at or above 0.80, or at
+`--threshold`. The output removes the kept cuts from the input as written, so
+the fillers outside a cut are still there.
+
+```
+$PF --tree-cut "We should ship it on Monday, no, on Tuesday."
+parser ready in 0.96 s
+view: We should ship it on Monday, no, on Tuesday.
+  0.923 kept     on Monday, no,
+out:  We should ship it on Tuesday.
+```
+
+`--batch` reads `[{"id", "text"}]` and prints one JSON line per item: the
+view, each candidate's view-word indices, P(real), kept flag and seven text
+features, the cut as indices of the input's words, the output and the time.
+Then a summary. `scripts/check-disfluency-model-parity.sh` compares it with
+the PyTorch reference on `tests/disfluency-model-parity.json`; it needs the
+model, so it is not in `make test`.
+
 ## Is this sentence mark real
 
 ```sh
