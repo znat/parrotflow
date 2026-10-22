@@ -1,6 +1,5 @@
 import CoreML
 import Foundation
-@preconcurrency import Tokenizers
 
 /// What word does this position expect? One masked forward pass over
 /// mmBERT-small.
@@ -158,19 +157,9 @@ struct SlotProbe {
     }
 }
 
-/// mmBERT-small's tokenizer, through `swift-transformers`.
-///
-/// mmBERT's file is Gemma-shaped — byte-fallback BPE, a `Metaspace`
-/// pre-tokenizer that writes a space as `▁`, and `<bos> <eos> <mask> <pad>` for
-/// special tokens. `AutoTokenizer` already reads all of that, and
-/// `WordVectors` already depends on it.
-///
 /// `scripts/check-slot-tokenizer.sh` compares it against the reference
 /// tokenizer, id by id, on `tests/slot-tokenizer-cases.json`.
-///
-/// `@unchecked Sendable` because `Tokenizers.Tokenizer` is not Sendable and is
-/// read-only after loading. `WordVectors` wraps the same protocol the same way.
-struct SlotTokenizer: @unchecked Sendable {
+struct SlotTokenizer: Sendable {
 
     enum Failure: LocalizedError {
         case missing(String)
@@ -187,29 +176,22 @@ struct SlotTokenizer: @unchecked Sendable {
     let mask: Int
     let pad: Int
 
-    private let upstream: any Tokenizers.Tokenizer
+    private let bpe: ScalarBPE
 
-    static func load(from directory: URL) async throws -> SlotTokenizer {
-        let upstream = try await AutoTokenizer.from(modelFolder: directory)
+    static func load(from directory: URL) throws -> SlotTokenizer {
+        let bpe = try ScalarBPE(contentsOf: directory.appendingPathComponent("tokenizer.json"))
         func id(_ name: String) throws -> Int {
-            guard let id = upstream.convertTokenToId(name), upstream.convertIdToToken(id) == name
-            else { throw Failure.missing(name) }
+            guard let id = bpe.id(of: name) else { throw Failure.missing(name) }
             return id
         }
         return SlotTokenizer(
             bos: try id("<bos>"), eos: try id("<eos>"),
-            mask: try id("<mask>"), pad: try id("<pad>"), upstream: upstream
+            mask: try id("<mask>"), pad: try id("<pad>"), bpe: bpe
         )
     }
 
-    /// The ids of `text`, with no special tokens.
-    ///
-    /// An empty string encodes to nothing. The `Metaspace` pre-tokenizer would
-    /// otherwise prepend its `▁` and hand back one token for no text, and a
-    /// word at the start of a sentence arrives here with an empty left side.
     func encode(_ text: String) -> [Int] {
-        guard !text.isEmpty else { return [] }
-        return upstream.encode(text: text, addSpecialTokens: false)
+        bpe.encode(text)
     }
 
     /// The word a token stands for, its word-start marker read back as a space.
@@ -219,7 +201,7 @@ struct SlotTokenizer: @unchecked Sendable {
     /// arrive as `castle`; keeping the space is what lets one that cares tell
     /// them apart.
     func word(of id: Int) -> String? {
-        upstream.convertIdToToken(id).map {
+        bpe.token(of: id).map {
             $0.replacingOccurrences(of: "\u{2581}", with: " ")
         }
     }

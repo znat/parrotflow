@@ -57,7 +57,7 @@ enum SlotProbeCommand {
 
         Task {
             do {
-                let tokenizer = try await SlotTokenizer.load(from: SlotModel.tokenizerDirectory)
+                let tokenizer = try SlotTokenizer.load(from: SlotModel.tokenizerDirectory)
                 let ids = tokenizer.encode(text)
                 let tokens = ids.compactMap { tokenizer.word(of: $0)?.debugDescription }
                 print("ids \(ids.map(String.init).joined(separator: ","))")
