@@ -92,6 +92,7 @@ transcription:
   rewrite_line: true
   sentence_repair: {enabled: true}    # a fixed pass, not a step — see pipelines.md
   vocabulary: {enabled: true}   # the same
+  disfluency: {enabled: false}  # the same; off by default
   pipeline: …           # see pipelines.md
 
 transforms: …           # see pipelines.md
@@ -588,6 +589,25 @@ The old spelling is still read, so an install that has one keeps its value, and
 line was written in, any options on the line are carried into the block, and
 `--check-config` says the line can go. `when:`, `unless:` and `app:` on those
 two lines are dropped: there is no step left for a condition to sit on.
+
+## `transcription.disfluency`
+
+Takes back self-corrections with the parser, not with rules. The
+parrotflow-syrinx tree cutter proposes each stretch its parse marks as taken
+back, and the cut filter keeps the likely ones.
+
+```yaml
+transcription:
+  disfluency:
+    enabled: false
+    threshold: 0.80        # the cut filter keeps a cut at P(real) >= this
+```
+
+Off by default. On, it downloads parrotflow-syrinx, about 530 MB, and runs
+after `vocabulary` and before `pipeline:`. English only: a dictation in
+another language passes through untouched. `threshold` is a probability from
+0 to 1; `--check-config` refuses anything else. See
+[The tree_cutter pass](pipelines.md#the-tree_cutter-pass).
 
 ## `transcription.replacements` is retired
 
