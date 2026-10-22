@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build parrot-syrinx for the app: the encoder as Core ML, the rest as safetensors.
+"""Build parrotflow-syrinx for the app: the encoder as Core ML, the rest as safetensors.
 
 Toolchain, pinned. Other versions were not checked for parity:
     python 3.13, torch==2.7.0, coremltools==9.0, numpy==2.2.6, safetensors==0.8.0
@@ -9,13 +9,13 @@ Toolchain, pinned. Other versions were not checked for parity:
 <export dir> holds base.safetensors, grammar.safetensors, syntax.safetensors and
 manifest.json. <out> receives the three files the app downloads:
 
-    parrot-syrinx.mlpackage  12 mmBERT-small blocks run twice, once per LoRA path
-                             (merged), on embeddings passed in. Outputs g_hidden
-                             and s_hidden, block 12 before final_norm.
-    syrinx.safetensors       the 256000 x 384 embedding table, the grammar heads,
-                             the fusion and the biaffine parser, in float32. The
-                             label names are in its metadata.
-    tokenizer.json           copied unchanged.
+    parrotflow-syrinx.mlpackage  12 mmBERT-small blocks run twice, once per LoRA
+                                 path (merged), on embeddings passed in. Outputs
+                                 g_hidden and s_hidden, block 12 before final_norm.
+    syrinx.safetensors           the 256000 x 384 embedding table, the grammar
+                                 heads, the fusion and the biaffine parser, in
+                                 float32. The label names are in its metadata.
+    tokenizer.json               copied unchanged.
 """
 import argparse
 import hashlib
@@ -140,12 +140,12 @@ def main():
         minimum_deployment_target=ct.target.macOS15,
         compute_precision=ct.precision.FLOAT32,
     )
-    ml.short_description = 'parrot-syrinx encoder: mmBERT-small blocks 1-12, grammar and syntax LoRA merged'
+    ml.short_description = 'parrotflow-syrinx encoder: mmBERT-small blocks 1-12, grammar and syntax LoRA merged'
     ml.license = 'Weights trained on Universal Dependencies treebanks (mostly CC BY-SA 4.0); base jhu-clsp/mmBERT-small (MIT)'
     ml.version = manifest['sources']['implementation_hash'][:12]
 
     args.out.mkdir(parents=True, exist_ok=True)
-    package = args.out / 'parrot-syrinx.mlpackage'
+    package = args.out / 'parrotflow-syrinx.mlpackage'
     shutil.rmtree(package, ignore_errors=True)
     ml.save(str(package))
 

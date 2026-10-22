@@ -61,7 +61,7 @@ final class Parser: @unchecked Sendable {
 
         var errorDescription: String? {
             switch self {
-            case .malformed(let what): return "parrot-syrinx: \(what)"
+            case .malformed(let what): return "parrotflow-syrinx: \(what)"
             }
         }
     }

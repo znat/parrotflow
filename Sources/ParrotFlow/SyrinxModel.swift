@@ -22,9 +22,9 @@ actor SyrinxModel {
         }
     }
 
-    private static let repository = "znaat/parrot-syrinx-coreml"
+    private static let repository = "znaat/parrotflow-syrinx-coreml"
     static let revision = "6ef93ba322a66cb3fda0addde0dd8f541b97e3fb"
-    private static let packageName = "parrot-syrinx.mlpackage"
+    private static let packageName = "parrotflow-syrinx.mlpackage"
 
     private static let pinned: [String: String] = [
         "\(packageName)/Manifest.json": "0a17227b61be34f337598d3aed394179165e6528e458358a4226f84f49547574",
@@ -49,17 +49,17 @@ actor SyrinxModel {
     }
 
     static var directory: URL {
-        AppVariant.supportDirectory.appendingPathComponent("models/parrot-syrinx", isDirectory: true)
+        AppVariant.supportDirectory.appendingPathComponent("models/parrotflow-syrinx", isDirectory: true)
     }
 
     static var compiledURL: URL {
-        directory.appendingPathComponent("parrot-syrinx.mlmodelc", isDirectory: true)
+        directory.appendingPathComponent("parrotflow-syrinx.mlmodelc", isDirectory: true)
     }
 
     private static var digestsURL: URL { directory.appendingPathComponent("digests.json") }
 
     private static var lockURL: URL {
-        directory.deletingLastPathComponent().appendingPathComponent("parrot-syrinx.lock")
+        directory.deletingLastPathComponent().appendingPathComponent("parrotflow-syrinx.lock")
     }
 
     static var isCached: Bool { FileManager.default.fileExists(atPath: digestsURL.path) }
