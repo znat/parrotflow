@@ -142,7 +142,7 @@ def main():
     )
     ml.short_description = 'parrotflow-syrinx encoder: mmBERT-small blocks 1-12, grammar and syntax LoRA merged'
     ml.license = 'Weights trained on Universal Dependencies treebanks (mostly CC BY-SA 4.0); base jhu-clsp/mmBERT-small (MIT)'
-    ml.version = manifest['sources']['implementation_hash'][:12]
+    ml.version = manifest['sources']['syntax_checkpoint_sha256'][:12]
 
     args.out.mkdir(parents=True, exist_ok=True)
     package = args.out / 'parrotflow-syrinx.mlpackage'
@@ -156,7 +156,7 @@ def main():
         inventories=json.dumps(manifest['inventories']['layout']),
         relations=json.dumps(manifest['passes']['relations']),
         max_subwords=str(manifest['tokenizer']['max_subwords']),
-        source=manifest['sources']['implementation_hash'],
+        source=manifest['sources']['syntax_checkpoint_sha256'],
     )
     save_file({k: v.contiguous() for k, v in heads.items()}, str(args.out / 'syrinx.safetensors'), metadata=metadata)
     shutil.copyfile(args.tokenizer, args.out / 'tokenizer.json')
