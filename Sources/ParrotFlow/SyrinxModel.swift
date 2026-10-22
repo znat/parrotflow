@@ -23,9 +23,7 @@ actor SyrinxModel {
     }
 
     private static let repository = "znaat/parrotflow-syrinx-coreml"
-    /// Not uploaded yet: no such revision exists on Hugging Face, so a fetch
-    /// fails at the listing rather than pulling files that cannot match `pinned`.
-    static let revision = "unpublished-parrotflow-syrinx-t42"
+    static let revision = "f3f75830f56901b45069df3492ade0040a6e2e39"
     private static let packageName = "parrotflow-syrinx.mlpackage"
 
     private static let pinned: [String: String] = [
