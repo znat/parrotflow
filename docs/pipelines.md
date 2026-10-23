@@ -74,12 +74,14 @@ can get wrong.
 
 `sentence_repair` and `vocabulary` are not in `pipeline:`. Each has a settings block
 under `transcription:`, each runs at a fixed point, and `enabled: false` is the
-only way to turn one off.
+only way to turn one off. `tree_cutter` is a third fixed pass, switched by
+`transcription.disfluency` and off by default.
 
 | Pass | What it does | Why it cannot move |
 |---|---|---|
 | `sentence_repair` | What you meant, where the decoder wrote what it heard. Today that is the marks a pause put in mid-sentence, taken out again — see [The sentence_repair pass](#the-sentence_repair-pass). English only. | It reads the decoder's own words and their timings. A rewrite above it moves a word and the pause gate lines up against the wrong token. |
 | `vocabulary` | Names. Matches every `heard:` rendering in `vocabulary.yaml`, reaches the near misses you have not taught, then settles each match against the sentence it stands in — see [The name stage](#the-name-stage). | It is handed spans measured on the transcript as the decoder wrote it. Any edit above it moves them (F10). |
+| `tree_cutter` | Self-corrections taken back by the parser — see [The tree_cutter pass](#the-tree_cutter-pass). Off unless `transcription.disfluency` turns it on. English only. | It was measured on the text before the number stages, where spoken numbers are still words. |
 
 ```yaml
 transcription:
@@ -89,11 +91,13 @@ transcription:
     enabled: true
 ```
 
-Both run before the list, `sentence_repair` first:
+They run in this order around the list:
 
 ```
-asr → vad → sentence_repair → vocabulary → pipeline
+asr → vad → sentence_repair → vocabulary → tree_cutter → pipeline → context_spelling
 ```
+
+`tree_cutter` runs only when `transcription.disfluency` is on.
 
 Both still publish into the scope, as `asr` and `vad` already do without being
 stages. `when: vocabulary.count > 0` on a transform goes on working, and
@@ -211,6 +215,32 @@ ship here. They were removed, not switched off — the files are gone. Each of
 the first four decided that a word you said was code, and the words they acted
 on — *dot*, *dash*, *point*, *question mark* — are words people also just say.
 They are in git history if you want one back.
+
+## The tree_cutter pass
+
+`transcription.disfluency: {enabled: true}` turns it on. It takes back
+self-corrections: "on Monday, no, on Tuesday" becomes "on Tuesday".
+
+It reads the text without the hesitation sounds the built-in `fillers` table
+removes, since that is the text the parser was measured on. The
+parrotflow-syrinx tree cutter proposes each stretch the parse marks as a
+reparandum, with its cue words. The cut filter scores each one and keeps it at
+P(real) at or above `threshold`, 0.80 by default. Kept cuts are removed from
+the text as it arrived, with any filler inside them; fillers outside a cut
+stay for the `fillers` step.
+
+English only. The model is about 530 MB and is fetched only when the pass is
+on. A dictation waits at most 2 s for a copy already on disk, and none for a
+download: until the model is in memory the pass declines and the text passes
+through.
+
+It publishes `tree_cutter.count`, `kept` and `dropped` (candidates),
+`threshold`, `candidates` (each candidate's words, P(real) and verdict, in text
+order) and `declined` (empty when it ran, else why not). `--tree-cut` runs it
+on text from the command line — see `docs/cli.md`.
+
+The `disfluency` transform in `pipeline:` is a different thing: string rules
+in Python. Both may run.
 
 ## The sentence_repair pass
 

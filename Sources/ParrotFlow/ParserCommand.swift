@@ -105,7 +105,7 @@ enum ParserCommand {
             do {
                 let parser = try await SyrinxModel.shared.prepare { label in
                     FileHandle.standardError.write(Data("  \(label)\n".utf8))
-                }
+                }.parser
                 let seconds = Date().timeIntervalSince(started)
                 if !quiet {
                     print(String(format: "parser ready in %.2f s", seconds))

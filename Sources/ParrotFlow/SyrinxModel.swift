@@ -8,6 +8,16 @@ actor SyrinxModel {
 
     static let shared = SyrinxModel()
 
+    /// The peak holds the package and its compile at once.
+    static let download = ModelDownload(
+        id: "parser", name: "parrotflow-syrinx", megabytes: 533, peak: 655,
+        group: .language, blocking: false,
+        costOfFailure: "self-corrections are left in"
+    )
+
+    /// Cached loads took 0.59 to 1.47 s, plus about 0.2 s for the first prediction.
+    static let dictationWait: Double = 2.0
+
     enum Failure: LocalizedError {
         case busy
         case damaged(String)
@@ -65,22 +75,131 @@ actor SyrinxModel {
 
     static var isCached: Bool { FileManager.default.fileExists(atPath: digestsURL.path) }
 
-    private var parser: Parser?
-    private var loading: Task<Parser, Error>?
+    struct Loaded: Sendable {
+        let parser: Parser
+        let cutFilter: CutFilter
+    }
 
-    func prepare(progress: (@Sendable (String) -> Void)? = nil) async throws -> Parser {
-        if let parser { return parser }
-        if let loading { return try await loading.value }
-        let task = Task<Parser, Error> { try await Self.build(progress: progress) }
+    private var loaded: Loaded?
+    private var loading: Task<Loaded, Error>?
+    /// When a failed load may be tried again. A damaged cache re-fetches 533 MB, so not on every dictation.
+    private var retryAfter: Date?
+    private var failure: String?
+    private static let backoff: TimeInterval = 300
+
+    func warm() {
+        guard loaded == nil, loading == nil else { return }
+        if let retryAfter, Date() < retryAfter { return }
+        let task = start(progress: nil)
+        Task {
+            let started = Date()
+            do {
+                _ = try await task.value
+                Log.write(String(format: "parser: warmed in %.1fs", Date().timeIntervalSince(started)))
+            } catch {
+                Log.write("parser: \(error.localizedDescription); self-corrections stay until it loads")
+            }
+        }
+    }
+
+    /// For the setup screen's repair button.
+    func retryNow() {
+        retryAfter = nil
+        warm()
+    }
+
+    static func discardCache() {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    struct Ready {
+        let loaded: Loaded?
+        /// Why `loaded` is nil.
+        let reason: String
+    }
+
+    /// A dictation waits only for a cached copy, and at most `seconds`; the
+    /// load goes on after that. Without a cache the fetch starts and this
+    /// returns at once.
+    func ready(within seconds: Double) async -> Ready {
+        if let loaded { return Ready(loaded: loaded, reason: "") }
+        guard Self.isCached else {
+            warm()
+            return Ready(loaded: nil, reason: "parser not downloaded")
+        }
+        if loading == nil, let retryAfter, Date() < retryAfter {
+            return Ready(loaded: nil, reason: failure ?? "parser failed to load")
+        }
+        let task = start(progress: nil)
+        let first = First<Result<Loaded, Error>?>()
+        let outcome = await withCheckedContinuation { continuation in
+            first.continuation = continuation
+            Task { first.resume(await task.result) }
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                first.resume(nil)
+            }
+        }
+        switch outcome {
+        case .success(let loaded)?: return Ready(loaded: loaded, reason: "")
+        case .failure(let error)?: return Ready(loaded: nil, reason: error.localizedDescription)
+        case nil: return Ready(loaded: nil, reason: "parser still loading")
+        }
+    }
+
+    func prepare(progress: (@Sendable (String) -> Void)? = nil) async throws -> Loaded {
+        if let loaded { return loaded }
+        return try await start(progress: progress).value
+    }
+
+    private func start(progress: (@Sendable (String) -> Void)?) -> Task<Loaded, Error> {
+        if let loading { return loading }
+        let task = Task<Loaded, Error> { try await Self.build(progress: progress) }
         loading = task
-        defer { loading = nil }
-        let loaded = try await task.value
-        parser = loaded
+        Task { await settle(task) }
+        return task
+    }
+
+    private func settle(_ task: Task<Loaded, Error>) async {
+        do {
+            loaded = try await task.value
+            failure = nil
+            ModelDownloads.report(Self.download.id, .installed)
+        } catch {
+            // The other build holding the lock lets go on its own; that is not a damaged cache.
+            if case Failure.busy = error {} else { retryAfter = Date().addingTimeInterval(Self.backoff) }
+            failure = error.localizedDescription
+            ModelDownloads.report(
+                Self.download.id, .failed(ModelDownloads.failure(error, needs: Self.download.peakLabel))
+            )
+        }
+        loading = nil
+    }
+
+    /// Resumes its continuation once, with whichever value comes first.
+    private final class First<Value>: @unchecked Sendable {
+        var continuation: CheckedContinuation<Value, Never>?
+        private let lock = NSLock()
+
+        func resume(_ value: Value) {
+            lock.lock()
+            let waiting = continuation
+            continuation = nil
+            lock.unlock()
+            waiting?.resume(returning: value)
+        }
+    }
+
+    private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Loaded {
+        let loaded = try await openOrFetch(progress: progress)
+        // The first prediction after a load took 167 to 223 ms against 10 to 16 ms warm.
+        _ = loaded.parser.analyse(words: Words(joining: ["I", "mean", "it"]), language: "en")
         return loaded
     }
 
-    private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
+    private static func openOrFetch(progress: (@Sendable (String) -> Void)?) async throws -> Loaded {
         if isCached {
+            ModelDownloads.report(download.id, .loading)
             do { return try load() } catch Failure.busy { throw Failure.busy } catch {
                 Log.write("parser: the cached copy will not load (\(error.localizedDescription)); fetching it again")
                 progress?("\(error.localizedDescription); fetching it again")
@@ -89,6 +208,7 @@ actor SyrinxModel {
         let handle = try lock(LOCK_EX)
         defer { close(handle) }
         try await fetch(progress: progress)
+        ModelDownloads.report(download.id, .loading)
         return try openCache()
     }
 
@@ -101,23 +221,25 @@ actor SyrinxModel {
         return .cpuAndGPU
     }
 
-    private static func load() throws -> Parser {
+    private static func load() throws -> Loaded {
         let handle = try lock(LOCK_SH)
         defer { close(handle) }
         return try openCache()
     }
 
     /// Callers hold the lock, shared or exclusive.
-    private static func openCache() throws -> Parser {
+    private static func openCache() throws -> Loaded {
         try verify()
         let configuration = MLModelConfiguration()
         configuration.computeUnits = computeUnits
         let model = try MLModel(contentsOf: compiledURL, configuration: configuration)
         let tokenizer = try ScalarBPE(contentsOf: directory.appendingPathComponent("tokenizer.json"))
-        return try Parser(
+        let parser = try Parser(
             model: model, tokenizer: tokenizer,
             weights: directory.appendingPathComponent("syrinx.safetensors")
         )
+        let filter = try CutFilter(contentsOf: directory.appendingPathComponent("cut-filter.safetensors"))
+        return Loaded(parser: parser, cutFilter: filter)
     }
 
     /// Core ML segfaults on a compiled model missing `model.mil` rather than
@@ -167,7 +289,9 @@ actor SyrinxModel {
             endpoint: endpoint
         ) { fraction in
             let percent = Int((fraction * 100).rounded())
-            if reported.advanced(to: percent) { progress?("parser \(percent)%") }
+            guard reported.advanced(to: percent) else { return }
+            ModelDownloads.report(download.id, .downloading(percent: percent))
+            progress?("parser \(percent)%")
         }
         for (path, digest) in pinned where try sha256(staging.appendingPathComponent(path)) != digest {
             throw Failure.damaged("\(path) does not match its pinned SHA-256")

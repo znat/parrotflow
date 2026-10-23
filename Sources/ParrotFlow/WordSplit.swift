@@ -105,13 +105,13 @@ enum WordSplit {
     // Python 3.10 is Unicode 13.0; later scalars are unassigned there.
     private static func inPython(_ c: Unicode.Scalar) -> Bool { (c.properties.age?.major ?? .max) <= 13 }
 
-    private static func isSpace(_ c: Unicode.Scalar) -> Bool { c.properties.isWhitespace || ("\u{1C}"..."\u{1F}").contains(c) }
+    static func isSpace(_ c: Unicode.Scalar) -> Bool { c.properties.isWhitespace || ("\u{1C}"..."\u{1F}").contains(c) }
 
     private static func isDigit(_ c: Unicode.Scalar) -> Bool { inPython(c) && c.properties.generalCategory == .decimalNumber }
 
     private static func isASCIILetter(_ c: Unicode.Scalar) -> Bool { ("a"..."z").contains(c) || ("A"..."Z").contains(c) }
 
-    private static func isAlnum(_ c: Unicode.Scalar) -> Bool {
+    static func isAlnum(_ c: Unicode.Scalar) -> Bool {
         guard inPython(c) else { return false }
         switch c.properties.generalCategory {
         case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter: return true

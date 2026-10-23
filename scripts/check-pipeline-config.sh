@@ -520,6 +520,54 @@ check "a listed - context_spelling does not run while the switch is off" \
 check "and the notice says so" \
   "$(printf '%s\n' "$out" | grep -c '`- context_spelling` is not a step')" "1"
 
+# --- disfluency ---------------------------------------------------------------
+#
+# Off by default. On, the tree cutter runs after vocabulary and before the list.
+
+run_config cutter_on 'transcription:
+  languages: [en]
+  disfluency:
+    enabled: true
+    threshold: 0.9
+  pipeline:
+    - context'
+
+check "disfluency: enabled loads" "$code" "0"
+check "and the tree cutter runs after vocabulary, before the list" \
+  "$(stages)" "sentence_repair → vocabulary → tree_cutter → context → context_spelling"
+check "and --check-config names its threshold" \
+  "$(printf '%s\n' "$out" | grep -c 'tree cutter *threshold 0.90, English only')" "1"
+
+run_config cutter_off 'transcription:
+  languages: [en]
+  disfluency:
+    enabled: false
+  pipeline:
+    - tree_cutter
+    - context'
+
+check "a listed - tree_cutter does not run while the switch is off" \
+  "$(stages)" "sentence_repair → vocabulary → context → context_spelling"
+check "and the notice says so" \
+  "$(printf '%s\n' "$out" | grep -c '`- tree_cutter` is not a step')" "1"
+
+run_config cutter_absent 'transcription:
+  languages: [en]
+  pipeline:
+    - context'
+
+check "without the block the tree cutter does not run" \
+  "$(stages)" "sentence_repair → vocabulary → context → context_spelling"
+
+run_config cutter_threshold 'transcription:
+  disfluency:
+    enabled: true
+    threshold: 1.5'
+
+check "a threshold over 1 is refused" "$code" "1"
+check "and the message names the key" \
+  "$(printf '%s\n' "$out" | grep -c 'transcription.disfluency.threshold')" "1"
+
 echo
 echo "  $pass/$total$failed"
 [ "$pass" = "$total" ]

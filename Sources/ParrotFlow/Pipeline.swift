@@ -54,6 +54,12 @@ struct Pipeline: Equatable, Codable {
         /// sentence it stands in — see `VocabularyPass` and `SentenceGate`.
         /// The pipeline entry is `- vocabulary`. It calls no model.
         case vocabulary
+        /// Self-corrections taken back: the parrotflow-syrinx tree cutter
+        /// proposes cuts and the cut filter keeps the likely ones — see
+        /// `TreeCutter`. Switched by `transcription.disfluency`, after
+        /// `vocabulary`. English only. Not `disfluency`: that namespace is the
+        /// Python transform's.
+        case treeCutter = "tree_cutter"
         /// A span respelled the way the screen writes it — see
         /// `ContextSpelling`. Switched by `transcription.context_spelling`,
         /// and last, after every listed step.
@@ -382,8 +388,11 @@ struct Pipeline: Equatable, Codable {
             steps.append(Step(
                 stage: .vocabulary, vocabulary: written.over(blocks.vocabulary.options)))
         }
+        if blocks.disfluency.enabled {
+            steps.append(Step(stage: .treeCutter))
+        }
         steps += carried.filter {
-            $0.stage != .sentenceRepair && $0.stage != .vocabulary && $0.stage != .contextSpelling
+            ![.sentenceRepair, .vocabulary, .treeCutter, .contextSpelling].contains($0.stage)
         }
         if blocks.contextSpelling.enabled {
             steps.append(Step(stage: .contextSpelling))
@@ -847,6 +856,8 @@ struct Pipeline: Equatable, Codable {
         case .vocabulary:
             return await settleVocabulary(step, on: text, config: config, scope: scope,
                                         )
+        case .treeCutter:
+            return await cutTrees(on: text, config: config, scope: scope)
         case .contextSpelling:
             return await ContextSpelling.apply(to: text, scope: scope)
         case .transform:
@@ -1039,6 +1050,44 @@ struct Pipeline: Equatable, Codable {
             words: words
         )
         return StageResult(text: outcome.text, vars: ["count": .int(outcome.count(.join))])
+    }
+
+    /// Self-corrections taken back — see `TreeCutter`. Fails open: every
+    /// decline returns the text as it arrived and says why in `declined`.
+    private func cutTrees(on text: String, config: Config, scope: Scope) async -> StageResult {
+        func declined(_ why: String) -> StageResult {
+            Log.write("tree_cutter: declined — \(why)")
+            return StageResult(text: text, vars: [
+                "count": .int(0), "kept": .int(0), "dropped": .int(0),
+                "candidates": .string(""), "declined": .string(why),
+            ])
+        }
+        guard scope["language"] == .string("en") else { return declined("not English") }
+        let ready = await SyrinxModel.shared.ready(within: SyrinxModel.dictationWait)
+        guard let loaded = ready.loaded else { return declined(ready.reason) }
+        let threshold = config.transcription.disfluency.threshold ?? loaded.cutFilter.threshold
+        let span = Trace.current?.open("tree cutter", kind: .part)
+        let outcome = TreeCutter.run(
+            text, parser: loaded.parser, filter: loaded.cutFilter, threshold: threshold
+        )
+        let kept = outcome.candidates.filter(\.kept).count
+        span?.close("\(kept) of \(outcome.candidates.count) kept")
+        if let why = outcome.declined { return declined(why) }
+        let words = TreeCutter.Spans(outcome.view).strings
+        let listed = outcome.candidates.map { candidate in
+            let said = candidate.words.map { words[$0] }.joined(separator: " ")
+            return "\"\(said)\" \(String(format: "%.3f", candidate.pReal))"
+                + (candidate.kept ? " kept" : " dropped")
+        }
+        Pipeline.logRewrite(by: "tree_cutter", from: text, to: outcome.text)
+        return StageResult(text: outcome.text, vars: [
+            "count": .int(outcome.candidates.count),
+            "kept": .int(kept),
+            "dropped": .int(outcome.candidates.count - kept),
+            "threshold": .double(threshold),
+            "candidates": .string(listed.joined(separator: "; ")),
+            "declined": .string(""),
+        ])
     }
 
     /// `priced.. The` -> `priced. The`.

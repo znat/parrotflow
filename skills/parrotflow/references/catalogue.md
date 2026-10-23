@@ -30,6 +30,7 @@ in the last column.
 | Numbers | "two hundred forty-three" → 243 | `numbers_en`, `numbers_fr` | 30–100 ms | English only | "Write numbers as digits in French" | rewrites |
 | Money | "twenty dollars" → $20 | `money_en`, `money_fr` | 30–100 ms | English only | "Euros too" | rewrites |
 | Disfluency | Repeats and false starts: "the the" → "the" | `disfluency` | 40–100 ms | on | "Stop removing my repetitions" | rewrites |
+| Self-corrections | Takes back what you corrected: "on Monday, no, on Tuesday" → "on Tuesday". English | `transcription.disfluency` | ~11 ms, 530 MB download | off | "Remove the part I took back" | rewrites |
 | Your own rules | A word, symbol, pattern, link or format | `transforms`, `transcription.pipeline` | none to ~1.5 s | none | "When I say arrow, write →" | rewrites |
 | Per-app rules | A step that runs only in some apps. A chip cannot be limited to an app | `app:` on a step | none | none | "Only in my terminal" | rewrites |
 | Formatting into Slack | Lists, bold and links arrive formatted | — | none | Slack only | "Bullets in Slack" | rewrites |

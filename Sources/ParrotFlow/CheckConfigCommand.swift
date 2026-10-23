@@ -146,6 +146,10 @@ enum CheckConfigCommand {
                 emit("  · sentence marks    \(marks.joined(separator: " "))"
                     + (step.repair.isOn(\.capitals) ? "" : "  (bare capitals off)"))
             }
+            if pipeline.stages.contains(.treeCutter) {
+                let threshold = transcription.disfluency.threshold ?? 0.80
+                emit("  · tree cutter       threshold \(String(format: "%.2f", threshold)), English only")
+            }
             // An empty pipeline is a choice, not a blank: printing nothing
             // there reads as a display fault rather than as the answer to "why
             // did none of this run".

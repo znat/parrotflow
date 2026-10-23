@@ -653,6 +653,7 @@ actor Transcriber {
         if config.transcription.contextSpelling.enabled || (english && config.readsBoundaries) {
             Task { await SentenceReadings.shared.warm() }
         }
+        if english, config.readsTreeCutter { Task { await SyrinxModel.shared.warm() } }
         if english {
             // The set the sound pass actually reads, not the shorter one the
             // audio search needed. `vocabularyTerms` drops anything under five

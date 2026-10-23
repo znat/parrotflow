@@ -1796,6 +1796,9 @@ struct Config: Decodable, Equatable {
         /// Whether the block was written under its old name, for `notices()`.
         var retiredInterpretBlock = false
         var vocabulary = Vocabulary()
+        /// Self-corrections taken back by the parser, after `vocabulary` — see
+        /// `TreeCutter`.
+        var disfluency = Disfluency()
         /// A span respelled the way the screen writes it, after the last step
         /// — see `ContextSpelling`.
         var contextSpelling = ContextSpelling()
@@ -1971,6 +1974,34 @@ struct Config: Decodable, Equatable {
             }
         }
 
+        /// Off unless turned on. A nil threshold is the cut filter's own.
+        struct Disfluency: Decodable, Equatable {
+            var enabled = false
+            var threshold: Double?
+
+            enum CodingKeys: String, CodingKey, CaseIterable {
+                case enabled, threshold
+            }
+
+            init() {}
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
+                if let written = try c.decodeIfPresent(Double.self, forKey: .threshold) {
+                    guard (0...1).contains(written) else {
+                        throw ConfigError.invalidValue(
+                            key: "transcription.disfluency.threshold",
+                            value: "\(written)",
+                            expected: "a probability from 0 to 1 — the cut filter keeps a cut"
+                                + " at P(real) at or above it"
+                        )
+                    }
+                    threshold = written
+                }
+            }
+        }
+
         /// On by default. With `every_app: false`, only terminals and Slack are
         /// read.
         struct ContextRead: Decodable, Equatable {
@@ -2082,6 +2113,7 @@ struct Config: Decodable, Equatable {
             case enabled, replacements, pipeline, languages, vocabulary, context
             case sentenceRepair = "sentence_repair"
             case contextSpelling = "context_spelling"
+            case disfluency
             case insertMode = "insert_mode"
             case activationPhrases = "activation_phrases"
             case activationPhrase = "activation_phrase"
@@ -2500,6 +2532,7 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(ContextSpelling.self, forKey: .contextSpelling) {
                 contextSpelling = v
             }
+            if let v = try c.decodeIfPresent(Disfluency.self, forKey: .disfluency) { disfluency = v }
             if let v = try c.decodeIfPresent(ContextRead.self, forKey: .context) { context = v }
             if let v = try c.decodeIfPresent([String].self, forKey: .languages) {
                 let known = v.map { $0.lowercased() }
@@ -3289,6 +3322,10 @@ struct Config: Decodable, Equatable {
                 + " use `transcription.\(stage.name): {enabled: false}` to turn"
                 + " it off")
         }
+        if transcription.pipeline?.stages.contains(.treeCutter) == true {
+            said.append("pipeline: `- tree_cutter` is not a step. It runs after `vocabulary`"
+                + " when `transcription.disfluency: {enabled: true}` — delete the line")
+        }
         if transcription.pipeline?.stages.contains(.contextSpelling) == true {
             said.append("pipeline: `- context_spelling` is not a step. It runs last"
                 + " when `transcription.context_spelling: {enabled: true}` — delete the line")
@@ -3407,6 +3444,11 @@ struct Config: Decodable, Equatable {
     /// warm that disagrees with the pipeline fetches weights nothing will read.
     var readsBoundaries: Bool {
         Pipeline.resolved(config: self).stages.contains(.sentenceRepair)
+    }
+
+    /// Whether the tree cutter runs, so whether parrotflow-syrinx is fetched.
+    var readsTreeCutter: Bool {
+        transcription.disfluency.enabled && transcription.languages.contains("en")
     }
 
     /// Whether anything will read the sentence model: `sentence_repair` or
