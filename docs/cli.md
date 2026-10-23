@@ -603,8 +603,8 @@ $PF --parse --batch <items.json>                         # many inputs in one lo
 $PF --parse --batch <items.json> --split                 # the word split alone, no model
 ```
 
-`--parse` runs parrot-syrinx, our dependency parser, in Core ML. The first call
-fetches it from `znaat/parrot-syrinx-coreml` at a pinned revision, about 530 MB.
+`--parse` runs parrotflow-syrinx, our dependency parser, in Core ML. The first call
+fetches it from `znaat/parrotflow-syrinx-coreml` at a pinned revision, about 530 MB.
 English only, because only English has a word splitter. `don't` is two words,
 `do` and `n't`, as in the treebanks the parser learned from.
 

@@ -71,7 +71,7 @@ status=$?
 
 # A cache built for other pinned hashes must be fetched again, never loaded.
 # The fetch goes to a closed port, so it fails fast and the parse abstains.
-STALE="$WORK/home/Library/Application Support/ParrotFlow/models/parrot-syrinx"
+STALE="$WORK/home/Library/Application Support/ParrotFlow/models/parrotflow-syrinx"
 mkdir -p "$STALE"
 zeros=0000000000000000000000000000000000000000000000000000000000000000
 printf '{"pinned":{"syrinx.safetensors":"%s"},"files":{"syrinx.safetensors":"%s"}}' "$zeros" "$zeros" > "$STALE/digests.json"

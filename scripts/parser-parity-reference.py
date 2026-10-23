@@ -119,7 +119,8 @@ def main():
 
     near_count = len(next(i for i in items if i["id"] == "long-near-256")["ids"])
     assert near_count <= model.limit and any(i.get("abstain") == "subwords" for i in items)
-    args.out.write_text(json.dumps(items, ensure_ascii=False, indent=1) + "\n")
+    lines = (json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in items)
+    args.out.write_text("[\n" + ",\n".join(lines) + "\n]\n")
     print(f"{len(items)} items, long-near-256 has {near_count} subwords -> {args.out}")
 
 

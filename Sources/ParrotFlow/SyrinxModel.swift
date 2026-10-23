@@ -22,18 +22,19 @@ actor SyrinxModel {
         }
     }
 
-    private static let repository = "znaat/parrot-syrinx-coreml"
-    static let revision = "6ef93ba322a66cb3fda0addde0dd8f541b97e3fb"
-    private static let packageName = "parrot-syrinx.mlpackage"
+    private static let repository = "znaat/parrotflow-syrinx-coreml"
+    static let revision = "f3f75830f56901b45069df3492ade0040a6e2e39"
+    private static let packageName = "parrotflow-syrinx.mlpackage"
 
     private static let pinned: [String: String] = [
-        "\(packageName)/Manifest.json": "0a17227b61be34f337598d3aed394179165e6528e458358a4226f84f49547574",
-        "\(packageName)/Data/com.apple.CoreML/model.mlmodel": "9c69fbe3e85c338154d5e1ab9e5e7758e4b6efc2d0a5871e84b1a35018ca1c62",
-        "\(packageName)/Data/com.apple.CoreML/weights/weight.bin": "2df7b948ee285b49281f9a7170357ccaef367cf1ba24036e861dfe8d82d210a7",
-        "syrinx.safetensors": "9b7396778657b8ce59cc659a756d9e0df429f86f2a00059fb22c25ef49890e24",
+        "cut-filter.safetensors": "b6746f9082ba881031ab4b298d255823521f4ea7e31dd29ec4be6e17249086a9",
+        "\(packageName)/Manifest.json": "92723dd897adbc78eb6aa4c793decb8fe4dcc6be2f8653eb11a45cf42f8d0a6f",
+        "\(packageName)/Data/com.apple.CoreML/model.mlmodel": "12b318dc69411d3f1dfdc865583a24d5ab8d1f8d39c4a874e91ef8ee875d2c9d",
+        "\(packageName)/Data/com.apple.CoreML/weights/weight.bin": "f23f2bbb731edd4786445c900b1c84f0ee2e9ddd8b69425341ac5033c4362f44",
+        "syrinx.safetensors": "da6385895a409154077179fe0269c7cae92effee4d779e822f9412a6b0534045",
         "tokenizer.json": "197d4cc5406ee12cc50c8b5511f2393cc32d9db321545979ce041c1199178356",
     ]
-    private static let kept = ["syrinx.safetensors", "tokenizer.json"]
+    private static let kept = ["cut-filter.safetensors", "syrinx.safetensors", "tokenizer.json"]
 
     /// `PARROTFLOW_SYRINX_ENDPOINT` points this download, and no other, at a
     /// mirror for tests. What it serves must still match `pinned`.
@@ -49,17 +50,17 @@ actor SyrinxModel {
     }
 
     static var directory: URL {
-        AppVariant.supportDirectory.appendingPathComponent("models/parrot-syrinx", isDirectory: true)
+        AppVariant.supportDirectory.appendingPathComponent("models/parrotflow-syrinx", isDirectory: true)
     }
 
     static var compiledURL: URL {
-        directory.appendingPathComponent("parrot-syrinx.mlmodelc", isDirectory: true)
+        directory.appendingPathComponent("parrotflow-syrinx.mlmodelc", isDirectory: true)
     }
 
     private static var digestsURL: URL { directory.appendingPathComponent("digests.json") }
 
     private static var lockURL: URL {
-        directory.deletingLastPathComponent().appendingPathComponent("parrot-syrinx.lock")
+        directory.deletingLastPathComponent().appendingPathComponent("parrotflow-syrinx.lock")
     }
 
     static var isCached: Bool { FileManager.default.fileExists(atPath: digestsURL.path) }
