@@ -28,8 +28,8 @@ WEIGHTS = ROOT / "built-in/data/vocab-clause.safetensors"
 MARGIN = 1e-3
 
 
-def use(said, span, counter=False, heard=None):
-    return dict(said=said, span=span, counter=counter, heard=heard)
+def use(said, span, counter=False, heard=None, source="correction"):
+    return dict(said=said, span=span, counter=counter, heard=heard, **{"from": source})
 
 
 VERCEL = [
@@ -102,6 +102,19 @@ GROUPS = [
     ("group-deploy-1", DEPLOY, 0, {"Mick": MICK, "Mik": MIK}),
     ("group-deploy-2", DEPLOY, 1, {"Mick": MICK, "Mik": MIK}),
     ("group-cold", "Mick is reviewing pull requests today.", 0, {"Mick": MICK, "Mik": []}),
+    # Heard "Mick" was once corrected to Mik, and Mick was once picked on the pill over Mik.
+    ("group-history-1", "Mick is writing code while Mick is playing the piano.", 0, {
+        "Mick": MICK + [use("Mick tuned the old piano before the show.", "Mick", source="chosen")],
+        "Mik": MIK + [use("Mik merged the branch after the review.", "Mik", heard="Mick"),
+                      use("Mick tuned the old piano before the show.", "Mick", counter=True, source="chosen")]}),
+    ("group-history-2", "Mick is writing code while Mick is playing the piano.", 1, {
+        "Mick": MICK + [use("Mick tuned the old piano before the show.", "Mick", source="chosen")],
+        "Mik": MIK + [use("Mik merged the branch after the review.", "Mik", heard="Mick"),
+                      use("Mick tuned the old piano before the show.", "Mick", counter=True, source="chosen")]}),
+    # The same history without the refusal the choice now writes: both sides earn +1, so neither gets an edge.
+    ("group-history-old", "Mick is writing code while Mick is playing the piano.", 1, {
+        "Mick": MICK + [use("Mick tuned the old piano before the show.", "Mick", source="chosen")],
+        "Mik": MIK + [use("Mik merged the branch after the review.", "Mik", heard="Mick")]}),
 ]
 # A closed-class edge word dropped before reading: (key, text, heard, term, rows).
 TRIMS = [
@@ -185,15 +198,14 @@ def main():
         m = ipa.of([heard, term])
         return V2.similarity(m[heard], m[term])
 
-    def reading(p, a, b, heard, term, rows):
+    def reading(p, a, b, heard, term, rows, shared=False):
         acc, ref = [], []
         for u in rows:
             at = C.occurrence(u["span"], u["said"])
             v = place(parses[u["said"]], *at)[0] if at else None
             if v is not None:
                 (ref if u["counter"] else acc).append(v)
-        acc_forms = {C.norm(u["heard"]) for u in rows if not u["counter"] and u.get("heard")}
-        ref_forms = {C.norm(u["span"]) for u in rows if u["counter"]}
+        pair_acc, pair_ref = C.pairs(heard, term, rows, shared)
         v, span, toks = place(p, a, b)
         if not span:
             return None
@@ -202,7 +214,7 @@ def main():
              "sim_ref": float(v @ cr) if v is not None and cr is not None else None,
              "ner": C.ner_entity(ner, p, span), **C.pos_features(p, span),
              "sound": sound(heard, term), "known": known(heard),
-             "pair_acc": float(C.norm(heard) in acc_forms), "pair_ref": float(C.norm(heard) in ref_forms)}
+             "pair_acc": pair_acc, "pair_ref": pair_ref}
         d, prob, z, _ = C.decide(model, f)
         clause = [min(p["starts"][k] for k in toks), max(p["ends"][k] for k in toks)] if toks else None
         return dict(decision=d, p=round(prob, 6), z=round(z, 6), clause=clause,
@@ -229,7 +241,7 @@ def main():
                 continue
         probs = []
         if it.get("memory"):
-            members = {t: reading(p, a, b, heard, t, rows) for t, rows in sorted(it["memory"].items())}
+            members = {t: reading(p, a, b, heard, t, rows, shared=True) for t, rows in sorted(it["memory"].items())}
             d, what = C.decide_group([(t, r["p"], r["features"]["sim_acc"] is not None)
                                       for t, r in members.items()])
             line.update(members=members, group=dict(decision=d, terms=[what] if d == "write" else what or []))
