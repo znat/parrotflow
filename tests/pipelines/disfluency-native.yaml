@@ -1,0 +1,11 @@
+# The `disfluency` string rules, run in process instead of through
+# disfluency.py. scripts/check-disfluency-native.sh scores it against
+# tests/disfluency-native-cases.json.
+languages: [en]
+transforms:
+  - name: disfluency
+    description: delete repeats and false starts
+    native: disfluency
+
+pipeline:
+  - transform: disfluency

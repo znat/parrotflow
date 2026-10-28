@@ -523,7 +523,7 @@ transforms:
 exist. `replace:` is a substitution table of its own, in the same shape as
 the `vocabulary` stage, and costs nothing. `command:` runs a program of
 yours, which costs a process start — about 30ms for `python3`, 5ms for a shell
-script.
+script. `native:` names a rewrite built into the app, which runs in process.
 
 ### The folder, and `path:`
 
@@ -785,6 +785,26 @@ identifiers were going to need a case operator in the substitution engine, and
 whatever came next would have needed something else. A command needs nothing
 added ever again — which is the point, and the reason it is worth the process
 start.
+
+### `native:`, a rewrite built into the app
+
+`native:` names a rewrite that runs inside the app, with no process start.
+There is one, `disfluency`. It applies the repeat, fragment, restart and partial
+rules of `built-in/transforms/disfluency/disfluency.py` and returns the same
+text.
+
+```yaml
+transforms:
+  - name: disfluency
+    description: delete repeats and false starts
+    native: disfluency
+```
+
+It publishes `disfluency.applied`, `disfluency.edits` and `disfluency.declined`,
+like the script does with `returns: json`. It does not have the marker rule yet,
+so `declined` says `word fillers need the parser` when an English transcript
+holds "I mean", "you know" or "like". Any other name is refused, and
+`--check-config` says so.
 
 ### `join`, which fits a clip to the box it lands in
 

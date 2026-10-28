@@ -30,6 +30,7 @@ Before writing a prompt, decide what should be doing the job at all:
 |---|---|---|
 | `replace:` | nothing (0.035 s for a whole pipeline) | the answer is already in the text, marked by a pattern you can write |
 | `command:` | one process start (~30 ms `python3`, ~5 ms shell) | the rule is real but needs code — casing, a lookup table, anything with a branch |
+| `native:` | nothing, in process | a rule built into the app; today only `disfluency` |
 | `prompt:` | ~1.5 s warm, 6.7 s cold | only judgement will do — which words the speaker meant, what an instruction is asking for |
 
 Getting this wrong is the expensive mistake, and it is usually made in the
