@@ -61,6 +61,11 @@ MIK = [
     use("I asked Mik to fix the failing build.", "Mik"),
     use("Mik pushed a patch for the login bug yesterday.", "Mik"),
 ]
+MIK_CODE = [
+    use("Mik is writing the parser code this week.", "Mik"),
+    use("Mik wrote the code for the migration script.", "Mik"),
+    use("I paired with Mik on the build code yesterday.", "Mik"),
+]
 MICK = [
     use("Mick played the guitar at the wedding.", "Mick"),
     use("We went to see Mick play a concert downtown.", "Mick"),
@@ -128,6 +133,15 @@ GROUPS = [
     ("group-castle", CASTLE, 1, {"Vercel": VENDOR, "Versailles": []}),
     ("group-vendor-deploy-rows", CASTLE, 0, {"Vercel": VENDOR_DEPLOY, "Versailles": []}),
     ("group-castle-deploy-rows", CASTLE, 1, {"Vercel": VENDOR_DEPLOY, "Versailles": []}),
+    # The same history, with Mik's sentences about writing code.
+    ("group-history-code-rows-1", "Mick is writing code while Mick is playing the piano.", 0, {
+        "Mick": MICK + [use("Mick tuned the old piano before the show.", "Mick", source="chosen")],
+        "Mik": MIK_CODE + [use("Mik merged the branch after the review.", "Mik", heard="Mick"),
+                           use("Mick tuned the old piano before the show.", "Mick", counter=True, source="chosen")]}),
+    ("group-history-code-rows-2", "Mick is writing code while Mick is playing the piano.", 1, {
+        "Mick": MICK + [use("Mick tuned the old piano before the show.", "Mick", source="chosen")],
+        "Mik": MIK_CODE + [use("Mik merged the branch after the review.", "Mik", heard="Mick"),
+                           use("Mick tuned the old piano before the show.", "Mick", counter=True, source="chosen")]}),
     # The same history without the refusal the choice now writes: both sides earn +1, so neither gets an edge.
     ("group-history-old", "Mick is writing code while Mick is playing the piano.", 1, {
         "Mick": MICK + [use("Mick tuned the old piano before the show.", "Mick", source="chosen")],
@@ -216,14 +230,14 @@ def main():
         m = ipa.of([heard, term])
         return V2.similarity(m[heard], m[term])
 
-    def reading(p, a, b, heard, term, rows, shared=False):
+    def reading(p, a, b, heard, term, rows, shared=False, peers=()):
         acc, ref = [], []
         for u in rows:
             at = C.occurrence(u["span"], u["said"])
             v = place(parses[u["said"]], *at)[0] if at else None
             if v is not None:
                 (ref if u["counter"] else acc).append(v)
-        pair_acc, pair_ref = C.pairs(heard, term, rows, shared)
+        pair_acc, pair_ref = C.pairs(heard, term, rows, shared, peers)
         v, span, toks = place(p, a, b)
         if not span:
             return None
@@ -259,7 +273,9 @@ def main():
                 continue
         probs = []
         if it.get("memory"):
-            members = {t: reading(p, a, b, heard, t, rows, shared=True) for t, rows in sorted(it["memory"].items())}
+            members = {t: reading(p, a, b, heard, t, rows, shared=True,
+                                  peers=[u for o, rs in it["memory"].items() if o != t for u in rs])
+                       for t, rows in sorted(it["memory"].items())}
             d, what = C.decide_group([dict(term=t, p=r["p"], sim=r["features"]["sim_acc"],
                                            n=r["features"]["pair_acc"] - r["features"]["pair_ref"])
                                       for t, r in members.items()], heard)
