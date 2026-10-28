@@ -229,6 +229,11 @@ enum TreeCutter {
         var abandoned: [Float] = []
         var cue: [Float] = []
         var vectors: [Float] = []
+        var fused: [Float] = []
+        /// `UPOS.allCases` probabilities, 17 per token.
+        var uposProbabilities: [Float] = []
+        /// Token index ranges, one per parsed window.
+        var windows: [Range<Int>] = []
         /// Per token, the view word holding its first scalar; nil when it has no alphanumeric.
         var tokenWord: [Int?] = []
 
@@ -245,12 +250,15 @@ enum TreeCutter {
                 else { continue }
                 let base = tokens.count
                 tokens += found
+                windows.append(base ..< tokens.count)
                 heads += analysis.parse.words.map { $0.head == 0 ? 0 : $0.head + base }
                 labels += analysis.parse.words.map(\.label)
                 upos += analysis.parse.words.map(\.tag.rawValue)
+                uposProbabilities += analysis.parse.words.flatMap(\.upos)
                 abandoned += analysis.abandoned
                 cue += analysis.cue
                 vectors += analysis.vectors
+                fused += analysis.fused
             }
             tokenWord = tokens.map { token in
                 guard token.string.unicodeScalars.contains(where: WordSplit.isAlnum) else { return nil }
