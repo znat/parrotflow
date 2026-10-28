@@ -6335,10 +6335,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // The clause decider reads a choice both ways: every other term
             // offered here is refused at this word. Not released, so the
-            // chosen term keeps the place.
+            // chosen term keeps the place. The term spelled like the heard
+            // words is skipped when the use row records them: the decider
+            // already counts that row as its refusal.
             if config.decidesByClause, let picked, !written.isEmpty {
                 let offered = open.group.count > 1 ? open.group : [open.term]
-                for other in offered where other.caseInsensitiveCompare(picked) != .orderedSame {
+                for other in offered where other.caseInsensitiveCompare(picked) != .orderedSame
+                    && replaced.map({ ClauseDecider.norm($0) != ClauseDecider.norm(other) }) ?? true {
                     try TermUses.record(
                         term: other, said: text, span: word.word, from: .chosen, counter: true, near: at
                     )

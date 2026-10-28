@@ -102,8 +102,10 @@ enum ClauseDecideCommand {
                     var members: [(term: String, reading: ClauseDecider.Reading)] = []
                     var each: [String: Any] = [:]
                     for (term, rows) in group.sorted(by: { $0.key < $1.key }) {
+                        let peers = group.filter { $0.key != term }.flatMap { $0.value.map(\.use) }
                         guard let r = decide(item.text, at: range, heard: heard, term: term, rows: rows.map(\.use),
-                                             parser: parser, model: model, shared: true)?.reading else { continue }
+                                             parser: parser, model: model, shared: true, peers: peers)?.reading
+                        else { continue }
                         members.append((term, r))
                         each[term] = line(r)
                     }
@@ -136,7 +138,7 @@ enum ClauseDecideCommand {
     /// Every row parsed here, uncached: the store is the app's, not the bench's.
     private static func decide(
         _ text: String, at range: Range<Int>, heard: String, term: String, rows: [TermUses.Use],
-        parser: Parser, model: ClauseDecider.Model, shared: Bool = false
+        parser: Parser, model: ClauseDecider.Model, shared: Bool = false, peers: [TermUses.Use] = []
     ) -> (reading: ClauseDecider.Reading, accepted: Int, refused: Int)? {
         var accepted: [[Float]] = [], refused: [[Float]] = []
         for row in rows {
@@ -146,7 +148,7 @@ enum ClauseDecideCommand {
         let parsed = ClauseDecider.Parsed(text, parser: parser)
         guard let reading = ClauseDecider.read(
             parsed, at: range, heard: heard, term: term, accepted: accepted, refused: refused,
-            pairs: ClauseDecider.pairs(heard: heard, term: term, rows: rows, shared: shared), model: model)
+            pairs: ClauseDecider.pairs(heard: heard, term: term, rows: rows, shared: shared, peers: peers), model: model)
         else { return nil }
         return (reading, accepted.count, refused.count)
     }

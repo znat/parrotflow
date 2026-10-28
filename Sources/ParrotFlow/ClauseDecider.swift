@@ -305,8 +305,11 @@ enum ClauseDecider {
     /// A single-term place: whether this exact swap was accepted, and refused,
     /// before. A shared place: the sign of the net counter, so a pair counter
     /// gives no member an edge another cannot earn — the member spelled like
-    /// the heard form is credited with the pill choices of that form.
-    static func pairs(heard: String, term: String, rows: [TermUses.Use], shared: Bool) -> (accepted: Double, refused: Double) {
+    /// the heard form is credited with the pill choices of that form, and
+    /// refused once for each correction of that form to a peer.
+    static func pairs(
+        heard: String, term: String, rows: [TermUses.Use], shared: Bool, peers: [TermUses.Use] = []
+    ) -> (accepted: Double, refused: Double) {
         let h = norm(heard)
         let accepted = rows.filter { !$0.counter }
         let refused = rows.filter(\.counter)
@@ -317,6 +320,7 @@ enum ClauseDecider {
         var net = accepted.filter { $0.heard.map(norm) == h }.count - refused.filter { norm($0.span) == h }.count
         if norm(term) == h {
             net += accepted.filter { $0.from == .chosen && norm($0.span) == h }.count
+            net -= peers.filter { !$0.counter && $0.heard.map(norm) == h }.count
         }
         return (net > 0 ? 1 : 0, net < 0 ? 1 : 0)
     }
@@ -389,7 +393,8 @@ extension ClauseDecider {
     /// they are told apart by how close the clause is to each one's
     /// sentences, plus its net counter; p only says the slot holds a name.
     /// The member spelled like the heard words is the default and needs no
-    /// evidence; another must beat it by the margin to be written.
+    /// evidence; another must beat it by the margin to be written. Counters
+    /// move a lead by half a margin at most, so they never write alone.
     static func decideGroup(
         _ members: [(term: String, reading: Reading)], heard: String, model: Model
     ) -> GroupDecision {
@@ -400,7 +405,7 @@ extension ClauseDecider {
         }
         func lead(_ t: Candidate, over u: Candidate) -> (gap: Double, margin: Double) {
             let margin = u.sim == nil ? marginCold : marginWarm
-            return ((t.sim ?? 0) - (u.sim ?? 0) + margin / 2 * (t.net - u.net), margin)
+            return ((t.sim ?? 0) - (u.sim ?? 0) + margin / 2 * min(1, max(-1, t.net - u.net)), margin)
         }
         if let fallback = all.first(where: { norm($0.term) == norm(heard) }) {
             let others = all.filter { $0.term != fallback.term }
@@ -531,12 +536,15 @@ final class ClauseSession {
         let a = text.unicodeScalars.distance(from: text.unicodeScalars.startIndex, to: change.range.lowerBound)
         let b = a + change.was.unicodeScalars.count
         let parse = parsing(heardText)
-        let rows = TermUses.load()[term] ?? []
+        let stored = TermUses.load()
+        let rows = stored[term] ?? []
+        let peers = shared ? change.group.filter { $0 != term }.flatMap { stored[$0] ?? [] } : []
         let memory = await ClauseStore.shared.memory(of: rows, parser: parser, model: model)
         guard let reading = ClauseDecider.read(
             parse, at: a ..< b, heard: change.was, term: term,
             accepted: memory.accepted, refused: memory.refused,
-            pairs: ClauseDecider.pairs(heard: change.was, term: term, rows: rows, shared: shared), model: model
+            pairs: ClauseDecider.pairs(heard: change.was, term: term, rows: rows, shared: shared, peers: peers),
+            model: model
         ) else {
             lines.append("\"\(change.was)\" -> \(term): no parser token at the place")
             return nil
