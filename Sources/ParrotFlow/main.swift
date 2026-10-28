@@ -624,7 +624,8 @@ if arguments.contains("--tree-test") {
     let press = PressReadTest.run()
     let teams = TeamsReaderTest.run()
     let outlook = OutlookReaderTest.run()
-    exit([labels, reader, generic, press, teams, outlook].allSatisfy { $0 == 0 } ? 0 : 1)
+    let input = InputBoxTest.run()
+    exit([labels, reader, generic, press, teams, outlook, input].allSatisfy { $0 == 0 } ? 0 : 1)
 }
 
 if let index = arguments.firstIndex(of: "--context-test") {

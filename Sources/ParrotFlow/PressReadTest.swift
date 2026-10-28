@@ -165,7 +165,7 @@ enum PressReadTest {
         return got
     }
 
-    private static func blocking<T: Sendable>(_ body: @escaping @Sendable () async -> T) -> T {
+    static func blocking<T: Sendable>(_ body: @escaping @Sendable () async -> T) -> T {
         let done = DispatchSemaphore(value: 0)
         let box = Box<T>()
         Task.detached {

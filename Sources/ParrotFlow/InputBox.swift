@@ -1,3 +1,4 @@
+import AXKit
 import AppKit
 import ApplicationServices
 
@@ -114,6 +115,8 @@ enum InputBox {
         case noInputBox = "no input box found between the rules this terminal draws"
         case noPress = "nothing was captured when the hotkey went down"
         case reading = "the field was still being read when this stage was reached"
+        case denied = "this app is never read: it holds passwords or system settings"
+        case secure = "the focused field is a password field"
     }
 
     // MARK: - The capture, which happens when the hotkey goes down
@@ -248,9 +251,17 @@ enum InputBox {
     static func read(
         app: Pipeline.App?, from element: AXUIElement
     ) -> Result<Capture, Declined> {
-        guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard let app else { return .failure(.noApp) }
+        if let why = refusal(app: app, owner: nil, readable: { true }) { return .failure(why) }
+        guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard !SelectionReader.isOurs(element) else { return .failure(.nothingFocused) }
+        AXUIElementSetMessagingTimeout(element, 0.5)
+        var pid: pid_t = 0
+        let owner = AXUIElementGetPid(element, &pid) == .success
+            ? NSRunningApplication(processIdentifier: pid)?.bundleIdentifier : nil
+        if let why = refusal(app: app, owner: owner, readable: { Element(element).valueIsReadable }) {
+            return .failure(why)
+        }
         guard let value = SelectionReader.visibleText(of: element) else {
             return .failure(.unreadable)
         }
@@ -282,6 +293,17 @@ enum InputBox {
             before: cut.before, selection: cut.selection, after: cut.after,
             text: nil, appending: cut.appending,
             total: total, truncated: cut.truncated))
+    }
+
+    /// Why the field must not be read, or nil. The same list the screen read
+    /// uses, checked on the app the press was for and on the process that owns
+    /// the focus: a password manager's panel can hold it over another app.
+    /// `readable` is asked last, so a denied app is never asked for its field.
+    static func refusal(app: Pipeline.App, owner: String?, readable: () -> Bool) -> Declined? {
+        let denied = [app.bundleID, owner].compactMap { $0?.lowercased() }
+            .contains(where: ContextReader.deniedBundleIDs.contains)
+        if denied { return .denied }
+        return readable() ? nil : .secure
     }
 
     /// The field cut into three at the selection, each side capped on its own.
