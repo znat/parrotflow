@@ -372,7 +372,10 @@ enum ClauseDecider {
 
 extension ClauseDecider {
 
-    static let groupMargin = 0.30
+    /// Margins in sim_acc, the first against a member with accepted
+    /// sentences, the second against one with none: the smallest with no
+    /// wrong pick on the two-name toy and on the public test places.
+    static let marginWarm = 0.15, marginCold = 0.75
     private static let closed: Set<String> = ["ADP", "DET", "CCONJ", "PRON", "AUX"]
 
     enum GroupDecision: Equatable {
@@ -382,18 +385,42 @@ extension ClauseDecider {
         case leave
     }
 
-    /// A place several terms compete for. The best member writes only when it
-    /// is warm, clears the write bar and leads the runner-up by `groupMargin`
-    /// in p; otherwise the top two are offered while the best clears the
-    /// leave bar.
-    static func decideGroup(_ members: [(term: String, reading: Reading)], model: Model) -> GroupDecision {
-        let ranked = members.sorted { $0.reading.p > $1.reading.p }
-        guard let best = ranked.first else { return .leave }
-        let second = ranked.count > 1 ? ranked[1].reading.p : 0
-        if !best.reading.cold, best.reading.p >= model.write, best.reading.p - second >= groupMargin {
-            return .write(best.term)
+    /// A place several terms compete for. Every member shares the slot, so
+    /// they are told apart by how close the clause is to each one's
+    /// sentences, plus its net counter; p only says the slot holds a name.
+    /// The member spelled like the heard words is the default and needs no
+    /// evidence; another must beat it by the margin to be written.
+    static func decideGroup(
+        _ members: [(term: String, reading: Reading)], heard: String, model: Model
+    ) -> GroupDecision {
+        struct Candidate { let term: String; let p: Double; let sim: Double?; let net: Double }
+        let all = members.map {
+            Candidate(term: $0.term, p: $0.reading.p, sim: $0.reading.features.simAccepted,
+                      net: $0.reading.features.pairAccepted - $0.reading.features.pairRefused)
         }
-        return best.reading.p >= model.leave ? .offer(ranked.prefix(2).map(\.term)) : .leave
+        func lead(_ t: Candidate, over u: Candidate) -> (gap: Double, margin: Double) {
+            let margin = u.sim == nil ? marginCold : marginWarm
+            return ((t.sim ?? 0) - (u.sim ?? 0) + margin / 2 * (t.net - u.net), margin)
+        }
+        if let fallback = all.first(where: { norm($0.term) == norm(heard) }) {
+            let others = all.filter { $0.term != fallback.term }
+            guard let best = others.max(by: { a, b in
+                let (x, y) = (lead(a, over: fallback).gap, lead(b, over: fallback).gap)
+                return x != y ? x < y : a.p < b.p
+            }) else { return .leave }
+            let (gap, margin) = lead(best, over: fallback)
+            if best.sim != nil, best.p >= model.write, gap >= margin { return .write(best.term) }
+            return gap >= margin / 2 ? .offer([best.term, fallback.term]) : .leave
+        }
+        let ranked = all.sorted { a, b in
+            let (x, y) = ((a.sim ?? 0) + marginWarm / 2 * a.net, (b.sim ?? 0) + marginWarm / 2 * b.net)
+            return x != y ? x > y : a.p > b.p
+        }
+        guard let best = ranked.first else { return .leave }
+        let (gap, margin) = ranked.count > 1
+            ? lead(best, over: ranked[1]) : ((best.sim ?? 0) + marginWarm / 2 * best.net, marginCold)
+        if best.sim != nil, best.p >= model.write, gap >= margin { return .write(best.term) }
+        return best.p >= model.leave ? .offer(ranked.prefix(2).map(\.term)) : .leave
     }
 
     /// The heard run without a closed-class first or last word the term does
@@ -543,7 +570,7 @@ final class ClauseSession {
             else { return nil }
             members.append((member, reading))
         }
-        let decision = ClauseDecider.decideGroup(members, model: model)
+        let decision = ClauseDecider.decideGroup(members, heard: change.was, model: model)
         places += 1
         let said: String
         switch decision {

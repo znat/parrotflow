@@ -108,7 +108,7 @@ enum ClauseDecideCommand {
                         each[term] = line(r)
                     }
                     out["members"] = each
-                    switch ClauseDecider.decideGroup(members, model: model) {
+                    switch ClauseDecider.decideGroup(members, heard: heard, model: model) {
                     case .write(let term): out["group"] = ["decision": "write", "terms": [term]]
                     case .offer(let top): out["group"] = ["decision": "offer", "terms": top]
                     case .leave: out["group"] = ["decision": "leave", "terms": [String]()]
