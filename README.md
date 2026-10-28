@@ -11,8 +11,9 @@ Local dictation for macOS that you can program.
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=5f46ca&label=release)](https://github.com/znat/parrotflow/releases)
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
 ![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-5f46ca)
+[![As seen on Open Source Alternatives](https://www.opensourcealternatives.to/badge-osa.svg)](https://www.opensourcealternatives.to)
 
-**[Install](#install)** · [What it does](#what-it-does) · [Documentation](docs/README.md)
+**[Install](#install)** · [What it does](#what-it-does) · [Documentation](docs/README.md) · [Website](https://parrotflow.io)
 
 </div>
 
