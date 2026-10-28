@@ -211,8 +211,7 @@ lists:
 #   done          what the pill says when this leaves the text alone on purpose
 #   failed        what the pill says when this could not run — markdown
 #   path          a body too long for here — transforms/X/, e.g. prompt: { path: slack.md }
-# More of them ship unwired in transforms/built-in/ — spoken punctuation,
-# dotted paths, code identifiers. See docs/pipelines.md.
+# More in docs/pipelines.md.
 transforms:
   - name: grammar
     description: fix grammar and punctuation mistakes, not formatting or numbers

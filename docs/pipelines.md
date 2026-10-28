@@ -1370,8 +1370,11 @@ not that it is fresher. It is that the pane is certain.
 
 A terminal read costs about 1ms on a small pane and 36–39ms on a long
 scrollback. A Slack walk costs 130–150ms. Both run on a background queue after
-the recorder has started. The read is skipped entirely unless some pipeline
-names the stage.
+the recorder has started. The read runs when `transcription.pipeline` names the
+stage or when `context_spelling` is on (`Context.isConfigured`).
+`context_spelling` is on by default, so in practice the screen is read at every
+press. To skip the read, turn `context_spelling` off and leave `context` out of
+the pipeline.
 
 **This does not fix where the text lands.** If you dictate into one pane and
 switch to another before the transcript is ready, the ⌘V still goes to the pane
@@ -1483,12 +1486,14 @@ selection replaces it, and what is about to be replaced is worth seeing.
 that could put the field into the transcript could paste what you already typed
 back on top of itself.
 
-**Why it is a separate stage.** Two reasons. `context` is terminals-only
-because reading the surrounding screen anywhere else means walking a window's
-children; the box *is* the focused element, so it is one call in a native field,
-a browser and an Electron composer alike. And naming `context` says "read my
-terminal". It must not also come to mean "read what I have typed in every app I
-dictate into". You turn each on by name.
+**Why it is a separate stage.** Two reasons. `context` reads the screen around
+the box. It shares one read with context spelling: `Context.capturePress` takes
+it at the press, and `ContextReader.choose` picks the reader for the app. Outside
+a terminal that read walks the window's children. The box *is* the focused
+element, so reading it is one call in a native field, a browser and an Electron
+composer alike. And naming `context` says "publish what is on screen". It must
+not also come to mean "publish what I have typed in every app I dictate into".
+You turn each on by name.
 
 **Appending or inserting.** This is what the stage is for. A transcript joining
 the end of a paragraph wants a capital and a full stop. One dropped into the
@@ -1609,9 +1614,11 @@ it by text does not.
 **They only apply to dictation.** The pipeline runs on a transcript on its way
 into a window. A voice command — anything after the activation phrase — is
 routed and transformed on a different path that never assembles a pipeline, so
-an `app:` there gates nothing. `--replace` likewise passes no app, which means
-an app-conditioned stage never runs under it; that is the fail-closed rule
-doing its job on a path with no window, not a bug to work around.
+an `app:` there gates nothing. `--replace` passes no app unless you give one:
+without `--app`, an app-conditioned stage never runs under it. That is the
+fail-closed rule doing its job on a path with no window. `--replace "<text>"
+--app <name>` says who to pretend is in front, the same way as `--pipeline
+--app`, so a stage gated on that app runs.
 
 **Negation reads differently for text and for apps.** `unless:` excludes on
 text; an app is excluded with a negative lookahead inside `app:`. Two idioms
