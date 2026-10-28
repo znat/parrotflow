@@ -66,6 +66,18 @@ MICK = [
     use("We went to see Mick play a concert downtown.", "Mick"),
     use("Mick is practising the drums for the gig on Friday.", "Mick"),
 ]
+VENDOR = [
+    use("We deploy the web app on Vercel every Friday.", "Vercel", heard="Versailles"),
+    use("The Vercel preview build failed again this morning.", "Vercel"),
+    use("I moved the API routes to Vercel last week.", "Vercel"),
+]
+# Rows shaped like the deploy sentences a user corrects Vercel in.
+VENDOR_DEPLOY = [
+    use("Tom deploys the new app on Vercel tonight.", "Vercel", heard="Versailles"),
+    use("We deploy every preview build on Vercel.", "Vercel"),
+    use("Sara deployed the API on Vercel yesterday.", "Vercel"),
+]
+CASTLE = "Anna deploys an app on Versailles while touring the Versailles Castle."
 LONG = " ".join(
     ["We talked about the staging server, the flaky tests, the build cache and the release notes for a while."] * 9
     + ["Then I deployed the app to Versal and went home."]
@@ -111,6 +123,11 @@ GROUPS = [
         "Mick": MICK + [use("Mick tuned the old piano before the show.", "Mick", source="chosen")],
         "Mik": MIK + [use("Mik merged the branch after the review.", "Mik", heard="Mick"),
                       use("Mick tuned the old piano before the show.", "Mick", counter=True, source="chosen")]}),
+    # A vendor and a castle heard the same way; one past correction of heard Versailles toward the vendor.
+    ("group-vendor", CASTLE, 0, {"Vercel": VENDOR, "Versailles": []}),
+    ("group-castle", CASTLE, 1, {"Vercel": VENDOR, "Versailles": []}),
+    ("group-vendor-deploy-rows", CASTLE, 0, {"Vercel": VENDOR_DEPLOY, "Versailles": []}),
+    ("group-castle-deploy-rows", CASTLE, 1, {"Vercel": VENDOR_DEPLOY, "Versailles": []}),
     # The same history without the refusal the choice now writes: both sides earn +1, so neither gets an edge.
     ("group-history-old", "Mick is writing code while Mick is playing the piano.", 1, {
         "Mick": MICK + [use("Mick tuned the old piano before the show.", "Mick", source="chosen")],
@@ -134,8 +151,9 @@ def items(args):
         a = text.index(heard)
         out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=term, uses=rows))
     for key, text, nth, members in GROUPS:
-        a = [m.start() for m in re.finditer(r"\bMick\b", text)][nth]
-        out.append(dict(id=key, text=text, a=a, b=a + 4, heard="Mick", term="Mick", uses=[], memory=members))
+        heard = "Versailles" if "Versailles" in members else "Mick"
+        a = [m.start() for m in re.finditer(rf"\b{heard}\b", text)][nth]
+        out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=heard, uses=[], memory=members))
     for key, text, heard, term, rows in TRIMS:
         a = text.index(heard)
         out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=term, uses=rows, trim=True,
@@ -242,14 +260,11 @@ def main():
         probs = []
         if it.get("memory"):
             members = {t: reading(p, a, b, heard, t, rows, shared=True) for t, rows in sorted(it["memory"].items())}
-            d, what = C.decide_group([(t, r["p"], r["features"]["sim_acc"] is not None)
-                                      for t, r in members.items()])
+            d, what = C.decide_group([dict(term=t, p=r["p"], sim=r["features"]["sim_acc"],
+                                           n=r["features"]["pair_acc"] - r["features"]["pair_ref"])
+                                      for t, r in members.items()], heard)
             line.update(members=members, group=dict(decision=d, terms=[what] if d == "write" else what or []))
-            ps = sorted((r["p"] for r in members.values()), reverse=True)
             probs = [r["p"] for r in members.values()]
-            if len(ps) > 1 and abs(ps[0] - ps[1] - C.GROUP_MARGIN) < MARGIN:
-                close.append(it["id"])
-                continue
         else:
             r = reading(p, a, b, heard, it["term"], it["uses"])
             if r is None:
