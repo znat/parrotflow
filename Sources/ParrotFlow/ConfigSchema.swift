@@ -305,6 +305,10 @@ enum ConfigSchema {
             key("asks", .bool,
                 "Ask before typing a name it could not settle. Left out, the value in"
                     + " vocabulary.yaml, else true."),
+            key("clause_decider", .bool,
+                "Trial: the parser clause decides a name in place of the term portrait."
+                    + " English only; needs gate_sentence.",
+                default: false),
             key("slot_floor", slotFloor,
                 "How far the heard word must win by before a rewrite is refused."
                     + " Built in: 0.20 in English, 0.30 in French."),

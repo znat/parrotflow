@@ -2060,6 +2060,9 @@ struct Config: Decodable, Equatable {
             /// Whether an unsettled name is asked before it is typed. Moved
             /// from `vocabulary.yaml`.
             var asks: Bool?
+            /// Whether `ClauseDecider` reads the sentence in place of the
+            /// term portrait. Off unless written.
+            var clauseDecider: Bool?
 
             enum CodingKeys: String, CodingKey, CaseIterable {
                 case enabled, gate, portrait, caps, asks
@@ -2070,6 +2073,7 @@ struct Config: Decodable, Equatable {
                 case slotFloor = "slot_floor"
                 case soundBelow = "sound_below"
                 case gateSentence = "gate_sentence"
+                case clauseDecider = "clause_decider"
             }
 
             init() {}
@@ -2106,6 +2110,7 @@ struct Config: Decodable, Equatable {
                 }
                 gateSentence = try c.decodeIfPresent(Bool.self, forKey: .gateSentence)
                 asks = try c.decodeIfPresent(Bool.self, forKey: .asks)
+                clauseDecider = try c.decodeIfPresent(Bool.self, forKey: .clauseDecider)
             }
         }
 
@@ -3437,6 +3442,11 @@ struct Config: Decodable, Equatable {
         transcription.vocabulary.asks ?? vocabulary.asks
     }
 
+    /// The clause decider runs on English only, so it needs English dictated.
+    var decidesByClause: Bool {
+        (transcription.vocabulary.clauseDecider ?? false) && transcription.languages.contains("en")
+    }
+
     /// Whether the `interpret` step will read a boundary: it is in the
     /// pipeline.
     ///
@@ -3446,9 +3456,15 @@ struct Config: Decodable, Equatable {
         Pipeline.resolved(config: self).stages.contains(.sentenceRepair)
     }
 
-    /// Whether the tree cutter runs, so whether parrotflow-syrinx is fetched.
+    /// Whether the tree cutter runs.
     var readsTreeCutter: Bool {
         transcription.disfluency.enabled && transcription.languages.contains("en")
+    }
+
+    /// Whether parrotflow-syrinx is fetched: the tree cutter or the clause
+    /// decider reads it.
+    var readsSyrinx: Bool {
+        readsTreeCutter || (decidesByClause && gatesSentence && vocabularyStep != nil)
     }
 
     /// Whether anything will read the sentence model: `sentence_repair` or

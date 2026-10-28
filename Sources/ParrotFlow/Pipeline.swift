@@ -1313,17 +1313,35 @@ struct Pipeline: Equatable, Codable {
             index < taught.count && taught[index] ? false : settled[index]
         }
         // The two tests that read the sentence, on whatever is still open.
+        var clauseVars: [String: Scope.Value] = [:]
         if config.gatesSentence, #available(macOS 14, *) {
             let span = Trace.current?.open("sentence_gate", kind: .part)
             defer { span?.close("\(decided.filter { $0 == nil }.count) still open") }
+            var clause: ClauseSession?
+            if config.decidesByClause {
+                let opened = await Self.clauseSession(language: Pipeline.language(of: text, config: config))
+                clause = opened.session
+                if let why = opened.declined { clauseVars["clause_declined"] = .string(why) }
+            }
             let settledBySentence = await SentenceGate.settle(
                 changes, in: text, given: decided,
                 floor: config.transcription.slotFloor(
                     for: Pipeline.language(of: text, config: config), on: step
                 ),
                 slot: step.vocabulary.isOn(\.slotGate), portrait: step.vocabulary.isOn(\.portrait),
-                terms: config.vocabulary.terms
+                terms: config.vocabulary.terms, clause: clause
             )
+            if let clause {
+                clauseVars.merge([
+                    "clause_places": .int(clause.lines.count),
+                    "clause_written": .int(clause.tally[.write] ?? 0),
+                    "clause_left": .int(clause.tally[.leave] ?? 0),
+                    "clause_offered": .int(clause.tally[.offer] ?? 0),
+                    "clause_ms": .int(Int((clause.seconds * 1000).rounded())),
+                    "clause": .string(clause.lines.joined(separator: "; ")),
+                ]) { _, new in new }
+                for line in clause.lines { Log.write("clause decider: \(line)") }
+            }
             decided = settledBySentence.decided
             // A group place comes back proposing the member that won, or
             // carrying the ones still standing. Nothing else in a change moves.
@@ -1428,7 +1446,26 @@ struct Pipeline: Equatable, Codable {
             "slots": .int(slots.count),
             "reverted": .string(reverted.joined(separator: "; ")),
             "judged": .string(chosen),
-        ])
+        ].merging(clauseVars) { old, _ in old })
+    }
+
+    /// The clause decider for one dictation, or why there is none. It waits for
+    /// the parser as the tree cutter does; without it the portrait decides.
+    static func clauseSession(language: String) async -> (session: ClauseSession?, declined: String?) {
+        guard language == "en" else { return (nil, "not English") }
+        let model: ClauseDecider.Model
+        switch ClauseDecider.Model.shared {
+        case .success(let loaded): model = loaded
+        case .failure(let error):
+            Log.write("clause decider: \(error.localizedDescription); the portrait decides")
+            return (nil, error.localizedDescription)
+        }
+        let ready = await SyrinxModel.shared.ready(within: SyrinxModel.dictationWait)
+        guard let loaded = ready.loaded else {
+            Log.write("clause decider: \(ready.reason); the portrait decides")
+            return (nil, ready.reason)
+        }
+        return (ClauseSession(parser: loaded.parser, model: model), nil)
     }
 
     /// Whichever kind of transform the step named.

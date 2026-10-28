@@ -43,9 +43,13 @@ enum PipelineCommand {
         /// fixture asserting on what a stage *found*, and is why the verdicts
         /// of the vocabulary pass were untestable from here at all.
         var models: [String: ModelSpec] = [:]
+        /// `transcription.vocabulary.clause_decider`, so a fixture can run the
+        /// clause decider.
+        var clauseDecider: Bool?
 
         enum CodingKeys: String, CodingKey {
             case languages, pipeline, transforms, vocabulary, lists, models
+            case clauseDecider = "clause_decider"
         }
 
         init(from decoder: Decoder) throws {
@@ -67,6 +71,7 @@ enum PipelineCommand {
             if let v = try c.decodeIfPresent([String: ModelSpec].self, forKey: .models) {
                 models = v
             }
+            clauseDecider = try c.decodeIfPresent(Bool.self, forKey: .clauseDecider)
         }
     }
 
@@ -134,6 +139,7 @@ enum PipelineCommand {
         config.lists = fixture.lists
         if let vocabulary = fixture.vocabulary { config.vocabulary = vocabulary }
         config.models = fixture.models
+        config.transcription.vocabulary.clauseDecider = fixture.clauseDecider
 
         // The fixture's own table is checked too, not just its stage list — a
         // template naming a group the pattern never captures is refused here
@@ -194,7 +200,7 @@ enum PipelineCommand {
                         found.append("slot model — \(error.localizedDescription)")
                     }
                 }
-                if pipeline.stages.contains(.treeCutter) {
+                if pipeline.stages.contains(.treeCutter) || config.decidesByClause {
                     do { _ = try await SyrinxModel.shared.prepare() } catch {
                         found.append("parser — \(error.localizedDescription)")
                     }
