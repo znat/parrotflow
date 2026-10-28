@@ -203,17 +203,14 @@ existed has no `kind`, and that is not the same as `word`.
 **`pronunciations`** is the ways this term actually comes out of the
 recogniser. Each entry does two jobs. It is an exact rule, which is what
 reaches the renderings no number can: "Prezi" is 0.33 from "Praisy", and a
-threshold that low would swallow every "praise". And its *sound* is registered
-with the CTC keyword spotter under the term's name, so the audio search looks
-for the rendering and reports the term. That is the only path that reaches a
-deep miss: "Versailles" is 0.40 from `Vercel`, and searching for the sound of
-"Versailles" finds the term at −2.28 where searching for the sound of "Vercel"
-manages −5.28.
+threshold that low would swallow every "praise". And its *sound* is matched on
+the text, like the term's own: a run of words that sounds like the rendering is
+offered as the term. A rendering reaches words the term's spelling cannot:
+`Silberstein` is 0.90 from the rendering `Silverstein` and 0.56 from
+`Zylbersztejn`.
 
 A rule alone cannot tell two things apart that are spelled the same. "deployed
 on Vercel against the Versailles castle" has both, and the rule rewrites both.
-The pronunciation fires where the audio agrees, which separates them by about a
-nat on that clip.
 
 Per entry:
 
@@ -228,11 +225,6 @@ Nothing mechanical reads `seen` or `from` yet — they are what a per-term cap
 and a prune rule will decide on, and a count that starts being kept the day it
 is first needed starts at zero.
 
-A pronunciation is only searched for by sound when its term is: a rendering is
-registered under the *term's* name, so one attached to a term the pass does not
-look for would report a finding nothing downstream can price. Those are still
-rules, and `--check-config` counts them separately.
-
 **`floor: off`** turns sound matching off for one term. Use it when the
 recogniser writes the term and an ordinary word identically. Measured on one
 machine: "Claude" and "cloud" both come back as `cloud`, "Matthieu" and
@@ -240,18 +232,12 @@ machine: "Claude" and "cloud" both come back as `cloud`, "Matthieu" and
 distinction is gone before anything downstream can look.
 
 It turns the whole term off, its pronunciations included. Those stay exact
-rules and stop being search targets — a rendering is registered under the
-term's name, and a term switched off has no entry for the spotter to report.
-That is the right reading rather than a limitation: a term is usually
-`floor: off` because it *sounds* like the ordinary word, and the audio
-separates them no better than the spelling does.
+rules and are not matched by sound. That is the right reading rather than a
+limitation: a term is usually `floor: off` because it *sounds* like the
+ordinary word, so its sound cannot separate the two.
 
 `floor: off` in YAML is the boolean `false`, not the string. So are `on`,
 `yes` and `no`. The decoder reads both.
-
-Terms shorter than five letters are dropped, as are terms with a digit or a
-dot. A short term aligns to almost any run of frames. A term the decoder could
-not have produced is not a term.
 
 #### Files written before the two numbers
 
@@ -291,9 +277,9 @@ its neighbourhood: "turn down the volume" glues to `Turndown` at 1.00.
 
 #### What it costs
 
-Matching by sound downloads a ~98 MB model on first use and adds a CTC pass
-per clip. `acoustic: false` skips both; the pronunciation rules still apply,
-as rules.
+Matching by sound downloads CharsiuG2P, an 81 MB model, on first use. It works
+on the text, so there is no audio pass. Until the model arrives, terms are
+matched by spelling. The pronunciation rules apply either way, as rules.
 
 Over 400 archived clips, damage — clips containing no vocabulary term that came
 out different — falls as the similarity rises:

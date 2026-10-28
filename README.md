@@ -73,9 +73,10 @@ transforms:
 
 Claude Code just wrote `CaretAnchor`. You say it, and the recogniser hears
 "carrot anchor". ParrotFlow reads the window you dictate into and writes
-`CaretAnchor`. It reads the whole window in a terminal or Slack, and the text
-before the caret anywhere else. The screen is read on your Mac, when you press
-the key, and needs the Accessibility permission.
+`CaretAnchor`. It reads the window in every app, except password managers,
+Keychain Access, System Settings and password fields. The screen is read on
+your Mac, when you press the key, and needs the Accessibility permission. Set
+`transcription.context.every_app: false` to read only terminals and Slack.
 
 <img src="Resources/readme/context.webp" width="640" alt="Claude Code in a terminal. The dictated words carrot anchor became CaretAnchor, linked to the same word in Claude's answer above.">
 
