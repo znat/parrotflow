@@ -12,7 +12,9 @@ Local dictation for macOS that you can program.
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
 ![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-5f46ca)
 
-**[Install](#install)** · [What it does](#what-it-does) · [Documentation](docs/README.md)
+<a href="https://www.opensourcealternatives.to"><img src="https://www.opensourcealternatives.to/badge-osa.svg" alt="As seen on Open Source Alternatives" width="270" height="20"></a>
+
+**[Install](#install)** · [What it does](#what-it-does) · [Documentation](docs/README.md) · [Website](https://parrotflow.io)
 
 </div>
 
