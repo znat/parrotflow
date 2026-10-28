@@ -582,8 +582,10 @@ neighbours', how they sound against the term, whether they are dictionary
 words, and whether this exact swap was accepted or refused before. A term with
 no accepted sentence never writes; it offers or leaves. A slot refusal still
 keeps what was heard. A place several terms share is read once per term on the
-same clause: the best is written only when it clears the write bar and leads
-the next by 0.30 in p, else the top two are offered. A sound match of two or
+same clause, and the terms are told apart by how close the clause is to each
+one's sentences. The term spelled like the heard words is the default and needs
+no sentences; another is written only when it beats it by a fixed margin, and
+offered when it beats it by half. A sound match of two or
 more words loses an edge word the parser tags ADP, DET, CCONJ, PRON or AUX
 (`on Versal` is proposed as `Versal`) and must still sound like the term. It
 reads parrotflow-syrinx, so turning it on fetches that model, and
