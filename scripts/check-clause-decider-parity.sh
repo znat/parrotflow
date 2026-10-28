@@ -23,7 +23,8 @@ export PARROTFLOW_CONFIG_DIR="$WORK/config"
 python3 - "$CASES" "$WORK/items.json" <<'EOF' || { echo "  ✗ $CASES could not be read"; exit 1; }
 import json, sys
 cases = json.load(open(sys.argv[1]))
-json.dump([{k: c[k] for k in ("id", "text", "a", "b", "heard", "term", "uses")} for c in cases if "text" in c],
+json.dump([{k: c[k] for k in ("id", "text", "a", "b", "heard", "term", "uses", "memory", "trim", "floor") if k in c}
+           for c in cases if "text" in c],
           open(sys.argv[2], "w"), ensure_ascii=False)
 EOF
 
@@ -37,7 +38,7 @@ fi
 
 python3 - "$CASES" "$WORK/got.jsonl" <<'EOF'
 import json, sys
-want = [c for c in json.load(open(sys.argv[1])) if "decision" in c]
+want = json.load(open(sys.argv[1]))
 got, summary = {}, {}
 for line in open(sys.argv[2]):
     if line.startswith("{"):
@@ -47,35 +48,51 @@ for line in open(sys.argv[2]):
         else:
             got[row["id"]] = row
 passed, worst = 0, 0.0
-for case in want:
-    row = got.get(case["id"], {})
-    problems = []
+
+
+def compare(name, case, row, problems):
+    global worst
     if row.get("decision") != case["decision"]:
-        problems.append(f"decision: want {case['decision']} got {row.get('decision')}")
+        problems.append(f"{name}decision: want {case['decision']} got {row.get('decision')}")
     for key in ("p", "z"):
         if key not in row:
-            problems.append(f"{key}: missing")
+            problems.append(f"{name}{key}: missing")
             continue
         diff = abs(row[key] - case[key])
         worst = max(worst, diff)
         if diff > 1e-4:
-            problems.append(f"{key}: want {case[key]:.6f} got {row[key]:.6f}")
+            problems.append(f"{name}{key}: want {case[key]:.6f} got {row[key]:.6f}")
     mine = row.get("features", {})
-    for name, value in case["features"].items():
-        if name not in mine:
-            problems.append(f"{name}: missing")
+    for feature, value in case["features"].items():
+        if feature not in mine:
+            problems.append(f"{name}{feature}: missing")
             continue
-        other = mine.get(name)
+        other = mine[feature]
         if value is None or other is None:
             if value != other:
-                problems.append(f"{name}: want {value} got {other}")
+                problems.append(f"{name}{feature}: want {value} got {other}")
             continue
         diff = abs(value - other)
         worst = max(worst, diff)
         if diff > 1e-4:
-            problems.append(f"{name}: want {value:.6f} got {other:.6f}")
+            problems.append(f"{name}{feature}: want {value:.6f} got {other:.6f}")
     if row.get("clause") != case["clause"]:
-        problems.append(f"clause: want {case['clause']} got {row.get('clause')}")
+        problems.append(f"{name}clause: want {case['clause']} got {row.get('clause')}")
+
+
+for case in want:
+    row = got.get(case["id"], {})
+    problems = []
+    for key in ("declined", "place"):
+        if row.get(key) != case.get(key):
+            problems.append(f"{key}: want {case.get(key)} got {row.get(key)}")
+    if "group" in case:
+        if row.get("group") != case["group"]:
+            problems.append(f"group: want {case['group']} got {row.get('group')}")
+        for term, member in case["members"].items():
+            compare(f"{term} ", member, row.get("members", {}).get(term, {}), problems)
+    elif "declined" not in case:
+        compare("", case, row, problems)
     passed += not problems
     if problems:
         print(f"  ✗ {case['id']}")

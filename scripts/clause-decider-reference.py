@@ -56,6 +56,16 @@ REDROCK = [
     use("The Redrock roadmap is due next month.", "Redrock"),
     use("The trail runs along a red rock ridge above the canyon.", "red rock", counter=True),
 ]
+MIK = [
+    use("Mik reviewed the pull request before the release.", "Mik"),
+    use("I asked Mik to fix the failing build.", "Mik"),
+    use("Mik pushed a patch for the login bug yesterday.", "Mik"),
+]
+MICK = [
+    use("Mick played the guitar at the wedding.", "Mick"),
+    use("We went to see Mick play a concert downtown.", "Mick"),
+    use("Mick is practising the drums for the gig on Friday.", "Mick"),
+]
 LONG = " ".join(
     ["We talked about the staging server, the flaky tests, the build cache and the release notes for a while."] * 9
     + ["Then I deployed the app to Versal and went home."]
@@ -83,6 +93,26 @@ CASES = [
 ]
 
 
+# Two names in one sentence, one per clause: (key, text, which occurrence of the heard word, members' rows).
+PIANO = "While Mick is playing the piano, Mick is reviewing pull requests."
+DEPLOY = "Mick fixed the deploy script, and Mick sang two songs at the bar."
+GROUPS = [
+    ("group-piano-1", PIANO, 0, {"Mick": MICK, "Mik": MIK}),
+    ("group-piano-2", PIANO, 1, {"Mick": MICK, "Mik": MIK}),
+    ("group-deploy-1", DEPLOY, 0, {"Mick": MICK, "Mik": MIK}),
+    ("group-deploy-2", DEPLOY, 1, {"Mick": MICK, "Mik": MIK}),
+    ("group-cold", "Mick is reviewing pull requests today.", 0, {"Mick": MICK, "Mik": []}),
+]
+# A closed-class edge word dropped before reading: (key, text, heard, term, rows).
+TRIMS = [
+    ("trim-on", "Mik is deploying the app on Versal this afternoon.", "on Versal", "Vercel", VERCEL),
+    ("trim-the", "We pushed the Versal build tonight.", "the Versal", "Vercel", VERCEL),
+    ("trim-at", "I sent the notes to Matthew at work.", "Matthew at", "Matthieu", []),
+    ("trim-none", "Red Rock still handles the redaction chain.", "Red Rock", "Redrock", REDROCK),
+]
+FLOOR = 0.60
+
+
 def items(args):
     if args.batch:
         return json.loads(Path(args.batch).read_text())
@@ -90,6 +120,13 @@ def items(args):
     for key, text, heard, term, rows in CASES:
         a = text.index(heard)
         out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=term, uses=rows))
+    for key, text, nth, members in GROUPS:
+        a = [m.start() for m in re.finditer(r"\bMick\b", text)][nth]
+        out.append(dict(id=key, text=text, a=a, b=a + 4, heard="Mick", term="Mick", uses=[], memory=members))
+    for key, text, heard, term, rows in TRIMS:
+        a = text.index(heard)
+        out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=term, uses=rows, trim=True,
+                        floor=FLOOR))
     return out
 
 
@@ -141,43 +178,80 @@ def main():
         return C.vector(p, toks, centre, proj), span, toks
 
     syrinx = Syrinx()
-    parses = syrinx.analyse([it["text"] for it in todo] + [u["said"] for it in todo for u in it["uses"]])
-    sounds = ipa.of([x for it in todo for x in (it["heard"], it["term"])])
-    lines, close = [], []
-    for it in todo:
-        p = parses[it["text"]]
+    rows_of = lambda it: [u for rows in (it.get("memory") or {}).values() for u in rows] + it["uses"]
+    parses = syrinx.analyse([it["text"] for it in todo] + [u["said"] for it in todo for u in rows_of(it)])
+
+    def sound(heard, term):
+        m = ipa.of([heard, term])
+        return V2.similarity(m[heard], m[term])
+
+    def reading(p, a, b, heard, term, rows):
         acc, ref = [], []
-        for u in it["uses"]:
+        for u in rows:
             at = C.occurrence(u["span"], u["said"])
             v = place(parses[u["said"]], *at)[0] if at else None
             if v is not None:
                 (ref if u["counter"] else acc).append(v)
-        acc_forms = {C.norm(u["heard"]) for u in it["uses"] if not u["counter"] and u.get("heard")}
-        ref_forms = {C.norm(u["span"]) for u in it["uses"] if u["counter"]}
-        v, span, toks = place(p, it["a"], it["b"])
+        acc_forms = {C.norm(u["heard"]) for u in rows if not u["counter"] and u.get("heard")}
+        ref_forms = {C.norm(u["span"]) for u in rows if u["counter"]}
+        v, span, toks = place(p, a, b)
         if not span:
-            lines.append(dict(id=it["id"], declined="no parser token at the place"))
-            continue
+            return None
         ca, cr = C.centroid(acc), C.centroid(ref)
         f = {"sim_acc": float(v @ ca) if v is not None and ca is not None else None,
              "sim_ref": float(v @ cr) if v is not None and cr is not None else None,
              "ner": C.ner_entity(ner, p, span), **C.pos_features(p, span),
-             "sound": V2.similarity(sounds[it["heard"]], sounds[it["term"]]), "known": known(it["heard"]),
-             "pair_acc": float(C.norm(it["heard"]) in acc_forms), "pair_ref": float(C.norm(it["heard"]) in ref_forms)}
+             "sound": sound(heard, term), "known": known(heard),
+             "pair_acc": float(C.norm(heard) in acc_forms), "pair_ref": float(C.norm(heard) in ref_forms)}
         d, prob, z, _ = C.decide(model, f)
         clause = [min(p["starts"][k] for k in toks), max(p["ends"][k] for k in toks)] if toks else None
-        line = dict(id=it["id"], decision=d, p=round(prob, 6), z=round(z, 6), clause=clause,
+        return dict(decision=d, p=round(prob, 6), z=round(z, 6), clause=clause,
                     features={k: (round(x, 6) if x is not None else None) for k, x in f.items()})
+
+    lines, close = [], []
+    for it in todo:
+        p = parses[it["text"]]
+        a, b, heard = it["a"], it["b"], it["heard"]
+        line = dict(id=it["id"])
         if not args.batch:
-            line.update(text=it["text"], a=it["a"], b=it["b"], heard=it["heard"], term=it["term"], uses=it["uses"])
-        if min(abs(prob - write), abs(prob - leave)) < MARGIN:
+            line.update({k: it[k] for k in ("text", "a", "b", "heard", "term", "uses", "memory", "trim", "floor")
+                         if k in it})
+        if it.get("trim"):
+            kept = C.trim_edges(p, it["text"], a, b, it["term"])
+            if kept is None:
+                lines.append(dict(line, declined="nothing left"))
+                continue
+            a, b = kept
+            heard = it["text"][a:b]
+            line["place"] = [a, b]
+            if it.get("floor") is not None and sound(heard, it["term"]) < it["floor"]:
+                lines.append(dict(line, declined="under the floor"))
+                continue
+        probs = []
+        if it.get("memory"):
+            members = {t: reading(p, a, b, heard, t, rows) for t, rows in sorted(it["memory"].items())}
+            d, what = C.decide_group([(t, r["p"], r["features"]["sim_acc"] is not None)
+                                      for t, r in members.items()])
+            line.update(members=members, group=dict(decision=d, terms=[what] if d == "write" else what or []))
+            ps = sorted((r["p"] for r in members.values()), reverse=True)
+            probs = [r["p"] for r in members.values()]
+            if len(ps) > 1 and abs(ps[0] - ps[1] - C.GROUP_MARGIN) < MARGIN:
+                close.append(it["id"])
+                continue
+        else:
+            r = reading(p, a, b, heard, it["term"], it["uses"])
+            if r is None:
+                lines.append(dict(line, declined="no parser token at the place"))
+                continue
+            line.update(r)
+            probs = [r["p"]]
+        if any(min(abs(q - write), abs(q - leave)) < MARGIN for q in probs):
             close.append(it["id"])
             continue
         lines.append(line)
     args.out.write_text("[\n" + ",\n".join(json.dumps(x, ensure_ascii=False, separators=(",", ":")) for x in lines)
                         + "\n]\n")
     print(f"{len(lines)} items -> {args.out}; left out near a bound: {close}")
-
 
 if __name__ == "__main__":
     main()
