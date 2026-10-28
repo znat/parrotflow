@@ -302,6 +302,25 @@ enum ClauseDecider {
             .trimmingCharacters(in: .whitespaces)
     }
 
+    /// A single-term place: whether this exact swap was accepted, and refused,
+    /// before. A shared place: the sign of the net counter, so a pair counter
+    /// gives no member an edge another cannot earn — the member spelled like
+    /// the heard form is credited with the pill choices of that form.
+    static func pairs(heard: String, term: String, rows: [TermUses.Use], shared: Bool) -> (accepted: Double, refused: Double) {
+        let h = norm(heard)
+        let accepted = rows.filter { !$0.counter }
+        let refused = rows.filter(\.counter)
+        guard shared else {
+            return (accepted.contains { $0.heard.map(norm) == h } ? 1 : 0,
+                    refused.contains { norm($0.span) == h } ? 1 : 0)
+        }
+        var net = accepted.filter { $0.heard.map(norm) == h }.count - refused.filter { norm($0.span) == h }.count
+        if norm(term) == h {
+            net += accepted.filter { $0.from == .chosen && norm($0.span) == h }.count
+        }
+        return (net > 0 ? 1 : 0, net < 0 ? 1 : 0)
+    }
+
     static func sound(heard: String, term: String) -> Double {
         let ipa = Phonemes.of([heard, term], voice: Phonemes.voice(for: "en"))
         guard let a = ipa[heard], let b = ipa[term] else { return 0 }
@@ -327,7 +346,7 @@ enum ClauseDecider {
     /// One place. `text` holds the heard words at `range` (scalar offsets).
     static func read(
         _ parsed: Parsed, at range: Range<Int>, heard: String, term: String,
-        accepted: [[Float]], refused: [[Float]], acceptedForms: Set<String>, refusedForms: Set<String>,
+        accepted: [[Float]], refused: [[Float]], pairs: (accepted: Double, refused: Double),
         model: Model
     ) -> Reading? {
         let (vector, span, pooled) = place(parsed, at: range, model: model)
@@ -341,8 +360,8 @@ enum ClauseDecider {
         partsOfSpeech(parsed, span: span, into: &f)
         f.sound = sound(heard: heard, term: term)
         f.known = known(heard) ? 1 : 0
-        f.pairAccepted = acceptedForms.contains(norm(heard)) ? 1 : 0
-        f.pairRefused = refusedForms.contains(norm(heard)) ? 1 : 0
+        f.pairAccepted = pairs.accepted
+        f.pairRefused = pairs.refused
         var clause: Range<Int>?
         if let lo = pooled.map({ parsed.clip.tokens[$0].start }).min(), let hi = pooled.map({ parsed.ends[$0] }).max() {
             clause = lo ..< hi
@@ -477,7 +496,7 @@ final class ClauseSession {
     /// One place, read on `text` with the heard words put back at it. The
     /// clause offsets in the trace line are mapped back to `text`.
     func read(
-        _ change: VocabularyPass.Change, term: String, in text: String, counted: Bool = true
+        _ change: VocabularyPass.Change, term: String, in text: String, counted: Bool = true, shared: Bool = false
     ) async -> ClauseDecider.Reading? {
         let started = Date()
         defer { seconds += Date().timeIntervalSince(started) }
@@ -487,12 +506,10 @@ final class ClauseSession {
         let parse = parsing(heardText)
         let rows = TermUses.load()[term] ?? []
         let memory = await ClauseStore.shared.memory(of: rows, parser: parser, model: model)
-        let acceptedForms = Set(rows.filter { !$0.counter }.compactMap(\.heard).map(ClauseDecider.norm))
-        let refusedForms = Set(rows.filter(\.counter).map(\.span).map(ClauseDecider.norm))
         guard let reading = ClauseDecider.read(
             parse, at: a ..< b, heard: change.was, term: term,
             accepted: memory.accepted, refused: memory.refused,
-            acceptedForms: acceptedForms, refusedForms: refusedForms, model: model
+            pairs: ClauseDecider.pairs(heard: change.was, term: term, rows: rows, shared: shared), model: model
         ) else {
             lines.append("\"\(change.was)\" -> \(term): no parser token at the place")
             return nil
@@ -522,7 +539,8 @@ final class ClauseSession {
     func readGroup(_ change: VocabularyPass.Change, in text: String) async -> ClauseDecider.GroupDecision? {
         var members: [(term: String, reading: ClauseDecider.Reading)] = []
         for member in change.group {
-            guard let reading = await read(change, term: member, in: text, counted: false) else { return nil }
+            guard let reading = await read(change, term: member, in: text, counted: false, shared: true)
+            else { return nil }
             members.append((member, reading))
         }
         let decision = ClauseDecider.decideGroup(members, model: model)

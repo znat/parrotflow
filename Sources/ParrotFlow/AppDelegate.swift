@@ -6327,10 +6327,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // mention of a name in a field that holds several dictations.
         let at = text.prefix(word.range.lowerBound).split(separator: " ").count
         do {
-            for row in try CorrectionRecording.apply(
+            let written = try CorrectionRecording.apply(
                 rows, said: text, from: .chosen, near: at, blocking: soundGroups
-            ) {
+            )
+            for row in written {
                 rebuildPortrait(for: row.term)
+            }
+            // The clause decider reads a choice both ways: every other term
+            // offered here is refused at this word. Not released, so the
+            // chosen term keeps the place.
+            if config.decidesByClause, let picked, !written.isEmpty {
+                let offered = open.group.count > 1 ? open.group : [open.term]
+                for other in offered where other.caseInsensitiveCompare(picked) != .orderedSame {
+                    try TermUses.record(
+                        term: other, said: text, span: word.word, from: .chosen, counter: true, near: at
+                    )
+                    rebuildPortrait(for: other)
+                    Log.write("selector: \(other) refused at \"\(word.word)\" — \(picked) was chosen")
+                }
             }
             let said = TermUses.narrowed(text, to: word.word)
             if let picked {
