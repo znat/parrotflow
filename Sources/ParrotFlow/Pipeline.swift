@@ -1288,7 +1288,8 @@ struct Pipeline: Equatable, Codable {
         // Which of the two halves is on, not just that the gate is: a place
         // decided by the portrait alone reads nothing like one both tests saw.
         let reading = [
-            step.vocabulary.isOn(\.slotGate) ? "slot" : nil, step.vocabulary.isOn(\.portrait) ? "portrait" : nil,
+            step.vocabulary.isOn(\.slotGate) ? "slot" : nil,
+            config.decidesByClause ? "clause" : step.vocabulary.isOn(\.portrait) ? "portrait" : nil,
         ].compactMap { $0 }
         if config.gatesSentence, !reading.isEmpty {
             census += ", sentence gate on (\(reading.joined(separator: " + ")))"
@@ -1347,14 +1348,20 @@ struct Pipeline: Equatable, Codable {
             let span = Trace.current?.open("sentence_gate", kind: .part)
             defer { span?.close("\(decided.filter { $0 == nil }.count) still open") }
             let clause = await openClause()
-            let settledBySentence = await SentenceGate.settle(
-                changes, in: text, given: decided,
-                floor: config.transcription.slotFloor(
-                    for: Pipeline.language(of: text, config: config), on: step
-                ),
-                slot: step.vocabulary.isOn(\.slotGate), portrait: step.vocabulary.isOn(\.portrait),
-                terms: config.vocabulary.terms, clause: clause
-            )
+            // With the clause decider on, the word vectors and the slot gap
+            // are never read: without a session the places stay open.
+            let qwen = !config.decidesByClause
+            let settledBySentence = config.decidesByClause && clause == nil
+                ? (decided: decided, changes: changes)
+                : await SentenceGate.settle(
+                    changes, in: text, given: decided,
+                    floor: config.transcription.slotFloor(
+                        for: Pipeline.language(of: text, config: config), on: step
+                    ),
+                    slot: qwen && step.vocabulary.isOn(\.slotGate),
+                    portrait: qwen && step.vocabulary.isOn(\.portrait),
+                    terms: config.vocabulary.terms, clause: clause
+                )
             if let clause {
                 clauseVars.merge([
                     "clause_places": .int(clause.places),
