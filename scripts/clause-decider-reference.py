@@ -142,6 +142,9 @@ GROUPS = [
         "Mick": MICK + [use("Mick tuned the old piano before the show.", "Mick", source="chosen")],
         "Mik": MIK_CODE + [use("Mik merged the branch after the review.", "Mik", heard="Mick"),
                            use("Mick tuned the old piano before the show.", "Mick", counter=True, source="chosen")]}),
+    # Mik was written over Mick once and the user put Mick back.
+    ("group-put-back", "Mick is reviewing the setlist for tonight.", 0, {
+        "Mick": MICK + [use("Mick sang two songs at the bar last night.", "Mick", heard="Mik")], "Mik": MIK}),
     # The same history without the refusal the choice now writes: both sides earn +1, so neither gets an edge.
     ("group-history-old", "Mick is writing code while Mick is playing the piano.", 1, {
         "Mick": MICK + [use("Mick tuned the old piano before the show.", "Mick", source="chosen")],

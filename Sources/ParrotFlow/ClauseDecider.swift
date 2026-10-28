@@ -305,8 +305,8 @@ enum ClauseDecider {
     /// A single-term place: whether this exact swap was accepted, and refused,
     /// before. A shared place: the sign of the net counter, so a pair counter
     /// gives no member an edge another cannot earn — the member spelled like
-    /// the heard form is credited with the pill choices of that form, and
-    /// refused once for each correction of that form to a peer.
+    /// the heard form is credited with each pill choice of it and each peer
+    /// put back to it, and refused once for each correction of it to a peer.
     static func pairs(
         heard: String, term: String, rows: [TermUses.Use], shared: Bool, peers: [TermUses.Use] = []
     ) -> (accepted: Double, refused: Double) {
@@ -318,8 +318,13 @@ enum ClauseDecider {
                     refused.contains { norm($0.span) == h } ? 1 : 0)
         }
         var net = accepted.filter { $0.heard.map(norm) == h }.count - refused.filter { norm($0.span) == h }.count
+        // A peer put back over this term at the heard words.
+        net -= peers.filter { !$0.counter && norm($0.span) == h && $0.heard.map(norm) == norm(term) }.count
         if norm(term) == h {
-            net += accepted.filter { $0.from == .chosen && norm($0.span) == h }.count
+            // Chosen on the pill, or put back over another spelling.
+            net += accepted.filter { use in
+                norm(use.span) == h && (use.from == .chosen || use.heard.map { norm($0) != h } == true)
+            }.count
             net -= peers.filter { !$0.counter && $0.heard.map(norm) == h }.count
         }
         return (net > 0 ? 1 : 0, net < 0 ? 1 : 0)
@@ -376,10 +381,11 @@ enum ClauseDecider {
 
 extension ClauseDecider {
 
-    /// Margins in sim_acc, the first against a member with accepted
-    /// sentences, the second against one with none: the smallest with no
-    /// wrong pick on the two-name toy and on the public test places.
+    /// What a net counter is worth: half of this, against a member with
+    /// accepted sentences and against one with none.
     static let marginWarm = 0.15, marginCold = 0.75
+    /// A lead this small is a near tie and is offered.
+    static let tie = 0.02
     private static let closed: Set<String> = ["ADP", "DET", "CCONJ", "PRON", "AUX"]
 
     enum GroupDecision: Equatable {
@@ -392,9 +398,10 @@ extension ClauseDecider {
     /// A place several terms compete for. Every member shares the slot, so
     /// they are told apart by how close the clause is to each one's
     /// sentences, plus its net counter; p only says the slot holds a name.
-    /// The member spelled like the heard words is the default and needs no
-    /// evidence; another must beat it by the margin to be written. Counters
-    /// move a lead by half a margin at most, so they never write alone.
+    /// The best is written as soon as it leads by `tie` and clears the write
+    /// bar, sentences or not; a near tie is offered. The member spelled like
+    /// the heard words is the default: another must lead it to be written.
+    /// Counters move a lead by half a margin at most.
     static func decideGroup(
         _ members: [(term: String, reading: Reading)], heard: String, model: Model
     ) -> GroupDecision {
@@ -403,28 +410,28 @@ extension ClauseDecider {
             Candidate(term: $0.term, p: $0.reading.p, sim: $0.reading.features.simAccepted,
                       net: $0.reading.features.pairAccepted - $0.reading.features.pairRefused)
         }
-        func lead(_ t: Candidate, over u: Candidate) -> (gap: Double, margin: Double) {
+        func lead(_ t: Candidate, over u: Candidate) -> Double {
             let margin = u.sim == nil ? marginCold : marginWarm
-            return ((t.sim ?? 0) - (u.sim ?? 0) + margin / 2 * min(1, max(-1, t.net - u.net)), margin)
+            return (t.sim ?? 0) - (u.sim ?? 0) + margin / 2 * min(1, max(-1, t.net - u.net))
         }
         if let fallback = all.first(where: { norm($0.term) == norm(heard) }) {
             let others = all.filter { $0.term != fallback.term }
             guard let best = others.max(by: { a, b in
-                let (x, y) = (lead(a, over: fallback).gap, lead(b, over: fallback).gap)
+                let (x, y) = (lead(a, over: fallback), lead(b, over: fallback))
                 return x != y ? x < y : a.p < b.p
             }) else { return .leave }
-            let (gap, margin) = lead(best, over: fallback)
-            if best.sim != nil, best.p >= model.write, gap >= margin { return .write(best.term) }
-            return gap >= margin / 2 ? .offer([best.term, fallback.term]) : .leave
+            let gap = lead(best, over: fallback)
+            if gap >= tie, best.p >= model.write { return .write(best.term) }
+            if abs(gap) < tie || (gap >= tie && best.p >= model.leave) { return .offer([best.term, fallback.term]) }
+            return .leave
         }
         let ranked = all.sorted { a, b in
             let (x, y) = ((a.sim ?? 0) + marginWarm / 2 * a.net, (b.sim ?? 0) + marginWarm / 2 * b.net)
             return x != y ? x > y : a.p > b.p
         }
         guard let best = ranked.first else { return .leave }
-        let (gap, margin) = ranked.count > 1
-            ? lead(best, over: ranked[1]) : ((best.sim ?? 0) + marginWarm / 2 * best.net, marginCold)
-        if best.sim != nil, best.p >= model.write, gap >= margin { return .write(best.term) }
+        let gap = ranked.count > 1 ? lead(best, over: ranked[1]) : tie
+        if gap >= tie, best.p >= model.write { return .write(best.term) }
         return best.p >= model.leave ? .offer(ranked.prefix(2).map(\.term)) : .leave
     }
 
