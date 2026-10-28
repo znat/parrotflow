@@ -1221,6 +1221,20 @@ struct Pipeline: Equatable, Codable {
         // Nothing is written here either. The floor is 0.85 and it was
         // measured over 20891 dictations — see `phonemeParts` for what fires
         // and what it costs.
+        // Opened once, on first need: the sound pass trims with it, the
+        // sentence gate decides with it.
+        var clauseVars: [String: Scope.Value] = [:]
+        var clause: ClauseSession?
+        var clauseAsked = false
+        func openClause() async -> ClauseSession? {
+            guard !clauseAsked else { return clause }
+            clauseAsked = true
+            guard config.decidesByClause, config.gatesSentence else { return nil }
+            let opened = await Self.clauseSession(language: Pipeline.language(of: text, config: config))
+            if let why = opened.declined { clauseVars["clause_declined"] = .string(why) }
+            clause = opened.session
+            return clause
+        }
         if step.vocabulary.isOn(\.bySound) {
             let spoken = Pipeline.language(of: text, config: config)
             let sounds = config.vocabularySounds(in: spoken)
@@ -1230,12 +1244,18 @@ struct Pipeline: Equatable, Codable {
                 in: text, sounds: sounds, voice: Phonemes.voice(for: spoken),
                 language: spoken, floor: config.soundBelow, claimed: parts
             )
+            var proposed = heard
+            if heard.contains(where: { $0.decoded.contains(" ") }), let clause = await openClause() {
+                proposed = clause.trimmingEdges(
+                    heard, in: text, sounds: sounds, voice: Phonemes.voice(for: spoken), floor: config.soundBelow
+                )
+            }
             soundSeconds = Date().timeIntervalSince(askedAt)
             sound?.close(sounds.isEmpty
                 ? "no terms with a sound"
-                : "\(heard.count) of \(sounds.count) over the floor")
-            bySound = heard.count
-            parts += heard
+                : "\(proposed.count) of \(sounds.count) over the floor")
+            bySound = proposed.count
+            parts += proposed
         }
 
         // The places where several terms share the word that was heard. Built
@@ -1313,16 +1333,10 @@ struct Pipeline: Equatable, Codable {
             index < taught.count && taught[index] ? false : settled[index]
         }
         // The two tests that read the sentence, on whatever is still open.
-        var clauseVars: [String: Scope.Value] = [:]
         if config.gatesSentence, #available(macOS 14, *) {
             let span = Trace.current?.open("sentence_gate", kind: .part)
             defer { span?.close("\(decided.filter { $0 == nil }.count) still open") }
-            var clause: ClauseSession?
-            if config.decidesByClause {
-                let opened = await Self.clauseSession(language: Pipeline.language(of: text, config: config))
-                clause = opened.session
-                if let why = opened.declined { clauseVars["clause_declined"] = .string(why) }
-            }
+            let clause = await openClause()
             let settledBySentence = await SentenceGate.settle(
                 changes, in: text, given: decided,
                 floor: config.transcription.slotFloor(
@@ -1333,7 +1347,7 @@ struct Pipeline: Equatable, Codable {
             )
             if let clause {
                 clauseVars.merge([
-                    "clause_places": .int(clause.lines.count),
+                    "clause_places": .int(clause.places),
                     "clause_written": .int(clause.tally[.write] ?? 0),
                     "clause_left": .int(clause.tally[.leave] ?? 0),
                     "clause_offered": .int(clause.tally[.offer] ?? 0),

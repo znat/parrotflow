@@ -351,6 +351,63 @@ enum ClauseDecider {
     }
 }
 
+extension ClauseDecider {
+
+    static let groupMargin = 0.30
+    private static let closed: Set<String> = ["ADP", "DET", "CCONJ", "PRON", "AUX"]
+
+    enum GroupDecision: Equatable {
+        case write(String)
+        /// Best first.
+        case offer([String])
+        case leave
+    }
+
+    /// A place several terms compete for. The best member writes only when it
+    /// is warm, clears the write bar and leads the runner-up by `groupMargin`
+    /// in p; otherwise the top two are offered while the best clears the
+    /// leave bar.
+    static func decideGroup(_ members: [(term: String, reading: Reading)], model: Model) -> GroupDecision {
+        let ranked = members.sorted { $0.reading.p > $1.reading.p }
+        guard let best = ranked.first else { return .leave }
+        let second = ranked.count > 1 ? ranked[1].reading.p : 0
+        if !best.reading.cold, best.reading.p >= model.write, best.reading.p - second >= groupMargin {
+            return .write(best.term)
+        }
+        return best.reading.p >= model.leave ? .offer(ranked.prefix(2).map(\.term)) : .leave
+    }
+
+    /// The heard run without a closed-class first or last word the term does
+    /// not also start or end with. Nil when nothing would be left.
+    static func trimmed(_ parsed: Parsed, text: [Unicode.Scalar], at range: Range<Int>, term: String) -> Range<Int>? {
+        var words: [Range<Int>] = []
+        var i = range.lowerBound
+        while i < range.upperBound {
+            if WordSplit.isSpace(text[i]) { i += 1; continue }
+            var j = i
+            while j < range.upperBound && !WordSplit.isSpace(text[j]) { j += 1 }
+            words.append(i ..< j)
+            i = j
+        }
+        guard words.count >= 2 else { return range }
+        let termWords = term.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+        func closedClass(_ word: Range<Int>) -> Bool {
+            guard let first = parsed.span(word).first(where: parsed.hasAlnum) else { return false }
+            return closed.contains(parsed.clip.upos[first])
+        }
+        func spelled(_ word: Range<Int>) -> String {
+            var view = String.UnicodeScalarView()
+            view.append(contentsOf: text[word])
+            return String(view).lowercased()
+        }
+        var lo = 0, hi = words.count
+        if closedClass(words[0]), spelled(words[0]) != termWords.first { lo = 1 }
+        if hi - lo >= 2, closedClass(words[hi - 1]), spelled(words[hi - 1]) != termWords.last { hi -= 1 }
+        guard lo < hi else { return nil }
+        return words[lo].lowerBound ..< words[hi - 1].upperBound
+    }
+}
+
 /// The row vectors, kept on disk under a name that holds the parser revision
 /// and the decider's weights, next to the Qwen portrait store.
 actor ClauseStore {
@@ -408,6 +465,7 @@ final class ClauseSession {
     let model: ClauseDecider.Model
     private var parsed: [String: ClauseDecider.Parsed] = [:]
     private(set) var lines: [String] = []
+    private(set) var places = 0
     private(set) var tally: [ClauseDecider.Decision: Int] = [:]
     private(set) var seconds = 0.0
 
@@ -419,20 +477,14 @@ final class ClauseSession {
     /// One place, read on `text` with the heard words put back at it. The
     /// clause offsets in the trace line are mapped back to `text`.
     func read(
-        _ change: VocabularyPass.Change, term: String, in text: String
+        _ change: VocabularyPass.Change, term: String, in text: String, counted: Bool = true
     ) async -> ClauseDecider.Reading? {
         let started = Date()
         defer { seconds += Date().timeIntervalSince(started) }
         let heardText = text.replacingCharacters(in: change.range, with: change.was)
         let a = text.unicodeScalars.distance(from: text.unicodeScalars.startIndex, to: change.range.lowerBound)
         let b = a + change.was.unicodeScalars.count
-        let parse: ClauseDecider.Parsed
-        if let held = parsed[heardText] {
-            parse = held
-        } else {
-            parse = ClauseDecider.Parsed(heardText, parser: parser)
-            parsed[heardText] = parse
-        }
+        let parse = parsing(heardText)
         let rows = TermUses.load()[term] ?? []
         let memory = await ClauseStore.shared.memory(of: rows, parser: parser, model: model)
         let acceptedForms = Set(rows.filter { !$0.counter }.compactMap(\.heard).map(ClauseDecider.norm))
@@ -445,7 +497,10 @@ final class ClauseSession {
             lines.append("\"\(change.was)\" -> \(term): no parser token at the place")
             return nil
         }
-        tally[reading.decision, default: 0] += 1
+        if counted {
+            places += 1
+            tally[reading.decision, default: 0] += 1
+        }
         let shift = text.unicodeScalars.count - heardText.unicodeScalars.count
         let clause = reading.clause.map { r in
             (r.lowerBound >= b ? r.lowerBound + shift : r.lowerBound) ..< (r.upperBound >= b ? r.upperBound + shift : r.upperBound)
@@ -453,6 +508,76 @@ final class ClauseSession {
         lines.append(Self.describe(reading, heard: change.was, term: term, clause: clause,
                                    accepted: memory.accepted.count, refused: memory.refused.count))
         return reading
+    }
+
+    private func parsing(_ text: String) -> ClauseDecider.Parsed {
+        if let held = parsed[text] { return held }
+        let parse = ClauseDecider.Parsed(text, parser: parser)
+        parsed[text] = parse
+        return parse
+    }
+
+    /// A place several terms compete for: every member read on the same
+    /// clause, then `ClauseDecider.decideGroup`. Nil when a member cannot be read.
+    func readGroup(_ change: VocabularyPass.Change, in text: String) async -> ClauseDecider.GroupDecision? {
+        var members: [(term: String, reading: ClauseDecider.Reading)] = []
+        for member in change.group {
+            guard let reading = await read(change, term: member, in: text, counted: false) else { return nil }
+            members.append((member, reading))
+        }
+        let decision = ClauseDecider.decideGroup(members, model: model)
+        places += 1
+        let said: String
+        switch decision {
+        case .write(let member):
+            tally[.write, default: 0] += 1
+            said = "write \(member)"
+        case .offer(let top):
+            tally[.offer, default: 0] += 1
+            said = "offer \(top.joined(separator: "/"))"
+        case .leave:
+            tally[.leave, default: 0] += 1
+            said = "leave"
+        }
+        lines.append("\"\(change.was)\" group \(change.group.joined(separator: "/")): \(said)")
+        return decision
+    }
+
+    /// Sound proposals of two or more words lose a closed-class edge word the
+    /// term does not share, then must still sound like the term.
+    func trimmingEdges(
+        _ parts: [VocabularyPass.Part], in text: String,
+        sounds: [(term: String, form: String, phonemes: String?)], voice: String, floor: Float
+    ) -> [VocabularyPass.Part] {
+        let scalars = Array(text.unicodeScalars)
+        let view = text.unicodeScalars
+        return parts.compactMap { part in
+            guard part.standing == .sound else { return part }
+            let a = view.distance(from: view.startIndex, to: part.range.lowerBound)
+            let b = view.distance(from: view.startIndex, to: part.range.upperBound)
+            let kept = ClauseDecider.trimmed(parsing(text), text: scalars, at: a ..< b, term: part.term)
+            guard kept != a ..< b else { return part }
+            guard let kept else {
+                lines.append("\"\(part.decoded)\" -> \(part.term): nothing left once the edge words go")
+                return nil
+            }
+            let range = view.index(view.startIndex, offsetBy: kept.lowerBound) ..< view.index(view.startIndex, offsetBy: kept.upperBound)
+            let words = String(text[range])
+            let forms = sounds.filter { $0.term == part.term }
+            let ipa = Phonemes.of([words] + forms.map(\.form), voice: voice)
+            let score = forms.flatMap { [ipa[$0.form], $0.phonemes] }.compactMap { $0 }.filter { !$0.isEmpty }
+                .map { form in ipa[words].map { Phonemes.similarity($0, form) } ?? 0 }.max() ?? 0
+            guard score >= floor else {
+                lines.append("\"\(part.decoded)\" -> \(part.term): \"\(words)\" alone scores"
+                    + String(format: " %.2f, under the floor; not proposed", score))
+                return nil
+            }
+            lines.append("\"\(part.decoded)\" -> \(part.term): proposed as \"\(words)\"" + String(format: " (%.2f)", score))
+            return VocabularyPass.Part(
+                range: range, decoded: words, other: Vocabulary.inflected(part.term, like: words),
+                term: part.term, standing: .sound
+            )
+        }
     }
 
     static func describe(

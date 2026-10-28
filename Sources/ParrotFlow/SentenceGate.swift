@@ -52,9 +52,10 @@ enum SentenceGate {
     /// nothing, the portrait says nothing. The four outcomes above are read the
     /// same way either way, so one half off leaves the other deciding alone.
     ///
-    /// `clause`, when given, reads every place but a group place in the
-    /// portrait's stead — see `ClauseDecider`. A slot refusal then keeps what
-    /// was heard without asking it, as the replay it was measured on did.
+    /// `clause`, when given, reads every place in the portrait's stead — see
+    /// `ClauseDecider` — and the word vectors are not needed. A slot refusal
+    /// then keeps what was heard without asking it, as the replay it was
+    /// measured on did.
     static func settle(
         _ changes: [VocabularyPass.Change], in text: String, given settled: [Bool?],
         floor: Double, slot: Bool = true, portrait: Bool = true,
@@ -65,14 +66,12 @@ enum SentenceGate {
         // Never on the dictation's time. The word vectors are 400 MB and the
         // first MLX call warms Metal; waiting for that with the pill on screen
         // reads as the app having hung, which is what it did.
-        let vectorsReady = await WordVectors.shared.isLoaded
-        if !vectorsReady {
-            await WordVectors.shared.warm()
-            guard clause != nil else {
+        if clause == nil {
+            guard await WordVectors.shared.isLoaded else {
+                await WordVectors.shared.warm()
                 Log.write("sentence gate: the word vectors are not loaded yet; skipped")
                 return (settled, changes)
             }
-            Log.write("sentence gate: the word vectors are not loaded yet; group places stay open")
         }
         // Only the slot half reads it. With that half off the portrait runs on
         // a machine the 269 MB was never fetched to.
@@ -140,8 +139,27 @@ enum SentenceGate {
             //
             // With the portrait off there is nothing left to decide a group
             // place with, so it keeps what was heard.
+            if change.group.count > 1, let clause {
+                looked += 1
+                let members = change.group.joined(separator: "/")
+                switch await clause.readGroup(change, in: text) {
+                case .write(let member)?:
+                    changes[index] = change.writing(member)
+                    out[index] = true
+                    Log.write("sentence gate: \"\(change.was)\" -> \(member) — the clause decider picks it")
+                case .offer(let top)?:
+                    changes[index] = change.offering(top)
+                    Log.write("sentence gate: \"\(change.was)\" — the clause decider offers \(top.joined(separator: "/"))")
+                case .leave?:
+                    out[index] = false
+                    Log.write("sentence gate: \"\(change.was)\" kept — no member of \(members) clears the clause decider")
+                case nil:
+                    Log.write("sentence gate: \"\(change.was)\" — the clause decider cannot read \(members) here")
+                }
+                continue
+            }
             if change.group.count > 1 {
-                guard portrait, vectorsReady else { continue }
+                guard portrait else { continue }
                 looked += 1
                 let verdict = await TermPortrait.shared.reads(
                     group: change.group, change.was, in: near

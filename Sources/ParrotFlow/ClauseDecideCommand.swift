@@ -7,6 +7,8 @@ import Foundation
 /// `--clause-decide --batch <items.json>` reads `[{"id", "text", "a", "b",
 /// "heard", "term", "uses": [{"said", "span", "counter", "heard"}]}]`, offsets
 /// in `Unicode.Scalar`s, and prints one JSON line per item, then a summary line.
+/// An item may carry `memory` (rows per member) for a shared place, and `trim`
+/// (with an optional sound `floor`) to drop closed-class edge words first.
 enum ClauseDecideCommand {
 
     static func run(text: String, heard: String, term: String) -> Int32 {
@@ -39,12 +41,20 @@ enum ClauseDecideCommand {
             let heard: String
             let term: String
             let uses: [Row]
+            /// A shared place: every member's rows, keyed by member.
+            let memory: [String: [Row]]?
+            /// Trim closed-class edge words first; with `floor`, drop the place
+            /// when the trimmed words sound further than that from the term.
+            let trim: Bool?
+            let floor: Double?
         }
         struct Row: Decodable {
             let said: String
             let span: String
             let counter: Bool
             let heard: String?
+
+            var use: TermUses.Use { TermUses.Use(said: said, span: span, counter: counter, heard: heard) }
         }
         let items: [Item]
         do {
@@ -54,31 +64,61 @@ enum ClauseDecideCommand {
             return 1
         }
         guard let (parser, model) = load() else { return 1 }
+        func line(_ r: ClauseDecider.Reading) -> [String: Any] {
+            var features: [String: Any] = ["pair_acc": r.features.pairAccepted, "pair_ref": r.features.pairRefused]
+            for (name, value) in zip(ClauseDecider.Model.names, r.features.fitted) { features[name] = value ?? NSNull() }
+            return ["decision": r.decision.rawValue, "p": r.p, "z": r.z,
+                    "clause": r.clause.map { [$0.lowerBound, $0.upperBound] } ?? NSNull(), "features": features]
+        }
         var times: [Double] = []
         for item in items {
             autoreleasepool {
-                let rows = item.uses.map {
-                    TermUses.Use(said: $0.said, span: $0.span, counter: $0.counter, heard: $0.heard)
-                }
                 let started = DispatchTime.now().uptimeNanoseconds
-                let read = decide(
-                    item.text, at: item.a ..< item.b, heard: item.heard, term: item.term, rows: rows,
-                    parser: parser, model: model)
+                var out: [String: Any] = ["id": item.id]
+                var range = item.a ..< item.b
+                var heard = item.heard
+                if item.trim == true {
+                    let parsed = ClauseDecider.Parsed(item.text, parser: parser)
+                    let scalars = Array(item.text.unicodeScalars)
+                    guard let kept = ClauseDecider.trimmed(parsed, text: scalars, at: range, term: item.term) else {
+                        emit(["id": item.id, "declined": "nothing left"])
+                        return
+                    }
+                    range = kept
+                    var view = String.UnicodeScalarView()
+                    view.append(contentsOf: scalars[kept])
+                    heard = String(view)
+                    out["place"] = [kept.lowerBound, kept.upperBound]
+                    if let floor = item.floor, ClauseDecider.sound(heard: heard, term: item.term) < floor {
+                        emit(["id": item.id, "declined": "under the floor", "place": [kept.lowerBound, kept.upperBound]])
+                        return
+                    }
+                }
+                if let group = item.memory {
+                    var members: [(term: String, reading: ClauseDecider.Reading)] = []
+                    var each: [String: Any] = [:]
+                    for (term, rows) in group.sorted(by: { $0.key < $1.key }) {
+                        guard let r = decide(item.text, at: range, heard: heard, term: term, rows: rows.map(\.use),
+                                             parser: parser, model: model)?.reading else { continue }
+                        members.append((term, r))
+                        each[term] = line(r)
+                    }
+                    out["members"] = each
+                    switch ClauseDecider.decideGroup(members, model: model) {
+                    case .write(let term): out["group"] = ["decision": "write", "terms": [term]]
+                    case .offer(let top): out["group"] = ["decision": "offer", "terms": top]
+                    case .leave: out["group"] = ["decision": "leave", "terms": [String]()]
+                    }
+                } else if let r = decide(item.text, at: range, heard: heard, term: item.term,
+                                         rows: item.uses.map(\.use), parser: parser, model: model)?.reading {
+                    out.merge(line(r)) { _, new in new }
+                } else {
+                    out["declined"] = "no parser token at the place"
+                }
                 let ms = Double(DispatchTime.now().uptimeNanoseconds - started) / 1e6
                 times.append(ms)
-                guard let r = read?.reading else {
-                    emit(["id": item.id, "declined": "no parser token at the place", "ms": ms])
-                    return
-                }
-                let f = r.features
-                var features: [String: Any] = [
-                    "pair_acc": f.pairAccepted, "pair_ref": f.pairRefused,
-                ]
-                for (name, value) in zip(ClauseDecider.Model.names, f.fitted) { features[name] = value ?? NSNull() }
-                emit([
-                    "id": item.id, "decision": r.decision.rawValue, "p": r.p, "z": r.z, "ms": ms,
-                    "clause": r.clause.map { [$0.lowerBound, $0.upperBound] } ?? NSNull(), "features": features,
-                ])
+                out["ms"] = ms
+                emit(out)
             }
         }
         let warm = times.dropFirst().sorted()
