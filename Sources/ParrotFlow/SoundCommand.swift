@@ -88,6 +88,15 @@ enum SoundCommand {
          "The meeting is at four.", []),
     ]
 
+    /// With the clause decider on, a term is also heard as its possessive,
+    /// and a weak word after the first may lose its /h/: (name, text, floor, want).
+    private static let possessives: [(name: String, text: String, floor: Float, want: [String])] = [
+        ("a weak /h/ makes a possessive", "Praise his work has been amazing.", 0.85, ["Praise his -> Praisy's"]),
+        ("the homophone now reaches the floor", "Let's praise his work.", 0.85, ["praise his -> Praisy's"]),
+        ("a possessive near spelling at 0.60", "I think Prise's work is great.", 0.60, ["Prise's -> Praisy's"]),
+        ("nothing to offer", "The meeting is at four.", 0.60, []),
+    ]
+
     static func run() async -> Int32 {
         let ears = await NeuralPhonemes.isReady()
         guard Phonemes.binary != nil || ears else {
@@ -130,7 +139,20 @@ enum SoundCommand {
                     + " wanted [\(one.want.joined(separator: ", "))]"))
         }
 
-        let total = pairs.count + cases.count + 1
+        for one in possessives {
+            let parts = await VocabularyPass.phonemeParts(
+                in: one.text, sounds: sounds, voice: "en-us", language: "en",
+                floor: one.floor, claimed: [], possessives: true
+            )
+            let got = parts.map { "\($0.decoded) -> \($0.other)" }.sorted()
+            let ok = got == one.want.sorted()
+            if !ok { failures += 1 }
+            print("\(ok ? "✓" : "✗") possessives: \(one.name)"
+                + (ok ? "" : "  — got [\(got.joined(separator: ", "))],"
+                    + " wanted [\(one.want.joined(separator: ", "))]"))
+        }
+
+        let total = pairs.count + cases.count + possessives.count + 1
         print("\n\(total - failures)/\(total)")
         return failures == 0 ? 0 : 1
     }

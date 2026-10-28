@@ -1242,7 +1242,8 @@ struct Pipeline: Equatable, Codable {
             let sound = Trace.current?.open("sound", kind: .part)
             let heard = await VocabularyPass.phonemeParts(
                 in: text, sounds: sounds, voice: Phonemes.voice(for: spoken),
-                language: spoken, floor: config.soundBelow, claimed: parts
+                language: spoken, floor: config.soundBelow, claimed: parts,
+                possessives: config.decidesByClause && spoken == "en"
             )
             var proposed = heard
             if heard.contains(where: { $0.decoded.contains(" ") }), let clause = await openClause() {
