@@ -96,6 +96,8 @@ mv "$APP/Contents/Resources/built-in/config.example.yaml" "$APP/Contents/Resourc
 # the other files in it are read by scripts/calibrate.py on a checkout and have
 # no business in the bundle. See WordPieces.fileURL.
 cp "$ROOT/built-in/data/wordpiece.txt" "$APP/Contents/Resources/wordpiece.txt"
+# The clause decider's weights. See ClauseDecider.Model.fileURL.
+cp "$ROOT/built-in/data/vocab-clause.safetensors" "$APP/Contents/Resources/vocab-clause.safetensors"
 cp "$ROOT/built-in/data/parsing-requirements.txt" "$APP/Contents/Resources/parsing-requirements.txt"
 
 # SwiftPM resource bundles, which the binary looks for beside itself.

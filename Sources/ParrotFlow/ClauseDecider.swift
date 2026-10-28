@@ -1,0 +1,470 @@
+import CryptoKit
+import Foundation
+
+/// Decides a vocabulary place from the parser clause around it, in place of
+/// `TermPortrait`. One sign-constrained logistic regression over: how close the
+/// clause is to the term's accepted and refused sentences, whether the heard
+/// span is an entity, the part of speech of the heard word and its
+/// neighbours, how it sounds against the term, whether it is a dictionary
+/// word, and whether this exact swap was accepted or refused before.
+///
+/// Ported from `training/syntax-parser/vocab_clause_core.py`; the weights were
+/// fitted on public text only. Behind `transcription.vocabulary.clause_decider`.
+enum ClauseDecider {
+
+    enum Decision: String {
+        case write, leave, offer
+    }
+
+    struct Features {
+        var simAccepted: Double?
+        var simRefused: Double?
+        var ner = 0.0
+        var heardPropn = 0.0
+        var heardNonnominal = 0.0
+        var prevDet = 0.0
+        var prevAdp = 0.0
+        var nextVerb = 0.0
+        var sound = 0.0
+        var known = 0.0
+        var pairAccepted = 0.0
+        var pairRefused = 0.0
+
+        /// In `Model.names` order.
+        var fitted: [Double?] {
+            [simAccepted, simRefused, ner, heardPropn, heardNonnominal, prevDet, prevAdp, nextVerb, sound, known]
+        }
+    }
+
+    struct Reading {
+        let features: Features
+        let z: Double
+        let p: Double
+        let decision: Decision
+        /// No accepted sentence to compare with: such a term never writes.
+        var cold: Bool { features.simAccepted == nil }
+        /// Scalar offsets of the pooled words in the text that was parsed.
+        let clause: Range<Int>?
+    }
+
+    // MARK: - The weights
+
+    struct Model: Sendable {
+        static let names = [
+            "sim_acc", "sim_ref", "ner", "heard_propn", "heard_nonnominal", "prev_det", "prev_adp", "next_verb",
+            "sound", "known",
+        ]
+        static let width = Parser.width, projected = 256, nerLabels = 11
+
+        let centre: [Float]
+        let projection: [Float]
+        let nerWeight: [Float]
+        let nerBias: [Float]
+        let weights: [Double]
+        let means: [Double]
+        let deviations: [Double]
+        let bias: Double
+        /// For `sim_acc` and `sim_ref`: the value when the feature is absent.
+        let absent: [Double]
+        /// For `pair_acc` and `pair_ref`, set by hand.
+        let fixed: [Double]
+        let write: Double
+        let leave: Double
+        let minimumPool: Int
+        /// Names the row-vector store, so another set of weights never reads
+        /// vectors this one wrote.
+        let tag: String
+
+        init(contentsOf url: URL) throws {
+            let tensors = try Tensors(try MappedFile(url))
+            func list(_ key: String) -> [String]? {
+                tensors.string(key).flatMap { try? JSONDecoder().decode([String].self, from: Data($0.utf8)) }
+            }
+            guard list("features") == Self.names, list("absent") == ["sim_acc", "sim_ref"],
+                  list("fixed") == ["pair_acc", "pair_ref"]
+            else { throw Parser.Failure.malformed("the clause decider's features are not in the order this code reads") }
+            guard let write = tensors.string("write").flatMap(Double.init),
+                  let leave = tensors.string("leave").flatMap(Double.init),
+                  let pool = tensors.string("min_pool").flatMap(Int.init)
+            else { throw Parser.Failure.malformed("the clause decider has no thresholds") }
+            let count = Self.names.count
+            centre = try tensors.floats("centre", shape: [Self.width])
+            projection = try tensors.floats("proj", shape: [Self.width, Self.projected])
+            nerWeight = try tensors.floats("ner.weight", shape: [Self.nerLabels, Self.width])
+            nerBias = try tensors.floats("ner.bias", shape: [Self.nerLabels])
+            weights = try tensors.floats("w", shape: [count]).map(Double.init)
+            means = try tensors.floats("mu", shape: [count]).map(Double.init)
+            deviations = try tensors.floats("sd", shape: [count]).map(Double.init)
+            bias = Double(try tensors.floats("bias", shape: [1])[0])
+            absent = try tensors.floats("absent", shape: [2]).map(Double.init)
+            fixed = try tensors.floats("fixed", shape: [2]).map(Double.init)
+            self.write = write
+            self.leave = leave
+            minimumPool = pool
+            let digest = SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+            tag = "\(SyrinxModel.revision.prefix(8))-\(digest.prefix(8))"
+        }
+
+        /// Bundled, like `wordpiece.txt`: the assembled app's Resources, else
+        /// the source tree for the raw `swift build` product.
+        static var fileURL: URL {
+            if !Permissions.isRunningFromBuildDirectory,
+               let bundled = Bundle.main.resourceURL?.appendingPathComponent("vocab-clause.safetensors"),
+               FileManager.default.fileExists(atPath: bundled.path) {
+                return bundled
+            }
+            return URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("built-in/data/vocab-clause.safetensors")
+        }
+
+        static let shared: Result<Model, Error> = Result { try Model(contentsOf: fileURL) }
+
+        func score(_ f: Features) -> Double {
+            var z = bias
+            for (k, value) in f.fitted.enumerated() {
+                if let value {
+                    z += weights[k] * (value - means[k]) / deviations[k]
+                } else if k < absent.count {
+                    z += absent[k]
+                }
+            }
+            return z + fixed[0] * f.pairAccepted + fixed[1] * f.pairRefused
+        }
+
+        func decide(_ f: Features, clause: Range<Int>?) -> Reading {
+            let z = score(f)
+            let p = 1 / (1 + exp(-z))
+            let decision: Decision
+            if f.simAccepted == nil {
+                decision = p >= leave ? .offer : .leave
+            } else {
+                decision = p >= write ? .write : p < leave ? .leave : .offer
+            }
+            return Reading(features: f, z: z, p: p, decision: decision, clause: clause)
+        }
+    }
+
+    // MARK: - One parsed text
+
+    /// A text as the vocabulary stage reads it: tokenised and windowed as
+    /// `TreeCutter.Clip` does, every offset in `Unicode.Scalar`s.
+    struct Parsed {
+        let clip: TreeCutter.Clip
+        let ends: [Int]
+
+        init(_ text: String, parser: Parser) {
+            clip = TreeCutter.Clip(text, parser: parser)
+            ends = clip.tokens.map { $0.start + $0.string.unicodeScalars.count }
+        }
+
+        var count: Int { clip.tokens.count }
+
+        func span(_ range: Range<Int>) -> [Int] {
+            (0 ..< count).filter { clip.tokens[$0].start < range.upperBound && ends[$0] > range.lowerBound }
+        }
+
+        private static let column = Dictionary(uniqueKeysWithValues: UPOS.allCases.enumerated().map { ($1, $0) })
+
+        func probability(_ token: Int, _ tag: UPOS) -> Double {
+            Double(clip.uposProbabilities[token * UPOS.allCases.count + (Self.column[tag] ?? 0)])
+        }
+
+        func hasAlnum(_ token: Int) -> Bool {
+            clip.tokens[token].string.unicodeScalars.contains(where: WordSplit.isAlnum)
+        }
+    }
+
+    private static let clausal: Set<String> = ["advcl", "ccomp", "xcomp", "conj", "acl", "parataxis", "csubj"]
+    private static let subject: Set<String> = ["nsubj", "csubj", "cop"]
+    private static let skipped: Set<String> = ["mark", "cc"]
+
+    /// The clause holding the span. From the first span token whose head is
+    /// outside the span, up to the first clause head: a window root, or a word
+    /// on a clausal relation that is a predicate (a verb, or a word with a
+    /// subject or copula child). A nominal conj is not one, so "Mirza and
+    /// Mira" stays in its sentence's clause. Then that head's subtree, without
+    /// going into another clause head or into mark and cc words.
+    static func clause(_ parsed: Parsed, span: [Int]) -> [Int] {
+        let clip = parsed.clip
+        let heads = clip.heads.map { $0 - 1 }
+        var kids: [Int: [Int]] = [:]
+        for (j, h) in heads.enumerated() { kids[h, default: []].append(j) }
+        let inside = Set(span)
+        let anchor = span.first { !inside.contains(heads[$0]) } ?? span[0]
+        func isHead(_ j: Int) -> Bool {
+            if clip.labels[j] == "root" || heads[j] < 0 { return true }
+            let predicate = clip.upos[j] == "VERB" || clip.upos[j] == "AUX"
+                || (kids[j] ?? []).contains { subject.contains(clip.labels[$0]) }
+            return clausal.contains(clip.labels[j]) && predicate
+        }
+        var h = anchor
+        while !isHead(h) { h = heads[h] }
+        var out: [Int] = [], stack = [h]
+        while let x = stack.popLast() {
+            out.append(x)
+            stack += (kids[x] ?? []).filter { !isHead($0) && !skipped.contains(clip.labels[$0]) }
+        }
+        return out.sorted()
+    }
+
+    /// The clause minus the span and minus tokens with no letter or digit; the
+    /// span's whole parse window when fewer than `minimum` are left.
+    static func pool(_ parsed: Parsed, span: [Int], minimum: Int) -> [Int] {
+        let inside = Set(span)
+        let keep = { (tokens: [Int]) in tokens.filter { !inside.contains($0) && parsed.hasAlnum($0) } }
+        let found = keep(clause(parsed, span: span))
+        if found.count >= minimum { return found }
+        guard let window = parsed.clip.windows.first(where: { $0.contains(span[0]) }) else { return [] }
+        return keep(Array(window))
+    }
+
+    static func vector(_ parsed: Parsed, tokens: [Int], model: Model) -> [Float]? {
+        guard !tokens.isEmpty else { return nil }
+        let width = Model.width, out = Model.projected
+        var mean = [Float](repeating: 0, count: width)
+        for t in tokens {
+            for d in 0 ..< width { mean[d] += parsed.clip.vectors[t * width + d] }
+        }
+        for d in 0 ..< width { mean[d] = mean[d] / Float(tokens.count) - model.centre[d] }
+        var projected = [Float](repeating: 0, count: out)
+        for i in 0 ..< width where mean[i] != 0 {
+            let x = mean[i]
+            for j in 0 ..< out { projected[j] += x * model.projection[i * out + j] }
+        }
+        return unit(projected)
+    }
+
+    static func unit(_ v: [Float]) -> [Float]? {
+        let norm = Float(v.reduce(0.0) { $0 + Double($1) * Double($1) }.squareRoot())
+        return norm > 0 ? v.map { $0 / norm } : nil
+    }
+
+    static func centroid(_ vectors: [[Float]]) -> [Float]? {
+        guard let first = vectors.first else { return nil }
+        var sum = [Float](repeating: 0, count: first.count)
+        for v in vectors {
+            for i in sum.indices { sum[i] += v[i] }
+        }
+        return unit(sum)
+    }
+
+    static func cosine(_ a: [Float], _ b: [Float]) -> Double {
+        zip(a, b).reduce(0.0) { $0 + Double($1.0) * Double($1.1) }
+    }
+
+    /// max over the span of 1 - P(O), O being label 0.
+    static func entity(_ parsed: Parsed, span: [Int], model: Model) -> Double {
+        let width = Model.width, labels = Model.nerLabels
+        var best = 0.0
+        for t in span {
+            var logits = model.nerBias.map(Double.init)
+            for k in 0 ..< labels {
+                var z = 0.0
+                for d in 0 ..< width {
+                    z += Double(model.nerWeight[k * width + d]) * Double(parsed.clip.fused[t * width + d])
+                }
+                logits[k] += z
+            }
+            let top = logits.max() ?? 0
+            let e = logits.map { exp($0 - top) }
+            best = max(best, 1 - e[0] / e.reduce(0, +))
+        }
+        return best
+    }
+
+    private static let nonnominal: [UPOS] = [.verb, .aux, .adv, .adp, .det, .pron, .cconj, .sconj, .part]
+
+    static func partsOfSpeech(_ parsed: Parsed, span: [Int], into f: inout Features) {
+        guard let first = span.min(), let last = span.max() else { return }
+        f.heardPropn = span.map { parsed.probability($0, .propn) }.max() ?? 0
+        f.heardNonnominal = span.map { t in nonnominal.reduce(0.0) { $0 + parsed.probability(t, $1) } }.max() ?? 0
+        let before = (0 ..< first).reversed().first(where: parsed.hasAlnum)
+        let after = (last + 1 ..< parsed.count).first(where: parsed.hasAlnum)
+        f.prevDet = before.map { parsed.probability($0, .det) } ?? 0
+        f.prevAdp = before.map { parsed.probability($0, .adp) } ?? 0
+        f.nextVerb = after.map { parsed.probability($0, .verb) + parsed.probability($0, .aux) } ?? 0
+    }
+
+    static func known(_ heard: String) -> Bool {
+        var runs: [String] = [], current = ""
+        for c in heard {
+            if c.isLetter { current.append(c) } else if !current.isEmpty { runs.append(current); current = "" }
+        }
+        if !current.isEmpty { runs.append(current) }
+        return !runs.isEmpty && runs.allSatisfy(ContextSpelling.known)
+    }
+
+    static func norm(_ word: String) -> String {
+        String(word.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == " " })
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    static func sound(heard: String, term: String) -> Double {
+        let ipa = Phonemes.of([heard, term], voice: Phonemes.voice(for: "en"))
+        guard let a = ipa[heard], let b = ipa[term] else { return 0 }
+        return Double(Phonemes.similarity(a, b))
+    }
+
+    static func place(_ parsed: Parsed, at range: Range<Int>, model: Model) -> (vector: [Float]?, span: [Int], pool: [Int]) {
+        let span = parsed.span(range)
+        guard !span.isEmpty else { return (nil, [], []) }
+        let pooled = pool(parsed, span: span, minimum: model.minimumPool)
+        return (vector(parsed, tokens: pooled, model: model), span, pooled)
+    }
+
+    /// A stored row's vector: its sentence parsed, its span found as
+    /// `TermUses` finds it.
+    static func rowVector(_ use: TermUses.Use, parser: Parser, model: Model) -> [Float]? {
+        guard let found = TermUses.occurrence(of: use.span, in: use.said) else { return nil }
+        let a = use.said.unicodeScalars.distance(from: use.said.unicodeScalars.startIndex, to: found.lowerBound)
+        let b = a + use.said[found].unicodeScalars.count
+        return place(Parsed(use.said, parser: parser), at: a ..< b, model: model).vector
+    }
+
+    /// One place. `text` holds the heard words at `range` (scalar offsets).
+    static func read(
+        _ parsed: Parsed, at range: Range<Int>, heard: String, term: String,
+        accepted: [[Float]], refused: [[Float]], acceptedForms: Set<String>, refusedForms: Set<String>,
+        model: Model
+    ) -> Reading? {
+        let (vector, span, pooled) = place(parsed, at: range, model: model)
+        guard !span.isEmpty else { return nil }
+        var f = Features()
+        if let vector {
+            f.simAccepted = centroid(accepted).map { cosine(vector, $0) }
+            f.simRefused = centroid(refused).map { cosine(vector, $0) }
+        }
+        f.ner = entity(parsed, span: span, model: model)
+        partsOfSpeech(parsed, span: span, into: &f)
+        f.sound = sound(heard: heard, term: term)
+        f.known = known(heard) ? 1 : 0
+        f.pairAccepted = acceptedForms.contains(norm(heard)) ? 1 : 0
+        f.pairRefused = refusedForms.contains(norm(heard)) ? 1 : 0
+        var clause: Range<Int>?
+        if let lo = pooled.map({ parsed.clip.tokens[$0].start }).min(), let hi = pooled.map({ parsed.ends[$0] }).max() {
+            clause = lo ..< hi
+        }
+        return model.decide(f, clause: clause)
+    }
+}
+
+/// The row vectors, kept on disk under a name that holds the parser revision
+/// and the decider's weights, next to the Qwen portrait store.
+actor ClauseStore {
+
+    static let shared = ClauseStore()
+
+    private var vectors: [String: [Float]] = [:]
+    private var loadedTag: String?
+
+    private static func url(_ tag: String) -> URL {
+        AppVariant.supportDirectory.appendingPathComponent("portraits-parrotflow-syrinx-\(tag).json")
+    }
+
+    private static func key(_ use: TermUses.Use) -> String {
+        "\(use.counter ? "-" : "+")\(use.span)\u{1}\(use.said)"
+    }
+
+    func memory(
+        of rows: [TermUses.Use], parser: Parser, model: ClauseDecider.Model
+    ) -> (accepted: [[Float]], refused: [[Float]]) {
+        if loadedTag != model.tag {
+            vectors = (try? JSONDecoder().decode([String: [Float]].self, from: Data(contentsOf: Self.url(model.tag)))) ?? [:]
+            loadedTag = model.tag
+        }
+        var changed = false
+        var accepted: [[Float]] = [], refused: [[Float]] = []
+        for use in rows {
+            let key = Self.key(use)
+            if vectors[key] == nil {
+                vectors[key] = ClauseDecider.rowVector(use, parser: parser, model: model) ?? []
+                changed = true
+            }
+            guard let v = vectors[key], !v.isEmpty else { continue }
+            if use.counter { refused.append(v) } else { accepted.append(v) }
+        }
+        if changed {
+            let live = Set(TermUses.load().values.flatMap { $0 }.map(Self.key))
+            vectors = vectors.filter { live.contains($0.key) }
+            do {
+                try FileManager.default.createDirectory(
+                    at: AppVariant.supportDirectory, withIntermediateDirectories: true)
+                try JSONEncoder().encode(vectors).write(to: Self.url(model.tag), options: .atomic)
+            } catch {
+                Log.write("clause decider: could not keep the row vectors (\(error.localizedDescription))")
+            }
+        }
+        return (accepted, refused)
+    }
+}
+
+/// One dictation's worth of clause readings: each heard text parsed once, and
+/// every place read kept for the trace.
+final class ClauseSession {
+    let parser: Parser
+    let model: ClauseDecider.Model
+    private var parsed: [String: ClauseDecider.Parsed] = [:]
+    private(set) var lines: [String] = []
+    private(set) var tally: [ClauseDecider.Decision: Int] = [:]
+    private(set) var seconds = 0.0
+
+    init(parser: Parser, model: ClauseDecider.Model) {
+        self.parser = parser
+        self.model = model
+    }
+
+    /// One place, read on `text` with the heard words put back at it. The
+    /// clause offsets in the trace line are mapped back to `text`.
+    func read(
+        _ change: VocabularyPass.Change, term: String, in text: String
+    ) async -> ClauseDecider.Reading? {
+        let started = Date()
+        defer { seconds += Date().timeIntervalSince(started) }
+        let heardText = text.replacingCharacters(in: change.range, with: change.was)
+        let a = text.unicodeScalars.distance(from: text.unicodeScalars.startIndex, to: change.range.lowerBound)
+        let b = a + change.was.unicodeScalars.count
+        let parse: ClauseDecider.Parsed
+        if let held = parsed[heardText] {
+            parse = held
+        } else {
+            parse = ClauseDecider.Parsed(heardText, parser: parser)
+            parsed[heardText] = parse
+        }
+        let rows = TermUses.load()[term] ?? []
+        let memory = await ClauseStore.shared.memory(of: rows, parser: parser, model: model)
+        let acceptedForms = Set(rows.filter { !$0.counter }.compactMap(\.heard).map(ClauseDecider.norm))
+        let refusedForms = Set(rows.filter(\.counter).map(\.span).map(ClauseDecider.norm))
+        guard let reading = ClauseDecider.read(
+            parse, at: a ..< b, heard: change.was, term: term,
+            accepted: memory.accepted, refused: memory.refused,
+            acceptedForms: acceptedForms, refusedForms: refusedForms, model: model
+        ) else {
+            lines.append("\"\(change.was)\" -> \(term): no parser token at the place")
+            return nil
+        }
+        tally[reading.decision, default: 0] += 1
+        let shift = text.unicodeScalars.count - heardText.unicodeScalars.count
+        let clause = reading.clause.map { r in
+            (r.lowerBound >= b ? r.lowerBound + shift : r.lowerBound) ..< (r.upperBound >= b ? r.upperBound + shift : r.upperBound)
+        }
+        lines.append(Self.describe(reading, heard: change.was, term: term, clause: clause,
+                                   accepted: memory.accepted.count, refused: memory.refused.count))
+        return reading
+    }
+
+    static func describe(
+        _ r: ClauseDecider.Reading, heard: String, term: String, clause: Range<Int>?, accepted: Int, refused: Int
+    ) -> String {
+        let f = r.features
+        func v(_ x: Double?) -> String { x.map { String(format: "%.3f", $0) } ?? "absent" }
+        let values = zip(ClauseDecider.Model.names, f.fitted).map { "\($0)=\(v($1))" }
+            + ["pair_acc=\(Int(f.pairAccepted))", "pair_ref=\(Int(f.pairRefused))"]
+        let span = clause.map { "[\($0.lowerBound),\($0.upperBound))" } ?? "none"
+        return "\"\(heard)\" -> \(term): \(r.decision.rawValue) p=\(String(format: "%.3f", r.p))"
+            + " z=\(String(format: "%.3f", r.z)) clause=\(span) rows=+\(accepted)/-\(refused) "
+            + values.joined(separator: " ")
+    }
+}
