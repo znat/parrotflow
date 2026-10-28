@@ -51,20 +51,27 @@ enum SentenceGate {
     /// that half already has when it cannot answer: `SlotReference` refuses
     /// nothing, the portrait says nothing. The four outcomes above are read the
     /// same way either way, so one half off leaves the other deciding alone.
+    ///
+    /// `clause`, when given, reads every place in the portrait's stead — see
+    /// `ClauseDecider` — and the word vectors are not needed. A slot refusal
+    /// then keeps what was heard without asking it, as the replay it was
+    /// measured on did.
     static func settle(
         _ changes: [VocabularyPass.Change], in text: String, given settled: [Bool?],
         floor: Double, slot: Bool = true, portrait: Bool = true,
-        terms: [String: Config.Vocabulary.Term] = [:]
+        terms: [String: Config.Vocabulary.Term] = [:], clause: ClauseSession? = nil
     ) async -> Settled {
         var changes = changes
-        guard slot || portrait else { return (settled, changes) }
+        guard slot || portrait || clause != nil else { return (settled, changes) }
         // Never on the dictation's time. The word vectors are 400 MB and the
         // first MLX call warms Metal; waiting for that with the pill on screen
         // reads as the app having hung, which is what it did.
-        guard await WordVectors.shared.isLoaded else {
-            await WordVectors.shared.warm()
-            Log.write("sentence gate: the word vectors are not loaded yet; skipped")
-            return (settled, changes)
+        if clause == nil {
+            guard await WordVectors.shared.isLoaded else {
+                await WordVectors.shared.warm()
+                Log.write("sentence gate: the word vectors are not loaded yet; skipped")
+                return (settled, changes)
+            }
         }
         // Only the slot half reads it. With that half off the portrait runs on
         // a machine the 269 MB was never fetched to.
@@ -132,6 +139,25 @@ enum SentenceGate {
             //
             // With the portrait off there is nothing left to decide a group
             // place with, so it keeps what was heard.
+            if change.group.count > 1, let clause {
+                looked += 1
+                let members = change.group.joined(separator: "/")
+                switch await clause.readGroup(change, in: text) {
+                case .write(let member)?:
+                    changes[index] = change.writing(member)
+                    out[index] = true
+                    Log.write("sentence gate: \"\(change.was)\" -> \(member) — the clause decider picks it")
+                case .offer(let top)?:
+                    changes[index] = change.offering(top)
+                    Log.write("sentence gate: \"\(change.was)\" — the clause decider offers \(top.joined(separator: "/"))")
+                case .leave?:
+                    out[index] = false
+                    Log.write("sentence gate: \"\(change.was)\" kept — no member of \(members) clears the clause decider")
+                case nil:
+                    Log.write("sentence gate: \"\(change.was)\" — the clause decider cannot read \(members) here")
+                }
+                continue
+            }
             if change.group.count > 1 {
                 guard portrait else { continue }
                 looked += 1
@@ -157,6 +183,22 @@ enum SentenceGate {
             }
 
             if out[index] == true {
+                // The clause decider takes a write back only from a term it
+                // has sentences for, and only when it would leave the place.
+                if let clause {
+                    looked += 1
+                    let owner = change.owner ?? term
+                    if let reading = await clause.read(change, term: owner, in: text),
+                       !reading.cold, reading.decision == .leave {
+                        out[index] = false
+                        Log.write("sentence gate: \"\(change.was)\" -> \(owner) taken back out"
+                            + " — the clause decider leaves it")
+                    } else {
+                        Log.write("sentence gate: \"\(change.was)\" -> \(owner) already written,"
+                            + " and the clause decider does not object")
+                    }
+                    continue
+                }
                 // Only the portrait may take a rule's write back out. With it
                 // off the write stands, which is what it did before the
                 // portrait existed.
@@ -202,9 +244,31 @@ enum SentenceGate {
                     continue
                 }
             }
-            let read = portrait
-                ? await TermPortrait.shared.reads(change.was, in: near, as: term)
-                : TermPortrait.Verdict.nothing
+            let read: TermPortrait.Verdict
+            if let clause {
+                looked += 1
+                let owner = change.owner ?? term
+                guard !refuses else {
+                    out[index] = false
+                    Log.write("sentence gate: \"\(change.was)\" kept — it belongs here")
+                    continue
+                }
+                switch await clause.read(change, term: owner, in: text)?.decision {
+                case .write?:
+                    out[index] = true
+                    Log.write("sentence gate: \"\(change.was)\" -> \(owner) — the clause decider writes it")
+                case .leave?:
+                    out[index] = false
+                    Log.write("sentence gate: \"\(change.was)\" kept — the clause decider leaves it")
+                case .offer?, nil:
+                    Log.write("sentence gate: \"\(change.was)\" -> \(owner) — the clause decider offers it")
+                }
+                continue
+            } else {
+                read = portrait
+                    ? await TermPortrait.shared.reads(change.was, in: near, as: term)
+                    : TermPortrait.Verdict.nothing
+            }
 
             switch (refuses, read) {
             case (true, .authorises):

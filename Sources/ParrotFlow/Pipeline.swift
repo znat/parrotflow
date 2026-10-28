@@ -1221,6 +1221,20 @@ struct Pipeline: Equatable, Codable {
         // Nothing is written here either. The floor is 0.85 and it was
         // measured over 20891 dictations — see `phonemeParts` for what fires
         // and what it costs.
+        // Opened once, on first need: the sound pass trims with it, the
+        // sentence gate decides with it.
+        var clauseVars: [String: Scope.Value] = [:]
+        var clause: ClauseSession?
+        var clauseAsked = false
+        func openClause() async -> ClauseSession? {
+            guard !clauseAsked else { return clause }
+            clauseAsked = true
+            guard config.decidesByClause, config.gatesSentence else { return nil }
+            let opened = await Self.clauseSession(language: Pipeline.language(of: text, config: config))
+            if let why = opened.declined { clauseVars["clause_declined"] = .string(why) }
+            clause = opened.session
+            return clause
+        }
         if step.vocabulary.isOn(\.bySound) {
             let spoken = Pipeline.language(of: text, config: config)
             let sounds = config.vocabularySounds(in: spoken)
@@ -1230,12 +1244,18 @@ struct Pipeline: Equatable, Codable {
                 in: text, sounds: sounds, voice: Phonemes.voice(for: spoken),
                 language: spoken, floor: config.soundBelow, claimed: parts
             )
+            var proposed = heard
+            if heard.contains(where: { $0.decoded.contains(" ") }), let clause = await openClause() {
+                proposed = clause.trimmingEdges(
+                    heard, in: text, sounds: sounds, voice: Phonemes.voice(for: spoken), floor: config.soundBelow
+                )
+            }
             soundSeconds = Date().timeIntervalSince(askedAt)
             sound?.close(sounds.isEmpty
                 ? "no terms with a sound"
-                : "\(heard.count) of \(sounds.count) over the floor")
-            bySound = heard.count
-            parts += heard
+                : "\(proposed.count) of \(sounds.count) over the floor")
+            bySound = proposed.count
+            parts += proposed
         }
 
         // The places where several terms share the word that was heard. Built
@@ -1316,14 +1336,26 @@ struct Pipeline: Equatable, Codable {
         if config.gatesSentence, #available(macOS 14, *) {
             let span = Trace.current?.open("sentence_gate", kind: .part)
             defer { span?.close("\(decided.filter { $0 == nil }.count) still open") }
+            let clause = await openClause()
             let settledBySentence = await SentenceGate.settle(
                 changes, in: text, given: decided,
                 floor: config.transcription.slotFloor(
                     for: Pipeline.language(of: text, config: config), on: step
                 ),
                 slot: step.vocabulary.isOn(\.slotGate), portrait: step.vocabulary.isOn(\.portrait),
-                terms: config.vocabulary.terms
+                terms: config.vocabulary.terms, clause: clause
             )
+            if let clause {
+                clauseVars.merge([
+                    "clause_places": .int(clause.places),
+                    "clause_written": .int(clause.tally[.write] ?? 0),
+                    "clause_left": .int(clause.tally[.leave] ?? 0),
+                    "clause_offered": .int(clause.tally[.offer] ?? 0),
+                    "clause_ms": .int(Int((clause.seconds * 1000).rounded())),
+                    "clause": .string(clause.lines.joined(separator: "; ")),
+                ]) { _, new in new }
+                for line in clause.lines { Log.write("clause decider: \(line)") }
+            }
             decided = settledBySentence.decided
             // A group place comes back proposing the member that won, or
             // carrying the ones still standing. Nothing else in a change moves.
@@ -1428,7 +1460,26 @@ struct Pipeline: Equatable, Codable {
             "slots": .int(slots.count),
             "reverted": .string(reverted.joined(separator: "; ")),
             "judged": .string(chosen),
-        ])
+        ].merging(clauseVars) { old, _ in old })
+    }
+
+    /// The clause decider for one dictation, or why there is none. It waits for
+    /// the parser as the tree cutter does; without it the portrait decides.
+    static func clauseSession(language: String) async -> (session: ClauseSession?, declined: String?) {
+        guard language == "en" else { return (nil, "not English") }
+        let model: ClauseDecider.Model
+        switch ClauseDecider.Model.shared {
+        case .success(let loaded): model = loaded
+        case .failure(let error):
+            Log.write("clause decider: \(error.localizedDescription); the portrait decides")
+            return (nil, error.localizedDescription)
+        }
+        let ready = await SyrinxModel.shared.ready(within: SyrinxModel.dictationWait)
+        guard let loaded = ready.loaded else {
+            Log.write("clause decider: \(ready.reason); the portrait decides")
+            return (nil, ready.reason)
+        }
+        return (ClauseSession(parser: loaded.parser, model: model), nil)
     }
 
     /// Whichever kind of transform the step named.
