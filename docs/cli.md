@@ -675,7 +675,10 @@ every feature. It is what `transcription.vocabulary.clause_decider` runs; see
 
 `--batch` reads `[{"id", "text", "a", "b", "heard", "term", "uses"}]`, offsets
 in Unicode scalars and `uses` in the shape `vocabulary-uses.yaml` stores, and
-prints one JSON line per item, then a summary.
+prints one JSON line per item, then a summary. An item with `"masked": true`
+also prints `slot`: the parser's UPOS probabilities where the heard words stand,
+read with the words replaced by one `<mask>`. That is the slot check the
+vocabulary stage runs with the clause decider on.
 `scripts/check-clause-decider-parity.sh` compares it with the PyTorch reference
 on `tests/clause-decider-parity.json`; it needs the parser, so it is not in
 `make test`.

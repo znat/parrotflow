@@ -1322,9 +1322,19 @@ struct Pipeline: Equatable, Codable {
             // settle what they settle and the slot is never asked. Read inside
             // the branch so `gate: false` does not load it either.
             let span = Trace.current?.open("slot_gate", kind: .part)
-            let slot = step.vocabulary.isOn(\.slotGate) ? await Vocabulary.shared.slotGate() : nil
+            //
+            // With the clause decider on, the parser reads the slot and
+            // mmBERT is never loaded.
+            var slot: ((VocabularyPass.Change) -> SlotGate.Reading?)?
+            if step.vocabulary.isOn(\.slotGate) {
+                if config.decidesByClause {
+                    if let clause = await openClause() { slot = { clause.slot($0, in: text) } }
+                } else if let gate = await Vocabulary.shared.slotGate() {
+                    slot = { try? gate.read(in: text, at: $0.range) }
+                }
+            }
             settled = VocabularyPass.settle(
-                changes, in: text, by: [.sound: .full, .rule: .lists], gate: slot)
+                changes, in: text, by: [.sound: .full, .rule: .lists], slot: slot)
             span?.close("\(changes.count) change(s)")
         } else {
             settled = [Bool?](repeating: nil, count: changes.count)

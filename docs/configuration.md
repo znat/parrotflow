@@ -580,8 +580,9 @@ is to the term's accepted and refused sentences, whether the heard words are a
 name (a small NER head on the parser), their part of speech and their
 neighbours', how they sound against the term, whether they are dictionary
 words, and whether this exact swap was accepted or refused before. A term with
-no accepted sentence never writes; it offers or leaves. A slot refusal still
-keeps what was heard. A place several terms share is read once per term on the
+no accepted sentence never writes; it offers or leaves. The slot check reads
+the parser too: the heard words become one `<mask>` and a slot the parser tags
+VERB, AUX, ADV or ADP refuses the term and keeps what was heard. A place several terms share is read once per term on the
 same clause, and the terms are told apart by how close the clause is to each
 one's sentences. The term spelled like the heard words is the default and needs
 no sentences; another is written only when it beats it by a fixed margin, and

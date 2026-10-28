@@ -1225,7 +1225,8 @@ enum VocabularyPass {
     /// 2. **Can a name stand in that spot?** Mask the span, take the ten words
     ///    the model would put there, tag them. A spot that wants a verb, an
     ///    adverb or a preposition cannot hold a name, so the reading is
-    ///    impossible and there is nothing to ask. Refuse it.
+    ///    impossible and there is nothing to ask. Refuse it. With the clause
+    ///    decider on, `slot` reads the parser instead — see `ClauseSession.slot`.
     ///
     /// There was a third — write the term when its span reads worst in the
     /// sentence — and it is gone. See `SlotGate` for what it cost.
@@ -1245,7 +1246,7 @@ enum VocabularyPass {
     /// nothing, so it is left to `SentenceGate`.
     static func settle(
         _ changes: [Change], in text: String, by policy: [Standing: Gating],
-        gate: SlotGate?
+        slot: ((Change) -> SlotGate.Reading?)?
     ) -> [Bool?] {
         changes.map { change -> Bool? in
             // A place where several terms share the heard word is never
@@ -1280,8 +1281,7 @@ enum VocabularyPass {
                     + " is in neither word list — written, not asked")
                 return true
             }
-            guard allowed == .full, let gate else { return nil }
-            guard let reading = try? gate.read(in: text, at: change.range) else { return nil }
+            guard allowed == .full, let slot, let reading = slot(change) else { return nil }
             switch reading.route {
             case .decline:
                 Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""

@@ -435,6 +435,32 @@ extension ClauseDecider {
         return best.p >= model.leave ? .offer(ranked.prefix(2).map(\.term)) : .leave
     }
 
+    /// Slots a name cannot stand in: `SlotGate.blocks` read as UPOS.
+    static let slotBlocks: Set<UPOS> = [.verb, .aux, .adv, .adp]
+
+    /// What the parser expects where the heard words stand. The span's tokens
+    /// become one `<mask>` in their window and the window is parsed again. UPOS
+    /// probabilities at the mask; nil when no token stands at `range`.
+    static func slot(_ parsed: Parsed, at range: Range<Int>, parser: Parser) -> [Float]? {
+        let span = parsed.span(range)
+        guard let first = span.first, let window = parsed.clip.windows.first(where: { $0.contains(first) })
+        else { return nil }
+        let inside = Set(span)
+        var words: [String] = [], at: Int?
+        for token in window {
+            guard inside.contains(token) else {
+                words.append(parsed.clip.tokens[token].string)
+                continue
+            }
+            if at == nil {
+                at = words.count
+                words.append("<mask>")
+            }
+        }
+        guard let at, let analysis = parser.analyse(words: Words(joining: words), language: "en") else { return nil }
+        return analysis.parse.words[at].upos
+    }
+
     /// The heard run without a closed-class first or last word the term does
     /// not also start or end with. Nil when nothing would be left.
     static func trimmed(_ parsed: Parsed, text: [Unicode.Scalar], at range: Range<Int>, term: String) -> Range<Int>? {
@@ -567,6 +593,23 @@ final class ClauseSession {
         lines.append(Self.describe(reading, heard: change.was, term: term, clause: clause,
                                    accepted: memory.accepted.count, refused: memory.refused.count))
         return reading
+    }
+
+    /// What the parser expects where the heard words stand, as the slot gate's
+    /// route. Against mmBERT's slot, right declines: judge 12 vs 15, bench 25
+    /// vs 25; one wrong decline ("that ___ added" read AUX 0.95) where mmBERT
+    /// had none.
+    func slot(_ change: VocabularyPass.Change, in text: String) -> SlotGate.Reading? {
+        let started = Date()
+        defer { seconds += Date().timeIntervalSince(started) }
+        let heardText = text.replacingCharacters(in: change.range, with: change.was)
+        let a = text.unicodeScalars.distance(from: text.unicodeScalars.startIndex, to: change.range.lowerBound)
+        guard let upos = ClauseDecider.slot(
+            parsing(heardText), at: a ..< a + change.was.unicodeScalars.count, parser: parser)
+        else { return nil }
+        let tag = UPOS.allCases[Parser.argmax(upos)]
+        lines.append("\"\(change.was)\" slot \(tag.rawValue)")
+        return SlotGate.Reading(tag: tag.rawValue, route: ClauseDecider.slotBlocks.contains(tag) ? .decline : .open)
     }
 
     private func parsing(_ text: String) -> ClauseDecider.Parsed {

@@ -158,6 +158,17 @@ TRIMS = [
     ("trim-none", "Red Rock still handles the redaction chain.", "Red Rock", "Redrock", REDROCK),
 ]
 FLOOR = 0.60
+# The slot the parser reads where the heard words stand: (key, text, heard, term).
+SLOTS = [
+    ("slot-praise-adverb", "Praise his work has been amazing.", "Praise", "Praisy"),
+    ("slot-praise-his", "Praise his work has been amazing.", "Praise his", "Praisy's"),
+    ("slot-praise-verb", "We should praise his work.", "praise", "Praisy"),
+    ("slot-praise-his-verb", "We should praise his work.", "praise his", "Praisy's"),
+    ("slot-merge", "Go back to main and merge before lunch.", "merge", "Vercel"),
+    ("slot-versus", "It was Postgres versus Mongo all week.", "versus", "Vercel"),
+    ("slot-name", "I deploy the site on Versal every Friday.", "Versal", "Vercel"),
+    ("slot-possessive", "I think Prise's work is great.", "Prise's", "Praisy's"),
+]
 
 
 def items(args):
@@ -175,6 +186,9 @@ def items(args):
         a = text.index(heard)
         out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=term, uses=rows, trim=True,
                         floor=FLOOR))
+    for key, text, heard, term in SLOTS:
+        a = text.index(heard)
+        out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=term, uses=[], masked=True))
     return out
 
 
@@ -193,6 +207,7 @@ def main():
     from safetensors import safe_open
 
     import vocab_clause_core as C
+    import vocab_slots_core as S
     import vocab_gate_v2_data as V2
     from vocab_clause_syrinx import Syrinx
 
@@ -261,7 +276,7 @@ def main():
         a, b, heard = it["a"], it["b"], it["heard"]
         line = dict(id=it["id"])
         if not args.batch:
-            line.update({k: it[k] for k in ("text", "a", "b", "heard", "term", "uses", "memory", "trim", "floor")
+            line.update({k: it[k] for k in ("text", "a", "b", "heard", "term", "uses", "memory", "trim", "floor", "masked")
                          if k in it})
         if it.get("trim"):
             kept = C.trim_edges(p, it["text"], a, b, it["term"])
@@ -291,6 +306,9 @@ def main():
                 continue
             line.update(r)
             probs = [r["p"]]
+        if it.get("masked"):
+            m = S.mask_reading(syrinx, p, a, b)
+            line["slot"] = dict(mask=[round(float(x), 6) for x in m], tag=S.tag(m))
         if any(min(abs(q - write), abs(q - leave)) < MARGIN for q in probs):
             close.append(it["id"])
             continue
