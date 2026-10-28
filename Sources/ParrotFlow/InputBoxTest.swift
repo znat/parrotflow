@@ -25,11 +25,10 @@ enum InputBoxTest {
         return read.isEmpty ? "all denied" : "read: " + read.joined(separator: ", ")
     }
 
-    /// A denied app is refused before its field is asked anything.
-    static func deniedAsksNothing() -> String {
+    /// A refused field is not asked anything.
+    static func asksNothing(_ app: Pipeline.App, owner: String?) -> String {
         var asked = false
-        let app = Pipeline.App(name: "1Password", bundleID: "com.1password.1password")
-        _ = InputBox.refusal(app: app, owner: app.bundleID, readable: { asked = true; return true })
+        _ = InputBox.refusal(app: app, owner: owner, readable: { asked = true; return true })
         return asked ? "asked" : "not asked"
     }
 
@@ -58,6 +57,7 @@ enum InputBoxTest {
     static func run() -> Int32 {
         let denied = InputBox.Declined.denied.rawValue
         let secure = InputBox.Declined.secure.rawValue
+        let onePassword = Pipeline.App(name: "1Password", bundleID: "com.1password.1password")
         let checks: [(what: String, got: String, want: String)] = [
             ("every app in deniedBundleIDs", everyDeniedApp(), "all denied"),
             ("the bundle ID in any case",
@@ -65,7 +65,11 @@ enum InputBoxTest {
             ("a password manager's panel over a browser", refused(safari, owner: "com.1password.1password"), denied),
             ("System Settings", refused(Pipeline.App(name: "", bundleID: "com.apple.systempreferences"),
                                         owner: nil), denied),
-            ("a denied app is not asked about its field", deniedAsksNothing(), "not asked"),
+            ("a denied app is not asked about its field", asksNothing(onePassword, owner: onePassword.bundleID),
+             "not asked"),
+            ("a focus whose owner cannot be identified", refused(safari, owner: nil),
+             InputBox.Declined.unknownOwner.rawValue),
+            ("an unknown owner is not asked about its field", asksNothing(safari, owner: nil), "not asked"),
             ("a text field in Safari", field(role: kAXTextFieldRole, subrole: nil, subroleRead: .noValue), "read"),
             ("an AXSecureTextField role",
              field(role: "AXSecureTextField", subrole: nil, subroleRead: .noValue), secure),

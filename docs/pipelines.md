@@ -1361,6 +1361,7 @@ at every press, so by default both run.
 | any other app | read while `every_app` is on, the default | read, whatever `every_app` says |
 | an app in `ContextReader.deniedBundleIDs` | never | never |
 | any app, while a denied app's panel holds the focus | never | never |
+| a focused element whose app cannot be identified | never | never |
 | a password field (`AXSecureTextField` role or subrole) | skipped, the rest of the window is read | never |
 | a field whose subrole cannot be read | its value skipped | never: it may be a password field |
 
@@ -1374,8 +1375,8 @@ A password manager missing from the list, or a vault open in a browser tab, is
 read like any other app, password fields still excepted.
 
 A refused field read publishes `input.declined` as `this app is never read: it
-holds passwords or system settings` or `the focused field is a password
-field`. In a denied app the screen read is refused too, so context spelling
+holds passwords or system settings`, `the app that owns the focused field could
+not be identified` or `the focused field is a password field`. In a denied app the screen read is refused too, so context spelling
 has no screen and no text above the caret. It logs `context spelling: no
 screen and no text above the caret` and leaves the sentence as dictated. In a
 password field in any other app, it still has the rest of the window.
@@ -1570,7 +1571,8 @@ first would read the second's field.
 
 **Never in a denied app, never in a password field.** The field read uses
 the same list as the screen read, `ContextReader.deniedBundleIDs`, checked on
-the app and on the owner of the focus. A field with the `AXSecureTextField`
+the app and on the owner of the focus. An owner that cannot be identified is
+refused, because it may be a denied app. A field with the `AXSecureTextField`
 role or subrole is not read. Neither is a field whose subrole cannot be read,
 because it may be one. Both decline before the field's value is asked for. See
 [What is read, and what is never read](#what-is-read-and-what-is-never-read).

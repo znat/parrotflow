@@ -117,6 +117,7 @@ enum InputBox {
         case reading = "the field was still being read when this stage was reached"
         case denied = "this app is never read: it holds passwords or system settings"
         case secure = "the focused field is a password field"
+        case unknownOwner = "the app that owns the focused field could not be identified"
     }
 
     // MARK: - The capture, which happens when the hotkey goes down
@@ -252,7 +253,7 @@ enum InputBox {
         app: Pipeline.App?, from element: AXUIElement
     ) -> Result<Capture, Declined> {
         guard let app else { return .failure(.noApp) }
-        if let why = refusal(app: app, owner: nil, readable: { true }) { return .failure(why) }
+        guard !isDenied(app.bundleID) else { return .failure(.denied) }
         guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard !SelectionReader.isOurs(element) else { return .failure(.nothingFocused) }
         AXUIElementSetMessagingTimeout(element, 0.5)
@@ -297,13 +298,18 @@ enum InputBox {
 
     /// Why the field must not be read, or nil. The same list the screen read
     /// uses, checked on the app the press was for and on the process that owns
-    /// the focus: a password manager's panel can hold it over another app.
-    /// `readable` is asked last, so a denied app is never asked for its field.
+    /// the focus: a password manager's panel can hold it over another app. An
+    /// owner that cannot be identified may be one, so it is refused too.
+    /// `readable` is asked last, so a refused field is never asked anything.
     static func refusal(app: Pipeline.App, owner: String?, readable: () -> Bool) -> Declined? {
-        let denied = [app.bundleID, owner].compactMap { $0?.lowercased() }
-            .contains(where: ContextReader.deniedBundleIDs.contains)
-        if denied { return .denied }
+        if isDenied(app.bundleID) { return .denied }
+        guard let owner else { return .unknownOwner }
+        if isDenied(owner) { return .denied }
         return readable() ? nil : .secure
+    }
+
+    static func isDenied(_ bundleID: String) -> Bool {
+        ContextReader.deniedBundleIDs.contains(bundleID.lowercased())
     }
 
     /// The field cut into three at the selection, each side capped on its own.
