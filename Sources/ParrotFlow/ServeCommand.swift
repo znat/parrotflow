@@ -133,6 +133,12 @@ enum ServeCommand {
     }
 
     private static func reset(say: (String) -> Void) -> Int32 {
+        // Empties learnt state, so never the vocabulary someone dictates with.
+        let scratch = ProcessInfo.processInfo.environment[ConfigStore.overrideVariable] ?? ""
+        guard !scratch.trimmingCharacters(in: .whitespaces).isEmpty else {
+            say("✗ reset needs PARROTFLOW_CONFIG_DIR: it would empty \(ConfigStore.vocabularyURL.path)")
+            return 1
+        }
         do {
             for url in [ConfigStore.vocabularyURL, TermUses.url] {
                 try "terms: {}\n".write(to: url, atomically: true, encoding: .utf8)

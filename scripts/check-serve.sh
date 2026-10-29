@@ -147,5 +147,14 @@ wait "$SERVER"
 check "end of input exits 0" "$?" "0"
 SERVER=""
 
+# Without a scratch config dir, reset would empty the vocabulary someone
+# dictates with. HOME is this run's, so the config it would have hit is too.
+mkdir -p "$WORK/home/.config/parrotflow"
+printf 'terms:\n  Zorblix:\n' > "$WORK/home/.config/parrotflow/vocabulary.yaml"
+r=$(printf '{"id": 9, "cmd": "reset"}\n' \
+  | env -u PARROTFLOW_CONFIG_DIR HOME="$WORK/home" "$BIN" --serve 2>/dev/null)
+check "reset refuses without PARROTFLOW_CONFIG_DIR" "$(field "$r" code)" "1"
+check "and leaves the vocabulary alone" "$(head -1 "$WORK/home/.config/parrotflow/vocabulary.yaml")" "terms:"
+
 printf '\n  %d/%d\n' "$pass" "$total"
 [ "$pass" -eq "$total" ]

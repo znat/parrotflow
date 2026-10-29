@@ -705,8 +705,10 @@ own flag runs, writes included:
 `warm` is true. The fixture is read again on every request. `picked`,
 `correction` and `learn` are `--picked`, `--correction` and `--learn`; `in` is
 `--in` and may be left out. `reset` writes `terms: {}` to `vocabulary.yaml` and
-`vocabulary-uses.yaml`. It does not clear what the process holds in memory:
-the portrait and clause caches are keyed by the rows they were built from.
+`vocabulary-uses.yaml`. It refuses when `PARROTFLOW_CONFIG_DIR` is not set, so
+it never empties the vocabulary you dictate with. It does not clear what the
+process holds in memory: the portrait and clause caches are keyed by the rows
+they were built from.
 
 Each answer is one line with sorted keys. `id` is echoed as given. `code` is
 the exit code of the separate flag, and `said` holds the lines it prints.
