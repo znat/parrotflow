@@ -6107,7 +6107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 + " keep what the pipeline settled on")
             return false
         }
-        let placed = OpenPlaces.located(open, in: text)
+        let placed = OpenPlaces.located(open, in: text, ignoringCase: config.decidesByClause)
         guard !placed.isEmpty else { return false }
 
         // The words, as `ChooseRun` counts them. A place's word index is

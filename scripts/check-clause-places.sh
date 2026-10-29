@@ -7,6 +7,7 @@
 # through, so a scratch home with the model in it works.
 #
 #   a pill answer that keeps the heard word adds no term
+#   the pill still asks when a later stage only changed the letter case
 #   a slot refusal puts the heard word back over a rule's write
 #   a heard word in neither word list is still written
 #   a rule place the decider offers shows the heard word
@@ -39,6 +40,15 @@ picked() {
 check "flag on: keeping the heard word refuses the offered term" "$(picked true)" "counter Vercel"
 check "and adds no term" "$(grep -c Versailles "$WORK/true/vocabulary.yaml")" "0"
 check "flag off: the same answer still creates the name" "$(picked false)" "create Versailles place"
+
+selector() {
+  PARROTFLOW_CONFIG_DIR="$WORK/$1" "$BIN" --selector "We visited the versailles castle." \
+    "Versailles|Vercel|3|0" --taught 2>/dev/null | tail -1
+}
+check "flag on: a keep is asked after a case-only rewrite" "$(selector true)" "versailles teaches"
+check "and it refuses the offered term" "$(PARROTFLOW_CONFIG_DIR="$WORK/true" "$BIN" --picked versailles Vercel \
+  --in "We visited the versailles castle." 2>/dev/null | tail -1)" "counter Vercel"
+check "flag off: not asked, as before" "$(selector false)" "NOTHING FOUND"
 
 cat > "$WORK/fixture.yaml" <<'EOF'
 languages: [en]

@@ -396,11 +396,15 @@ enum TermUses {
     /// the stages after `vocabulary` rewrote the transcript, so it cannot
     /// simply take the first: picking the hit nearest that position is how the
     /// right one of two mentions is found.
-    static func occurrences(of span: String, in text: String) -> [Range<String.Index>] {
+    static func occurrences(
+        of span: String, in text: String, ignoringCase: Bool = false
+    ) -> [Range<String.Index>] {
         func word(_ c: Character) -> Bool { c.isLetter || c.isNumber }
         var found: [Range<String.Index>] = []
         var from = text.startIndex
-        while let at = text.range(of: span, range: from ..< text.endIndex) {
+        while let at = text.range(
+            of: span, options: ignoringCase ? [.caseInsensitive] : [], range: from ..< text.endIndex
+        ) {
             let before = at.lowerBound == text.startIndex
                 || !word(text[text.index(before: at.lowerBound)])
             let after = at.upperBound == text.endIndex || !word(text[at.upperBound])
