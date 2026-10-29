@@ -47,6 +47,8 @@ enum ClauseDecideCommand {
             /// when the trimmed words sound further than that from the term.
             let trim: Bool?
             let floor: Double?
+            /// Also print the slot reading: UPOS at the masked place.
+            let masked: Bool?
         }
         struct Row: Decodable {
             let said: String
@@ -121,6 +123,15 @@ enum ClauseDecideCommand {
                 } else {
                     out["declined"] = "no parser token at the place"
                 }
+                if item.masked == true {
+                    let parsed = ClauseDecider.Parsed(item.text, parser: parser)
+                    var slot: [String: Any] = [:]
+                    if let mask = ClauseDecider.slot(parsed, at: range, parser: parser) {
+                        slot["mask"] = mask.map(Double.init)
+                        slot["tag"] = UPOS.allCases[Parser.argmax(mask)].rawValue
+                    }
+                    out["slot"] = slot
+                }
                 let ms = Double(DispatchTime.now().uptimeNanoseconds - started) / 1e6
                 times.append(ms)
                 out["ms"] = ms
@@ -148,7 +159,8 @@ enum ClauseDecideCommand {
         let parsed = ClauseDecider.Parsed(text, parser: parser)
         guard let reading = ClauseDecider.read(
             parsed, at: range, heard: heard, term: term, accepted: accepted, refused: refused,
-            pairs: ClauseDecider.pairs(heard: heard, term: term, rows: rows, shared: shared, peers: peers), model: model)
+            pairs: ClauseDecider.pairs(heard: heard, term: term, rows: rows, shared: shared, peers: peers), model: model,
+            shared: shared)
         else { return nil }
         return (reading, accepted.count, refused.count)
     }

@@ -107,6 +107,11 @@ CASES = [
     ("rock-ridge", "We hiked to the red rock ridge at sunrise.", "red rock", "Redrock", REDROCK),
     ("unfound-row", "I pushed the branch to Versal this morning.", "Versal", "Vercel",
      [use("I liked Vercelli a lot.", "Vercel"), use("The Vercel dashboard shows the logs.", "Vercel")]),
+    # A past correction of this exact word in a deploy clause, read in a castle clause.
+    ("vercel-castle-pair", "My grandmother loved the gardens of the Versailles castle near Paris.", "Versailles",
+     "Vercel", VERCEL[:3] + [use("We moved the API routes to Vercel last month.", "Vercel", heard="Versailles")]),
+    ("vercel-deploy-pair", "We deploy the staging app on Versailles every night.", "Versailles",
+     "Vercel", VERCEL[:3] + [use("We moved the API routes to Vercel last month.", "Vercel", heard="Versailles")]),
 ]
 
 
@@ -158,6 +163,17 @@ TRIMS = [
     ("trim-none", "Red Rock still handles the redaction chain.", "Red Rock", "Redrock", REDROCK),
 ]
 FLOOR = 0.60
+# The slot the parser reads where the heard words stand: (key, text, heard, term).
+SLOTS = [
+    ("slot-praise-adverb", "Praise his work has been amazing.", "Praise", "Praisy"),
+    ("slot-praise-his", "Praise his work has been amazing.", "Praise his", "Praisy's"),
+    ("slot-praise-verb", "We should praise his work.", "praise", "Praisy"),
+    ("slot-praise-his-verb", "We should praise his work.", "praise his", "Praisy's"),
+    ("slot-merge", "Go back to main and merge before lunch.", "merge", "Vercel"),
+    ("slot-versus", "It was Postgres versus Mongo all week.", "versus", "Vercel"),
+    ("slot-name", "I deploy the site on Versal every Friday.", "Versal", "Vercel"),
+    ("slot-possessive", "I think Prise's work is great.", "Prise's", "Praisy's"),
+]
 
 
 def items(args):
@@ -175,6 +191,9 @@ def items(args):
         a = text.index(heard)
         out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=term, uses=rows, trim=True,
                         floor=FLOOR))
+    for key, text, heard, term in SLOTS:
+        a = text.index(heard)
+        out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=term, uses=[], masked=True))
     return out
 
 
@@ -193,6 +212,7 @@ def main():
     from safetensors import safe_open
 
     import vocab_clause_core as C
+    import vocab_slots_core as S
     import vocab_gate_v2_data as V2
     from vocab_clause_syrinx import Syrinx
 
@@ -203,7 +223,8 @@ def main():
     model = dict(names=names, w=t["w"].astype(float).tolist(), mu=t["mu"].astype(float).tolist(),
                  sd=t["sd"].astype(float).tolist(), bias=float(t["bias"][0]),
                  absent=dict(zip(json.loads(meta["absent"]), t["absent"].astype(float).tolist())),
-                 fixed=dict(zip(json.loads(meta["fixed"]), t["fixed"].astype(float).tolist())))
+                 fixed=dict(zip(json.loads(meta["fixed"]), t["fixed"].astype(float).tolist())),
+                 one_sided=json.loads(meta.get("one_sided", "[]")), pair_gate=meta.get("pair_gate") == "sim_acc")
     write, leave = float(meta["write"]), float(meta["leave"])
     assert C.WRITE == write and C.LEAVE == leave and C.MIN_POOL == int(meta["min_pool"])
     centre, proj, ner = t["centre"], t["proj"], (t["ner.weight"], t["ner.bias"])
@@ -250,7 +271,7 @@ def main():
              "ner": C.ner_entity(ner, p, span), **C.pos_features(p, span),
              "sound": sound(heard, term), "known": known(heard),
              "pair_acc": pair_acc, "pair_ref": pair_ref}
-        d, prob, z, _ = C.decide(model, f)
+        d, prob, z, _ = C.decide(model, f, shared=shared)
         clause = [min(p["starts"][k] for k in toks), max(p["ends"][k] for k in toks)] if toks else None
         return dict(decision=d, p=round(prob, 6), z=round(z, 6), clause=clause,
                     features={k: (round(x, 6) if x is not None else None) for k, x in f.items()})
@@ -261,7 +282,7 @@ def main():
         a, b, heard = it["a"], it["b"], it["heard"]
         line = dict(id=it["id"])
         if not args.batch:
-            line.update({k: it[k] for k in ("text", "a", "b", "heard", "term", "uses", "memory", "trim", "floor")
+            line.update({k: it[k] for k in ("text", "a", "b", "heard", "term", "uses", "memory", "trim", "floor", "masked")
                          if k in it})
         if it.get("trim"):
             kept = C.trim_edges(p, it["text"], a, b, it["term"])
@@ -291,6 +312,9 @@ def main():
                 continue
             line.update(r)
             probs = [r["p"]]
+        if it.get("masked"):
+            m = S.mask_reading(syrinx, p, a, b)
+            line["slot"] = dict(mask=[round(float(x), 6) for x in m], tag=S.tag(m))
         if any(min(abs(q - write), abs(q - leave)) < MARGIN for q in probs):
             close.append(it["id"])
             continue

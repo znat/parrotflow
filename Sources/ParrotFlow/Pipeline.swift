@@ -1288,7 +1288,8 @@ struct Pipeline: Equatable, Codable {
         // Which of the two halves is on, not just that the gate is: a place
         // decided by the portrait alone reads nothing like one both tests saw.
         let reading = [
-            step.vocabulary.isOn(\.slotGate) ? "slot" : nil, step.vocabulary.isOn(\.portrait) ? "portrait" : nil,
+            step.vocabulary.isOn(\.slotGate) ? "slot" : nil,
+            config.decidesByClause ? "clause" : step.vocabulary.isOn(\.portrait) ? "portrait" : nil,
         ].compactMap { $0 }
         if config.gatesSentence, !reading.isEmpty {
             census += ", sentence gate on (\(reading.joined(separator: " + ")))"
@@ -1322,9 +1323,20 @@ struct Pipeline: Equatable, Codable {
             // settle what they settle and the slot is never asked. Read inside
             // the branch so `gate: false` does not load it either.
             let span = Trace.current?.open("slot_gate", kind: .part)
-            let slot = step.vocabulary.isOn(\.slotGate) ? await Vocabulary.shared.slotGate() : nil
+            //
+            // With the clause decider on, the parser reads the slot and
+            // mmBERT is never loaded.
+            var slot: ((VocabularyPass.Change) -> SlotGate.Reading?)?
+            if step.vocabulary.isOn(\.slotGate) {
+                if config.decidesByClause {
+                    if let clause = await openClause() { slot = { clause.slot($0, in: text) } }
+                } else if let gate = await Vocabulary.shared.slotGate() {
+                    slot = { try? gate.read(in: text, at: $0.range) }
+                }
+            }
             settled = VocabularyPass.settle(
-                changes, in: text, by: [.sound: .full, .rule: .lists], gate: slot)
+                changes, in: text,
+                by: [.sound: .full, .rule: config.decidesByClause ? .slot : .lists], slot: slot)
             span?.close("\(changes.count) change(s)")
         } else {
             settled = [Bool?](repeating: nil, count: changes.count)
@@ -1337,14 +1349,20 @@ struct Pipeline: Equatable, Codable {
             let span = Trace.current?.open("sentence_gate", kind: .part)
             defer { span?.close("\(decided.filter { $0 == nil }.count) still open") }
             let clause = await openClause()
-            let settledBySentence = await SentenceGate.settle(
-                changes, in: text, given: decided,
-                floor: config.transcription.slotFloor(
-                    for: Pipeline.language(of: text, config: config), on: step
-                ),
-                slot: step.vocabulary.isOn(\.slotGate), portrait: step.vocabulary.isOn(\.portrait),
-                terms: config.vocabulary.terms, clause: clause
-            )
+            // With the clause decider on, the word vectors and the slot gap
+            // are never read: without a session the places stay open.
+            let qwen = !config.decidesByClause
+            let settledBySentence = config.decidesByClause && clause == nil
+                ? (decided: decided, changes: changes)
+                : await SentenceGate.settle(
+                    changes, in: text, given: decided,
+                    floor: config.transcription.slotFloor(
+                        for: Pipeline.language(of: text, config: config), on: step
+                    ),
+                    slot: qwen && step.vocabulary.isOn(\.slotGate),
+                    portrait: qwen && step.vocabulary.isOn(\.portrait),
+                    terms: config.vocabulary.terms, clause: clause
+                )
             if let clause {
                 clauseVars.merge([
                     "clause_places": .int(clause.places),
@@ -1383,6 +1401,16 @@ struct Pipeline: Equatable, Codable {
         // twice, and the last stage is the one whose places are still open.
         // Recording only a non-empty list would leave an earlier stage's
         // question standing after a later one had settled it.
+        // With the clause decider on, a rule place left open shows the heard
+        // word and the term waits on the pill. A refusal used to undo a lesson
+        // the user could not get back; now the term stays on the pill.
+        var shown = decided
+        if config.decidesByClause, clause != nil {
+            for index in changes.indices where decided[index] == nil && !(index < taught.count && taught[index]) {
+                let change = changes[index]
+                if change.standing == .rule, String(text[change.range]) == change.now { shown[index] = false }
+            }
+        }
         if case .int(let run)? = scope["press.run"] {
             OpenPlaces.record(run: run, changes.indices.compactMap { index in
                 // The term that offered the reading, not the first of the
@@ -1397,7 +1425,7 @@ struct Pipeline: Equatable, Codable {
                     was: change.was, now: change.now,
                     // What `settling` is about to copy: a rule has already
                     // written its term over the span, a sound proposal has not.
-                    wrote: String(text[change.range]) == change.now,
+                    wrote: String(text[change.range]) == change.now && shown[index] != false,
                     term: term,
                     word: text[..<change.range.lowerBound]
                         .split(separator: " ").count,
@@ -1424,7 +1452,7 @@ struct Pipeline: Equatable, Codable {
         var writing = changes
         if step.vocabulary.isOn(\.lowercaseRefused) {
             let terms = Array(config.vocabulary.terms.keys)
-            for index in changes.indices where decided[index] == false {
+            for index in changes.indices where shown[index] == false {
                 guard !(index < taught.count && taught[index]) else { continue }
                 let change = changes[index]
                 guard Vocabulary.glues(heard: change.was, term: change.now) else { continue }
@@ -1448,11 +1476,11 @@ struct Pipeline: Equatable, Codable {
         // Each place written the way it was settled, and a place nothing
         // settled left exactly as it already stands: a rule substitution keeps
         // the term it wrote, a sound proposal keeps the word that was heard.
-        let chosen = VocabularyPass.settling(decided, in: text, changes: writing)
+        let chosen = VocabularyPass.settling(shown, in: text, changes: writing)
         // What the stage undid, in the words it put back. Named `reverted`
         // rather than `kept_as_decoded`: every place on this list is a
         // substitution somebody has to answer for.
-        let reverted = zip(writing, decided).filter { $0.1 == false }.map {
+        let reverted = zip(writing, shown).filter { $0.1 == false }.map {
             "\($0.0.now) -> \($0.0.was)"
         }
         Pipeline.logRewrite(by: "vocabulary", from: text, to: chosen)
