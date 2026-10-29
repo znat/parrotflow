@@ -48,6 +48,8 @@ import Foundation
 /// auto-apply. What happens next depends on where the proposal came from, and
 /// that is not something a word and a term can say: a `replacements` rule is
 /// left open by `VocabularyPass.settle`, and the sound path still writes it.
+/// With the clause decider on, both are asked unless a word of the span is in
+/// neither list.
 /// The route printed is the rule's, since these two arguments carry no audio.
 ///
 /// The slot is still printed and it still decides nothing. `settle` gates a

@@ -412,6 +412,13 @@ sentence tests below decide it, which costs nothing: an open place keeps what
 is already in the text. The sound path has written nothing yet, so it still
 applies the glue and `Ghost E` still becomes `Ghostty`.
 
+With `clause_decider: true` the glue writes nothing on its own, from either
+source. Each word of the span is asked of the two lists: a word in neither
+(`Zorb` in `Zorb lix`) writes the term, as a single word would. Otherwise the
+place goes to the slot and the clause decider like any other, so a correction
+back counts against the term the next time. `Ghost E` is two known words, so
+it becomes a question until `Ghostty` has a sentence of its own.
+
 If the list cannot be read the gate stops auto-applying entirely and leaves
 every place open. `--word-gate <word>` prints both verdicts and the
 decision, and `--word-gate <word> <term>` prints the possessive verdict and the
