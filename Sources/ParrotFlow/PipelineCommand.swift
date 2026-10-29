@@ -102,52 +102,10 @@ enum PipelineCommand {
     ) -> Int32 {
         let named = (app ?? "").trimmingCharacters(in: .whitespaces)
         let front = named.isEmpty ? nil : Pipeline.App(name: named, bundleID: "")
-        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-        let fixture: Fixture
-        do {
-            fixture = try YAMLDecoder().decode(
-                Fixture.self, from: String(contentsOf: url, encoding: .utf8),
-                userInfo: [.configDirectory: url.deletingLastPathComponent()]
-            )
-        } catch {
-            print("✗ \(path): \(CheckConfigCommand.describe(error))")
-            return 1
-        }
-
-        var unknown: [String] = []
-        let steps = fixture.pipeline.compactMap { entry -> Pipeline.Step? in
-            guard let stage = Pipeline.stage(named: entry.name) else {
-                unknown.append(entry.name)
-                return nil
-            }
-            return Pipeline.Step(stage: stage, entry: entry)
-        }
-        for name in unknown {
-            if let advice = Config.retiredStageAdvice(name) {
-                print("✗ \"\(name)\" \(advice)")
-                continue
-            }
-            print("✗ \"\(name)\" is not a stage — have: \(Pipeline.stageNames.joined(separator: ", "))")
-        }
-        guard unknown.isEmpty else { return 1 }
-
-        let pipeline = Pipeline(steps: steps)
-        var config = Config()
-        config.transcription.languages = fixture.languages
-        config.transcription.pipeline = pipeline
-        config.transforms = fixture.transforms
-        config.lists = fixture.lists
-        if let vocabulary = fixture.vocabulary { config.vocabulary = vocabulary }
-        config.models = fixture.models
-        config.transcription.vocabulary.clauseDecider = fixture.clauseDecider
-
-        // The fixture's own table is checked too, not just its stage list — a
-        // template naming a group the pattern never captures is refused here
-        // for the same reason `--check-config` refuses it, and being reachable
-        // from a fixture is what lets a validation set cover it at all.
-        var problems = pipeline.validate() + config.replacementProblems()
-        for problem in problems { print("✗ \(problem)") }
-        guard problems.isEmpty else { return 1 }
+        guard let assembled = assemble(path: path, say: { print($0) }) else { return 1 }
+        let (fixture, steps, pipeline, config) = (
+            assembled.fixture, assembled.steps, assembled.pipeline, assembled.config
+        )
 
         // No text: report the pipeline itself. "Which stages, in what order,
         // gated by what" is a question worth answering without inventing a
@@ -166,61 +124,8 @@ enum PipelineCommand {
             return 0
         }
 
-        // The same seed a live dictation gets from `Replacements.apply`. Without
-        // it a condition reading `language` would work in the app and fail here,
-        // and a fixture that cannot reproduce the app is not a fixture.
-        // `Pipeline.language` is asked rather than `DictationLanguage` directly,
-        // so the answer is the one a dictation would have got.
-        var seed = Scope()
-        seed.set("language", .string(Pipeline.language(of: text, config: config)))
-
-        // `--warm`. The sentence gate never makes a dictation wait, so in a
-        // one-shot run nothing has loaded the 400 MB word vectors and the two
-        // tests that read the sentence are skipped every time. This is the
-        // only way to see them from the command line. Off by default: it is a
-        // download, and `make test` must not need one.
-        //
-        // A failure here refuses the run rather than falling back. The gate
-        // skips itself in silence when a model is missing — that is right in
-        // the app and wrong here, where a skipped gate and a gate that decided
-        // nothing print the same sentence.
-        if warm, #available(macOS 14, *) {
-            let failures = Blocking.run { () async -> [String] in
-                var found: [String] = []
-                // Only what the pipeline's own steps will read. A fixture that
-                // switches a gate off has nothing to do with these weights, and
-                // `--warm` is a download.
-                if config.readsSentenceGate {
-                    do { try await WordVectors.shared.prepare() } catch {
-                        found.append("word vectors — \(error.localizedDescription)")
-                    }
-                }
-                if config.readsSlots {
-                    do { _ = try await SlotModel.shared.prepare() } catch {
-                        found.append("slot model — \(error.localizedDescription)")
-                    }
-                }
-                if pipeline.stages.contains(.treeCutter) || config.decidesByClause {
-                    do { _ = try await SyrinxModel.shared.prepare() } catch {
-                        found.append("parser — \(error.localizedDescription)")
-                    }
-                }
-                // Only for a pipeline that holds the step. It is 320 MB, and a
-                // fixture without the step has nothing to read them.
-                if pipeline.stages.contains(.sentenceRepair)
-                    || pipeline.stages.contains(.contextSpelling) {
-                    do { try await SentenceReadings.shared.prepare() } catch {
-                        found.append("sentence readings — \(error.localizedDescription)")
-                    }
-                }
-                return found
-            }
-            for failure in failures { print("✗ --warm: \(failure)") }
-            if !failures.isEmpty {
-                print("  the stage that reads it would stand aside, and the run would not say so")
-                return 1
-            }
-        }
+        let seed = languageSeed(text, config: config)
+        if warm, !prepare(pipeline, config: config, say: { print($0) }) { return 1 }
 
         let done = DispatchSemaphore(value: 0)
         if quiet {
@@ -300,8 +205,147 @@ enum PipelineCommand {
         }
         if showVars { printVars(scope) }
         print("out:  \(current)")
-        problems = []
         return 0
+    }
+
+    /// `--serve`'s dictation: the `--quiet` path, which is the one the app uses.
+    /// The fixture is read again on every call, because the caller rewrites it
+    /// between dictations. Nil when the fixture or `warm` fails; `say` has the
+    /// lines `run` prints for it.
+    static func dictate(
+        path: String, text: String, warm: Bool, say: (String) -> Void
+    ) -> (text: String, scope: Scope)? {
+        guard let assembled = assemble(path: path, say: say) else { return nil }
+        let (pipeline, config) = (assembled.pipeline, assembled.config)
+        let seed = languageSeed(text, config: config)
+        if warm, !prepare(pipeline, config: config, say: say) { return nil }
+        return Blocking.run {
+            await pipeline.runCollectingScope(
+                text, config: config, allowPrompts: true, app: nil, seed: seed
+            )
+        }
+    }
+
+    private struct Assembled {
+        let fixture: Fixture
+        let steps: [Pipeline.Step]
+        let pipeline: Pipeline
+        let config: Config
+    }
+
+    /// The fixture at `path`, as the pipeline and config it describes. Nil
+    /// when it does not decode, names an unknown stage or does not validate.
+    private static func assemble(path: String, say: (String) -> Void) -> Assembled? {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        let fixture: Fixture
+        do {
+            fixture = try YAMLDecoder().decode(
+                Fixture.self, from: String(contentsOf: url, encoding: .utf8),
+                userInfo: [.configDirectory: url.deletingLastPathComponent()]
+            )
+        } catch {
+            say("✗ \(path): \(CheckConfigCommand.describe(error))")
+            return nil
+        }
+
+        var unknown: [String] = []
+        let steps = fixture.pipeline.compactMap { entry -> Pipeline.Step? in
+            guard let stage = Pipeline.stage(named: entry.name) else {
+                unknown.append(entry.name)
+                return nil
+            }
+            return Pipeline.Step(stage: stage, entry: entry)
+        }
+        for name in unknown {
+            if let advice = Config.retiredStageAdvice(name) {
+                say("✗ \"\(name)\" \(advice)")
+                continue
+            }
+            say("✗ \"\(name)\" is not a stage — have: \(Pipeline.stageNames.joined(separator: ", "))")
+        }
+        guard unknown.isEmpty else { return nil }
+
+        let pipeline = Pipeline(steps: steps)
+        var config = Config()
+        config.transcription.languages = fixture.languages
+        config.transcription.pipeline = pipeline
+        config.transforms = fixture.transforms
+        config.lists = fixture.lists
+        if let vocabulary = fixture.vocabulary { config.vocabulary = vocabulary }
+        config.models = fixture.models
+        config.transcription.vocabulary.clauseDecider = fixture.clauseDecider
+
+        // The fixture's own table is checked too, not just its stage list — a
+        // template naming a group the pattern never captures is refused here
+        // for the same reason `--check-config` refuses it, and being reachable
+        // from a fixture is what lets a validation set cover it at all.
+        let problems = pipeline.validate() + config.replacementProblems()
+        for problem in problems { say("✗ \(problem)") }
+        guard problems.isEmpty else { return nil }
+        return Assembled(fixture: fixture, steps: steps, pipeline: pipeline, config: config)
+    }
+
+    // The same seed a live dictation gets from `Replacements.apply`. Without
+    // it a condition reading `language` would work in the app and fail here,
+    // and a fixture that cannot reproduce the app is not a fixture.
+    // `Pipeline.language` is asked rather than `DictationLanguage` directly,
+    // so the answer is the one a dictation would have got.
+    private static func languageSeed(_ text: String, config: Config) -> Scope {
+        var seed = Scope()
+        seed.set("language", .string(Pipeline.language(of: text, config: config)))
+        return seed
+    }
+
+    // `--warm`. The sentence gate never makes a dictation wait, so in a
+    // one-shot run nothing has loaded the 400 MB word vectors and the two
+    // tests that read the sentence are skipped every time. This is the
+    // only way to see them from the command line. Off by default: it is a
+    // download, and `make test` must not need one.
+    //
+    // A failure here refuses the run rather than falling back. The gate
+    // skips itself in silence when a model is missing — that is right in
+    // the app and wrong here, where a skipped gate and a gate that decided
+    // nothing print the same sentence.
+    private static func prepare(
+        _ pipeline: Pipeline, config: Config, say: (String) -> Void
+    ) -> Bool {
+        guard #available(macOS 14, *) else { return true }
+        let failures = Blocking.run { () async -> [String] in
+            var found: [String] = []
+            // Only what the pipeline's own steps will read. A fixture that
+            // switches a gate off has nothing to do with these weights, and
+            // `--warm` is a download.
+            if config.readsSentenceGate {
+                do { try await WordVectors.shared.prepare() } catch {
+                    found.append("word vectors — \(error.localizedDescription)")
+                }
+            }
+            if config.readsSlots {
+                do { _ = try await SlotModel.shared.prepare() } catch {
+                    found.append("slot model — \(error.localizedDescription)")
+                }
+            }
+            if pipeline.stages.contains(.treeCutter) || config.decidesByClause {
+                do { _ = try await SyrinxModel.shared.prepare() } catch {
+                    found.append("parser — \(error.localizedDescription)")
+                }
+            }
+            // Only for a pipeline that holds the step. It is 320 MB, and a
+            // fixture without the step has nothing to read them.
+            if pipeline.stages.contains(.sentenceRepair)
+                || pipeline.stages.contains(.contextSpelling) {
+                do { try await SentenceReadings.shared.prepare() } catch {
+                    found.append("sentence readings — \(error.localizedDescription)")
+                }
+            }
+            return found
+        }
+        for failure in failures { say("✗ --warm: \(failure)") }
+        guard failures.isEmpty else {
+            say("  the stage that reads it would stand aside, and the run would not say so")
+            return false
+        }
+        return true
     }
 
     /// Every variable, by full path, one per line.

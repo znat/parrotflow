@@ -683,6 +683,43 @@ vocabulary stage runs with the clause decider on.
 on `tests/clause-decider-parity.json`; it needs the parser, so it is not in
 `make test`.
 
+## One process for many vocabulary calls
+
+```sh
+$PF --serve                                              # JSON lines on stdin, one answer per line on stdout
+```
+
+`--serve` keeps one process alive, so a replay loads its models once and not
+on every call. Each request is one line, and each command runs the function its
+own flag runs, writes included:
+
+```
+{"id": 1, "cmd": "dictate", "fixture": "/abs/fixture.yaml", "text": "<heard>", "warm": true}
+{"id": 2, "cmd": "picked", "word": "<w>", "term": "<t>", "in": "<sentence>"}
+{"id": 3, "cmd": "correction", "wrote": "<w>", "put": "<p>", "in": "<sentence>"}
+{"id": 4, "cmd": "learn", "heard": "<h>", "corrected": "<c>", "kind": "person", "in": "<sentence>"}
+{"id": 5, "cmd": "reset"}
+```
+
+`dictate` is `--pipeline <fixture> "<text>" --quiet`, with `--warm` when
+`warm` is true. The fixture is read again on every request. `picked`,
+`correction` and `learn` are `--picked`, `--correction` and `--learn`; `in` is
+`--in` and may be left out. `reset` writes `terms: {}` to `vocabulary.yaml` and
+`vocabulary-uses.yaml`. It does not clear what the process holds in memory:
+the portrait and clause caches are keyed by the rows they were built from.
+
+Each answer is one line with sorted keys. `id` is echoed as given. `code` is
+the exit code of the separate flag, and `said` holds the lines it prints.
+`log` holds the lines the request wrote to the log, without the timestamp: the
+places a dictation offered and how each was settled come back as the
+vocabulary stage's own lines. `dictate` adds `out`, the text, and `vars`, each
+path `--vars` prints with its value. A line that does not decode answers
+`{"id", "error"}` and the next line is still read. End of input exits 0.
+
+One process serves one `PARROTFLOW_CONFIG_DIR`. `picked` reads
+`clause_decider` from that `config.yaml`, so one process is one setting of the
+flag. `scripts/check-serve.sh` checks every command against its separate flag.
+
 ## Is this sentence mark real
 
 ```sh
@@ -1248,6 +1285,7 @@ scripts/check-sentence-case.sh     # the capital after a mark the join removes
 scripts/check-invented-tail.sh     # the endings the decoder wrote over silence
 scripts/check-sentence-join.sh     # which sentence marks the join removes (needs the model)
 scripts/check-selector.sh          # where an open place lands, and what an answer writes
+scripts/check-serve.sh             # --serve says and writes what the separate flags do
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back
