@@ -218,7 +218,8 @@ def main():
     model = dict(names=names, w=t["w"].astype(float).tolist(), mu=t["mu"].astype(float).tolist(),
                  sd=t["sd"].astype(float).tolist(), bias=float(t["bias"][0]),
                  absent=dict(zip(json.loads(meta["absent"]), t["absent"].astype(float).tolist())),
-                 fixed=dict(zip(json.loads(meta["fixed"]), t["fixed"].astype(float).tolist())))
+                 fixed=dict(zip(json.loads(meta["fixed"]), t["fixed"].astype(float).tolist())),
+                 one_sided=json.loads(meta.get("one_sided", "[]")))
     write, leave = float(meta["write"]), float(meta["leave"])
     assert C.WRITE == write and C.LEAVE == leave and C.MIN_POOL == int(meta["min_pool"])
     centre, proj, ner = t["centre"], t["proj"], (t["ner.weight"], t["ner.bias"])

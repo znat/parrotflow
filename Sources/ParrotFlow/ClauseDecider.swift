@@ -68,6 +68,10 @@ enum ClauseDecider {
         let absent: [Double]
         /// For `pair_acc` and `pair_ref`, set by hand.
         let fixed: [Double]
+        /// Features that may only lower z. A refused-sentence match pushes
+        /// toward leaving; its absence is no evidence for writing. Both ways,
+        /// one off-topic refusal wrote `red rock` as Redrock on the bench.
+        let oneSided: Set<Int>
         let write: Double
         let leave: Double
         let minimumPool: Int
@@ -98,6 +102,7 @@ enum ClauseDecider {
             bias = Double(try tensors.floats("bias", shape: [1])[0])
             absent = try tensors.floats("absent", shape: [2]).map(Double.init)
             fixed = try tensors.floats("fixed", shape: [2]).map(Double.init)
+            oneSided = Set((list("one_sided") ?? []).compactMap { Self.names.firstIndex(of: $0) })
             self.write = write
             self.leave = leave
             minimumPool = pool
@@ -126,7 +131,8 @@ enum ClauseDecider {
             var z = bias
             for (k, value) in f.fitted.enumerated() {
                 if let value {
-                    z += weights[k] * (value - means[k]) / deviations[k]
+                    let part = weights[k] * (value - means[k]) / deviations[k]
+                    z += oneSided.contains(k) ? min(0, part) : part
                 } else if k < absent.count {
                     z += absent[k]
                 }
