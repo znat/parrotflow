@@ -6303,7 +6303,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // learns anything.
         var picked: String?
         switch CorrectionRecording.picked(
-            word.word, proposedBy: open.term, in: config.vocabulary.terms
+            word.word, proposedBy: open.term, in: config.vocabulary.terms,
+            creating: !config.decidesByClause
         ) {
         case .use(let term): picked = term
         case .create(let name, let kind):
@@ -6338,6 +6339,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // chosen term keeps the place. The term spelled like the heard
             // words is skipped when the use row records them: the decider
             // already counts that row as its refusal.
+            // With no term picked, the heard word kept refuses every other
+            // member offered too. Recorded without releasing, so each keeps
+            // its counter.
+            if config.decidesByClause, picked == nil, !written.isEmpty {
+                for other in open.group where other.caseInsensitiveCompare(open.term) != .orderedSame {
+                    try TermUses.record(
+                        term: other, said: text, span: word.word, from: .chosen, counter: true, near: at
+                    )
+                    rebuildPortrait(for: other)
+                    Log.write("selector: \(other) refused at \"\(word.word)\" — the heard word was kept")
+                }
+            }
             if config.decidesByClause, let picked, !written.isEmpty {
                 let offered = open.group.count > 1 ? open.group : [open.term]
                 for other in offered where other.caseInsensitiveCompare(picked) != .orderedSame
