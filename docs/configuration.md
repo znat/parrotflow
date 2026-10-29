@@ -588,11 +588,7 @@ one's sentences. The term spelled like the heard words is the default and needs
 no sentences; another is written only when it beats it by a fixed margin, and
 offered when it beats it by half. A sound match of two or
 more words loses an edge word the parser tags ADP, DET, CCONJ, PRON or AUX
-(`on Versal` is proposed as `Versal`) and must still sound like the term. The
-sound pass also hears each term as its possessive (`Praisy` + /z/), and a
-weak word after the first (he, his, him, her, has, have, had) may lose its
-/h/: `Prise's` and `praise his` both reach `Praisy's`, which is written with the
-`'s` and recorded under `Praisy`. It
+(`on Versal` is proposed as `Versal`) and must still sound like the term. It
 reads parrotflow-syrinx, so turning it on fetches that model, and
 it needs `gate_sentence`. Each dictation publishes `vocabulary.clause` (every
 feature, the score, the decision and the clause offsets per place) and

@@ -161,13 +161,13 @@ FLOOR = 0.60
 # The slot the parser reads where the heard words stand: (key, text, heard, term).
 SLOTS = [
     ("slot-praise-adverb", "Praise his work has been amazing.", "Praise", "Praisy"),
-    ("slot-praise-his", "Praise his work has been amazing.", "Praise his", "Praisy"),
+    ("slot-praise-his", "Praise his work has been amazing.", "Praise his", "Praisy's"),
     ("slot-praise-verb", "We should praise his work.", "praise", "Praisy"),
-    ("slot-praise-his-verb", "We should praise his work.", "praise his", "Praisy"),
+    ("slot-praise-his-verb", "We should praise his work.", "praise his", "Praisy's"),
     ("slot-merge", "Go back to main and merge before lunch.", "merge", "Vercel"),
     ("slot-versus", "It was Postgres versus Mongo all week.", "versus", "Vercel"),
     ("slot-name", "I deploy the site on Versal every Friday.", "Versal", "Vercel"),
-    ("slot-possessive", "I think Prise's work is great.", "Prise's", "Praisy"),
+    ("slot-possessive", "I think Prise's work is great.", "Prise's", "Praisy's"),
 ]
 
 
@@ -208,7 +208,6 @@ def main():
 
     import vocab_clause_core as C
     import vocab_slots_core as S
-    import vocab_slots_sound as SS
     import vocab_gate_v2_data as V2
     from vocab_clause_syrinx import Syrinx
 
@@ -246,12 +245,8 @@ def main():
     parses = syrinx.analyse([it["text"] for it in todo] + [u["said"] for it in todo for u in rows_of(it)])
 
     def sound(heard, term):
-        m = ipa.of([term])
-        if not m[term]:
-            return 0.0
-        scorer = SS.Scorer()
-        scorer.ipa = ipa
-        return scorer.score(heard, [m[term]])[1]
+        m = ipa.of([heard, term])
+        return V2.similarity(m[heard], m[term])
 
     def reading(p, a, b, heard, term, rows, shared=False, peers=()):
         acc, ref = [], []

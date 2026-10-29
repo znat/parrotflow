@@ -801,51 +801,10 @@ enum VocabularyPass {
         return Phonemes.similarity(heard, form) >= floor
     }
 
-    // MARK: - Possessive sound forms
-
-    /// Words whose leading /h/ is dropped after another word: "praise his"
-    /// is said /pɹeɪzɪz/, which is how "Praisy's" sounds.
-    static let weakH: Set<String> = ["he", "his", "him", "her", "has", "have", "had"]
-
-    /// A reading with the possessive ending: /ɪz/ after a sibilant, /s/ after
-    /// a voiceless sound, /z/ otherwise.
-    static func possessive(_ ipa: String) -> String {
-        guard let last = ipa.last else { return ipa }
-        if "szʃʒ".contains(last) { return ipa + "ɪz" }
-        if "ptkfθ".contains(last) { return ipa + "s" }
-        return ipa + "z"
-    }
-
-    /// A run of words read with the leading /h/ of each weak word after the
-    /// first dropped: the words' own readings, joined. Nil when no weak word
-    /// follows the first, or a word has no reading.
-    static func droppingH(_ run: [String], readings: [String: String]) -> String? {
-        let bare = run.map { String($0.lowercased().filter(\.isLetter)) }
-        guard run.count >= 2, bare.dropFirst().contains(where: weakH.contains) else { return nil }
-        var out = ""
-        for (index, word) in run.enumerated() {
-            guard var reading = readings[word], !reading.isEmpty else { return nil }
-            if index > 0, weakH.contains(bare[index]), reading.first == "h" { reading.removeFirst() }
-            out += reading
-        }
-        return out
-    }
-
-    /// The best score of a heard run against a term's form readings, by
-    /// espeak alone: the run as read and without weak /h/s, against each form
-    /// and its possessive.
-    static func possessiveScore(_ heard: String, forms: [String], voice: String) -> Float {
-        let run = heard.split(whereSeparator: \.isWhitespace).map(String.init)
-        let ipa = Phonemes.of([heard] + run, voice: voice)
-        let heardings = [ipa[heard], droppingH(run, readings: ipa)].compactMap { $0 }.filter { !$0.isEmpty }
-        let all = forms.filter { !$0.isEmpty }.flatMap { [$0, possessive($0)] }
-        return heardings.flatMap { h in all.map { Phonemes.similarity(h, $0) } }.max() ?? 0
-    }
-
     static func phonemeParts(
         in text: String,
         sounds: [(term: String, form: String, phonemes: String?)],
-        voice: String, language: String, floor: Float, claimed: [Part], possessives: Bool = false
+        voice: String, language: String, floor: Float, claimed: [Part]
     ) async -> [Part] {
         guard !sounds.isEmpty else { return [] }
         let neural = NeuralPhonemes.language(language)
@@ -861,12 +820,12 @@ enum VocabularyPass {
         // dictation asks in one go or the stage is not worth having.
         let words = Replacements.wordRanges(in: text)
         var taken = claimed.map(\.range)
-        var windows: [(span: Range<String.Index>, text: String, width: Int, start: Int)] = []
+        var windows: [(span: Range<String.Index>, text: String, width: Int)] = []
         for start in words.indices {
             for count in stride(from: widest, through: 1, by: -1)
             where start + count <= words.count {
                 let span = words[start].lowerBound..<words[start + count - 1].upperBound
-                windows.append((span, String(text[span]), count, start))
+                windows.append((span, String(text[span]), count))
             }
         }
         // What the terms are already spelled as. A window that *is* the term,
@@ -918,7 +877,6 @@ enum VocabularyPass {
             .flatMap { [rules[$0.form], written[$0.form]] }
             .compactMap { $0 }
             .filter { !$0.isEmpty }
-            .flatMap { possessives ? [$0, possessive($0)] : [$0] }
         let near: [String]
         if Phonemes.binary == nil || formSounds.isEmpty {
             near = windows.map(\.text)
@@ -937,15 +895,9 @@ enum VocabularyPass {
         var found: [Part] = []
         for window in windows.sorted(by: { $0.width > $1.width || ($0.width == $1.width && $0.span.lowerBound < $1.span.lowerBound) }) {
             guard !spelled.contains(window.text.lowercased()) else { continue }
-            var ears = [("espeak", rules[window.text]), ("model", model[window.text])]
+            let ears = [("espeak", rules[window.text]), ("model", model[window.text])]
                 .compactMap { name, ipa in ipa.map { (name, $0) } }
                 .filter { !$0.1.isEmpty }
-            if possessives, window.width >= 2 {
-                let run = words[window.start ..< window.start + window.width].map { String(text[$0]) }
-                for (name, table) in [("espeak", rules), ("model", model)] {
-                    if let reading = droppingH(run, readings: table) { ears.append((name, reading)) }
-                }
-            }
             guard !ears.isEmpty else { continue }
             if taken.contains(where: {
                 $0.lowerBound < window.span.upperBound && window.span.lowerBound < $0.upperBound
@@ -960,15 +912,14 @@ enum VocabularyPass {
             // of the two, and both numbers are logged: they are what says
             // whether the second ear is still earning its place.
             var perEar: [String: (score: Float, term: String)] = [:]
-            var best: (score: Float, term: String, ear: String, heard: String, possessive: Bool)?
+            var best: (score: Float, term: String, ear: String, heard: String)?
             for entry in sounds {
                 for (ear, heard) in ears {
                     // The form as this ear reads it, and the one a person
                     // wrote down if they did.
-                    let plain = [ear == "espeak" ? rules[entry.form] : model[entry.form],
+                    let forms = [ear == "espeak" ? rules[entry.form] : model[entry.form],
                                  written[entry.form]].compactMap { $0 }.filter { !$0.isEmpty }
-                    let forms = plain.map { ($0, false) } + (possessives ? plain.map { (possessive($0), true) } : [])
-                    for (form, owned) in forms {
+                    for form in forms {
                         // The length ratio caps the score on its own, so a
                         // pair that cannot reach the floor even aligned
                         // perfectly is skipped before the distance is
@@ -981,17 +932,14 @@ enum VocabularyPass {
                             perEar[ear] = (score, entry.term)
                         }
                         guard score >= floor, score > (best?.score ?? 0) else { continue }
-                        best = (score, entry.term, ear, heard, owned)
+                        best = (score, entry.term, ear, heard)
                     }
                 }
             }
             guard let best else { continue }
-            // A possessive reading heard without an `'s` ("praise his") is
-            // written as the term's possessive.
-            let owns = best.possessive && Vocabulary.possessive(in: window.text) == nil
             found.append(Part(
                 range: window.span, decoded: window.text,
-                other: owns ? best.term + "'s" : Vocabulary.inflected(best.term, like: window.text),
+                other: Vocabulary.inflected(best.term, like: window.text),
                 term: best.term, standing: .sound
             ))
             taken.append(window.span)
@@ -1003,8 +951,7 @@ enum VocabularyPass {
                 return String(format: "%@ /%@/ %.2f %@", ear, ipa, mine.score, mine.term)
             }.joined(separator: "  ")
             Log.write("vocabulary sound: \"\(window.text)\" -> \(best.term)"
-                + String(format: " %.2f by %@%@ — ", best.score, best.ear, best.possessive ? " (possessive)" : "")
-                + heardBy)
+                + String(format: " %.2f by %@ — ", best.score, best.ear) + heardBy)
         }
         return found.sorted { $0.range.lowerBound < $1.range.lowerBound }
     }

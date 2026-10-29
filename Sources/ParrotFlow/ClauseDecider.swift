@@ -330,12 +330,10 @@ enum ClauseDecider {
         return (net > 0 ? 1 : 0, net < 0 ? 1 : 0)
     }
 
-    /// With the possessive forms and the weak /h/ — see
-    /// `VocabularyPass.possessiveScore` — as the sound pass reads a place.
     static func sound(heard: String, term: String) -> Double {
-        let voice = Phonemes.voice(for: "en")
-        guard let form = Phonemes.of([term], voice: voice)[term] else { return 0 }
-        return Double(VocabularyPass.possessiveScore(heard, forms: [form], voice: voice))
+        let ipa = Phonemes.of([heard, term], voice: Phonemes.voice(for: "en"))
+        guard let a = ipa[heard], let b = ipa[term] else { return 0 }
+        return Double(Phonemes.similarity(a, b))
     }
 
     static func place(_ parsed: Parsed, at range: Range<Int>, model: Model) -> (vector: [Float]?, span: [Int], pool: [Int]) {
@@ -465,11 +463,7 @@ extension ClauseDecider {
 
     /// The heard run without a closed-class first or last word the term does
     /// not also start or end with. Nil when nothing would be left.
-    /// `keepLast` keeps the last word: in a possessive heard as "praise his"
-    /// the `his` is the `'s`.
-    static func trimmed(
-        _ parsed: Parsed, text: [Unicode.Scalar], at range: Range<Int>, term: String, keepLast: Bool = false
-    ) -> Range<Int>? {
+    static func trimmed(_ parsed: Parsed, text: [Unicode.Scalar], at range: Range<Int>, term: String) -> Range<Int>? {
         var words: [Range<Int>] = []
         var i = range.lowerBound
         while i < range.upperBound {
@@ -492,7 +486,7 @@ extension ClauseDecider {
         }
         var lo = 0, hi = words.count
         if closedClass(words[0]), spelled(words[0]) != termWords.first { lo = 1 }
-        if !keepLast, hi - lo >= 2, closedClass(words[hi - 1]), spelled(words[hi - 1]) != termWords.last { hi -= 1 }
+        if hi - lo >= 2, closedClass(words[hi - 1]), spelled(words[hi - 1]) != termWords.last { hi -= 1 }
         guard lo < hi else { return nil }
         return words[lo].lowerBound ..< words[hi - 1].upperBound
     }
@@ -664,8 +658,7 @@ final class ClauseSession {
             guard part.standing == .sound else { return part }
             let a = view.distance(from: view.startIndex, to: part.range.lowerBound)
             let b = view.distance(from: view.startIndex, to: part.range.upperBound)
-            let owned = part.other.hasSuffix("'s") && Vocabulary.possessive(in: part.decoded) == nil
-            let kept = ClauseDecider.trimmed(parsing(text), text: scalars, at: a ..< b, term: part.term, keepLast: owned)
+            let kept = ClauseDecider.trimmed(parsing(text), text: scalars, at: a ..< b, term: part.term)
             guard kept != a ..< b else { return part }
             guard let kept else {
                 lines.append("\"\(part.decoded)\" -> \(part.term): nothing left once the edge words go")
@@ -674,9 +667,9 @@ final class ClauseSession {
             let range = view.index(view.startIndex, offsetBy: kept.lowerBound) ..< view.index(view.startIndex, offsetBy: kept.upperBound)
             let words = String(text[range])
             let forms = sounds.filter { $0.term == part.term }
-            let ipa = Phonemes.of(forms.map(\.form), voice: voice)
-            let score = VocabularyPass.possessiveScore(
-                words, forms: forms.flatMap { [ipa[$0.form], $0.phonemes] }.compactMap { $0 }, voice: voice)
+            let ipa = Phonemes.of([words] + forms.map(\.form), voice: voice)
+            let score = forms.flatMap { [ipa[$0.form], $0.phonemes] }.compactMap { $0 }.filter { !$0.isEmpty }
+                .map { form in ipa[words].map { Phonemes.similarity($0, form) } ?? 0 }.max() ?? 0
             guard score >= floor else {
                 lines.append("\"\(part.decoded)\" -> \(part.term): \"\(words)\" alone scores"
                     + String(format: " %.2f, under the floor; not proposed", score))
@@ -684,7 +677,7 @@ final class ClauseSession {
             }
             lines.append("\"\(part.decoded)\" -> \(part.term): proposed as \"\(words)\"" + String(format: " (%.2f)", score))
             return VocabularyPass.Part(
-                range: range, decoded: words, other: owned ? part.other : Vocabulary.inflected(part.term, like: words),
+                range: range, decoded: words, other: Vocabulary.inflected(part.term, like: words),
                 term: part.term, standing: .sound
             )
         }
