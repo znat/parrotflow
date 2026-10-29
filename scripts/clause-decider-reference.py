@@ -107,6 +107,11 @@ CASES = [
     ("rock-ridge", "We hiked to the red rock ridge at sunrise.", "red rock", "Redrock", REDROCK),
     ("unfound-row", "I pushed the branch to Versal this morning.", "Versal", "Vercel",
      [use("I liked Vercelli a lot.", "Vercel"), use("The Vercel dashboard shows the logs.", "Vercel")]),
+    # A past correction of this exact word in a deploy clause, read in a castle clause.
+    ("vercel-castle-pair", "My grandmother loved the gardens of the Versailles castle near Paris.", "Versailles",
+     "Vercel", VERCEL[:3] + [use("We moved the API routes to Vercel last month.", "Vercel", heard="Versailles")]),
+    ("vercel-deploy-pair", "We deploy the staging app on Versailles every night.", "Versailles",
+     "Vercel", VERCEL[:3] + [use("We moved the API routes to Vercel last month.", "Vercel", heard="Versailles")]),
 ]
 
 
@@ -219,7 +224,7 @@ def main():
                  sd=t["sd"].astype(float).tolist(), bias=float(t["bias"][0]),
                  absent=dict(zip(json.loads(meta["absent"]), t["absent"].astype(float).tolist())),
                  fixed=dict(zip(json.loads(meta["fixed"]), t["fixed"].astype(float).tolist())),
-                 one_sided=json.loads(meta.get("one_sided", "[]")))
+                 one_sided=json.loads(meta.get("one_sided", "[]")), pair_gate=meta.get("pair_gate") == "sim_acc")
     write, leave = float(meta["write"]), float(meta["leave"])
     assert C.WRITE == write and C.LEAVE == leave and C.MIN_POOL == int(meta["min_pool"])
     centre, proj, ner = t["centre"], t["proj"], (t["ner.weight"], t["ner.bias"])
@@ -266,7 +271,7 @@ def main():
              "ner": C.ner_entity(ner, p, span), **C.pos_features(p, span),
              "sound": sound(heard, term), "known": known(heard),
              "pair_acc": pair_acc, "pair_ref": pair_ref}
-        d, prob, z, _ = C.decide(model, f)
+        d, prob, z, _ = C.decide(model, f, shared=shared)
         clause = [min(p["starts"][k] for k in toks), max(p["ends"][k] for k in toks)] if toks else None
         return dict(decision=d, p=round(prob, 6), z=round(z, 6), clause=clause,
                     features={k: (round(x, 6) if x is not None else None) for k, x in f.items()})

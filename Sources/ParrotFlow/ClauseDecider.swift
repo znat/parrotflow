@@ -72,6 +72,10 @@ enum ClauseDecider {
         /// toward leaving; its absence is no evidence for writing. Both ways,
         /// one off-topic refusal wrote `red rock` as Redrock on the bench.
         let oneSided: Set<Int>
+        /// A single-term place's pair_acc counts only when sim_acc is present
+        /// and at least its mean: a correction made in a deploy clause wrote
+        /// Vercel over a castle's "Versailles" (sim_acc 0.061).
+        let pairGate: Bool
         let write: Double
         let leave: Double
         let minimumPool: Int
@@ -103,6 +107,7 @@ enum ClauseDecider {
             absent = try tensors.floats("absent", shape: [2]).map(Double.init)
             fixed = try tensors.floats("fixed", shape: [2]).map(Double.init)
             oneSided = Set((list("one_sided") ?? []).compactMap { Self.names.firstIndex(of: $0) })
+            pairGate = tensors.string("pair_gate") == "sim_acc"
             self.write = write
             self.leave = leave
             minimumPool = pool
@@ -362,7 +367,7 @@ enum ClauseDecider {
     static func read(
         _ parsed: Parsed, at range: Range<Int>, heard: String, term: String,
         accepted: [[Float]], refused: [[Float]], pairs: (accepted: Double, refused: Double),
-        model: Model
+        model: Model, shared: Bool = false
     ) -> Reading? {
         let (vector, span, pooled) = place(parsed, at: range, model: model)
         guard !span.isEmpty else { return nil }
@@ -376,6 +381,7 @@ enum ClauseDecider {
         f.sound = sound(heard: heard, term: term)
         f.known = known(heard) ? 1 : 0
         f.pairAccepted = pairs.accepted
+        if model.pairGate, !shared, (f.simAccepted ?? -.infinity) < model.means[0] { f.pairAccepted = 0 }
         f.pairRefused = pairs.refused
         var clause: Range<Int>?
         if let lo = pooled.map({ parsed.clip.tokens[$0].start }).min(), let hi = pooled.map({ parsed.ends[$0] }).max() {
@@ -583,7 +589,7 @@ final class ClauseSession {
             parse, at: a ..< b, heard: change.was, term: term,
             accepted: memory.accepted, refused: memory.refused,
             pairs: ClauseDecider.pairs(heard: change.was, term: term, rows: rows, shared: shared, peers: peers),
-            model: model
+            model: model, shared: shared
         ) else {
             lines.append("\"\(change.was)\" -> \(term): no parser token at the place")
             return nil

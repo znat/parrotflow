@@ -159,7 +159,8 @@ enum ClauseDecideCommand {
         let parsed = ClauseDecider.Parsed(text, parser: parser)
         guard let reading = ClauseDecider.read(
             parsed, at: range, heard: heard, term: term, accepted: accepted, refused: refused,
-            pairs: ClauseDecider.pairs(heard: heard, term: term, rows: rows, shared: shared, peers: peers), model: model)
+            pairs: ClauseDecider.pairs(heard: heard, term: term, rows: rows, shared: shared, peers: peers), model: model,
+            shared: shared)
         else { return nil }
         return (reading, accepted.count, refused.count)
     }
