@@ -12,6 +12,7 @@
 #   a heard word in neither word list is still written
 #   a rule place the decider offers shows the heard word
 #   a span that glues to the term is asked, and a correction back counts
+#   a known word with no name reading is not written on a past correction alone
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
@@ -104,6 +105,18 @@ check "a correction back counts against it the next time" \
   "$(glued "$phrase")" "left 1|offered 0|$phrase"
 check "a glued span with a word in neither list is still written" \
   "$(glued "We ship Zorb lix on Fridays." | sed 's/.*|//')" "We ship Zorblix on Fridays."
+
+mkdir -p "$WORK/noun"
+printf 'transcription:\n  languages: [en]\n  vocabulary:\n    clause_decider: true\n' > "$WORK/noun/config.yaml"
+printf 'terms:\n  Praisy:\n    kind: person\n' > "$WORK/noun/vocabulary.yaml"
+noun() { PARROTFLOW_CONFIG_DIR="$WORK/noun" "$BIN" "$@" >/dev/null 2>&1; }
+noun --picked Praisy Praisy --in "Praisy wrote the launch notes for the whole team."
+noun --picked Praisy Praisy --in "The team asked Praisy to plan the launch party."
+noun --learn praise Praisy --in "Praisy led the launch review with the team."
+check "a known word the parser reads as no name is not written past a correction" \
+  "$(PARROTFLOW_CONFIG_DIR="$WORK/noun" "$BIN" --pipeline "$WORK/fixture.yaml" \
+    "The whole team got a lot of praise after the launch." --quiet --warm 2>/dev/null | tail -1)" \
+  "The whole team got a lot of praise after the launch."
 
 printf '\n  %d/%d\n' "$pass" "$total"
 [ "$pass" -eq "$total" ]
