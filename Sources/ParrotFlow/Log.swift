@@ -18,6 +18,20 @@ enum Log {
 
     private static let queue = DispatchQueue(label: "com.parrotflow.log")
 
+    /// `--serve`'s per-request copy of what reached the file. Touched only on `queue`.
+    private static var collected: [String]?
+
+    static func collect() {
+        queue.sync { collected = [] }
+    }
+
+    static func takeCollected() -> [String] {
+        queue.sync {
+            defer { collected = nil }
+            return collected ?? []
+        }
+    }
+
     private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -48,6 +62,7 @@ enum Log {
         // text has to respect `logging.text` at this sink too.
         NSLog("[ParrotFlow] %@", message)
         queue.async {
+            collected?.append(message)
             guard let data = line.data(using: .utf8) else { return }
             let fm = FileManager.default
 

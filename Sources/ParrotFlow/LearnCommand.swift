@@ -11,14 +11,15 @@ import Foundation
 /// given, so without it the mapping is saved and nothing else.
 enum LearnCommand {
     static func run(
-        heard: String, corrected: String, kind: WordKind? = nil, sentence: String? = nil
+        heard: String, corrected: String, kind: WordKind? = nil, sentence: String? = nil,
+        say: (String) -> Void = { print($0) }
     ) -> Int32 {
         do {
             try ConfigWriter.addVocabularyPronunciation(
                 term: corrected, heard: heard, kind: kind
             )
         } catch {
-            print("✗ \(error.localizedDescription)")
+            say("✗ \(error.localizedDescription)")
             return 1
         }
         // The mapping is already saved by here, so a sentence that could not be
@@ -34,12 +35,12 @@ enum LearnCommand {
                     heard: heard
                 )
             } catch {
-                print("! the sentence was not recorded in"
+                say("! the sentence was not recorded in"
                     + " \(TermUses.url.lastPathComponent): \(error.localizedDescription)")
             }
         }
         Trace.correction(heard: heard, corrected: corrected, via: "learn")
-        print("✓ \(heard) → \(corrected)")
+        say("✓ \(heard) → \(corrected)")
         return 0
     }
 

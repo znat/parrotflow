@@ -101,7 +101,8 @@ enum SoundGroupCommand {
     /// `--dry` prints them without writing. Otherwise they land in
     /// `vocabulary-uses.yaml`, the same call the app makes.
     static func correction(
-        wrote: String, put: String, sentence: String?, dry: Bool
+        wrote: String, put: String, sentence: String?, dry: Bool,
+        say: (String) -> Void = { print($0) }
     ) -> Int32 {
         let config = (try? ConfigStore.load()) ?? Config()
         let rows = CorrectionRecording.rows(
@@ -115,7 +116,7 @@ enum SoundGroupCommand {
             wrote: wrote, put: put, in: config.vocabulary.terms
         ) {
             guard !dry else {
-                print("learn \(new.name) \(new.kind.rawValue) heard \(wrote)")
+                say("learn \(new.name) \(new.kind.rawValue) heard \(wrote)")
                 return 0
             }
             do {
@@ -134,14 +135,14 @@ enum SoundGroupCommand {
                     )
                 }
             } catch {
-                print("✗ \(error.localizedDescription)")
+                say("✗ \(error.localizedDescription)")
                 return 1
             }
-            print("learn \(new.name) \(new.kind.rawValue) heard \(wrote)")
+            say("learn \(new.name) \(new.kind.rawValue) heard \(wrote)")
             return 0
         }
         guard !rows.isEmpty else {
-            print("nothing: \(wrote) is not a term, or the two are the same term")
+            say("nothing: \(wrote) is not a term, or the two are the same term")
             return 0
         }
         let groups = SoundGroup.groups(terms: config.vocabulary.terms, uses: TermUses.load())
@@ -149,7 +150,7 @@ enum SoundGroupCommand {
            let two = CorrectionRecording.blocked(
                sentence, term: row.term, span: CorrectionRecording.span(of: row), in: groups
            ) {
-            print("blocked \(two.joined(separator: " "))")
+            say("blocked \(two.joined(separator: " "))")
             return 0
         }
         if !dry, let sentence {
@@ -158,20 +159,20 @@ enum SoundGroupCommand {
                     rows, said: sentence, blocking: groups
                 )
                 guard !written.isEmpty else {
-                    print("nothing: \"\(put)\" does not stand in the sentence as a word")
+                    say("nothing: \"\(put)\" does not stand in the sentence as a word")
                     return 0
                 }
             } catch {
-                print("✗ \(error.localizedDescription)")
+                say("✗ \(error.localizedDescription)")
                 return 1
             }
         }
         for row in rows {
             switch row {
             case .use(let term, let span, let heard):
-                print("use \(term) \"\(span)\"" + (heard.map { " heard \($0)" } ?? ""))
+                say("use \(term) \"\(span)\"" + (heard.map { " heard \($0)" } ?? ""))
             case .counter(let term, let span):
-                print("counter \(term) \"\(span)\"")
+                say("counter \(term) \"\(span)\"")
             }
         }
         return 0
@@ -183,7 +184,10 @@ enum SoundGroupCommand {
     /// Prints `use <term>`, `create <name> <kind>` — a name written to
     /// `vocabulary.yaml` and then used — or `counter <term>`, and `blocked` in
     /// front of any of them when the sentence names two members of one group.
-    static func picked(word: String, term: String, sentence: String?, dry: Bool) -> Int32 {
+    static func picked(
+        word: String, term: String, sentence: String?, dry: Bool,
+        say: (String) -> Void = { print($0) }
+    ) -> Int32 {
         let config = (try? ConfigStore.load()) ?? Config()
         var answer = CorrectionRecording.picked(
             word, proposedBy: term, in: config.vocabulary.terms, creating: !config.decidesByClause
@@ -192,7 +196,7 @@ enum SoundGroupCommand {
             do {
                 try ConfigWriter.addVocabularyTerm(name, kind: kind)
             } catch {
-                print("✗ \(error.localizedDescription)")
+                say("✗ \(error.localizedDescription)")
                 return 1
             }
         }
@@ -208,7 +212,7 @@ enum SoundGroupCommand {
         if let sentence, let two = CorrectionRecording.blocked(
             sentence, term: row.term, span: CorrectionRecording.span(of: row), in: groups
         ) {
-            print("blocked \(two.joined(separator: " "))")
+            say("blocked \(two.joined(separator: " "))")
             return 0
         }
         if let sentence, !dry {
@@ -217,14 +221,14 @@ enum SoundGroupCommand {
                     [row], said: sentence, from: .chosen, blocking: groups
                 )
             } catch {
-                print("✗ \(error.localizedDescription)")
+                say("✗ \(error.localizedDescription)")
                 return 1
             }
         }
         switch answer {
-        case .use(let already): print("use \(already)")
-        case .create(let name, let kind): print("create \(name) \(kind.rawValue)")
-        case .counter(let proposed): print("counter \(proposed)")
+        case .use(let already): say("use \(already)")
+        case .create(let name, let kind): say("create \(name) \(kind.rawValue)")
+        case .counter(let proposed): say("counter \(proposed)")
         }
         return 0
     }
