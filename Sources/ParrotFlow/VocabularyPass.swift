@@ -1207,6 +1207,10 @@ enum VocabularyPass {
         /// write a name the text did not have, and can refuse a reading
         /// outright.
         case full
+        /// A rule's write with the clause decider on: kept when neither list
+        /// knows the heard word, otherwise asked of the slot, which may put the
+        /// heard word back. A glued span is asked too.
+        case slot
     }
 
     /// What the two free rules settle.
@@ -1237,7 +1241,9 @@ enum VocabularyPass {
     /// never offered a way back from. Rules therefore get `.lists` — the two
     /// word lists, and only in the direction that keeps what is already there.
     /// The sound path writes nothing until somebody says so, so it gets
-    /// `.full`.
+    /// `.full`. With the clause decider on, rules get `.slot`: the term stays
+    /// on the pill when the decider offers, so a refusal no longer undoes a
+    /// lesson the user cannot get back.
     ///
     /// This is what settles `Versal -> Vercel`. `Versal` is in neither list,
     /// so the rule that wrote it is right and there is nothing left to decide.
@@ -1272,16 +1278,19 @@ enum VocabularyPass {
                 // sentence tests see the place. Under `.full` nothing has been
                 // written yet and the glue still decides, which is what keeps
                 // `Ghost E -> Ghostty` on the sound path.
-                if allowed == .lists, Vocabulary.glues(heard: change.was, term: change.now) {
+                let glued = Vocabulary.glues(heard: change.was, term: change.now)
+                if allowed == .lists, glued {
                     Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
                         + " glues to the term — the rule's write is left to the sentence")
                     return nil
                 }
-                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
-                    + " is in neither word list — written, not asked")
-                return true
+                if !(allowed == .slot && glued) {
+                    Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
+                        + " is in neither word list — written, not asked")
+                    return true
+                }
             }
-            guard allowed == .full, let slot, let reading = slot(change) else { return nil }
+            guard allowed != .lists, let slot, let reading = slot(change) else { return nil }
             switch reading.route {
             case .decline:
                 Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""

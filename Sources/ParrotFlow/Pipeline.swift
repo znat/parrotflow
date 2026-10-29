@@ -1335,7 +1335,8 @@ struct Pipeline: Equatable, Codable {
                 }
             }
             settled = VocabularyPass.settle(
-                changes, in: text, by: [.sound: .full, .rule: .lists], slot: slot)
+                changes, in: text,
+                by: [.sound: .full, .rule: config.decidesByClause ? .slot : .lists], slot: slot)
             span?.close("\(changes.count) change(s)")
         } else {
             settled = [Bool?](repeating: nil, count: changes.count)
@@ -1400,6 +1401,16 @@ struct Pipeline: Equatable, Codable {
         // twice, and the last stage is the one whose places are still open.
         // Recording only a non-empty list would leave an earlier stage's
         // question standing after a later one had settled it.
+        // With the clause decider on, a rule place left open shows the heard
+        // word and the term waits on the pill. A refusal used to undo a lesson
+        // the user could not get back; now the term stays on the pill.
+        var shown = decided
+        if config.decidesByClause, clause != nil {
+            for index in changes.indices where decided[index] == nil && !(index < taught.count && taught[index]) {
+                let change = changes[index]
+                if change.standing == .rule, String(text[change.range]) == change.now { shown[index] = false }
+            }
+        }
         if case .int(let run)? = scope["press.run"] {
             OpenPlaces.record(run: run, changes.indices.compactMap { index in
                 // The term that offered the reading, not the first of the
@@ -1414,7 +1425,7 @@ struct Pipeline: Equatable, Codable {
                     was: change.was, now: change.now,
                     // What `settling` is about to copy: a rule has already
                     // written its term over the span, a sound proposal has not.
-                    wrote: String(text[change.range]) == change.now,
+                    wrote: String(text[change.range]) == change.now && shown[index] != false,
                     term: term,
                     word: text[..<change.range.lowerBound]
                         .split(separator: " ").count,
@@ -1441,7 +1452,7 @@ struct Pipeline: Equatable, Codable {
         var writing = changes
         if step.vocabulary.isOn(\.lowercaseRefused) {
             let terms = Array(config.vocabulary.terms.keys)
-            for index in changes.indices where decided[index] == false {
+            for index in changes.indices where shown[index] == false {
                 guard !(index < taught.count && taught[index]) else { continue }
                 let change = changes[index]
                 guard Vocabulary.glues(heard: change.was, term: change.now) else { continue }
@@ -1465,11 +1476,11 @@ struct Pipeline: Equatable, Codable {
         // Each place written the way it was settled, and a place nothing
         // settled left exactly as it already stands: a rule substitution keeps
         // the term it wrote, a sound proposal keeps the word that was heard.
-        let chosen = VocabularyPass.settling(decided, in: text, changes: writing)
+        let chosen = VocabularyPass.settling(shown, in: text, changes: writing)
         // What the stage undid, in the words it put back. Named `reverted`
         // rather than `kept_as_decoded`: every place on this list is a
         // substitution somebody has to answer for.
-        let reverted = zip(writing, decided).filter { $0.1 == false }.map {
+        let reverted = zip(writing, shown).filter { $0.1 == false }.map {
             "\($0.0.now) -> \($0.0.was)"
         }
         Pipeline.logRewrite(by: "vocabulary", from: text, to: chosen)
