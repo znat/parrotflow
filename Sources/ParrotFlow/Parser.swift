@@ -54,7 +54,7 @@ struct Parse: Equatable, Sendable {
 /// A parse plus what the tree cutter reads per word: the tag head's
 /// P(abandoned) and P(cue), and `s_hidden10` pooled to words, `n * 384`.
 /// `fused` is what the parser and tag heads read, `n * 384`; the clause
-/// decider's NER head reads it too.
+/// decider's NER head and the slot head read it too.
 struct Analysis: Sendable {
     let parse: Parse
     let abandoned: [Float]
@@ -361,7 +361,7 @@ private func multiply(_ a: [Float], _ b: [Float], rows: Int, inner: Int, columns
     return c
 }
 
-private func elu(_ x: Float) -> Float { x > 0 ? x : expm1(x) }
+func elu(_ x: Float) -> Float { x > 0 ? x : expm1(x) }
 
 private func transpose(_ a: [Float], rows: Int, columns: Int) -> [Float] {
     var t = [Float](repeating: 0, count: a.count)

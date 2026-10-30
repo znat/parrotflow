@@ -1503,12 +1503,19 @@ struct Pipeline: Equatable, Codable {
             Log.write("clause decider: \(error.localizedDescription); the portrait decides")
             return (nil, error.localizedDescription)
         }
+        let slotHead: ClauseDecider.SlotHead
+        switch ClauseDecider.SlotHead.shared {
+        case .success(let loaded): slotHead = loaded
+        case .failure(let error):
+            Log.write("clause decider: \(error.localizedDescription); the portrait decides")
+            return (nil, error.localizedDescription)
+        }
         let ready = await SyrinxModel.shared.ready(within: SyrinxModel.dictationWait)
         guard let loaded = ready.loaded else {
             Log.write("clause decider: \(ready.reason); the portrait decides")
             return (nil, ready.reason)
         }
-        return (ClauseSession(parser: loaded.parser, model: model), nil)
+        return (ClauseSession(parser: loaded.parser, model: model, slotHead: slotHead), nil)
     }
 
     /// Whichever kind of transform the step named.

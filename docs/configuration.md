@@ -584,8 +584,10 @@ never writes a term with no accepted sentence; it offers or leaves. A sound
 match that neither word list knows is asked too, not written on sight. A rule
 whose heard word is in neither list is still written before the decider reads
 it, with or without accepted sentences. The slot check reads
-the parser too: the heard words become one `<mask>` and a slot the parser tags
-VERB, AUX, ADV or ADP refuses the term and keeps what was heard. A place several terms share is read once per term on the
+the parser too: the heard words become one `<mask>`, and a small head on the
+parser's features there gives P that a name, noun or pronoun stands in the
+slot. Under the threshold in `built-in/data/vocab-slot.safetensors`, the term is
+refused and what was heard is kept. A place several terms share is read once per term on the
 same clause, and the terms are told apart by how close the clause is to each
 one's sentences. The term spelled like the heard words is the default and needs
 no sentences; another is written only when it beats it by a fixed margin, and
