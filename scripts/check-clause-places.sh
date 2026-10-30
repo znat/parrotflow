@@ -12,6 +12,7 @@
 #   a heard word in neither word list is still written
 #   a rule place the decider offers shows the heard word
 #   a span that glues to the term is asked, and a correction back counts
+#   an unknown heard word that is not the term is asked, not written
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
@@ -104,6 +105,23 @@ check "a correction back counts against it the next time" \
   "$(glued "$phrase")" "left 1|offered 0|$phrase"
 check "a glued span with a word in neither list is still written" \
   "$(glued "We ship Zorb lix on Fridays." | sed 's/.*|//')" "We ship Zorblix on Fridays."
+
+cat > "$WORK/unseen.yaml" <<'EOF'
+languages: [en]
+clause_decider: true
+vocabulary:
+  terms:
+    Supabase:
+pipeline:
+  - vocabulary
+EOF
+mkdir -p "$WORK/unseen"
+printf 'transcription:\n  languages: [en]\n  vocabulary:\n    clause_decider: true\n' > "$WORK/unseen/config.yaml"
+printf 'terms:\n  Supabase:\n' > "$WORK/unseen/vocabulary.yaml"
+game="In the game I built a superbase on the moon."
+check "an unknown heard word that is not the term is asked, not written" \
+  "$(PARROTFLOW_CONFIG_DIR="$WORK/unseen" "$BIN" --pipeline "$WORK/unseen.yaml" "$game" --quiet --warm 2>/dev/null \
+    | tail -1)" "$game"
 
 printf '\n  %d/%d\n' "$pass" "$total"
 [ "$pass" -eq "$total" ]
