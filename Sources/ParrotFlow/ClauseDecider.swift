@@ -70,6 +70,9 @@ enum ClauseDecider {
             "sound", "known",
         ]
         static let width = Parser.width, projected = 256, nerLabels = 11
+        /// The languages the centre and the slot head were fitted on, from UD
+        /// train. Another language gets no session.
+        static let languages: Set<String> = ["en", "fr"]
 
         let centre: [Float]
         let projection: [Float]
@@ -301,13 +304,15 @@ enum ClauseDecider {
         f.nextVerb = after.map { parsed.probability($0, .verb) + parsed.probability($0, .aux) } ?? 0
     }
 
+    /// Every letter run of the heard words is in a word list, read as the
+    /// word-list shortcut reads them.
     static func known(_ heard: String) -> Bool {
         var runs: [String] = [], current = ""
         for c in heard {
             if c.isLetter { current.append(c) } else if !current.isEmpty { runs.append(current); current = "" }
         }
         if !current.isEmpty { runs.append(current) }
-        return !runs.isEmpty && runs.allSatisfy(ContextSpelling.known)
+        return !runs.isEmpty && runs.allSatisfy { !Vocabulary.unseenWord($0) }
     }
 
     static func norm(_ word: String) -> String {
@@ -343,8 +348,8 @@ enum ClauseDecider {
         return (net > 0 ? 1 : 0, net < 0 ? 1 : 0)
     }
 
-    static func sound(heard: String, term: String) -> Double {
-        let ipa = Phonemes.of([heard, term], voice: Phonemes.voice(for: "en"))
+    static func sound(heard: String, term: String, voice: String) -> Double {
+        let ipa = Phonemes.of([heard, term], voice: voice)
         guard let a = ipa[heard], let b = ipa[term] else { return 0 }
         return Double(Phonemes.similarity(a, b))
     }
@@ -369,7 +374,7 @@ enum ClauseDecider {
     static func read(
         _ parsed: Parsed, at range: Range<Int>, heard: String, term: String,
         accepted: [[Float]], refused: [[Float]], pairs: (accepted: Double, refused: Double),
-        model: Model, shared: Bool = false
+        model: Model, voice: String, shared: Bool = false
     ) -> Reading? {
         let (vector, span, pooled) = place(parsed, at: range, model: model)
         guard !span.isEmpty else { return nil }
@@ -380,7 +385,7 @@ enum ClauseDecider {
         }
         f.ner = entity(parsed, span: span, model: model)
         partsOfSpeech(parsed, span: span, into: &f)
-        f.sound = sound(heard: heard, term: term)
+        f.sound = sound(heard: heard, term: term, voice: voice)
         f.known = known(heard) ? 1 : 0
         f.pairAccepted = pairs.accepted
         if model.pairGate, !shared, (f.simAccepted ?? -.infinity) < model.means[0] { f.pairAccepted = 0 }
@@ -609,16 +614,18 @@ final class ClauseSession {
     let parser: Parser
     let model: ClauseDecider.Model
     let slotHead: ClauseDecider.SlotHead
+    let language: String
     private var parsed: [String: ClauseDecider.Parsed] = [:]
     private(set) var lines: [String] = []
     private(set) var places = 0
     private(set) var tally: [ClauseDecider.Decision: Int] = [:]
     private(set) var seconds = 0.0
 
-    init(parser: Parser, model: ClauseDecider.Model, slotHead: ClauseDecider.SlotHead) {
+    init(parser: Parser, model: ClauseDecider.Model, slotHead: ClauseDecider.SlotHead, language: String) {
         self.parser = parser
         self.model = model
         self.slotHead = slotHead
+        self.language = language
     }
 
     /// One place, read on `text` with the heard words put back at it. The
@@ -640,7 +647,7 @@ final class ClauseSession {
             parse, at: a ..< b, heard: change.was, term: term,
             accepted: memory.accepted, refused: memory.refused,
             pairs: ClauseDecider.pairs(heard: change.was, term: term, rows: rows, shared: shared, peers: peers),
-            model: model, shared: shared
+            model: model, voice: Phonemes.voice(for: language), shared: shared
         ) else {
             lines.append("\"\(change.was)\" -> \(term): no parser token at the place")
             return nil

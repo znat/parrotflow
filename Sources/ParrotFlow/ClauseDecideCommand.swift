@@ -7,11 +7,12 @@ import Foundation
 /// `--clause-decide --batch <items.json>` reads `[{"id", "text", "a", "b",
 /// "heard", "term", "uses": [{"said", "span", "counter", "heard"}]}]`, offsets
 /// in `Unicode.Scalar`s, and prints one JSON line per item, then a summary line.
-/// An item may carry `memory` (rows per member) for a shared place, and `trim`
-/// (with an optional sound `floor`) to drop closed-class edge words first.
+/// An item may carry `memory` (rows per member) for a shared place, `trim`
+/// (with an optional sound `floor`) to drop closed-class edge words first, and
+/// `language` (default `en`), the voice the heard words are sounded in.
 enum ClauseDecideCommand {
 
-    static func run(text: String, heard: String, term: String) -> Int32 {
+    static func run(text: String, heard: String, term: String, language: String) -> Int32 {
         guard let (parser, model, _) = load() else { return 1 }
         guard let found = TermUses.occurrence(of: heard, in: text) else {
             print("✗ \"\(heard)\" does not stand in the text as a word")
@@ -21,7 +22,7 @@ enum ClauseDecideCommand {
         let rows = TermUses.load()[term] ?? []
         let reading = decide(
             text, at: a ..< a + heard.unicodeScalars.count, heard: heard, term: term, rows: rows,
-            parser: parser, model: model)
+            parser: parser, model: model, voice: Phonemes.voice(for: language))
         guard let reading else {
             print("✗ no parser token at the place")
             return 1
@@ -50,6 +51,7 @@ enum ClauseDecideCommand {
             /// Also print the slot reading at the masked place: UPOS and the
             /// slot head's P.
             let masked: Bool?
+            let language: String?
         }
         struct Row: Decodable {
             let said: String
@@ -82,6 +84,7 @@ enum ClauseDecideCommand {
             autoreleasepool {
                 let started = DispatchTime.now().uptimeNanoseconds
                 var out: [String: Any] = ["id": item.id]
+                let voice = Phonemes.voice(for: item.language ?? "en")
                 var range = item.a ..< item.b
                 var heard = item.heard
                 if item.trim == true {
@@ -96,7 +99,7 @@ enum ClauseDecideCommand {
                     view.append(contentsOf: scalars[kept])
                     heard = String(view)
                     out["place"] = [kept.lowerBound, kept.upperBound]
-                    if let floor = item.floor, ClauseDecider.sound(heard: heard, term: item.term) < floor {
+                    if let floor = item.floor, ClauseDecider.sound(heard: heard, term: item.term, voice: voice) < floor {
                         emit(["id": item.id, "declined": "under the floor", "place": [kept.lowerBound, kept.upperBound]])
                         return
                     }
@@ -107,7 +110,8 @@ enum ClauseDecideCommand {
                     for (term, rows) in group.sorted(by: { $0.key < $1.key }) {
                         let peers = group.filter { $0.key != term }.flatMap { $0.value.map(\.use) }
                         guard let r = decide(item.text, at: range, heard: heard, term: term, rows: rows.map(\.use),
-                                             parser: parser, model: model, shared: true, peers: peers)?.reading
+                                             parser: parser, model: model, voice: voice, shared: true,
+                                             peers: peers)?.reading
                         else { continue }
                         members.append((term, r))
                         each[term] = line(r)
@@ -119,7 +123,8 @@ enum ClauseDecideCommand {
                     case .leave: out["group"] = ["decision": "leave", "terms": [String]()]
                     }
                 } else if let r = decide(item.text, at: range, heard: heard, term: item.term,
-                                         rows: item.uses.map(\.use), parser: parser, model: model)?.reading {
+                                         rows: item.uses.map(\.use), parser: parser, model: model,
+                                         voice: voice)?.reading {
                     out.merge(line(r)) { _, new in new }
                 } else {
                     out["declined"] = "no parser token at the place"
@@ -152,7 +157,8 @@ enum ClauseDecideCommand {
     /// Every row parsed here, uncached: the store is the app's, not the bench's.
     private static func decide(
         _ text: String, at range: Range<Int>, heard: String, term: String, rows: [TermUses.Use],
-        parser: Parser, model: ClauseDecider.Model, shared: Bool = false, peers: [TermUses.Use] = []
+        parser: Parser, model: ClauseDecider.Model, voice: String, shared: Bool = false,
+        peers: [TermUses.Use] = []
     ) -> (reading: ClauseDecider.Reading, accepted: Int, refused: Int)? {
         var accepted: [[Float]] = [], refused: [[Float]] = []
         for row in rows {
@@ -163,7 +169,7 @@ enum ClauseDecideCommand {
         guard let reading = ClauseDecider.read(
             parsed, at: range, heard: heard, term: term, accepted: accepted, refused: refused,
             pairs: ClauseDecider.pairs(heard: heard, term: term, rows: rows, shared: shared, peers: peers), model: model,
-            shared: shared)
+            voice: voice, shared: shared)
         else { return nil }
         return (reading, accepted.count, refused.count)
     }
