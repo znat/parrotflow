@@ -6,8 +6,8 @@
 <syntax-parser dir> holds the training code the decider was fitted with
 (vocab_clause_core, vocab_clause_syrinx, vocab_gate_v2_data) and the t-silver
 42 checkpoint. Run it with that directory's venv; espeak-ng must be installed.
-The weights are read from built-in/data/vocab-clause.safetensors, the file the
-app bundles. `--batch` reads items in the same shape instead of the built-in
+The weights are read from built-in/data/vocab-clause.safetensors and
+vocab-slot.safetensors, the files the app bundles. `--batch` reads items in the same shape instead of the built-in
 cases, for a local run on text that may not be committed.
 
 An item: the text with the heard words in place, their scalar offsets a..b,
@@ -23,6 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WEIGHTS = ROOT / "built-in/data/vocab-clause.safetensors"
+SLOT_WEIGHTS = ROOT / "built-in/data/vocab-slot.safetensors"
 # A case this close to a decision bound can flip on float noise alone, so it is
 # left out rather than compared.
 MARGIN = 1e-3
@@ -173,6 +174,10 @@ SLOTS = [
     ("slot-versus", "It was Postgres versus Mongo all week.", "versus", "Vercel"),
     ("slot-name", "I deploy the site on Versal every Friday.", "Versal", "Vercel"),
     ("slot-possessive", "I think Prise's work is great.", "Prise's", "Praisy's"),
+    # The parser's argmax reads these names as AUX; the mask head opens them.
+    ("slot-name-that", "It's the repo that Dalvi asked me to fix.", "Dalvi", "Dalvy"),
+    ("slot-name-first", "Torvel put up the release notes.", "Torvel", "Torvell"),
+    ("slot-adverb", "She quickly closed the ticket.", "quickly", "Quickly"),
 ]
 
 
@@ -208,6 +213,7 @@ def main():
     os.chdir(args.reference)
     sys.path.insert(0, str(args.reference))
     sys.dont_write_bytecode = True
+    import numpy as np
     from safetensors.numpy import load_file
     from safetensors import safe_open
 
@@ -228,6 +234,17 @@ def main():
     write, leave = float(meta["write"]), float(meta["leave"])
     assert C.WRITE == write and C.LEAVE == leave and C.MIN_POOL == int(meta["min_pool"])
     centre, proj, ner = t["centre"], t["proj"], (t["ner.weight"], t["ner.bias"])
+    head = load_file(str(SLOT_WEIGHTS))
+    with safe_open(str(SLOT_WEIGHTS), "np") as fh:
+        slot_meta = fh.metadata()
+    assert slot_meta["input"] == "fused" and slot_meta["input_rounding"] == "float16"
+    threshold = float(slot_meta["threshold"])
+
+    def nominal(x):
+        x = np.asarray(x, dtype=np.float16).astype(np.float32)
+        h = head["hidden.weight"] @ x + head["hidden.bias"]
+        h = np.where(h > 0, h, np.expm1(np.minimum(h, 0)))
+        return float(1 / (1 + np.exp(-(head["out.weight"] @ h + head["out.bias"])[0])))
     ipa = V2.IPA("en-us")
     dictionary = {w.strip().lower() for w in Path("/usr/share/dict/words").read_text().split("\n")}
 
@@ -313,8 +330,15 @@ def main():
             line.update(r)
             probs = [r["p"]]
         if it.get("masked"):
-            m = S.mask_reading(syrinx, p, a, b)
-            line["slot"] = dict(mask=[round(float(x), 6) for x in m], tag=S.tag(m))
+            words, at = S.masked_words(p, C.span_tokens(p, a, b))
+            out = syrinx._rows([dict(words=words, text=" ".join(words))])[0]
+            m = np.asarray(out["upos"][at], dtype=np.float64)
+            q = nominal(out["x"][at].numpy())
+            line["slot"] = dict(mask=[round(float(x), 6) for x in m], tag=S.tag(m), nominal=round(q, 6),
+                                route="decline" if q < threshold else "open")
+            if abs(q - threshold) < MARGIN:
+                close.append(it["id"])
+                continue
         if any(min(abs(q - write), abs(q - leave)) < MARGIN for q in probs):
             close.append(it["id"])
             continue

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Compares the Swift clause decider with the PyTorch reference, case by case:
 # the same decision, p and z within 1e-4, every feature within 1e-4 (absent
-# where the reference has it absent), the same clause offsets.
+# where the reference has it absent), the same clause offsets. A slot case also
+# needs the same tag and route, and its UPOS and mask head P within 1e-4.
 #
 #   scripts/check-clause-decider-parity.sh [cases.json]
 #
@@ -103,6 +104,15 @@ for case in want:
                 problems.append(f"slot UPOS {at}: want {want_p:.6f} got {got_p:.6f}")
         if len(mine.get("mask", [])) != len(case["slot"]["mask"]):
             problems.append("slot: no mask reading")
+        if mine.get("route") != case["slot"]["route"]:
+            problems.append(f"slot route: want {case['slot']['route']} got {mine.get('route')}")
+        if "nominal" not in mine:
+            problems.append("slot nominal: missing")
+        else:
+            diff = abs(mine["nominal"] - case["slot"]["nominal"])
+            worst = max(worst, diff)
+            if diff > 1e-4:
+                problems.append(f"slot nominal: want {case['slot']['nominal']:.6f} got {mine['nominal']:.6f}")
     passed += not problems
     if problems:
         print(f"  ✗ {case['id']}")
