@@ -4,24 +4,30 @@
     python scripts/clause-decider-reference.py --reference <syntax-parser dir> [--out FILE] [--batch FILE]
 
 <syntax-parser dir> holds the training code the decider was fitted with
-(vocab_clause_core, vocab_clause_syrinx, vocab_gate_v2_data) and the t-silver
-42 checkpoint. Run it with that directory's venv; espeak-ng must be installed.
+(vocab_clause_core, vocab_slots_core, vocab_clause_syrinx, vocab_gate_v2_data)
+and the t-silver 42 checkpoint. Run it with that directory's venv; espeak-ng
+must be installed, and the release binary built: `known` asks its
+`--word-gate` about each letter run, since the word lists are NSSpellChecker
+and wordpiece.txt. Those lists are scored by check-word-gate.sh, not here.
 The weights are read from built-in/data/vocab-clause.safetensors and
 vocab-slot.safetensors, the files the app bundles. `--batch` reads items in the same shape instead of the built-in
 cases, for a local run on text that may not be committed.
 
 An item: the text with the heard words in place, their scalar offsets a..b,
-the heard words, the term, and the term's stored rows (TermUses: said, span,
-counter, heard). Every case below was written for this repository.
+the heard words, the term, the term's stored rows (TermUses: said, span,
+counter, heard) and the dictation language (default en). Every case below was
+written for this repository.
 """
 import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+BINARY = ROOT / ".build/release/ParrotFlow"
 WEIGHTS = ROOT / "built-in/data/vocab-clause.safetensors"
 SLOT_WEIGHTS = ROOT / "built-in/data/vocab-slot.safetensors"
 # A case this close to a decision bound can flip on float noise alone, so it is
@@ -181,6 +187,44 @@ SLOTS = [
 ]
 
 
+# French, read with the French voice: (key, text, heard, term, rows).
+VERCEL_FR = [
+    use("On déploie le site sur Vercel chaque vendredi.", "Vercel", heard="Versal"),
+    use("Le build de prévisualisation sur Vercel a encore échoué ce matin.", "Vercel"),
+    use("J'ai déplacé les routes de l'API vers Vercel la semaine dernière.", "Vercel"),
+    use("Nous avons visité le château de Versailles pendant les vacances.", "Versailles", counter=True),
+]
+MIRZA_FR = [
+    use("Mirza a relu la pull request avant le déjeuner.", "Mirza"),
+    use("J'ai demandé à Mirza de vérifier les notes de version.", "Mirza", heard="Mirsa"),
+]
+SUPABASE_FR = [
+    use("On garde la table des utilisateurs dans Supabase.", "Supabase", heard="super base"),
+    use("Le projet Supabase a la sécurité par ligne activée.", "Supabase"),
+]
+FRENCH = [
+    ("fr-vercel-versal", "Je déploie mon application sur Versal tous les vendredis.", "Versal", "Vercel", VERCEL_FR),
+    ("fr-vercel-castle", "Ma grand-mère adorait les jardins du château de Versailles.", "Versailles", "Vercel",
+     VERCEL_FR),
+    ("fr-mirza-murza", "Murza a préparé la migration de la base hier soir.", "Murza", "Mirza", MIRZA_FR),
+    ("fr-ghostty-cold", "J'ai ouvert trois onglets dans Ghost T avant la démo.", "Ghost T", "Ghostty", []),
+    ("fr-supabase-pair", "La clé super base a expiré hier.", "super base", "Supabase", SUPABASE_FR),
+    ("fr-supabase-word", "Il a joué une super basse pendant le concert.", "super basse", "Supabase", SUPABASE_FR),
+]
+FRENCH_GROUPS = [
+    ("fr-group-piano", "Pendant que Mick joue du piano, Mick relit les pull requests.", 1,
+     {"Mick": MICK, "Mik": MIK}),
+]
+FRENCH_TRIMS = [
+    ("fr-trim-sur", "Mik déploie l'application sur Versal cet après-midi.", "sur Versal", "Vercel", VERCEL_FR),
+]
+FRENCH_SLOTS = [
+    ("fr-slot-verb", "Il faut fusionner la branche avant midi.", "fusionner", "Vercel"),
+    ("fr-slot-name", "Je déploie le site sur Versal ce soir.", "Versal", "Vercel"),
+    ("fr-slot-subject", "Précis a corrigé le build hier.", "Précis", "Praisy"),
+]
+
+
 def items(args):
     if args.batch:
         return json.loads(Path(args.batch).read_text())
@@ -199,6 +243,21 @@ def items(args):
     for key, text, heard, term in SLOTS:
         a = text.index(heard)
         out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=term, uses=[], masked=True))
+    for key, text, heard, term, rows in FRENCH:
+        a = text.index(heard)
+        out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=term, uses=rows, language="fr"))
+    for key, text, nth, members in FRENCH_GROUPS:
+        a = [m.start() for m in re.finditer(r"\bMick\b", text)][nth]
+        out.append(dict(id=key, text=text, a=a, b=a + 4, heard="Mick", term="Mick", uses=[], memory=members,
+                        language="fr"))
+    for key, text, heard, term, rows in FRENCH_TRIMS:
+        a = text.index(heard)
+        out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=term, uses=rows, trim=True,
+                        floor=FLOOR, language="fr"))
+    for key, text, heard, term in FRENCH_SLOTS:
+        a = text.index(heard)
+        out.append(dict(id=key, text=text, a=a, b=a + len(heard), heard=heard, term=term, uses=[], masked=True,
+                        language="fr"))
     return out
 
 
@@ -240,21 +299,16 @@ def main():
     assert slot_meta["input"] == "fused" and slot_meta["input_rounding"] == "float16"
     threshold = float(slot_meta["threshold"])
 
-    def nominal(x):
-        x = np.asarray(x, dtype=np.float16).astype(np.float32)
-        h = head["hidden.weight"] @ x + head["hidden.bias"]
-        h = np.where(h > 0, h, np.expm1(np.minimum(h, 0)))
-        return float(1 / (1 + np.exp(-(head["out.weight"] @ h + head["out.bias"])[0])))
-    ipa = V2.IPA("en-us")
-    dictionary = {w.strip().lower() for w in Path("/usr/share/dict/words").read_text().split("\n")}
+    ipa = {}
+    unseen = {}
 
-    def known(heard):
-        def one(w):
-            w = w.lower()
-            return w in dictionary or (w.endswith("s") and w[:-1] in dictionary) or (
-                w.endswith("es") and w[:-2] in dictionary)
-        runs = re.findall(r"[^\W\d_]+", heard)
-        return float(bool(runs) and all(one(w) for w in runs))
+    def word_lists(heard):
+        for run in re.findall(r"[^\W\d_]+", heard):
+            if run not in unseen:
+                out = subprocess.run([str(BINARY), "--word-gate", run], capture_output=True, text=True,
+                                     check=True).stdout
+                unseen[run] = "gate       auto-apply" in out
+        return unseen.__getitem__
 
     def place(p, a, b):
         span = C.span_tokens(p, a, b)
@@ -267,11 +321,12 @@ def main():
     rows_of = lambda it: [u for rows in (it.get("memory") or {}).values() for u in rows] + it["uses"]
     parses = syrinx.analyse([it["text"] for it in todo] + [u["said"] for it in todo for u in rows_of(it)])
 
-    def sound(heard, term):
-        m = ipa.of([heard, term])
+    def sound(heard, term, language):
+        voice = C.voice(language)
+        m = ipa.setdefault(voice, V2.IPA(voice)).of([heard, term])
         return V2.similarity(m[heard], m[term])
 
-    def reading(p, a, b, heard, term, rows, shared=False, peers=()):
+    def reading(p, a, b, heard, term, rows, language, shared=False, peers=()):
         acc, ref = [], []
         for u in rows:
             at = C.occurrence(u["span"], u["said"])
@@ -286,7 +341,7 @@ def main():
         f = {"sim_acc": float(v @ ca) if v is not None and ca is not None else None,
              "sim_ref": float(v @ cr) if v is not None and cr is not None else None,
              "ner": C.ner_entity(ner, p, span), **C.pos_features(p, span),
-             "sound": sound(heard, term), "known": known(heard),
+             "sound": sound(heard, term, language), "known": C.known(heard, word_lists(heard)),
              "pair_acc": pair_acc, "pair_ref": pair_ref}
         d, prob, z, _ = C.decide(model, f, shared=shared)
         clause = [min(p["starts"][k] for k in toks), max(p["ends"][k] for k in toks)] if toks else None
@@ -297,10 +352,11 @@ def main():
     for it in todo:
         p = parses[it["text"]]
         a, b, heard = it["a"], it["b"], it["heard"]
+        language = it.get("language", "en")
         line = dict(id=it["id"])
         if not args.batch:
-            line.update({k: it[k] for k in ("text", "a", "b", "heard", "term", "uses", "memory", "trim", "floor", "masked")
-                         if k in it})
+            line.update({k: it[k] for k in ("text", "a", "b", "heard", "term", "uses", "memory", "trim", "floor", "masked",
+                                            "language") if k in it})
         if it.get("trim"):
             kept = C.trim_edges(p, it["text"], a, b, it["term"])
             if kept is None:
@@ -309,12 +365,12 @@ def main():
             a, b = kept
             heard = it["text"][a:b]
             line["place"] = [a, b]
-            if it.get("floor") is not None and sound(heard, it["term"]) < it["floor"]:
+            if it.get("floor") is not None and sound(heard, it["term"], language) < it["floor"]:
                 lines.append(dict(line, declined="under the floor"))
                 continue
         probs = []
         if it.get("memory"):
-            members = {t: reading(p, a, b, heard, t, rows, shared=True,
+            members = {t: reading(p, a, b, heard, t, rows, language, shared=True,
                                   peers=[u for o, rs in it["memory"].items() if o != t for u in rs])
                        for t, rows in sorted(it["memory"].items())}
             d, what = C.decide_group([dict(term=t, p=r["p"], sim=r["features"]["sim_acc"],
@@ -323,7 +379,7 @@ def main():
             line.update(members=members, group=dict(decision=d, terms=[what] if d == "write" else what or []))
             probs = [r["p"] for r in members.values()]
         else:
-            r = reading(p, a, b, heard, it["term"], it["uses"])
+            r = reading(p, a, b, heard, it["term"], it["uses"], language)
             if r is None:
                 lines.append(dict(line, declined="no parser token at the place"))
                 continue
@@ -333,7 +389,7 @@ def main():
             words, at = S.masked_words(p, C.span_tokens(p, a, b))
             out = syrinx._rows([dict(words=words, text=" ".join(words))])[0]
             m = np.asarray(out["upos"][at], dtype=np.float64)
-            q = nominal(out["x"][at].numpy())
+            q = S.nominal(head, out["x"][at].numpy())
             line["slot"] = dict(mask=[round(float(x), 6) for x in m], tag=S.tag(m), nominal=round(q, 6),
                                 route="decline" if q < threshold else "open")
             if abs(q - threshold) < MARGIN:

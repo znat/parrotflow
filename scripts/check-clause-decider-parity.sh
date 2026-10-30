@@ -24,7 +24,7 @@ export PARROTFLOW_CONFIG_DIR="$WORK/config"
 python3 - "$CASES" "$WORK/items.json" <<'EOF' || { echo "  ✗ $CASES could not be read"; exit 1; }
 import json, sys
 cases = json.load(open(sys.argv[1]))
-json.dump([{k: c[k] for k in ("id", "text", "a", "b", "heard", "term", "uses", "memory", "trim", "floor", "masked") if k in c}
+json.dump([{k: c[k] for k in ("id", "text", "a", "b", "heard", "term", "uses", "memory", "trim", "floor", "masked", "language") if k in c}
            for c in cases if "text" in c],
           open(sys.argv[2], "w"), ensure_ascii=False)
 EOF
