@@ -141,7 +141,7 @@ enum CheckConfigCommand {
             }
             if !vocabularySteps.isEmpty, transcription.vocabulary.clauseDecider == true {
                 if !config.decidesByClause {
-                    emit("      ✗ clause_decider is on but English is not dictated, so it never runs")
+                    emit("      ✗ clause_decider is on but no language it reads (\(ClauseDecider.Model.languages.sorted().joined(separator: ", "))) is dictated, so it never runs")
                     ok = false
                 } else if !config.gatesSentence {
                     emit("      ✗ clause_decider is on but gate_sentence is off, so it never runs")

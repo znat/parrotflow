@@ -300,11 +300,11 @@ if let at = arguments.firstIndex(of: "--clause-decide") {
     }
     guard arguments.indices.contains(at + 1), !arguments[at + 1].hasPrefix("--"),
           let heard = value("--heard"), let term = value("--term") else {
-        print("usage: ParrotFlow --clause-decide \"<text>\" --heard \"<words>\" --term <term>")
+        print("usage: ParrotFlow --clause-decide \"<text>\" --heard \"<words>\" --term <term> [--language fr]")
         print("       ParrotFlow --clause-decide --batch <items.json>")
         exit(2)
     }
-    exit(ClauseDecideCommand.run(text: arguments[at + 1], heard: heard, term: term))
+    exit(ClauseDecideCommand.run(text: arguments[at + 1], heard: heard, term: term, language: value("--language") ?? "en"))
 }
 
 if let at = arguments.firstIndex(of: "--sentence-probe") {

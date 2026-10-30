@@ -1495,7 +1495,7 @@ struct Pipeline: Equatable, Codable {
     /// The clause decider for one dictation, or why there is none. It waits for
     /// the parser as the tree cutter does; without it the portrait decides.
     static func clauseSession(language: String) async -> (session: ClauseSession?, declined: String?) {
-        guard language == "en" else { return (nil, "not English") }
+        guard ClauseDecider.Model.languages.contains(language) else { return (nil, "no clause decider for \(language)") }
         let model: ClauseDecider.Model
         switch ClauseDecider.Model.shared {
         case .success(let loaded): model = loaded
@@ -1515,7 +1515,7 @@ struct Pipeline: Equatable, Codable {
             Log.write("clause decider: \(ready.reason); the portrait decides")
             return (nil, ready.reason)
         }
-        return (ClauseSession(parser: loaded.parser, model: model, slotHead: slotHead), nil)
+        return (ClauseSession(parser: loaded.parser, model: model, slotHead: slotHead, language: language), nil)
     }
 
     /// Whichever kind of transform the step named.
