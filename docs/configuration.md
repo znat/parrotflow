@@ -573,13 +573,19 @@ transcription:
     clause_decider: false  # trial: the parser clause decides in place of the portrait
 ```
 
-**`clause_decider` is a trial, off by default.** On, English places are read
-by the clause decider instead of the term portrait. It is one logistic
+**`clause_decider` is a trial, off by default.** On, places are read by the
+clause decider instead of the term portrait, in English and in French: the
+languages its centre and slot head were fitted on, listed in
+`ClauseDecider.Model.languages`. Both run the same pipeline; the language only
+picks the espeak voice. In another language the decider and the slot check do
+not run: the word lists settle what they can and the other places stay open.
+It is one logistic
 regression with fixed signs over: how close the parser clause around the place
 is to the term's accepted and refused sentences, whether the heard words are a
 name (a small NER head on the parser), their part of speech and their
-neighbours', how they sound against the term, whether they are dictionary
-words, and whether this exact swap was accepted or refused before. A term with
+neighbours', how they sound against the term in the dictation's voice, whether
+each word is in a word list (the spell checker in English and French, or the
+tokenizer list), and whether this exact swap was accepted or refused before. A term with
 no accepted sentence never writes; it offers or leaves. The slot check reads
 the parser too: the heard words become one `<mask>`, and a small head on the
 parser's features there gives P that a name, noun or pronoun stands in the
