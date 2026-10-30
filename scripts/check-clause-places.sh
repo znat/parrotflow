@@ -9,7 +9,7 @@
 #   a pill answer that keeps the heard word adds no term
 #   the pill still asks when a later stage only changed the letter case
 #   a slot refusal puts the heard word back over a rule's write
-#   a heard word in neither word list is still written
+#   a rule's word in neither word list is still written
 #   a rule place the decider offers shows the heard word
 #   a span that glues to the term is asked, and a correction back counts
 #   an unknown heard word that is not the term is asked, not written
@@ -74,7 +74,7 @@ run() {
 
 check "a slot refusal puts the heard word back" \
   "$(run "We should praise his work.")" "We should praise his work."
-check "a word in neither list is still written" \
+check "a rule's word in neither list is still written" \
   "$(run "We deploy on Versal every Friday.")" "We deploy on Vercel every Friday."
 check "an offered rule place shows the heard word" \
   "$(run "We deploy our apps on Versailles every week.")" "We deploy our apps on Versailles every week."
@@ -103,8 +103,8 @@ check "a span that glues to the term is asked, not written" \
 PARROTFLOW_CONFIG_DIR="$WORK/glued" "$BIN" --correction BetterStack "better stack" --in "$phrase" >/dev/null 2>&1
 check "a correction back counts against it the next time" \
   "$(glued "$phrase")" "left 1|offered 0|$phrase"
-check "a glued span with a word in neither list is still written" \
-  "$(glued "We ship Zorb lix on Fridays." | sed 's/.*|//')" "We ship Zorblix on Fridays."
+check "a sound match glued with a word in neither list is asked" \
+  "$(glued "We ship Zorb lix on Fridays.")" "left 0|offered 1|We ship Zorb lix on Fridays."
 
 cat > "$WORK/unseen.yaml" <<'EOF'
 languages: [en]

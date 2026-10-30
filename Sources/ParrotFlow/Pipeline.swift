@@ -1336,7 +1336,7 @@ struct Pipeline: Equatable, Codable {
             }
             settled = VocabularyPass.settle(
                 changes, in: text,
-                by: config.decidesByClause ? [.sound: .slot, .rule: .slot] : [.sound: .full, .rule: .lists],
+                by: config.decidesByClause ? [.sound: .asked, .rule: .slot] : [.sound: .full, .rule: .lists],
                 slot: slot)
             span?.close("\(changes.count) change(s)")
         } else {
