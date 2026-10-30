@@ -194,8 +194,8 @@ cases:
   # already written the term is left open by `VocabularyPass.settle` and the
   # two sentence tests decide it. The sound path, which has written nothing
   # yet, still applies the glue. The note on the `gate` line says which. With
-  # the clause decider on, either source writes the glue only when one of the
-  # span's words is in neither list, and asks the sentence otherwise.
+  # the clause decider on, a rule writes the glue only when one of the span's
+  # words is in neither list, and a sound match never writes on the lists alone.
 
   - word: "red crawl"
     term: Redcrawl
