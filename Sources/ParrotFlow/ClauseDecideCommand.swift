@@ -12,7 +12,7 @@ import Foundation
 enum ClauseDecideCommand {
 
     static func run(text: String, heard: String, term: String) -> Int32 {
-        guard let (parser, model) = load() else { return 1 }
+        guard let (parser, model, _) = load() else { return 1 }
         guard let found = TermUses.occurrence(of: heard, in: text) else {
             print("✗ \"\(heard)\" does not stand in the text as a word")
             return 1
@@ -47,7 +47,8 @@ enum ClauseDecideCommand {
             /// when the trimmed words sound further than that from the term.
             let trim: Bool?
             let floor: Double?
-            /// Also print the slot reading: UPOS at the masked place.
+            /// Also print the slot reading at the masked place: UPOS and the
+            /// slot head's P.
             let masked: Bool?
         }
         struct Row: Decodable {
@@ -69,7 +70,7 @@ enum ClauseDecideCommand {
             print("✗ \(path): \(error.localizedDescription)")
             return 1
         }
-        guard let (parser, model) = load() else { return 1 }
+        guard let (parser, model, head) = load() else { return 1 }
         func line(_ r: ClauseDecider.Reading) -> [String: Any] {
             var features: [String: Any] = ["pair_acc": r.features.pairAccepted, "pair_ref": r.features.pairRefused]
             for (name, value) in zip(ClauseDecider.Model.names, r.features.fitted) { features[name] = value ?? NSNull() }
@@ -126,9 +127,11 @@ enum ClauseDecideCommand {
                 if item.masked == true {
                     let parsed = ClauseDecider.Parsed(item.text, parser: parser)
                     var slot: [String: Any] = [:]
-                    if let mask = ClauseDecider.slot(parsed, at: range, parser: parser) {
-                        slot["mask"] = mask.map(Double.init)
-                        slot["tag"] = UPOS.allCases[Parser.argmax(mask)].rawValue
+                    if let read = ClauseDecider.slot(parsed, at: range, parser: parser, head: head) {
+                        slot["mask"] = read.upos.map(Double.init)
+                        slot["tag"] = UPOS.allCases[Parser.argmax(read.upos)].rawValue
+                        slot["nominal"] = read.nominal
+                        slot["route"] = read.nominal < head.threshold ? "decline" : "open"
                     }
                     out["slot"] = slot
                 }
@@ -165,12 +168,19 @@ enum ClauseDecideCommand {
         return (reading, accepted.count, refused.count)
     }
 
-    private static func load() -> (Parser, ClauseDecider.Model)? {
+    private static func load() -> (Parser, ClauseDecider.Model, ClauseDecider.SlotHead)? {
         let model: ClauseDecider.Model
         switch ClauseDecider.Model.shared {
         case .success(let loaded): model = loaded
         case .failure(let error):
             print("✗ the clause decider's weights: \(error.localizedDescription)")
+            return nil
+        }
+        let head: ClauseDecider.SlotHead
+        switch ClauseDecider.SlotHead.shared {
+        case .success(let loaded): head = loaded
+        case .failure(let error):
+            print("✗ the slot head's weights: \(error.localizedDescription)")
             return nil
         }
         var parser: Parser?
@@ -186,7 +196,7 @@ enum ClauseDecideCommand {
             done.signal()
         }
         done.wait()
-        return parser.map { ($0, model) }
+        return parser.map { ($0, model, head) }
     }
 
     private static func emit(_ object: [String: Any]) {

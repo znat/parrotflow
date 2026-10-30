@@ -98,6 +98,8 @@ mv "$APP/Contents/Resources/built-in/config.example.yaml" "$APP/Contents/Resourc
 cp "$ROOT/built-in/data/wordpiece.txt" "$APP/Contents/Resources/wordpiece.txt"
 # The clause decider's weights. See ClauseDecider.Model.fileURL.
 cp "$ROOT/built-in/data/vocab-clause.safetensors" "$APP/Contents/Resources/vocab-clause.safetensors"
+# The slot head's weights. See ClauseDecider.SlotHead.fileURL.
+cp "$ROOT/built-in/data/vocab-slot.safetensors" "$APP/Contents/Resources/vocab-slot.safetensors"
 cp "$ROOT/built-in/data/parsing-requirements.txt" "$APP/Contents/Resources/parsing-requirements.txt"
 
 # SwiftPM resource bundles, which the binary looks for beside itself.
