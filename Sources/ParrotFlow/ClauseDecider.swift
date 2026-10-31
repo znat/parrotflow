@@ -70,8 +70,8 @@ enum ClauseDecider {
             "sound", "known",
         ]
         static let width = Parser.width, projected = 256, nerLabels = 11
-        /// The languages the centre and the slot head were fitted on, from UD
-        /// train. Another language gets no session.
+        /// The languages the slot head was fitted on, from UD train. Another
+        /// language gets no session.
         static let languages: Set<String> = ["en", "fr"]
 
         let centre: [Float]

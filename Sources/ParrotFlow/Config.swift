@@ -3442,8 +3442,8 @@ struct Config: Decodable, Equatable {
         transcription.vocabulary.asks ?? vocabulary.asks
     }
 
-    /// The clause decider runs on the languages it was fitted on, so it needs
-    /// one of them dictated.
+    /// The clause decider runs only on `ClauseDecider.Model.languages`, so it
+    /// needs one of them dictated.
     var decidesByClause: Bool {
         (transcription.vocabulary.clauseDecider ?? false)
             && transcription.languages.contains(where: ClauseDecider.Model.languages.contains)
