@@ -32,6 +32,27 @@ enum ParserCommand {
         return 0
     }
 
+    /// `--tokenize "<text>"` prints the parser's tokenizer ids and tokens, and
+    /// loads no model. `PARROTFLOW_TOKENIZER` names another directory holding a
+    /// `tokenizer.json`, for a machine the parser was never fetched to.
+    static func tokenize(_ text: String) -> Int32 {
+        let directory = ProcessInfo.processInfo.environment["PARROTFLOW_TOKENIZER"]
+            .map { URL(fileURLWithPath: $0, isDirectory: true) } ?? SyrinxModel.directory
+        do {
+            let bpe = try ScalarBPE(contentsOf: directory.appendingPathComponent("tokenizer.json"))
+            let ids = bpe.encode(text)
+            let tokens = ids.compactMap {
+                bpe.token(of: $0)?.replacingOccurrences(of: "\u{2581}", with: " ").debugDescription
+            }
+            print("ids \(ids.map(String.init).joined(separator: ","))")
+            print("tokens \(tokens.joined(separator: " "))")
+            return 0
+        } catch {
+            print("✗ \(error.localizedDescription)")
+            return 1
+        }
+    }
+
     static func batch(path: String, splitOnly: Bool) -> Int32 {
         struct Item: Decodable {
             let id: String

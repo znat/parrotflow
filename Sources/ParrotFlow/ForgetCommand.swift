@@ -65,7 +65,7 @@ enum ForgetCommand {
             }
             // The rest is already deleted, so the tally still prints. What it
             // must not say is that the term was forgotten when its sentences
-            // can still rebuild the portrait.
+            // are still there to be read.
             print(stayed == nil
                 ? "✓ forgot \(name)"
                 : "✗ \(name) was only partly forgotten")

@@ -300,29 +300,21 @@ enum ConfigSchema {
                 "How close a run of words must sound to a term, from 0 to 1. Left out,"
                     + " the value in vocabulary.yaml, else 0.85."),
             key("gate_sentence", .bool,
-                "Read the sentence before keeping a match. Left out, the value in"
-                    + " vocabulary.yaml, else true."),
+                "Let the clause decider read the sentence before keeping a match. Left"
+                    + " out, the value in vocabulary.yaml, else true."),
             key("asks", .bool,
                 "Ask before typing a name it could not settle. Left out, the value in"
                     + " vocabulary.yaml, else true."),
-            key("clause_decider", .bool,
-                "Trial: the parser clause decides a name in place of the term portrait."
-                    + " English only; needs gate_sentence.",
-                default: false),
-            key("slot_floor", slotFloor,
-                "How far the heard word must win by before a rewrite is refused."
-                    + " Built in: 0.20 in English, 0.30 in French."),
+            key("clause_decider", .anything, "Retired.", deprecated: Config.retiredVocabularyAdvice),
+            key("slot_floor", .anything, "Retired.", deprecated: Config.retiredVocabularyAdvice),
             key("near_misses", .bool, "Bench switch: also match a rendering one edit away.",
                 default: true),
             key("by_sound", .bool, "Bench switch: also match words that sound like a term.",
                 default: true),
             key("gate", .bool, "Bench switch: the word lists and the slot's part of speech.",
                 default: true),
-            key("slot_gate", .bool, "Bench switch: the slot model. false downloads nothing.",
-                default: true),
-            key("portrait", .bool,
-                "Bench switch: a term's own sentences and its counter-examples.",
-                default: true),
+            key("slot_gate", .anything, "Retired.", deprecated: Config.retiredVocabularyAdvice),
+            key("portrait", .anything, "Retired.", deprecated: Config.retiredVocabularyAdvice),
             key("lowercase_refused", .bool,
                 "Bench switch: refuse a term written where the decoder wrote lower case.",
                 default: true),
@@ -354,17 +346,6 @@ enum ConfigSchema {
     }
     static var perTerm: Kind { .wholeRange(Bounds(min: 1)) }
 
-    /// A number for every language, or one per language.
-    static var slotFloor: Kind {
-        let floor = Kind.range(Bounds(min: 0, max: 2, aboveMin: true))
-        return .either([floor, .object(Section(
-            source: "DictationLanguage.supported", keys: DictationLanguage.supported,
-            fields: DictationLanguage.supported.map {
-                key($0, floor, "The floor when the transcript is in this language.")
-            }
-        ))])
-    }
-
     /// A bare stage name, or a mapping that names a stage or a transform.
     static var step: Kind {
         let stages = Kind.choice(Pipeline.stageNames + ["interpret"])
@@ -385,11 +366,11 @@ enum ConfigSchema {
                 key("near_misses", .bool, "vocabulary: also match a rendering one edit away."),
                 key("by_sound", .bool, "vocabulary: also match words that sound like a term."),
                 key("gate", .bool, "vocabulary: the word lists and the slot's part of speech."),
-                key("slot_gate", .bool, "vocabulary: the slot model."),
-                key("portrait", .bool, "vocabulary: a term's own sentences."),
                 key("lowercase_refused", .bool,
                     "vocabulary: refuse a term where the decoder wrote lower case."),
-                key("slot_floor", slotFloor, "vocabulary: the slot floor, as in the block."),
+                key("slot_gate", .anything, "Retired.", deprecated: Config.retiredVocabularyAdvice),
+                key("portrait", .anything, "Retired.", deprecated: Config.retiredVocabularyAdvice),
+                key("slot_floor", .anything, "Retired.", deprecated: Config.retiredVocabularyAdvice),
                 key("max_per_slot", perSlot, "vocabulary: readings per place. At most 2.",
                     default: 2),
                 key("max_per_term", perTerm,

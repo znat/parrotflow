@@ -129,50 +129,14 @@ struct Pipeline: Equatable, Codable {
         /// whatever arrived, which is what the gate was measured against and
         /// the only way to measure it again.
         var gate: Bool?
-        /// Written `slot_gate:`. Whether anything reads the mmBERT slot — the
-        /// part of speech the spot wants, in `SlotGate`, and the ten words it
-        /// expects there, in `SlotReference`.
-        ///
-        /// One switch for both because they are one model, and the promise the
-        /// switch makes is that `false` downloads nothing. Each half takes the
-        /// path it already has on a machine the 269 MB is not on: the lexical
-        /// gate settles what the word lists settle and asks nothing more, and
-        /// the sentence gate is left to the portrait alone.
-        var slotGate: Bool?
-        /// Written `portrait:`. Whether a term's own sentences and its
-        /// counter-examples may settle a proposal — see `TermPortrait`.
-        ///
-        /// `false` takes the path a term with too few uses already has: the
-        /// portrait says nothing, and the slot's refusal is all that can speak.
-        var portrait: Bool?
         /// Written `lowercase_refused:`. Whether a glued span the sentence
         /// refuses is written back in lowercase instead of as heard.
         ///
         /// `false` puts the span back exactly as the decoder wrote it, which
         /// is what every other refusal in this stage does.
         var lowercaseRefused: Bool?
-        /// Written `slot_floor:`. How far the heard word must win by before
-        /// `SlotReference` refuses the rewrite. A language it does not name
-        /// keeps the built-in value for that language — see
-        /// `Transcription.slotFloor(for:on:)`.
-        var slotFloor: SlotFloor?
         /// How many places one sentence may offer — see `VocabularyPass.Caps`.
         var caps: VocabularyPass.Caps?
-
-        /// What `slot_floor:` said, in either spelling.
-        ///
-        ///     slot_floor: 0.20                 every language
-        ///     slot_floor: {en: 0.20, fr: 0.30} one at a time
-        ///
-        /// A language the map does not name keeps its built-in floor.
-        struct SlotFloor: Equatable, Codable {
-            var everyLanguage: Double?
-            var byLanguage: [String: Double] = [:]
-
-            func value(for language: String) -> Double? {
-                byLanguage[language] ?? everyLanguage
-            }
-        }
 
         /// Every switch is on until it is written false.
         func isOn(_ option: KeyPath<VocabularyOptions, Bool?>) -> Bool {
@@ -185,10 +149,7 @@ struct Pipeline: Equatable, Codable {
                 nearMisses: nearMisses ?? base.nearMisses,
                 bySound: bySound ?? base.bySound,
                 gate: gate ?? base.gate,
-                slotGate: slotGate ?? base.slotGate,
-                portrait: portrait ?? base.portrait,
                 lowercaseRefused: lowercaseRefused ?? base.lowercaseRefused,
-                slotFloor: slotFloor ?? base.slotFloor,
                 caps: caps ?? base.caps
             )
         }
@@ -370,7 +331,7 @@ struct Pipeline: Equatable, Codable {
     /// notice that says so.
     ///
     /// Only the first such line's options come across, and each one it writes
-    /// wins over the block: a config that writes `slot_floor:` on the line has
+    /// wins over the block: a config that writes `near_misses:` on the line has
     /// said the number exactly once, and moving the key should not silently
     /// drop it. The position does not come across, which is the whole point.
     static func resolved(config: Config) -> Pipeline {
@@ -1124,11 +1085,9 @@ struct Pipeline: Equatable, Codable {
     /// not loaded, a sentence model that is not on disk. Losing a gate costs a
     /// name; losing the sentence costs the sentence.
     ///
-    /// **Nothing here calls a model.** Every substitution used to be put to a
-    /// local model, one KEEP or REVERT each, at about 900 ms a dictation. What
-    /// decides now is the two word lists, the slot's part of speech, and the
-    /// two tests that read the sentence — see `VocabularyPass.settle` and
-    /// `SentenceGate`. Every place they leave open keeps what arrived.
+    /// What decides is the two word lists, the slot's part of speech, and the
+    /// clause decider — see `VocabularyPass.settle` and `SentenceGate`. Every
+    /// place they leave open keeps what arrived.
     ///
     /// The mechanics are in `VocabularyPass`. This is the wiring: which
     /// substitutions are gathered, which gates run, and which variables come
@@ -1158,10 +1117,7 @@ struct Pipeline: Equatable, Codable {
         var nearMisses = 0
         var bySound = 0
         // Where this stage's time goes, split at its two model calls. The
-        // stage's own `ms` is one number for all of it, so it cannot tell a
-        // pronunciation the model has never been asked for from a term
-        // portrait being rebuilt. Those are the two things that put a
-        // dictation past a second here.
+        // stage's own `ms` is one number for all of it.
         var soundSeconds = 0.0
         var gateSeconds = 0.0
         func result(_ text: String, _ vars: [String: Scope.Value]) -> StageResult {
@@ -1229,7 +1185,7 @@ struct Pipeline: Equatable, Codable {
         func openClause() async -> ClauseSession? {
             guard !clauseAsked else { return clause }
             clauseAsked = true
-            guard config.decidesByClause, config.gatesSentence else { return nil }
+            guard config.gatesSentence else { return nil }
             let opened = await Self.clauseSession(language: Pipeline.language(of: text, config: config))
             if let why = opened.declined { clauseVars["clause_declined"] = .string(why) }
             clause = opened.session
@@ -1285,14 +1241,8 @@ struct Pipeline: Equatable, Codable {
         // spells names into it on runs where nothing was even offered.
         var census = "vocabulary: \(slots.count) slot(s) from \(parts.count) proposal(s)"
         if bySound > 0 { census += " (\(bySound) by sound)" }
-        // Which of the two halves is on, not just that the gate is: a place
-        // decided by the portrait alone reads nothing like one both tests saw.
-        let reading = [
-            step.vocabulary.isOn(\.slotGate) ? "slot" : nil,
-            config.decidesByClause ? "clause" : step.vocabulary.isOn(\.portrait) ? "portrait" : nil,
-        ].compactMap { $0 }
-        if config.gatesSentence, !reading.isEmpty {
-            census += ", sentence gate on (\(reading.joined(separator: " + ")))"
+        if config.gatesSentence {
+            census += ", sentence gate on (slot + clause)"
         }
         if !slots.isEmpty, ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
             census += " — " + slots.map {
@@ -1318,26 +1268,11 @@ struct Pipeline: Equatable, Codable {
         let gatedAt = Date()
         let settled: [Bool?]
         if step.vocabulary.isOn(\.gate) {
-            // `slot_gate: false` passes no gate at all, which is the path a
-            // machine without the 269 MB model already takes: the word lists
-            // settle what they settle and the slot is never asked. Read inside
-            // the branch so `gate: false` does not load it either.
+            // Read inside the branch so `gate: false` does not open the parser.
             let span = Trace.current?.open("slot_gate", kind: .part)
-            //
-            // With the clause decider on, the parser reads the slot and
-            // mmBERT is never loaded.
-            var slot: ((VocabularyPass.Change) -> SlotGate.Reading?)?
-            if step.vocabulary.isOn(\.slotGate) {
-                if config.decidesByClause {
-                    if let clause = await openClause() { slot = { clause.slot($0, in: text) } }
-                } else if let gate = await Vocabulary.shared.slotGate() {
-                    slot = { try? gate.read(in: text, at: $0.range) }
-                }
-            }
-            settled = VocabularyPass.settle(
-                changes, in: text,
-                by: config.decidesByClause ? [.sound: .slot, .rule: .slot] : [.sound: .full, .rule: .lists],
-                slot: slot)
+            var slot: ((VocabularyPass.Change) -> VocabularyPass.SlotReading?)?
+            if let clause = await openClause() { slot = { clause.slot($0, in: text) } }
+            settled = VocabularyPass.settle(changes, in: text, slot: slot)
             span?.close("\(changes.count) change(s)")
         } else {
             settled = [Bool?](repeating: nil, count: changes.count)
@@ -1345,26 +1280,15 @@ struct Pipeline: Equatable, Codable {
         var decided: [Bool?] = changes.indices.map { index in
             index < taught.count && taught[index] ? false : settled[index]
         }
-        // The two tests that read the sentence, on whatever is still open.
-        if config.gatesSentence, #available(macOS 14, *) {
+        // The clause decider, on whatever is still open. Without a session
+        // the places stay open.
+        if config.gatesSentence {
             let span = Trace.current?.open("sentence_gate", kind: .part)
             defer { span?.close("\(decided.filter { $0 == nil }.count) still open") }
-            let clause = await openClause()
-            // With the clause decider on, the word vectors and the slot gap
-            // are never read: without a session the places stay open.
-            let qwen = !config.decidesByClause
-            let settledBySentence = config.decidesByClause && clause == nil
-                ? (decided: decided, changes: changes)
-                : await SentenceGate.settle(
-                    changes, in: text, given: decided,
-                    floor: config.transcription.slotFloor(
-                        for: Pipeline.language(of: text, config: config), on: step
-                    ),
-                    slot: qwen && step.vocabulary.isOn(\.slotGate),
-                    portrait: qwen && step.vocabulary.isOn(\.portrait),
-                    terms: config.vocabulary.terms, clause: clause
+            if let clause = await openClause() {
+                let settledBySentence = await SentenceGate.settle(
+                    changes, in: text, given: decided, clause: clause
                 )
-            if let clause {
                 clauseVars.merge([
                     "clause_places": .int(clause.places),
                     "clause_written": .int(clause.tally[.write] ?? 0),
@@ -1374,11 +1298,12 @@ struct Pipeline: Equatable, Codable {
                     "clause": .string(clause.lines.joined(separator: "; ")),
                 ]) { _, new in new }
                 for line in clause.lines { Log.write("clause decider: \(line)") }
+                decided = settledBySentence.decided
+                // A group place comes back proposing the member that won, or
+                // carrying the ones still standing. Nothing else in a change
+                // moves.
+                changes = settledBySentence.changes
             }
-            decided = settledBySentence.decided
-            // A group place comes back proposing the member that won, or
-            // carrying the ones still standing. Nothing else in a change moves.
-            changes = settledBySentence.changes
         }
         gateSeconds = Date().timeIntervalSince(gatedAt)
 
@@ -1402,11 +1327,10 @@ struct Pipeline: Equatable, Codable {
         // twice, and the last stage is the one whose places are still open.
         // Recording only a non-empty list would leave an earlier stage's
         // question standing after a later one had settled it.
-        // With the clause decider on, a rule place left open shows the heard
-        // word and the term waits on the pill. A refusal used to undo a lesson
-        // the user could not get back; now the term stays on the pill.
+        // A rule place left open shows the heard word and the term waits on
+        // the pill.
         var shown = decided
-        if config.decidesByClause, clause != nil {
+        if clause != nil {
             for index in changes.indices where decided[index] == nil && !(index < taught.count && taught[index]) {
                 let change = changes[index]
                 if change.standing == .rule, String(text[change.range]) == change.now { shown[index] = false }
@@ -1493,26 +1417,26 @@ struct Pipeline: Equatable, Codable {
     }
 
     /// The clause decider for one dictation, or why there is none. It waits for
-    /// the parser as the tree cutter does; without it the portrait decides.
+    /// the parser as the tree cutter does; without it the places stay open.
     static func clauseSession(language: String) async -> (session: ClauseSession?, declined: String?) {
         guard ClauseDecider.Model.languages.contains(language) else { return (nil, "no clause decider for \(language)") }
         let model: ClauseDecider.Model
         switch ClauseDecider.Model.shared {
         case .success(let loaded): model = loaded
         case .failure(let error):
-            Log.write("clause decider: \(error.localizedDescription); the portrait decides")
+            Log.write("clause decider: \(error.localizedDescription); the places stay open")
             return (nil, error.localizedDescription)
         }
         let slotHead: ClauseDecider.SlotHead
         switch ClauseDecider.SlotHead.shared {
         case .success(let loaded): slotHead = loaded
         case .failure(let error):
-            Log.write("clause decider: \(error.localizedDescription); the portrait decides")
+            Log.write("clause decider: \(error.localizedDescription); the places stay open")
             return (nil, error.localizedDescription)
         }
         let ready = await SyrinxModel.shared.ready(within: SyrinxModel.dictationWait)
         guard let loaded = ready.loaded else {
-            Log.write("clause decider: \(ready.reason); the portrait decides")
+            Log.write("clause decider: \(ready.reason); the places stay open")
             return (nil, ready.reason)
         }
         return (ClauseSession(parser: loaded.parser, model: model, slotHead: slotHead, language: language), nil)

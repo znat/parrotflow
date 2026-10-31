@@ -43,13 +43,9 @@ enum PipelineCommand {
         /// fixture asserting on what a stage *found*, and is why the verdicts
         /// of the vocabulary pass were untestable from here at all.
         var models: [String: ModelSpec] = [:]
-        /// `transcription.vocabulary.clause_decider`, so a fixture can run the
-        /// clause decider.
-        var clauseDecider: Bool?
 
         enum CodingKeys: String, CodingKey {
             case languages, pipeline, transforms, vocabulary, lists, models
-            case clauseDecider = "clause_decider"
         }
 
         init(from decoder: Decoder) throws {
@@ -71,7 +67,6 @@ enum PipelineCommand {
             if let v = try c.decodeIfPresent([String: ModelSpec].self, forKey: .models) {
                 models = v
             }
-            clauseDecider = try c.decodeIfPresent(Bool.self, forKey: .clauseDecider)
         }
     }
 
@@ -273,7 +268,6 @@ enum PipelineCommand {
         config.lists = fixture.lists
         if let vocabulary = fixture.vocabulary { config.vocabulary = vocabulary }
         config.models = fixture.models
-        config.transcription.vocabulary.clauseDecider = fixture.clauseDecider
 
         // The fixture's own table is checked too, not just its stage list — a
         // template naming a group the pattern never captures is refused here
@@ -297,10 +291,9 @@ enum PipelineCommand {
     }
 
     // `--warm`. The sentence gate never makes a dictation wait, so in a
-    // one-shot run nothing has loaded the 400 MB word vectors and the two
-    // tests that read the sentence are skipped every time. This is the
-    // only way to see them from the command line. Off by default: it is a
-    // download, and `make test` must not need one.
+    // one-shot run the parser is not loaded and the clause decider is skipped
+    // every time. This is the only way to see it from the command line. Off by
+    // default: it is a download, and `make test` must not need one.
     //
     // A failure here refuses the run rather than falling back. The gate
     // skips itself in silence when a model is missing — that is right in
@@ -315,17 +308,7 @@ enum PipelineCommand {
             // Only what the pipeline's own steps will read. A fixture that
             // switches a gate off has nothing to do with these weights, and
             // `--warm` is a download.
-            if config.readsSentenceGate {
-                do { try await WordVectors.shared.prepare() } catch {
-                    found.append("word vectors — \(error.localizedDescription)")
-                }
-            }
-            if config.readsSlots {
-                do { _ = try await SlotModel.shared.prepare() } catch {
-                    found.append("slot model — \(error.localizedDescription)")
-                }
-            }
-            if pipeline.stages.contains(.treeCutter) || config.decidesByClause {
+            if pipeline.stages.contains(.treeCutter) || config.readsClauses {
                 do { _ = try await SyrinxModel.shared.prepare() } catch {
                     found.append("parser — \(error.localizedDescription)")
                 }

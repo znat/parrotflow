@@ -17,6 +17,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
 [ -x "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
 
+# Its own home, with no parser in it, so the clause decider declines and the
+# word lists settle every place on this machine as on one that never dictated.
+# The parser's fetch goes nowhere.
+WORK="$(mktemp -d -t parrotflow-pipeline)"
+trap 'rm -rf "$WORK"' EXIT
+export CFFIXED_USER_HOME="$WORK" PARROTFLOW_SYRINX_ENDPOINT=http://127.0.0.1:9
+
 pass=0; total=0; failed=""
 
 while IFS='|' read -r name fixture app noprompts input expect vars; do

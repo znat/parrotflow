@@ -112,51 +112,33 @@ enum CheckConfigCommand {
             // about the order and not about a setting any more.
             let pipeline = Pipeline.resolved(config: config)
             let vocabularySteps = pipeline.steps.filter { $0.stage == .vocabulary }
-            // The floor is not the same in two languages, so it is printed per
-            // language rather than once. The marks are not: they belong to the
-            // `interpret` step, which is English only, and they are printed
-            // with it below.
             emit("  · languages         \(transcription.languages.joined(separator: ", "))")
             // One line per `vocabulary` step, whether there is one or five. A
             // pipeline may hold several — one per app is the reason these
-            // options live on the step — and each names its own floor and its
-            // own gates, so there is no step whose numbers can stand for the
-            // rest. Silent when the pipeline holds none, which is also what
-            // says nothing is downloaded for them: the switches on these lines
-            // are the ones that decide whether each model is fetched.
+            // options live on the step. Silent when the pipeline holds none,
+            // which is also what says nothing is downloaded for them.
             let width = vocabularySteps.map { described($0).count }.max() ?? 0
             for step in vocabularySteps {
-                let floors = transcription.languages.map { language in
-                    let floor = transcription.slotFloor(for: language, on: step)
-                    return "\(language) \(String(format: "%.2f", floor))"
-                }.joined(separator: "  ")
                 let name = described(step)
                     .padding(toLength: width, withPad: " ", startingAt: 0)
-                emit("      \(name)  slot floor \(floors)"
-                    + "  \(gates(of: step, config: config))")
+                // Named only when it is off, as `(bare capitals off)` is on the
+                // `interpret` line.
+                let lowercase = step.vocabulary.isOn(\.lowercaseRefused) ? "" : "  (lowercase refused off)"
+                emit("      \(name)  clause decider \(config.readsClauses ? "on" : "off")\(lowercase)")
             }
+            let clauseLanguages = ClauseDecider.Model.languages.sorted().joined(separator: ", ")
             if !vocabularySteps.isEmpty, !config.gatesSentence {
-                emit("      the sentence tests are off —"
+                emit("      the clause decider is off —"
                     + " `transcription.vocabulary.gate_sentence: false`")
-            }
-            if !vocabularySteps.isEmpty, transcription.vocabulary.clauseDecider == true {
-                if !config.decidesByClause {
-                    emit("      ✗ clause_decider is on but no language it reads (\(ClauseDecider.Model.languages.sorted().joined(separator: ", "))) is dictated, so it never runs")
-                    ok = false
-                } else if !config.gatesSentence {
-                    emit("      ✗ clause_decider is on but gate_sentence is off, so it never runs")
-                    ok = false
-                } else if case .failure(let error) = ClauseDecider.Model.shared {
-                    emit("      ✗ clause_decider: \(error.localizedDescription)")
+            } else if !vocabularySteps.isEmpty, !config.readsClauses {
+                emit("      the clause decider reads \(clauseLanguages) and none is dictated, so places stay open")
+            } else if !vocabularySteps.isEmpty {
+                if case .failure(let error) = ClauseDecider.Model.shared {
+                    emit("      ✗ clause decider: \(error.localizedDescription)")
                     ok = false
                 } else {
-                    emit("      clause decider on (trial): it reads \(ClauseDecider.Model.languages.sorted().joined(separator: ", ")) places in place of the portrait")
-                    let reads = [
-                        config.readsSyrinx ? "parrotflow-syrinx" : nil,
-                        config.readsSlots ? "mmbert-small-64" : nil,
-                        config.readsSentenceGate ? "qwen3-embedding" : nil,
-                    ].compactMap { $0 }
-                    emit("      vocabulary models: \(reads.joined(separator: ", "))")
+                    emit("      the clause decider reads \(clauseLanguages); any other language is declined")
+                    emit("      vocabulary models: \(config.readsSyrinx ? "parrotflow-syrinx" : "none")")
                 }
             }
             // The set the step runs with. Silent when the pipeline holds no
@@ -514,19 +496,6 @@ enum CheckConfigCommand {
         if let unless = step.unless { out += " unless \(unless)" }
         if let app = step.app { out += " in \(app)" }
         return out
-    }
-
-    /// Which of the two tests that read the sentence this step will run.
-    ///
-    /// The slot half is not gated by `gate_sentence:`, because the slot is also
-    /// read by the lexical gate, which that key has never touched.
-    private static func gates(of step: Pipeline.Step, config: Config) -> String {
-        let slot = step.vocabulary.isOn(\.slotGate)
-        let portrait = step.vocabulary.isOn(\.portrait) && config.gatesSentence
-        // Named only when it is off, as `(bare capitals off)` is on the
-        // `interpret` line. On is the default and the line is long already.
-        let lowercase = step.vocabulary.isOn(\.lowercaseRefused) ? "" : "  (lowercase refused off)"
-        return "slot \(slot ? "on" : "off"), portrait \(portrait ? "on" : "off")\(lowercase)"
     }
 
     static func describe(_ error: Error) -> String {

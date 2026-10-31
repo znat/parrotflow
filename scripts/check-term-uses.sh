@@ -3,8 +3,8 @@
 #
 #   scripts/check-term-uses.sh
 #
-# A term's portrait is built from these sentences, so what is stored has to be
-# exactly what was said and nothing else. No model is loaded: this is the file,
+# The clause decider reads a term against these sentences, so what is stored
+# has to be exactly what was said and nothing else. No model is loaded: this is the file,
 # the deduplication and the guards.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -38,7 +38,7 @@ check "a second use is added" 2 "$(count)"
 learn Prazi Praisy --in "Praisy joined the team in March."
 check "the same sentence is not stored twice" 2 "$(count)"
 
-# The term has to be in the sentence, or the portrait cannot leave it out.
+# The term has to be in the sentence, or the decider cannot find its place.
 learn Vercell Vercel --in "This sentence does not hold the term."
 check "a sentence without the term is refused" 2 "$(count)"
 
@@ -121,8 +121,8 @@ check "and says the term was only partly forgotten" 1 \
   "$(printf '%s' "$out" | grep -c 'only partly forgotten')"
 
 # A newline written as itself is folded back into a space, and a raw control
-# character makes the whole file unparseable. Both change or lose what a
-# portrait is built from, so both are escaped.
+# character makes the whole file unparseable. Both change or lose what the
+# decider reads, so both are escaped.
 ODD="$WORK/odd"
 mkdir -p "$ODD"
 two="$(printf 'Praisy wrote\nthe guide.')"
@@ -226,13 +226,6 @@ out="$(against Vercel "We deploy the docs on Vercel." Vercel)"
 check "the term standing in its own sentence is not a counter" 1 \
   "$(printf '%s' "$out" | grep -c 'is the term itself')"
 
-# The portrait is built from confirmed uses, so a counter must not make one
-# look ready. One counter and no use is still no portrait. No model is loaded:
-# with no uses, nothing is ever scored.
-out="$(PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --portrait Vercel 2>/dev/null)"
-check "a counter does not count as a use" 1 \
-  "$(printf '%s' "$out" | grep -c 'no portrait: 0 confirmed use(s), 1 counter-example(s)')"
-
 # Two confirmed uses beside the counter, for the --tidy-uses check at the end.
 PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --for Vercel \
   "We deploy the dashboard on Vercel every Friday." >/dev/null 2>&1
@@ -254,7 +247,7 @@ PARROTFLOW_CONFIG_DIR="$FLIP" "$BIN" --for Vercel \
 check "and back again" 0 "$(matches '^      counter: true' "$FY")"
 
 # Each polarity has its own budget. Sharing one, a term corrected the wrong way
-# often enough evicts the uses its portrait is built from.
+# often enough evicts the uses the decider reads it against.
 BUDGET="$WORK/budget"; mkdir -p "$BUDGET"
 BY="$BUDGET/vocabulary-uses.yaml"
 {

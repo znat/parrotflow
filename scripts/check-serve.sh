@@ -25,8 +25,7 @@ trap cleanup EXIT
 export CFFIXED_USER_HOME="$WORK/home"
 mkdir -p "$WORK/home" "$WORK/serve" "$WORK/cli"
 for dir in serve cli; do
-  printf 'transcription:\n  languages: [en]\n  vocabulary:\n    clause_decider: false\n' \
-    > "$WORK/$dir/config.yaml"
+  printf 'transcription:\n  languages: [en]\n' > "$WORK/$dir/config.yaml"
 done
 cat > "$WORK/fixture.yaml" <<'EOF'
 languages: [en]
