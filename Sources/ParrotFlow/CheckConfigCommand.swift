@@ -150,7 +150,7 @@ enum CheckConfigCommand {
                     emit("      ✗ clause_decider: \(error.localizedDescription)")
                     ok = false
                 } else {
-                    emit("      clause decider on (trial): it reads English places in place of the portrait")
+                    emit("      clause decider on (trial): it reads \(ClauseDecider.Model.languages.sorted().joined(separator: ", ")) places in place of the portrait")
                     let reads = [
                         config.readsSyrinx ? "parrotflow-syrinx" : nil,
                         config.readsSlots ? "mmbert-small-64" : nil,
