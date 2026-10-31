@@ -49,12 +49,30 @@ enum ClauseDecider {
 
     // MARK: - The weights
 
+    /// Bundled, like `wordpiece.txt`: the assembled app's Resources, else
+    /// the source tree for the raw `swift build` product.
+    static func resource(_ name: String) -> URL {
+        if !Permissions.isRunningFromBuildDirectory,
+           let bundled = Bundle.main.resourceURL?.appendingPathComponent(name),
+           FileManager.default.fileExists(atPath: bundled.path) {
+            return bundled
+        }
+        return URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("built-in/data/\(name)")
+    }
+
     struct Model: Sendable {
         static let names = [
             "sim_acc", "sim_ref", "ner", "heard_propn", "heard_nonnominal", "prev_det", "prev_adp", "next_verb",
             "sound", "known",
         ]
         static let width = Parser.width, projected = 256, nerLabels = 11
+        /// The languages the slot head was fitted on, from UD train. Another
+        /// language gets no session.
+        static let languages: Set<String> = ["en", "fr"]
 
         let centre: [Float]
         let projection: [Float]
@@ -115,20 +133,7 @@ enum ClauseDecider {
             tag = "\(SyrinxModel.revision.prefix(8))-\(digest.prefix(8))"
         }
 
-        /// Bundled, like `wordpiece.txt`: the assembled app's Resources, else
-        /// the source tree for the raw `swift build` product.
-        static var fileURL: URL {
-            if !Permissions.isRunningFromBuildDirectory,
-               let bundled = Bundle.main.resourceURL?.appendingPathComponent("vocab-clause.safetensors"),
-               FileManager.default.fileExists(atPath: bundled.path) {
-                return bundled
-            }
-            return URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("built-in/data/vocab-clause.safetensors")
-        }
+        static var fileURL: URL { ClauseDecider.resource("vocab-clause.safetensors") }
 
         static let shared: Result<Model, Error> = Result { try Model(contentsOf: fileURL) }
 
@@ -299,13 +304,15 @@ enum ClauseDecider {
         f.nextVerb = after.map { parsed.probability($0, .verb) + parsed.probability($0, .aux) } ?? 0
     }
 
+    /// Every letter run of the heard words is in a word list, read as the
+    /// word-list shortcut reads them.
     static func known(_ heard: String) -> Bool {
         var runs: [String] = [], current = ""
         for c in heard {
             if c.isLetter { current.append(c) } else if !current.isEmpty { runs.append(current); current = "" }
         }
         if !current.isEmpty { runs.append(current) }
-        return !runs.isEmpty && runs.allSatisfy(ContextSpelling.known)
+        return !runs.isEmpty && runs.allSatisfy { !Vocabulary.unseenWord($0) }
     }
 
     static func norm(_ word: String) -> String {
@@ -341,8 +348,8 @@ enum ClauseDecider {
         return (net > 0 ? 1 : 0, net < 0 ? 1 : 0)
     }
 
-    static func sound(heard: String, term: String) -> Double {
-        let ipa = Phonemes.of([heard, term], voice: Phonemes.voice(for: "en"))
+    static func sound(heard: String, term: String, voice: String) -> Double {
+        let ipa = Phonemes.of([heard, term], voice: voice)
         guard let a = ipa[heard], let b = ipa[term] else { return 0 }
         return Double(Phonemes.similarity(a, b))
     }
@@ -367,7 +374,7 @@ enum ClauseDecider {
     static func read(
         _ parsed: Parsed, at range: Range<Int>, heard: String, term: String,
         accepted: [[Float]], refused: [[Float]], pairs: (accepted: Double, refused: Double),
-        model: Model, shared: Bool = false
+        model: Model, voice: String, shared: Bool = false
     ) -> Reading? {
         let (vector, span, pooled) = place(parsed, at: range, model: model)
         guard !span.isEmpty else { return nil }
@@ -378,7 +385,7 @@ enum ClauseDecider {
         }
         f.ner = entity(parsed, span: span, model: model)
         partsOfSpeech(parsed, span: span, into: &f)
-        f.sound = sound(heard: heard, term: term)
+        f.sound = sound(heard: heard, term: term, voice: voice)
         f.known = known(heard) ? 1 : 0
         f.pairAccepted = pairs.accepted
         if model.pairGate, !shared, (f.simAccepted ?? -.infinity) < model.means[0] { f.pairAccepted = 0 }
@@ -398,7 +405,7 @@ extension ClauseDecider {
     static let marginWarm = 0.15, marginCold = 0.75
     /// A lead this small is a near tie and is offered.
     static let tie = 0.02
-    private static let closed: Set<String> = ["ADP", "DET", "CCONJ", "PRON", "AUX"]
+    private static let closed: Set<String> = ["ADP", "DET", "CCONJ", "PRON", "AUX", "PART"]
 
     enum GroupDecision: Equatable {
         case write(String)
@@ -447,13 +454,57 @@ extension ClauseDecider {
         return best.p >= model.leave ? .offer(ranked.prefix(2).map(\.term)) : .leave
     }
 
-    /// Slots a name cannot stand in: `SlotGate.blocks` read as UPOS.
-    static let slotBlocks: Set<UPOS> = [.verb, .aux, .adv, .adp]
+    /// P that a name, noun or pronoun stands at a `<mask>`, read from the
+    /// parser's fused row there.
+    struct SlotHead: Sendable {
+        static let width = Parser.width, hidden = 64
+
+        let hiddenWeight: [Float]
+        let hiddenBias: [Float]
+        let outWeight: [Float]
+        let outBias: Float
+        /// Under it the slot refuses.
+        let threshold: Double
+
+        init(contentsOf url: URL) throws {
+            let tensors = try Tensors(try MappedFile(url))
+            guard tensors.string("input") == "fused", tensors.string("input_rounding") == "float16",
+                  let threshold = tensors.string("threshold").flatMap(Double.init)
+            else { throw Parser.Failure.malformed("the slot head is not a float16 fused-row head with a threshold") }
+            hiddenWeight = try tensors.floats("hidden.weight", shape: [Self.hidden, Self.width])
+            hiddenBias = try tensors.floats("hidden.bias", shape: [Self.hidden])
+            outWeight = try tensors.floats("out.weight", shape: [1, Self.hidden])
+            outBias = try tensors.floats("out.bias", shape: [1])[0]
+            self.threshold = threshold
+        }
+
+        static var fileURL: URL { ClauseDecider.resource("vocab-slot.safetensors") }
+
+        static let shared: Result<SlotHead, Error> = Result { try SlotHead(contentsOf: fileURL) }
+
+        func nominal(_ fused: ArraySlice<Float>) -> Double {
+            // Fitted on float16 features.
+            let v = fused.map { Float(Float16($0)) }
+            var z = outBias
+            for i in 0 ..< Self.hidden {
+                var h = hiddenBias[i]
+                for d in 0 ..< Self.width { h += hiddenWeight[i * Self.width + d] * v[d] }
+                z += outWeight[i] * elu(h)
+            }
+            return 1 / (1 + exp(-Double(z)))
+        }
+    }
+
+    struct Slot {
+        /// UPOS probabilities at the mask.
+        let upos: [Float]
+        let nominal: Double
+    }
 
     /// What the parser expects where the heard words stand. The span's tokens
-    /// become one `<mask>` in their window and the window is parsed again. UPOS
-    /// probabilities at the mask; nil when no token stands at `range`.
-    static func slot(_ parsed: Parsed, at range: Range<Int>, parser: Parser) -> [Float]? {
+    /// become one `<mask>` in their window and the window is parsed again. Nil
+    /// when no token stands at `range`.
+    static func slot(_ parsed: Parsed, at range: Range<Int>, parser: Parser, head: SlotHead) -> Slot? {
         let span = parsed.span(range)
         guard let first = span.first, let window = parsed.clip.windows.first(where: { $0.contains(first) })
         else { return nil }
@@ -469,8 +520,11 @@ extension ClauseDecider {
                 words.append("<mask>")
             }
         }
-        guard let at, let analysis = parser.analyse(words: Words(joining: words), language: "en") else { return nil }
-        return analysis.parse.words[at].upos
+        let width = Parser.width
+        guard let at, let analysis = parser.analyse(words: Words(joining: words), language: "en"),
+              (at + 1) * width <= analysis.fused.count
+        else { return nil }
+        return Slot(upos: analysis.parse.words[at].upos, nominal: head.nominal(analysis.fused[at * width ..< (at + 1) * width]))
     }
 
     /// The heard run without a closed-class first or last word the term does
@@ -559,15 +613,19 @@ actor ClauseStore {
 final class ClauseSession {
     let parser: Parser
     let model: ClauseDecider.Model
+    let slotHead: ClauseDecider.SlotHead
+    let language: String
     private var parsed: [String: ClauseDecider.Parsed] = [:]
     private(set) var lines: [String] = []
     private(set) var places = 0
     private(set) var tally: [ClauseDecider.Decision: Int] = [:]
     private(set) var seconds = 0.0
 
-    init(parser: Parser, model: ClauseDecider.Model) {
+    init(parser: Parser, model: ClauseDecider.Model, slotHead: ClauseDecider.SlotHead, language: String) {
         self.parser = parser
         self.model = model
+        self.slotHead = slotHead
+        self.language = language
     }
 
     /// One place, read on `text` with the heard words put back at it. The
@@ -589,7 +647,7 @@ final class ClauseSession {
             parse, at: a ..< b, heard: change.was, term: term,
             accepted: memory.accepted, refused: memory.refused,
             pairs: ClauseDecider.pairs(heard: change.was, term: term, rows: rows, shared: shared, peers: peers),
-            model: model, shared: shared
+            model: model, voice: Phonemes.voice(for: language), shared: shared
         ) else {
             lines.append("\"\(change.was)\" -> \(term): no parser token at the place")
             return nil
@@ -608,20 +666,22 @@ final class ClauseSession {
     }
 
     /// What the parser expects where the heard words stand, as the slot gate's
-    /// route. Against mmBERT's slot, right declines: judge 12 vs 15, bench 25
-    /// vs 25; one wrong decline ("that ___ added" read AUX 0.95) where mmBERT
-    /// had none.
+    /// route. Refused when the slot head's P that a name, noun or pronoun
+    /// (PROPN, NOUN, PRON) stands there is under the file's threshold: the 5th
+    /// percentile of P over UD dev proper nouns. Right / wrong declines against
+    /// the argmax UPOS rule: French 135 45/1 (30/7), English judge 13/0 (12/1),
+    /// bench 33/1 (25/1).
     func slot(_ change: VocabularyPass.Change, in text: String) -> SlotGate.Reading? {
         let started = Date()
         defer { seconds += Date().timeIntervalSince(started) }
         let heardText = text.replacingCharacters(in: change.range, with: change.was)
         let a = text.unicodeScalars.distance(from: text.unicodeScalars.startIndex, to: change.range.lowerBound)
-        guard let upos = ClauseDecider.slot(
-            parsing(heardText), at: a ..< a + change.was.unicodeScalars.count, parser: parser)
+        guard let slot = ClauseDecider.slot(
+            parsing(heardText), at: a ..< a + change.was.unicodeScalars.count, parser: parser, head: slotHead)
         else { return nil }
-        let tag = UPOS.allCases[Parser.argmax(upos)]
-        lines.append("\"\(change.was)\" slot \(tag.rawValue)")
-        return SlotGate.Reading(tag: tag.rawValue, route: ClauseDecider.slotBlocks.contains(tag) ? .decline : .open)
+        let tag = UPOS.allCases[Parser.argmax(slot.upos)]
+        lines.append("\"\(change.was)\" slot \(tag.rawValue) nominal=\(String(format: "%.3f", slot.nominal))")
+        return SlotGate.Reading(tag: tag.rawValue, route: slot.nominal < slotHead.threshold ? .decline : .open)
     }
 
     private func parsing(_ text: String) -> ClauseDecider.Parsed {

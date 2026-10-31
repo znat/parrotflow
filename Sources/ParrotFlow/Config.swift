@@ -3442,9 +3442,11 @@ struct Config: Decodable, Equatable {
         transcription.vocabulary.asks ?? vocabulary.asks
     }
 
-    /// The clause decider runs on English only, so it needs English dictated.
+    /// The clause decider runs only on `ClauseDecider.Model.languages`, so it
+    /// needs one of them dictated.
     var decidesByClause: Bool {
-        (transcription.vocabulary.clauseDecider ?? false) && transcription.languages.contains("en")
+        (transcription.vocabulary.clauseDecider ?? false)
+            && transcription.languages.contains(where: ClauseDecider.Model.languages.contains)
     }
 
     /// Whether the `interpret` step will read a boundary: it is in the

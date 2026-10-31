@@ -673,12 +673,16 @@ decision (`write`, `leave` or `offer`), p, the score, the clause offsets and
 every feature. It is what `transcription.vocabulary.clause_decider` runs; see
 `docs/configuration.md`.
 
-`--batch` reads `[{"id", "text", "a", "b", "heard", "term", "uses"}]`, offsets
-in Unicode scalars and `uses` in the shape `vocabulary-uses.yaml` stores, and
-prints one JSON line per item, then a summary. An item with `"masked": true`
-also prints `slot`: the parser's UPOS probabilities where the heard words stand,
-read with the words replaced by one `<mask>`. That is the slot check the
-vocabulary stage runs with the clause decider on.
+`--language fr` sounds the heard words in the French voice; the default is
+`en`. `--batch` reads `[{"id", "text", "a", "b", "heard", "term", "uses"}]`,
+offsets in Unicode scalars and `uses` in the shape `vocabulary-uses.yaml`
+stores, plus an optional `language`, and prints one JSON line per item, then a
+summary. An item with `"masked": true`
+also prints `slot`, read with the heard words replaced by one `<mask>`: the
+parser's UPOS probabilities there (`mask`, argmax `tag`), the slot head's P
+that a name, noun or pronoun stands there (`nominal`), and `route`: `decline`
+under the head's threshold, else `open`. That is the slot check the vocabulary
+stage runs with the clause decider on.
 `scripts/check-clause-decider-parity.sh` compares it with the PyTorch reference
 on `tests/clause-decider-parity.json`; it needs the parser, so it is not in
 `make test`.
