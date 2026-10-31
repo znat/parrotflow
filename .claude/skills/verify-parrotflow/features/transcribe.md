@@ -57,11 +57,10 @@ Preconditions:
 - No redirect for these: one `build: unstamped` line plus the pipeline lines
   in `~/Library/Logs/ParrotFlow.log`; the vocabulary sound pass may rewrite
   `~/Library/Application Support/ParrotFlow/phonemes-multilingual-g2p.json`.
-- It starts background loads of the slot model, word vectors and sentence
-  model from `~/Library/Application Support/ParrotFlow/models/`. A model
-  missing there is downloaded (269 MB, 400 MB, 320 MB). Check that
-  `mmbert-small-64`, `qwen3-embedding-0.6b-4bit` and `qwen3-0.6b-base-4bit`
-  are present before you run it.
+- It starts background loads of the parser and the sentence model from
+  `~/Library/Application Support/ParrotFlow/models/`. A model missing there is
+  downloaded (530 MB, 320 MB). Check that `parrotflow-syrinx` and
+  `qwen3-0.6b-base-4bit` are present before you run it.
 - The default scratch config runs Python transforms on the transcript, like
   `--replace` does.
 - `say` voices do not sound like the user. A wrong name here says nothing

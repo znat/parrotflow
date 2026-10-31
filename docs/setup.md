@@ -135,7 +135,7 @@ Want `accessibility=Granted`. `NotGranted` means the switch is off or they
 ticked a different app.
 
 **After the permissions.** The setup window lists the models it is fetching —
-about 1.5 GB, started at launch — with what each one costs. *Download* moves on;
+about 1.4 GB, started at launch — with what each one costs. *Download* moves on;
 the fetches started at launch and carry on behind it.
 
 **eSpeak NG.** Then the one thing the app cannot fetch for you. It helps

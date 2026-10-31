@@ -567,15 +567,12 @@ transcription:
   vocabulary:
     enabled: true
     sound_below: 0.85      # how close a run of words must sound to a term
-    gate_sentence: true    # read the sentence before keeping a match
+    gate_sentence: true    # let the clause decider read the sentence
     asks: true             # ask before typing a name it could not settle
-    slot_floor: {en: 0.20, fr: 0.30}
-    clause_decider: false  # trial: the parser clause decides in place of the portrait
 ```
 
-**`clause_decider` is a trial, off by default.** On, places are read by the
-clause decider instead of the term portrait, in English and in French: the
-languages its slot head was fitted on, listed in
+**The clause decider reads every place the word lists leave open**, in English
+and in French: the languages its slot head was fitted on, listed in
 `ClauseDecider.Model.languages`. Both run the same pipeline; the language only
 picks the espeak voice. Any other language is declined: the decider and the
 slot check do not run, the word lists settle what they can and the other places
@@ -597,16 +594,22 @@ no sentences; another is written only when it beats it by a fixed margin, and
 offered when it beats it by half. A sound match of two or
 more words loses an edge word the parser tags ADP, DET, CCONJ, PRON, AUX or
 PART (`on Versal` and `Versal to` are proposed as `Versal`) and must still sound like the term. It
-reads parrotflow-syrinx, so turning it on fetches that model, and
-it needs `gate_sentence`. Each dictation publishes `vocabulary.clause` (every
+reads parrotflow-syrinx, so a vocabulary step fetches that model, and
+`gate_sentence: false` turns it off. Each dictation publishes `vocabulary.clause` (every
 feature, the score, the decision and the clause offsets per place) and
 `vocabulary.clause_written`, `clause_left`, `clause_offered`, `clause_ms`.
 
-`near_misses`, `by_sound`, `gate`, `slot_gate`, `portrait` and
-`lowercase_refused` are also keys here, all on by default. They are not
-everyday settings: they exist so a bench can switch off one half of the pass
-and score the other, which is why `built-in/config.example.yaml` does not write
-them out. `slot_gate: false` downloads nothing.
+`near_misses`, `by_sound`, `gate` and `lowercase_refused` are also keys here,
+all on by default. They are not everyday settings: they exist so a bench can
+switch off one half of the pass and score the other, which is why
+`built-in/config.example.yaml` does not write them out.
+
+**Four keys are retired.** `clause_decider`, `slot_gate`, `portrait` and
+`slot_floor` switched the vocabulary path the clause decider replaced: the
+mmBERT-small slot model, the Qwen3 Embedding word vectors and the term
+portraits. A config that still carries one loads, the key does nothing, and
+`--check-config` names it. The app removes the two models' caches and the
+portrait cache on its next launch.
 
 **Three keys moved out of `vocabulary.yaml`.** `sound_below`, `gate_sentence`
 and `asks` are person-chosen switches, and they were sitting in the file the
@@ -725,9 +728,9 @@ is timed in tenths of a second, and it sees every word you say.
 capitals out of speech is the job a small local model is worst at — so it is
 the first one worth pointing somewhere bigger.
 
-There is no entry for the `vocabulary` stage. It calls no model — the two word
-lists, the slot's part of speech and the two tests that read the sentence
-decide, and every place they leave open keeps what arrived. See
+There is no entry for the `vocabulary` stage. It calls no language model — the
+two word lists, the slot check and the clause decider decide, and every place
+they leave open keeps what arrived. See
 [pipelines.md](pipelines.md#the-name-stage). `review:` on that step named the
 model that used to decide; it is read and does nothing, and `--check-config`
 says so.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks what the clause decider path does with rule places and pill answers.
+# Checks what the clause decider does with rule places and pill answers.
 #
 #   scripts/check-clause-places.sh
 #
@@ -30,30 +30,21 @@ check() {
   fi
 }
 
-picked() {
-  mkdir -p "$WORK/$1"
-  printf 'transcription:\n  languages: [en]\n  vocabulary:\n    clause_decider: %s\n' "$1" > "$WORK/$1/config.yaml"
-  printf 'terms:\n  Vercel:\n    kind: organization\n' > "$WORK/$1/vocabulary.yaml"
-  PARROTFLOW_CONFIG_DIR="$WORK/$1" "$BIN" --picked Versailles Vercel \
-    --in "We visited the Versailles castle last summer." 2>/dev/null | tail -1
-}
-
-check "flag on: keeping the heard word refuses the offered term" "$(picked true)" "counter Vercel"
-check "and adds no term" "$(grep -c Versailles "$WORK/true/vocabulary.yaml")" "0"
-check "flag off: the same answer still creates the name" "$(picked false)" "create Versailles place"
-
-selector() {
-  PARROTFLOW_CONFIG_DIR="$WORK/$1" "$BIN" --selector "We visited the versailles castle." \
-    "Versailles|Vercel|3|0" --taught 2>/dev/null | tail -1
-}
-check "flag on: a keep is asked after a case-only rewrite" "$(selector true)" "versailles teaches"
-check "and it refuses the offered term" "$(PARROTFLOW_CONFIG_DIR="$WORK/true" "$BIN" --picked versailles Vercel \
+mkdir -p "$WORK/pill"
+printf 'transcription:\n  languages: [en]\n' > "$WORK/pill/config.yaml"
+printf 'terms:\n  Vercel:\n    kind: organization\n' > "$WORK/pill/vocabulary.yaml"
+check "keeping the heard word refuses the offered term" "$(PARROTFLOW_CONFIG_DIR="$WORK/pill" "$BIN" \
+  --picked Versailles Vercel --in "We visited the Versailles castle last summer." 2>/dev/null | tail -1)" \
+  "counter Vercel"
+check "and adds no term" "$(grep -c Versailles "$WORK/pill/vocabulary.yaml")" "0"
+check "a keep is asked after a case-only rewrite" "$(PARROTFLOW_CONFIG_DIR="$WORK/pill" "$BIN" \
+  --selector "We visited the versailles castle." "Versailles|Vercel|3|0" --taught 2>/dev/null | tail -1)" \
+  "versailles teaches"
+check "and it refuses the offered term" "$(PARROTFLOW_CONFIG_DIR="$WORK/pill" "$BIN" --picked versailles Vercel \
   --in "We visited the versailles castle." 2>/dev/null | tail -1)" "counter Vercel"
-check "flag off: not asked, as before" "$(selector false)" "NOTHING FOUND"
 
 cat > "$WORK/fixture.yaml" <<'EOF'
 languages: [en]
-clause_decider: true
 vocabulary:
   terms:
     Praisy:
@@ -81,7 +72,6 @@ check "an offered rule place shows the heard word" \
 # Needs espeak-ng: these places come from the sound pass.
 cat > "$WORK/glued.yaml" <<'EOF'
 languages: [en]
-clause_decider: true
 vocabulary:
   terms:
     BetterStack:
@@ -90,7 +80,7 @@ pipeline:
   - vocabulary
 EOF
 mkdir -p "$WORK/glued"
-printf 'transcription:\n  languages: [en]\n  vocabulary:\n    clause_decider: true\n' > "$WORK/glued/config.yaml"
+printf 'transcription:\n  languages: [en]\n' > "$WORK/glued/config.yaml"
 printf 'terms:\n  BetterStack:\n  Zorblix:\n' > "$WORK/glued/vocabulary.yaml"
 glued() {
   PARROTFLOW_CONFIG_DIR="$WORK/glued" "$BIN" --pipeline "$WORK/glued.yaml" "$1" --vars --warm 2>/dev/null \

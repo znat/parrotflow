@@ -24,65 +24,18 @@ import Foundation
 /// heard text carries and the term does not is a question about the sentence,
 /// so it needs both halves of the proposal — see `Vocabulary.dropsPossessive`.
 ///
-/// Name the sentence too and the model tiers answer as well:
-///
-///     ParrotFlow --word-gate merge Vercel --in "Go back to main and merge."
-///     possessive kept
-///     gate       open
-///     slot       Verb
-///     route      decline
-///
-/// `slot` is what the masked slot wants and `route` is where the proposal goes
-/// — see `SlotGate`. Nothing is downloaded: with no cached model the slot reads
-/// `unavailable` and the route is `open`.
-///
-/// A span that glues to the term is the one case where the two lines disagree:
-///
-///     ParrotFlow --word-gate "better stack" BetterStack --in \
-///       "I think Node.js and MongoDB is a much better stack than PHP and MySQL."
-///     gate       auto-apply (a rule's write is left to the sentence)
-///     slot       Adverb
-///     route      open
-///
-/// The lists are never asked about a glued span, so the gate really does say
-/// auto-apply. What happens next depends on where the proposal came from, and
-/// that is not something a word and a term can say: a `replacements` rule is
-/// left open by `VocabularyPass.settle`, and the sound path still writes it.
-/// With the clause decider on, both are asked unless a word of the span is in
-/// neither list.
-/// The route printed is the rule's, since these two arguments carry no audio.
-///
-/// The slot is still printed and it still decides nothing. `settle` gates a
-/// rule with `.lists`, so the slot is never asked about one — `Adverb` above
-/// is in `blocks` and would refuse it, and does not.
-///
 /// No audio. The pair form fixes the scores so the term wins, because the
 /// acoustic half is not what it is asking; a proposal whose term loses on
 /// sound never reaches these conditions.
 enum WordGateCommand {
-    static func run(word: String, term: String? = nil, sentence: String? = nil) -> Int32 {
+    static func run(word: String, term: String? = nil) -> Int32 {
         if let term, !term.isEmpty {
-            let writes = pair(heard: word, term: term)
-            guard let sentence, !sentence.isEmpty else { return 0 }
-            guard #available(macOS 14, *) else {
-                print("slot       unavailable")
-                print("route      open")
-                return 0
-            }
-            printSlot(
-                heard: word, term: term, in: sentence,
-                applies: writes, glues: Vocabulary.glues(heard: word, term: term)
-            )
+            pair(heard: word, term: term)
             return 0
         }
-
-        // The slot tiers are about a proposal, so `--in` without a term is a
-        // question this cannot answer. Refused rather than ignored: a set that
-        // dropped the term would otherwise report the word lists and look like
-        // it had scored the route.
         let letters = String(word.filter { $0.isLetter })
-        guard !letters.isEmpty, sentence == nil else {
-            print("usage: ParrotFlow --word-gate <word> [term] [--in \"<sentence>\"]")
+        guard !letters.isEmpty else {
+            print("usage: ParrotFlow --word-gate <word> [term]")
             return 2
         }
         // The decision comes from the shipped test. The two verdicts above it
@@ -105,7 +58,7 @@ enum WordGateCommand {
     /// The two lists are not printed here. They are not consulted at all on a
     /// span the gate matches glued — `"Matthew at"` — so printing them would
     /// report a lookup that decided nothing.
-    private static func pair(heard: String, term: String) -> Bool {
+    private static func pair(heard: String, term: String) {
         let drops = Vocabulary.dropsPossessive(heard: heard, term: term)
         print("possessive \(drops ? "dropped" : "kept")")
         let applies = Vocabulary.autoApplies(
@@ -116,74 +69,5 @@ enum WordGateCommand {
             ? (glues ? "auto-apply (a rule's write is left to the sentence)" : "auto-apply")
             : "open"
         print("gate       \(verdict)")
-        // What a rule would do. These arguments carry no audio, so a rule is
-        // the proposal this can answer about.
-        return applies && !glues
-    }
-
-    /// The model tiers, on the proposal the lexical gate did not settle.
-    ///
-    /// Nothing is downloaded. With no cached model the slot is `unavailable`
-    /// and the route is `open`, which is what the app does — see
-    /// `Vocabulary.slotRoute`.
-    @available(macOS 14, *)
-    private static func printSlot(
-        heard: String, term: String, in sentence: String, applies: Bool, glues: Bool
-    ) {
-        let config = (try? ConfigStore.load()) ?? Config()
-        let language = Pipeline.language(of: sentence, config: config)
-        print("language   \(language)")
-        guard language == "en" else {
-            print("slot       not english")
-            print("route      open")
-            return
-        }
-        guard let range = Vocabulary.spans(of: heard, in: sentence).first else {
-            print("slot       not found in the sentence")
-            print("route      open")
-            return
-        }
-        guard let gate = load() else {
-            print("slot       unavailable")
-            print("route      open")
-            return
-        }
-        guard let reading = try? gate.read(in: sentence, at: range) else {
-            print("slot       unreadable")
-            print("route      open")
-            return
-        }
-        print("slot       \(reading.tag.isEmpty ? "untagged" : reading.tag)")
-        // `apply` is not a route any more — the lexical gate is the only thing
-        // that writes without asking, and it has already printed its verdict.
-        //
-        // A glued span is neither. `settle` gates a rule with `.lists` and
-        // never reaches the slot, so the place is left open whatever the tag
-        // above says.
-        let route: String
-        if glues {
-            route = "open"
-        } else if applies {
-            route = "apply"
-        } else if Vocabulary.dropsPossessive(heard: heard, term: term) {
-            route = "open"
-        } else {
-            route = reading.route.rawValue
-        }
-        print("route      \(route)")
-    }
-
-    /// The probe, or nil when the model has never been fetched.
-    @available(macOS 14, *)
-    static func load() -> SlotGate? {
-        guard SlotModel.isCached else { return nil }
-        var gate: SlotGate?
-        let done = DispatchSemaphore(value: 0)
-        Task {
-            gate = (try? await SlotProbe.load()).map(SlotGate.init(probe:))
-            done.signal()
-        }
-        done.wait()
-        return gate
     }
 }

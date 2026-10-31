@@ -23,10 +23,11 @@ trap cleanup EXIT
 # Its own home, so the log and the caches are this run's and a machine with
 # the models behaves like one without.
 export CFFIXED_USER_HOME="$WORK/home"
+# The clause decider declines with no parser here; its fetch goes nowhere.
+export PARROTFLOW_SYRINX_ENDPOINT=http://127.0.0.1:9
 mkdir -p "$WORK/home" "$WORK/serve" "$WORK/cli"
 for dir in serve cli; do
-  printf 'transcription:\n  languages: [en]\n  vocabulary:\n    clause_decider: false\n' \
-    > "$WORK/$dir/config.yaml"
+  printf 'transcription:\n  languages: [en]\n' > "$WORK/$dir/config.yaml"
 done
 cat > "$WORK/fixture.yaml" <<'EOF'
 languages: [en]

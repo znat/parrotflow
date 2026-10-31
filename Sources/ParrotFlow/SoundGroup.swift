@@ -1,22 +1,16 @@
 import Foundation
 
-/// The terms that share a sound, and how a place between them is decided.
+/// The terms that share a sound.
 ///
 /// `Mik` and `Mick` are two people and the decoder writes "Mick" for both.
-/// Under the old model one of them owned the sound: `heard: Mick` was a rule
-/// that rewrote every "Mick" to "Mik", and the only thing that could undo it
-/// was Mik's portrait, where Mick lived as a counter-example. Mick had no
-/// portrait at all.
+/// One place over that word carries every member as a reading, and the clause
+/// decider picks one, offers several, or keeps what was heard — see
+/// `ClauseSession.readGroup`.
 ///
 /// A group is derived, never declared. No field says one exists — see
-/// `groups(terms:uses:)` for the three links. Every member keeps its own
-/// portrait, and one more member has no name: **plain**, the ordinary word
-/// that sounds like this. Plain's portrait is the counter rows of the group's
-/// members, pooled.
-///
-/// A group of one is every term that shares its sound with nothing, which is
-/// almost all of them. Those go the way they always have — the caller reads
-/// one portrait, not a group. See `docs/proposals/sound-groups.md`.
+/// `groups(terms:uses:)` for the three links. A group of one is every term
+/// that shares its sound with nothing, which is almost all of them. See
+/// `docs/proposals/sound-groups.md`.
 enum SoundGroup {
 
     /// How many named members one place may offer.
@@ -177,7 +171,7 @@ enum SoundGroup {
         }) else { return [] }
         var owner: [String: String] = [:]
         func stands(_ word: String) -> Bool {
-            !TermPortrait.places(of: word, in: sentence).isEmpty
+            !places(of: word, in: sentence).isEmpty
         }
         for member in group.members where stands(member) {
             owner[member.lowercased()] = member
@@ -191,99 +185,25 @@ enum SoundGroup {
         return Array(Set(owner.values)).sorted()
     }
 
-    // MARK: - Deciding
-
-    /// One candidate at a place: what it scored, and the floor it has to clear.
+    /// Every whole-word occurrence of `needle`, matched without case.
     ///
-    /// Plain has no floor. Its portrait is pooled counter rows, and a floor is
-    /// read off a term's own uses.
-    struct Candidate: Equatable {
-        let name: String
-        /// Nil when nothing could be scored: no portrait yet, or none at all.
-        let score: Double?
-        let floor: Double?
-        /// How many confirmed uses the term has.
-        var uses: Int = 1
-
-        /// A member nobody has ever confirmed. It cannot lose, because there
-        /// is nothing to lose with: scoring the others against it would settle
-        /// a place on one name's evidence while the other has none. Measured
-        /// on the live app, 2026-09-10: with `Eric` at zero uses, `Erik` won
-        /// "Eric the musician." 0.898 to 0.600 and the name was written
-        /// silently.
-        ///
-        /// One sentence is enough to stop being unknown. A group member is
-        /// scored against the others rather than against a fixed floor, so it
-        /// can take part from its first use — see `TermPortrait.centre(of:)`.
-        var unknown: Bool { uses == 0 }
-
-        /// Below its own floor is out. A candidate with fewer than
-        /// `TermPortrait.floorMinimum` uses has no floor and is never out on
-        /// that ground.
-        var stands: Bool {
-            guard let score else { return false }
-            return floor.map { score > $0 } ?? true
+    /// Without case because a member opening a sentence is capitalised there
+    /// and not in the row that recorded it.
+    static func places(of needle: String, in text: String) -> [Range<String.Index>] {
+        guard !needle.isEmpty else { return [] }
+        func letter(_ c: Character) -> Bool { c.isLetter || c.isNumber }
+        var out: [Range<String.Index>] = []
+        var from = text.startIndex
+        while let found = text.range(
+            of: needle, options: [.caseInsensitive], range: from ..< text.endIndex
+        ) {
+            let before = found.lowerBound == text.startIndex
+                || !letter(text[text.index(before: found.lowerBound)])
+            let after = found.upperBound == text.endIndex || !letter(text[found.upperBound])
+            if before && after { out.append(found) }
+            guard found.lowerBound < text.endIndex else { break }
+            from = text.index(after: found.lowerBound)
         }
-    }
-
-    /// What the group says about a place.
-    enum Verdict: Equatable {
-        /// Write this member's spelling.
-        case write(String)
-        /// Keep what was heard: plain won, or nobody stood.
-        case keep
-        /// Two or more stand and none of them leads. The pill asks, and these
-        /// are the members to offer, best first.
-        case open([String])
-    }
-
-    /// The nearest centre, with floors.
-    ///
-    /// 1. A candidate below its own floor is out.
-    /// 2. Among those standing, the best wins if it leads the second by more
-    ///    than `band`.
-    /// 3. A named member winning writes its spelling; plain winning keeps what
-    ///    was heard.
-    /// 4. Nobody standing keeps what was heard.
-    /// 5. Two standing and no lead opens the place.
-    ///
-    /// The heard spelling gets no bonus. Which homophone the recogniser
-    /// reached for is frequency, not evidence.
-    static func decide(
-        _ members: [Candidate], plain: Double?, band: Double = 0.01
-    ) -> Verdict {
-        // A member nobody has ever confirmed decides nothing and loses
-        // nothing. The place is open and the pill lists it with the rest —
-        // which is the only way that member ever gets a first sentence.
-        let unknown = members.filter(\.unknown)
-        if !unknown.isEmpty {
-            let known = members.filter { !$0.unknown && $0.stands }
-                .sorted { ($0.score ?? 0) > ($1.score ?? 0) }
-            return .open(known.map(\.name) + unknown.map(\.name))
-        }
-        var standing = members.filter(\.stands)
-        // Nobody standing, and no plain centre to fall back on. "Keep what was
-        // heard" is the ordinary word winning — and with no counter row
-        // anywhere in the group there is no ordinary word to win, so keeping
-        // is an assumption rather than a decision. Measured on decoded audio,
-        // 2026-09-10, three uses each and no counters: `Erik` led 0.791 to
-        // 0.649 on "Eric is a musician." and 0.647 to 0.747 the other way on
-        // "Eric is a software engineer." — the right name first both times,
-        // and both below floors read off three short sentences. Kept, that
-        // types Eric twice and asks nothing.
-        //
-        // Best first, so the pill's top row carries the ranking the floors
-        // threw away.
-        if standing.isEmpty, plain == nil {
-            return .open(members.sorted { ($0.score ?? 0) > ($1.score ?? 0) }.map(\.name))
-        }
-        // Plain is a member with no name and no floor.
-        if let plain { standing.append(Candidate(name: "", score: plain, floor: nil)) }
-        let ranked = standing.sorted { ($0.score ?? 0) > ($1.score ?? 0) }
-        guard let best = ranked.first else { return .keep }
-        if ranked.count > 1, (best.score ?? 0) - (ranked[1].score ?? 0) <= band {
-            return .open(ranked.filter { !$0.name.isEmpty }.map(\.name))
-        }
-        return best.name.isEmpty ? .keep : .write(best.name)
+        return out
     }
 }

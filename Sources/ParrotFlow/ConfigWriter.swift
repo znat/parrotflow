@@ -170,8 +170,8 @@ enum ConfigWriter {
     /// Writes a term with nothing under it but its kind.
     ///
     /// For a name the recogniser already spells right: there is no rendering
-    /// to record, and a term with no pronunciations is still a term — it has a
-    /// portrait, and it shares a sound with whatever else opens its group.
+    /// to record, and a term with no pronunciations is still a term — it has
+    /// sentences, and it shares a sound with whatever else opens its group.
     static func addVocabularyTerm(_ term: String, kind: WordKind) throws {
         let url = ConfigStore.vocabularyURL
         let original = (try? String(contentsOf: url, encoding: .utf8)) ?? "terms: {}\n"
