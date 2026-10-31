@@ -27,14 +27,18 @@ CACHED="$HOME/Library/Application Support/ParrotFlow/models/parrotflow-syrinx"
 # than quietly become the thing being checked.
 REVISION=f3f75830f56901b45069df3492ade0040a6e2e39
 BASE="https://huggingface.co/znaat/parrotflow-syrinx-coreml/resolve/$REVISION"
+# `SyrinxModel.pinned["tokenizer.json"]`. A cached copy that does not match is
+# fetched again rather than scored.
+DIGEST=197d4cc5406ee12cc50c8b5511f2393cc32d9db321545979ce041c1199178356
 
 WORK="$(mktemp -d -t parrotflow-tokenizer)"
 trap 'rm -rf "$WORK"' EXIT
 
-if [ -f "$CACHED/tokenizer.json" ]; then
+if [ -f "$CACHED/tokenizer.json" ] \
+  && [ "$(shasum -a 256 "$CACHED/tokenizer.json" | awk '{ print $1 }')" = "$DIGEST" ]; then
   export PARROTFLOW_TOKENIZER="$CACHED"
 else
-  echo "  the tokenizer is not cached, fetching it"
+  echo "  the tokenizer is not cached at the pinned digest, fetching it"
   if ! curl -fsSL "$BASE/tokenizer.json" -o "$WORK/tokenizer.json"; then
     echo "  ✗ could not fetch $BASE/tokenizer.json"
     exit 1

@@ -201,8 +201,9 @@ so a case file states the setup it assumes instead of inheriting this machine's.
   a dictation wait, so in a one-shot run the parser is not loaded and the
   clause decider is skipped every time — this is the only way to see it from
   the command line. Off by default: it is a 533 MB download, and `make test`
-  must not need one. Only what the fixture's own pipeline reads: a fixture with
-  no `vocabulary` or `tree_cutter` step fetches nothing.
+  must not need one. Only what the fixture's own pipeline reads: the parser for
+  a `vocabulary` or `tree_cutter` step, and the 320 MB sentence model for a
+  `sentence_repair` or `context_spelling` step.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
 

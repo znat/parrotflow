@@ -137,8 +137,9 @@ its modifiers (`--app`, `--quiet`, `--vars`, `--no-prompts`, `--keyed`,
 The default proof feature, with its expected result. It runs the vocabulary
 stage, which loads the parser and downloads it (about 530 MB) if it is
 missing. First check that
-`~/Library/Application Support/ParrotFlow/models/parrotflow-syrinx`
-exists. If it does not, ask the user before the call.
+`~/Library/Application Support/ParrotFlow/models/parrotflow-syrinx/digests.json`
+exists: an interrupted download leaves the directory without it. If it does
+not, ask the user before the call.
 
 ```sh
 .claude/skills/verify-parrotflow/scripts/pf.sh <run-dir> pipeline-vocabulary --pipeline tests/pipelines/replacements.yaml "our app is deployed on Versailles" --app "" --quiet --vars
@@ -209,7 +210,7 @@ the command in its feature file.
   `~/Library/Application Support/ParrotFlow/phonemes-multilingual-g2p.json`,
   the live release app's cache, when it meets an uncached word. The same
   stage loads the parser, and starts its download if
-  `models/parrotflow-syrinx` is missing there.
+  `models/parrotflow-syrinx/digests.json` is missing there.
 - **Model loads.** `--transcribe` starts background loads from
   `~/Library/Application Support/ParrotFlow/models/` and loads the speech
   model from `~/Library/Application Support/FluidAudio/Models/`. A missing
@@ -257,7 +258,7 @@ A complete run, end to end:
 ```sh
 swift build -c release
 .claude/skills/verify-parrotflow/scripts/doctor.sh
-ls -d "$HOME/Library/Application Support/ParrotFlow/models/parrotflow-syrinx"   # missing: ask the user first
+ls "$HOME/Library/Application Support/ParrotFlow/models/parrotflow-syrinx/digests.json"   # missing: ask the user first
 RUN=$(.claude/skills/verify-parrotflow/scripts/start.sh); echo "$RUN"
 .claude/skills/verify-parrotflow/scripts/pf.sh "$RUN" pipeline-vocabulary --pipeline tests/pipelines/replacements.yaml "our app is deployed on Versailles" --app "" --quiet --vars
 .claude/skills/verify-parrotflow/scripts/finish.sh "$RUN"

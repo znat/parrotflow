@@ -308,7 +308,8 @@ enum PipelineCommand {
             // Only what the pipeline's own steps will read. A fixture that
             // switches a gate off has nothing to do with these weights, and
             // `--warm` is a download.
-            if pipeline.stages.contains(.treeCutter) || config.readsClauses {
+            if pipeline.stages.contains(.treeCutter)
+                || (pipeline.stages.contains(.vocabulary) && config.readsClauses) {
                 do { _ = try await SyrinxModel.shared.prepare() } catch {
                     found.append("parser — \(error.localizedDescription)")
                 }

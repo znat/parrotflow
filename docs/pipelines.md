@@ -409,14 +409,14 @@ a place none of them settles keeps the word that was heard — so the looser
 match costs a gate call, not a sentence. `near_misses: false` puts matching
 back to exact and whole-word.
 
-`--check-config` prints one line per `vocabulary` step, and whether the clause
-decider runs — the same predicate that decides whether the parser is
-downloaded:
+`--check-config` prints the `vocabulary` step, and whether the clause decider
+runs — the same predicate that decides whether the parser is downloaded. There
+is one pass, so there is one line, carrying the options of the first
+`vocabulary` line:
 
 ```
   · languages         en, fr
-      vocabulary            clause decider on
-      vocabulary in /term/  clause decider on  (lowercase refused off)
+      vocabulary  clause decider on  (lowercase refused off)
 ```
 
 `slot_gate:`, `portrait:` and `slot_floor:` switched the slot model, the term

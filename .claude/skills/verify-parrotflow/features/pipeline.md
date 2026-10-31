@@ -79,7 +79,7 @@ Preconditions:
   the download (about 530 MB) in the background; the process may exit halfway.
   `--warm` waits for it, so `pf.sh` refuses it. Before a run without
   `--no-prompts`, check that
-  `~/Library/Application Support/ParrotFlow/models/parrotflow-syrinx`
+  `~/Library/Application Support/ParrotFlow/models/parrotflow-syrinx/digests.json`
   exists. If it does not, use `--no-prompts` or ask the user.
 - The binary loads the config dir at start, and the stage reads `voice/` and
   `vocabulary-uses.yaml` from it. Without `PARROTFLOW_CONFIG_DIR` that is the

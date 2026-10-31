@@ -136,6 +136,9 @@ enum CheckConfigCommand {
                 if case .failure(let error) = ClauseDecider.Model.shared {
                     emit("      ✗ clause decider: \(error.localizedDescription)")
                     ok = false
+                } else if case .failure(let error) = ClauseDecider.SlotHead.shared {
+                    emit("      ✗ clause decider slot head: \(error.localizedDescription)")
+                    ok = false
                 } else {
                     emit("      the clause decider reads \(clauseLanguages); any other language is declined")
                     emit("      vocabulary models: \(config.readsSyrinx ? "parrotflow-syrinx" : "none")")
