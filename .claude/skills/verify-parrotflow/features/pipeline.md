@@ -36,10 +36,14 @@ Preconditions:
 
 - **Term over a rendering.** Run
   `.claude/skills/verify-parrotflow/scripts/pf.sh "$RUN" pipeline-vocabulary --pipeline tests/pipelines/replacements.yaml "our app is deployed on Versailles" --app "" --quiet --vars`.
-  Exit `0`. The last line is `our app is deployed on Vercel`. The output
-  contains `var   vocabulary.protected = "Vercel"` and
-  `var   vocabulary.changes = "Versailles -> Vercel"`. This is a case in
-  `tests/pipeline-cases.yaml`. About 4 s, most of it the gate (`vocabulary.gate_ms`).
+  Exit `0`. The last line is `our app is deployed on Versailles`: the clause
+  decider offers the rule's place, so the heard word stands. The output
+  contains `var   vocabulary.changes = "Versailles -> Vercel"`,
+  `var   vocabulary.clause_offered = 1` and
+  `var   vocabulary.reverted = "Vercel -> Versailles"`. Without the parser the
+  place stays open and the line is `our app is deployed on Vercel`, which is
+  the case in `tests/pipeline-cases.yaml`. About 2 s, most of it the parser
+  load (`vocabulary.gate_ms`).
 - **Filler removed, stage by stage.** Run
   `.claude/skills/verify-parrotflow/scripts/pf.sh "$RUN" pipeline-trace --pipeline tests/pipelines/replacements.yaml "our app is um deployed on Vercel" --app ""`.
   Exit `0`. Output has `in:   our app is um deployed on Vercel`, then
@@ -70,13 +74,12 @@ Preconditions:
   the release app's phoneme cache, when a word is not cached yet. No env var
   redirects it. It never downloads; it only loads the model from
   `~/.cache/fluidaudio/Models/kokoro`.
-- The vocabulary stage asks the word vectors to load in the background, then
-  logs `sentence gate: the word vectors are not loaded yet; skipped`. That is
-  normal for a one-shot run. `--warm` makes it wait, and downloads what is
-  missing, so `pf.sh` refuses it. The background load also downloads
-  (about 400 MB) when the model is missing, and the process may exit halfway.
-  Before a run without `--no-prompts`, check that
-  `~/Library/Application Support/ParrotFlow/models/qwen3-embedding-0.6b-4bit`
+- The vocabulary stage waits up to 2 s for a cached parser. Without one it
+  publishes `vocabulary.clause_declined = "parser not downloaded"` and starts
+  the download (about 530 MB) in the background; the process may exit halfway.
+  `--warm` waits for it, so `pf.sh` refuses it. Before a run without
+  `--no-prompts`, check that
+  `~/Library/Application Support/ParrotFlow/models/parrotflow-syrinx`
   exists. If it does not, use `--no-prompts` or ask the user.
 - The binary loads the config dir at start, and the stage reads `voice/` and
   `vocabulary-uses.yaml` from it. Without `PARROTFLOW_CONFIG_DIR` that is the

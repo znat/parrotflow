@@ -83,17 +83,14 @@ transcription:
   vocabulary:
     enabled: true
     # sound_below: 0.85      # how close a run of words must sound to a term
-    # gate_sentence: true    # read the sentence before keeping a match
+    # gate_sentence: true    # let the clause decider read the sentence (en, fr)
     # asks: true             # ask before typing a name it could not settle
-    # clause_decider: false  # trial: the parser clause decides in place of the portrait
     #
     # The rest switch off one half of the pass so the other can be scored.
     # See docs/pipelines.md before changing them.
     # near_misses: true      # also match a rendering one edit away
     # by_sound: true         # also match words that sound like a term
     # gate: true             # the word lists and the slot's part of speech
-    # slot_gate: true        # the mmBERT slot — false downloads nothing
-    # portrait: true         # a term's own sentences and its counter-examples
     # lowercase_refused: true
 
   # Takes back self-corrections: the parrotflow-syrinx tree cutter proposes

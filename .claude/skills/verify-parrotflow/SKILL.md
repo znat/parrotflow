@@ -40,7 +40,7 @@ the feature file you need.
   `--record`, `--microphones --set`, `--watch-modifiers`, `--watch-taps`,
   `--audio-recovery`, `--peek`, `--edit-test`, `--span-test`,
   `--clipboard-test`, `--paste-probe`, `--field-dump`, `--context-test`,
-  `--set-key`, `--warm`, `--warm-models`, `--slot-model`, `--sentence-model`,
+  `--set-key`, `--warm`, `--warm-models`, `--sentence-model`,
   `--phonemes`, `--setup-parsing`, `--update-check`, `--update-install`,
   `--panels`, and the image writers `--panel-sheet`, `--tutorial-sheet`,
   `--tour-film`, `--onboarding-film`. Never read another app's tree
@@ -135,18 +135,20 @@ its modifiers (`--app`, `--quiet`, `--vars`, `--no-prompts`, `--keyed`,
 `--cases`, `--probe`, `--verbose`, `--no-vocab`).
 
 The default proof feature, with its expected result. It runs the vocabulary
-stage, which loads the word vectors in the background and downloads them
-(about 400 MB) if they are missing. First check that
-`~/Library/Application Support/ParrotFlow/models/qwen3-embedding-0.6b-4bit`
+stage, which loads the parser and downloads it (about 530 MB) if it is
+missing. First check that
+`~/Library/Application Support/ParrotFlow/models/parrotflow-syrinx`
 exists. If it does not, ask the user before the call.
 
 ```sh
 .claude/skills/verify-parrotflow/scripts/pf.sh <run-dir> pipeline-vocabulary --pipeline tests/pipelines/replacements.yaml "our app is deployed on Versailles" --app "" --quiet --vars
 ```
 
-Exit `0`. The last line is `our app is deployed on Vercel`, and the output
-has `var   vocabulary.protected = "Vercel"`. Other features and their exact
-commands are in `features/`.
+Exit `0`. The last line is `our app is deployed on Versailles`: the clause
+decider offers the rule's place, so the heard word stands and the term waits
+on the pill. The output has `var   vocabulary.clause_offered = 1` and
+`var   vocabulary.reverted = "Vercel -> Versailles"`. Other features and their
+exact commands are in `features/`.
 
 The flags, and what they need:
 
@@ -206,8 +208,8 @@ the command in its feature file.
   `--no-prompts`, `--transcribe` without `--no-vocab`) can rewrite
   `~/Library/Application Support/ParrotFlow/phonemes-multilingual-g2p.json`,
   the live release app's cache, when it meets an uncached word. The same
-  stage starts a background load of the word vectors, which downloads them
-  if `models/qwen3-embedding-0.6b-4bit` is missing there.
+  stage loads the parser, and starts its download if
+  `models/parrotflow-syrinx` is missing there.
 - **Model loads.** `--transcribe` starts background loads from
   `~/Library/Application Support/ParrotFlow/models/` and loads the speech
   model from `~/Library/Application Support/FluidAudio/Models/`. A missing
@@ -255,7 +257,7 @@ A complete run, end to end:
 ```sh
 swift build -c release
 .claude/skills/verify-parrotflow/scripts/doctor.sh
-ls -d "$HOME/Library/Application Support/ParrotFlow/models/qwen3-embedding-0.6b-4bit"   # missing: ask the user first
+ls -d "$HOME/Library/Application Support/ParrotFlow/models/parrotflow-syrinx"   # missing: ask the user first
 RUN=$(.claude/skills/verify-parrotflow/scripts/start.sh); echo "$RUN"
 .claude/skills/verify-parrotflow/scripts/pf.sh "$RUN" pipeline-vocabulary --pipeline tests/pipelines/replacements.yaml "our app is deployed on Versailles" --app "" --quiet --vars
 .claude/skills/verify-parrotflow/scripts/finish.sh "$RUN"
