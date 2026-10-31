@@ -22,7 +22,7 @@ BIN="$ROOT/.build/release/ParrotFlow"
 # The parser's fetch goes nowhere.
 WORK="$(mktemp -d -t parrotflow-pipeline)"
 trap 'rm -rf "$WORK"' EXIT
-export CFFIXED_USER_HOME="$WORK" PARROTFLOW_SYRINX_ENDPOINT=http://127.0.0.1:9
+export CFFIXED_USER_HOME="$WORK" PARROTFLOW_CONFIG_DIR="$WORK/config" PARROTFLOW_SYRINX_ENDPOINT=http://127.0.0.1:9
 
 pass=0; total=0; failed=""
 

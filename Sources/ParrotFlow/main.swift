@@ -29,6 +29,16 @@ if arguments.contains("--schema") {
     exit(SchemaCommand.run())
 }
 
+// Above the config for the same reason: it reads a tokenizer.json and writes
+// nothing, and loading the config would refresh the shipped examples.
+if let at = arguments.firstIndex(of: "--tokenize") {
+    guard arguments.indices.contains(at + 1) else {
+        print("usage: ParrotFlow --tokenize \"<text>\"")
+        exit(2)
+    }
+    exit(ParserCommand.tokenize(arguments[at + 1]))
+}
+
 // The first line of every run, app or command, and above the config for the
 // same reason: loading the config already logs — a transform it refused, a
 // vocabulary.yaml it wrote — and those lines need the stamp above them to say
@@ -248,14 +258,6 @@ if let at = arguments.firstIndex(of: "--parse") {
         exit(2)
     }
     exit(ParserCommand.run(text: arguments[at + 1], language: languageList(arguments)?.first ?? "en"))
-}
-
-if let at = arguments.firstIndex(of: "--tokenize") {
-    guard arguments.indices.contains(at + 1) else {
-        print("usage: ParrotFlow --tokenize \"<text>\"")
-        exit(2)
-    }
-    exit(ParserCommand.tokenize(arguments[at + 1]))
 }
 
 if let at = arguments.firstIndex(of: "--tree-cut") {

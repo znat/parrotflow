@@ -60,7 +60,11 @@ while IFS= read -r quoted && IFS= read -r want; do
   text="$(python3 -c 'import json,sys; sys.stdout.write(json.loads(sys.argv[1]))' "$quoted")"
   # `ids` with nothing after it is the empty string's answer, and `$2` is then
   # empty. That is a pass, not a missing line.
-  got="$("$BIN" --tokenize "$text" 2>/dev/null | awk '/^ids/ { print $2 }')"
+  # No `ids` line at all is a tokenizer that did not load, and must not pass
+  # as the empty string's answer.
+  out="$("$BIN" --tokenize "$text" 2>/dev/null)"
+  got="$(printf '%s\n' "$out" | awk '/^ids/ { print $2 }')"
+  printf '%s\n' "$out" | grep -q '^ids' || got="(no ids line)"
   if [ "$got" = "$want" ]; then
     pass=$((pass + 1))
     printf '  ✓ %s\n' "$quoted"
