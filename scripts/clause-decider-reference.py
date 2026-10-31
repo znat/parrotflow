@@ -162,6 +162,10 @@ TRIMS = [
     ("trim-the", "We pushed the Versal build tonight.", "the Versal", "Vercel", VERCEL),
     ("trim-at", "I sent the notes to Matthew at work.", "Matthew at", "Matthieu", []),
     ("trim-none", "Red Rock still handles the redaction chain.", "Red Rock", "Redrock", REDROCK),
+    ("trim-to", "We asked Versal to rebuild the preview.", "Versal to", "Vercel", VERCEL),
+    ("trim-because", "I moved it to Versal because the build failed.", "Versal because", "Vercel", VERCEL),
+    ("trim-que", "Je crois que Versal est en panne ce matin.", "que Versal", "Vercel", VERCEL),
+    ("trim-de", "On a demandé à Versal de refaire le déploiement.", "Versal de", "Vercel", VERCEL),
 ]
 FLOOR = 0.60
 # The slot the parser reads where the heard words stand: (key, text, heard, term).
@@ -302,7 +306,7 @@ def main():
             line.update({k: it[k] for k in ("text", "a", "b", "heard", "term", "uses", "memory", "trim", "floor", "masked")
                          if k in it})
         if it.get("trim"):
-            kept = C.trim_edges(p, it["text"], a, b, it["term"])
+            kept = C.trim_edges(p, it["text"], a, b, it["term"], C.CLOSED_PART)
             if kept is None:
                 lines.append(dict(line, declined="nothing left"))
                 continue

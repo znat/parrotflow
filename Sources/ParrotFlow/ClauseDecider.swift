@@ -405,7 +405,7 @@ extension ClauseDecider {
     static let marginWarm = 0.15, marginCold = 0.75
     /// A lead this small is a near tie and is offered.
     static let tie = 0.02
-    private static let closed: Set<String> = ["ADP", "DET", "CCONJ", "PRON", "AUX"]
+    private static let closed: Set<String> = ["ADP", "DET", "CCONJ", "PRON", "AUX", "PART"]
 
     enum GroupDecision: Equatable {
         case write(String)
