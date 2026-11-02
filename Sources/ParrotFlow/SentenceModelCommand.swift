@@ -11,9 +11,6 @@ import Foundation
 /// The same call the first English dictation makes, without a microphone. Run
 /// it twice: the second run skips the download, which is the only proof the
 /// cache is being used.
-///
-/// The vocabulary slot gate has its own model and its own command,
-/// `--slot-model`.
 @available(macOS 14, *)
 enum SentenceModelCommand {
 

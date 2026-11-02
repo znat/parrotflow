@@ -1003,8 +1003,8 @@ enum PanelsCommand {
         let didNotArrive = sampleDownloads(speech: .failed(.unreachable))
         let ready = sampleDownloads(speech: .installed)
         ready.update(NeuralPhonemes.soundDownload.id, to: .installed)
-        ready.update(SlotModel.download.id, to: .installed)
         ready.update(SentenceReadings.download.id, to: .installed)
+        ready.update(SyrinxModel.download.id, to: .installed)
         // The other blocking row. Its failure costs the speech gate rather than
         // the whole feature, and the sentence has to say which row it is about.
         let vadDidNotArrive = sampleDownloads(speech: .installed)
@@ -1344,12 +1344,8 @@ enum PanelsCommand {
         downloads.update(Transcriber.voiceDownload.id, to: .installed)
         downloads.expect(NeuralPhonemes.soundDownload)
         downloads.update(NeuralPhonemes.soundDownload.id, to: .failed(.unreachable))
-        downloads.expect(SlotModel.download)
         downloads.expect(SentenceReadings.download)
-        // Live, not `off`. It was switched off here to draw the "gate is off"
-        // row, and that row went with the old screen — all it did after that
-        // was keep the sixth model off the list.
-        downloads.expect(WordVectors.download)
+        downloads.expect(SyrinxModel.download)
         return downloads
     }
 
@@ -1639,7 +1635,7 @@ enum PanelsCommand {
                     downloads.update(
                         Transcriber.voiceDownload.id, to: .downloading(percent: nil)
                     )
-                    downloads.update(SlotModel.download.id, to: .downloading(percent: nil))
+                    downloads.update(SyrinxModel.download.id, to: .downloading(percent: nil))
                     return
                 }
                 downloads.update(
@@ -1655,15 +1651,15 @@ enum PanelsCommand {
         // countdown or the cross takes the panel down, the downloads start
         // again.
         case "launch":
-            // All six, which is what a first install declares. Three of them
+            // All five, which is what a first install declares. Three of them
             // are drawn — see `LaunchModel.shown` — and the panel has to be
             // right at the number it will really be handed, not at the number
             // that fits.
             let downloads = ModelDownloads()
             for row in [
                 Transcriber.speechDownload, Transcriber.voiceDownload,
-                NeuralPhonemes.soundDownload, SlotModel.download,
-                SentenceReadings.download, WordVectors.download
+                NeuralPhonemes.soundDownload, SentenceReadings.download,
+                SyrinxModel.download
             ] {
                 downloads.expect(row)
             }

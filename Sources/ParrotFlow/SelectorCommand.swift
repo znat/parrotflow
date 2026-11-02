@@ -71,7 +71,7 @@ enum SelectorCommand {
             open.append(place)
             answers.append(answer)
         }
-        let located = OpenPlaces.located(open, in: text)
+        let located = OpenPlaces.located(open, in: text, ignoringCase: true)
         guard !located.isEmpty else {
             print("NOTHING FOUND")
             return 0

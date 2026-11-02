@@ -92,6 +92,7 @@ transcription:
   rewrite_line: true
   sentence_repair: {enabled: true}    # a fixed pass, not a step — see pipelines.md
   vocabulary: {enabled: true}   # the same
+  disfluency: {enabled: false}  # the same; off by default
   pipeline: …           # see pipelines.md
 
 transforms: …           # see pipelines.md
@@ -553,7 +554,9 @@ end of what was still there.
 
 Two passes read the decoder's own output, so neither can be reordered. They are
 settings blocks rather than `pipeline:` lines, they run before the list —
-`sentence_repair` first — and `enabled: false` is the only way off.
+`sentence_repair` first — and `enabled: false` is the only way off. A third
+fixed pass, the tree cutter, runs after them when
+[`transcription.disfluency`](#transcriptiondisfluency) is on.
 
 ```yaml
 transcription:
@@ -566,16 +569,49 @@ transcription:
   vocabulary:
     enabled: true
     sound_below: 0.85      # how close a run of words must sound to a term
-    gate_sentence: true    # read the sentence before keeping a match
+    gate_sentence: true    # let the clause decider read the sentence
     asks: true             # ask before typing a name it could not settle
-    slot_floor: {en: 0.20, fr: 0.30}
 ```
 
-`near_misses`, `by_sound`, `gate`, `slot_gate`, `portrait` and
-`lowercase_refused` are also keys here, all on by default. They are not
-everyday settings: they exist so a bench can switch off one half of the pass
-and score the other, which is why `built-in/config.example.yaml` does not write
-them out. `slot_gate: false` downloads nothing.
+**The clause decider reads every place the word lists leave open**, in English
+and in French: the languages its slot head was fitted on, listed in
+`ClauseDecider.Model.languages`. Both run the same pipeline; the language only
+picks the espeak voice. Any other language is declined: the decider and the
+slot check do not run, the word lists settle what they can and the other places
+stay open. It is one logistic
+regression with fixed signs over: how close the parser clause around the place
+is to the term's accepted and refused sentences, whether the heard words are a
+name (a small NER head on the parser), their part of speech and their
+neighbours', how they sound against the term in the dictation's voice, whether
+each word is in a word list (the spell checker in English and French, or the
+tokenizer list), and whether this exact swap was accepted or refused before. A term with
+no accepted sentence never writes; it offers or leaves. The slot check reads
+the parser too: the heard words become one `<mask>`, and a small head on the
+parser's features there gives P that a name, noun or pronoun stands in the
+slot. Under the threshold in `built-in/data/vocab-slot.safetensors`, the term is
+refused and what was heard is kept. A place several terms share is read once per term on the
+same clause, and the terms are told apart by how close the clause is to each
+one's sentences. The term spelled like the heard words is the default and needs
+no sentences; another is written only when it beats it by a fixed margin, and
+offered when it beats it by half. A sound match of two or
+more words loses an edge word the parser tags ADP, DET, CCONJ, PRON, AUX or
+PART (`on Versal` and `Versal to` are proposed as `Versal`) and must still sound like the term. It
+reads parrotflow-syrinx, so a vocabulary step fetches that model, and
+`gate_sentence: false` turns it off. Each dictation publishes `vocabulary.clause` (every
+feature, the score, the decision and the clause offsets per place) and
+`vocabulary.clause_written`, `clause_left`, `clause_offered`, `clause_ms`.
+
+`near_misses`, `by_sound`, `gate` and `lowercase_refused` are also keys here,
+all on by default. They are not everyday settings: they exist so a bench can
+switch off one half of the pass and score the other, which is why
+`built-in/config.example.yaml` does not write them out.
+
+**Four keys are retired.** `clause_decider`, `slot_gate`, `portrait` and
+`slot_floor` switched the vocabulary path the clause decider replaced: the
+mmBERT-small slot model, the Qwen3 Embedding word vectors and the term
+portraits. A config that still carries one loads, the key does nothing, and
+`--check-config` names it. The app removes the two models' caches and the
+portrait cache on its next launch.
 
 **Three keys moved out of `vocabulary.yaml`.** `sound_below`, `gate_sentence`
 and `asks` are person-chosen switches, and they were sitting in the file the
@@ -588,6 +624,25 @@ The old spelling is still read, so an install that has one keeps its value, and
 line was written in, any options on the line are carried into the block, and
 `--check-config` says the line can go. `when:`, `unless:` and `app:` on those
 two lines are dropped: there is no step left for a condition to sit on.
+
+## `transcription.disfluency`
+
+Takes back self-corrections with the parser, not with rules. The
+parrotflow-syrinx tree cutter proposes each stretch its parse marks as taken
+back, and the cut filter keeps the likely ones.
+
+```yaml
+transcription:
+  disfluency:
+    enabled: false
+    threshold: 0.80        # the cut filter keeps a cut at P(real) >= this
+```
+
+Off by default. On, it downloads parrotflow-syrinx, about 530 MB, and runs
+after `vocabulary` and before `pipeline:`. English only: a dictation in
+another language passes through untouched. `threshold` is a probability from
+0 to 1; `--check-config` refuses anything else. See
+[The tree_cutter pass](pipelines.md#the-tree_cutter-pass).
 
 ## `transcription.replacements` is retired
 
@@ -675,9 +730,9 @@ is timed in tenths of a second, and it sees every word you say.
 capitals out of speech is the job a small local model is worst at — so it is
 the first one worth pointing somewhere bigger.
 
-There is no entry for the `vocabulary` stage. It calls no model — the two word
-lists, the slot's part of speech and the two tests that read the sentence
-decide, and every place they leave open keeps what arrived. See
+There is no entry for the `vocabulary` stage. It calls no language model — the
+two word lists, the slot check and the clause decider decide, and every place
+they leave open keeps what arrived. See
 [pipelines.md](pipelines.md#the-name-stage). `review:` on that step named the
 model that used to decide; it is read and does nothing, and `--check-config`
 says so.

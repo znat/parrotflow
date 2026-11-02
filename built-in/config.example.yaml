@@ -83,7 +83,7 @@ transcription:
   vocabulary:
     enabled: true
     # sound_below: 0.85      # how close a run of words must sound to a term
-    # gate_sentence: true    # read the sentence before keeping a match
+    # gate_sentence: true    # let the clause decider read the sentence (en, fr)
     # asks: true             # ask before typing a name it could not settle
     #
     # The rest switch off one half of the pass so the other can be scored.
@@ -91,9 +91,16 @@ transcription:
     # near_misses: true      # also match a rendering one edit away
     # by_sound: true         # also match words that sound like a term
     # gate: true             # the word lists and the slot's part of speech
-    # slot_gate: true        # the mmBERT slot — false downloads nothing
-    # portrait: true         # a term's own sentences and its counter-examples
     # lowercase_refused: true
+
+  # Takes back self-corrections: the parrotflow-syrinx tree cutter proposes
+  # cuts, the cut filter keeps the likely ones. English only. No rules.
+  #
+  # Not a pipeline step: it runs third, after `vocabulary` and before the list,
+  # where spoken numbers are still words. On, it downloads about 530 MB.
+  disfluency:
+    enabled: false
+    # threshold: 0.80        # the cut filter keeps a cut at P(real) >= this
 
   # Spells a dictated word the way the screen does. Reads the screen at press.
   context_spelling:

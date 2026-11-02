@@ -65,7 +65,7 @@ espeak_here && echo "  brew uninstall espeak-ng — this takes it from the other
 [ "$CONFIG" -eq 1 ] && echo "  move $HOME/$CONFIG_DIR aside"
 [ "$INSTALL" -eq 1 ] && echo "  build, install and launch it again"
 echo
-echo "  kept: portraits and the phoneme table in $SUPPORT"
+echo "  kept: the clause decider's row cache and the phoneme table in $SUPPORT"
 [ "$CONFIG" -eq 0 ] && echo "  kept: ~/$CONFIG_DIR — add --config to move it aside"
 echo
 

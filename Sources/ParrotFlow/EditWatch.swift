@@ -19,8 +19,8 @@ import ApplicationServices
 /// One span, and the rest of the sentence unchanged. Two edits, a rewrite, or
 /// clearing the line are not corrections of a word — they are somebody writing
 /// something else, and reading them as a lesson would teach nonsense. The rule
-/// is deliberately strict here, because the alternative is a portrait poisoned
-/// by its own noise.
+/// is deliberately strict here, because the alternative is a term taught by
+/// its own noise.
 ///
 /// It also fires once. The same span keeps being read as long as the field is
 /// open, and a correction told twice is not two corrections.

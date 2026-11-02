@@ -15,7 +15,9 @@
 I deployed it to Versel yesterday|I deployed it to Versel yesterday
 We shipped on Ver Sal last week|We shipped on Ver Sal last week
 I love working on Superbase|I love working on Supabase
-It runs on super base now|It runs on Supabase now
+# A rendering made only of ordinary words is not a rule. With no parser here,
+# the clause decider cannot read its place, so it is left as heard.
+It runs on super base now|It runs on super base now
 I work with Tasmia on this|I work with Tasmia on this
 Talk to Tasmine about it|Talk to Tasmeen about it
 Open the file in Excel please|Open the file in Excel please
@@ -24,7 +26,7 @@ The database is the base of it|The database is the base of it
 Generally speaking this is fine|Generally speaking this is fine
 Nothing here matches anything|Nothing here matches anything
 Je préfère une lettre plus courte|Je préfère une lettre plus courte
-Um I work with Tasmin and Mick|I work with Tasmeen and Mik
+Um I work with Tasmin and Mick|I work with Tasmeen and Mick
 Where the last two uh lines are an example|Where the last two lines are an example
 Show me an example of rendered uh prompt|Show me an example of rendered prompt
 And uh, if you say hey parrot|And if you say hey parrot
@@ -37,7 +39,7 @@ Read config dot port from user dot name|Read config.port from user.name
 # It composes with the passes around it — the filler goes, the name is fixed,
 # and the dotted path is built from the corrected word. The capital is `tidy`
 # putting one back after a leading filler was removed, as everywhere else.
-Um call super base dot query|Call Supabase.query
+Um call super baze dot query|Call Supabase.query
 # And the limitation, recorded rather than wished away: a rule this shape joins
 # any two words either side of "dot", ordinary prose included. There is no
 # pattern that separates "user dot name" from "the word dot on" — they are the

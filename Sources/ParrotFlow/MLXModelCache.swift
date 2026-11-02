@@ -6,8 +6,8 @@ import MLXLMCommon
 /// One MLX model in the application support directory, and the fetch that puts
 /// it there.
 ///
-/// Two models are loaded this way — the word vectors and the sentence readings
-/// — and the download is the part with the traps in it: a lock so two
+/// The sentence readings are loaded this way, and the download is the part
+/// with the traps in it: a lock so two
 /// ParrotFlow processes do not fetch the same weights at once, a staging
 /// directory so a half-written cache never loads, and a file list rather than a
 /// whole-repository mirror.
@@ -29,7 +29,7 @@ struct MLXModelCache: Sendable {
     /// Beside the cache directory, not inside it, so a fetch that clears the
     /// cache does not delete a lock somebody is holding.
     let lockURL: URL
-    /// What a progress line calls this model — "word vectors 43%".
+    /// What a progress line calls this model — "sentence model 43%".
     let label: String
     /// The `ModelDownload` row this fetch reports into, so the setup screen
     /// shows a percentage for a model whose download lives here rather than in
@@ -65,7 +65,7 @@ struct MLXModelCache: Sendable {
 
     /// Downloads the files unless they are all already there.
     ///
-    /// `progress` gets a label shaped like "word vectors 43%", already
+    /// `progress` gets a label shaped like "sentence model 43%", already
     /// de-duplicated.
     func ensure(progress: (@Sendable (String) -> Void)? = nil) async throws {
         guard !isCached else { return }
