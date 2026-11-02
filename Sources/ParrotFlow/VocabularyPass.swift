@@ -416,16 +416,21 @@ enum VocabularyPass {
     /// rule writes these and the other gatherers skip them. `.sound`, so
     /// `settle` asks the slot and then the clause decider.
     ///
+    /// Renderings are read in their own language only, as the sound pass reads
+    /// them (`Config.vocabularySounds`): `quand on` is two words in English
+    /// too. `fallback` is the language of a rendering with no `lang:`.
+    ///
     /// Gathered before any correction too: a cold term never writes. Kokoro
     /// try-out: 2 first mentions offered instead of missed, 1 ordinary noun
     /// offered, 0 wrong writes. One No on the pill leaves it after that.
     static func wordParts(
-        in text: String, terms: [String: Config.Vocabulary.Term], claimed: [Part]
+        in text: String, terms: [String: Config.Vocabulary.Term], claimed: [Part],
+        language: String, fallback: String
     ) -> [Part] {
         let forms = terms.flatMap { term, entry -> [(form: String, term: String)] in
             let spelled = !entry.never && term != term.lowercased() && ordinary(term)
-            return (spelled ? [(term, term)] : [])
-                + entry.heard.filter(ordinary).map { ($0, term) }
+            let heard = entry.pronunciations.filter { ($0.lang ?? fallback) == language }.map(\.heard)
+            return (spelled ? [(term, term)] : []) + heard.filter(ordinary).map { ($0, term) }
         }
         .sorted { a, b in
             a.form.count != b.form.count ? a.form.count > b.form.count : (a.form, a.term) < (b.form, b.term)

@@ -640,6 +640,13 @@ cases:
     expect_vars:
       vocabulary.slots: 1
 
+  - name: an ordinary rendering from another language opens no place
+    pipeline: vocabulary-learnt-lang
+    input: We send the invoices monthly.
+    expect: unchanged
+    expect_vars:
+      vocabulary.slots: 0
+
   # And the counts still have to add up. A pattern rule wrote the second
   # `Vercel` and names no spelling to offer back, so the literal rule beside it
   # is one occurrence short however the pairs are grouped. Declining is the

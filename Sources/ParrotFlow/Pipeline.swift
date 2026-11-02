@@ -1217,7 +1217,10 @@ struct Pipeline: Equatable, Codable {
 
         // After the sound pass, so "stack" for `Stack` cannot take the span
         // "better stack" needs for `BetterStack`.
-        let worded = VocabularyPass.wordParts(in: text, terms: config.vocabulary.terms, claimed: parts)
+        let worded = VocabularyPass.wordParts(
+            in: text, terms: config.vocabulary.terms, claimed: parts,
+            language: Pipeline.language(of: text, config: config), fallback: config.primaryLanguage
+        )
         byWord = worded.count
         parts += worded
 
