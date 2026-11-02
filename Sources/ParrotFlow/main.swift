@@ -125,6 +125,10 @@ func languageList(_ arguments: [String]) -> [String]? {
     return listed.isEmpty ? nil : listed
 }
 
+if arguments.contains("--serve") {
+    exit(ServeCommand.run())
+}
+
 if arguments.contains("--check-config") {
     exit(CheckConfigCommand.run())
 }
