@@ -317,7 +317,7 @@ struct Pipeline: Equatable, Codable {
 
     var stages: [Stage] { steps.map(\.stage) }
 
-    /// What actually runs: the two fixed passes, then the list.
+    /// What actually runs: the fixed passes, then the list.
     ///
     /// `interpret` reads the decoder's own word timings and `vocabulary` is
     /// handed spans measured before any of this started. Both are wrong

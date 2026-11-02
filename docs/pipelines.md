@@ -37,7 +37,7 @@ when adding or reordering transforms.
 
 `sentence_repair` and `vocabulary` are not in this list. They read the
 decoder's own output, so they cannot be ordered — each has a settings block and
-runs before the list. See [The two fixed passes](#the-two-fixed-passes).
+runs before the list. See [The fixed passes](#the-fixed-passes).
 
 There is one pipeline, and it runs whatever the language. A step that should
 only run in one language says so on the line it affects:
@@ -53,9 +53,9 @@ you can see, not finding a setting you cannot. Delete `pipeline:` entirely and
 you get every stage back — a missing section is silence, not a choice. Write
 `pipeline: []` and you get none, which is a choice.
 
-The two fixed passes are the exception, and they are not in this list at all.
-`pipeline: []` still runs them; their own blocks turn them off. See [The two
-fixed passes](#the-two-fixed-passes).
+The fixed passes are the exception, and they are not in this list at all.
+`pipeline: []` still runs them; their own blocks turn them off. See [The
+fixed passes](#the-fixed-passes).
 
 `pipelines:`, the map keyed by language, is retired. Nothing under it is read.
 `--check-config` exits non-zero and says to write one `pipeline:` list, and the
@@ -70,7 +70,7 @@ order they had to run in was enforced by hand because the three were never
 independent. They are one stage, and the order is no longer something a config
 can get wrong.
 
-## The two fixed passes
+## The fixed passes
 
 `sentence_repair` and `vocabulary` are not in `pipeline:`. Each has a settings block
 under `transcription:`, each runs at a fixed point, and `enabled: false` is the

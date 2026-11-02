@@ -568,8 +568,8 @@ nothing to calibrate. The marks are `marks:` on the step, default
 English.
 
 This is not a pipeline step. It reads the decoder's own word timings, so there
-is no second place it could run — see [The two fixed
-passes](pipelines.md#the-two-fixed-passes). `transcription.sentence_repair:` is its
+is no second place it could run — see [The fixed
+passes](pipelines.md#the-fixed-passes). `transcription.sentence_repair:` is its
 settings block, and `enabled: false` is what turns it off; with it off nothing
 is downloaded for boundaries at all.
 

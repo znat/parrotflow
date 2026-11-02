@@ -36,14 +36,14 @@ Preconditions:
 
 - **Term over a rendering.** Run
   `.claude/skills/verify-parrotflow/scripts/pf.sh "$RUN" pipeline-vocabulary --pipeline tests/pipelines/replacements.yaml "our app is deployed on Versailles" --app "" --quiet --vars`.
-  Exit `0`. The last line is `our app is deployed on Versailles`: the clause
-  decider offers the rule's place, so the heard word stands. The output
-  contains `var   vocabulary.changes = "Versailles -> Vercel"`,
-  `var   vocabulary.clause_offered = 1` and
-  `var   vocabulary.reverted = "Vercel -> Versailles"`. Without the parser the
-  place stays open and the line is `our app is deployed on Vercel`, which is
-  the case in `tests/pipeline-cases.yaml`. About 2 s, most of it the parser
-  load (`vocabulary.gate_ms`).
+  Exit `0`. The last line is `our app is deployed on Versailles`: "Versailles"
+  is an ordinary word, so its rendering is a place, not a rule, and the clause
+  decider offers it. The output contains `var   vocabulary.changes = ""` and
+  `var   vocabulary.clause_offered = 1`. Without the parser the word is left
+  as heard too, with `vocabulary.clause_declined = "parser not downloaded"`.
+  A rendering of unknown words is still a rule: "deployed on Versal" comes
+  out `deployed on Vercel`. About 2 s, most of it the parser load
+  (`vocabulary.gate_ms`).
 - **Filler removed, stage by stage.** Run
   `.claude/skills/verify-parrotflow/scripts/pf.sh "$RUN" pipeline-trace --pipeline tests/pipelines/replacements.yaml "our app is um deployed on Vercel" --app ""`.
   Exit `0`. Output has `in:   our app is um deployed on Vercel`, then

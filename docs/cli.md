@@ -197,13 +197,15 @@ so a case file states the setup it assumes instead of inheriting this machine's.
   result. It is how a stage whose only contribution is a fact gets scored at
   all, and the first thing to reach for when a condition is not deciding what
   you expected. See [pipelines.md](pipelines.md#variables).
-- `--warm` waits for the parser before the run. The sentence gate never makes
-  a dictation wait, so in a one-shot run the parser is not loaded and the
-  clause decider is skipped every time — this is the only way to see it from
-  the command line. Off by default: it is a 533 MB download, and `make test`
+- `--warm` waits for the models the run reads, and downloads what is missing.
+  Without it, a run waits up to 2 s for a cached parser, as a dictation does.
+  A parser that is not downloaded is skipped
+  (`vocabulary.clause_declined = "parser not downloaded"`) and its download
+  starts. Off by default: the parser is a 533 MB download, and `make test`
   must not need one. Only what the fixture's own pipeline reads: the parser for
-  a `vocabulary` or `tree_cutter` step, and the 320 MB sentence model for a
-  `sentence_repair` or `context_spelling` step.
+  a `tree_cutter` step, or for a `vocabulary` step whose clause decider can run
+  (`gate_sentence` on, English or French in the languages), and the 320 MB
+  sentence model for a `sentence_repair` or `context_spelling` step.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
 

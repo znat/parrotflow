@@ -554,7 +554,9 @@ end of what was still there.
 
 Two passes read the decoder's own output, so neither can be reordered. They are
 settings blocks rather than `pipeline:` lines, they run before the list —
-`sentence_repair` first — and `enabled: false` is the only way off.
+`sentence_repair` first — and `enabled: false` is the only way off. A third
+fixed pass, the tree cutter, runs after them when
+[`transcription.disfluency`](#transcriptiondisfluency) is on.
 
 ```yaml
 transcription:
