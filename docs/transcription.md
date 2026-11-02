@@ -413,10 +413,19 @@ is already in the text. The sound path has written nothing yet, so it still
 applies the glue and `Ghost E` still becomes `Ghostty`.
 
 With `clause_decider: true` the glue writes nothing on its own, from either
-source. Each word of the span is asked of the two lists: a word in neither
-(`Zorb` in `Zorb lix`) writes the term, as a single word would. Otherwise the
-place goes to the slot and the clause decider like any other, so a correction
-back counts against the term the next time.
+source. For a rule, each word of the span is asked of the two lists: a word in
+neither (`Zorb` in `Zorb lix`) writes the term, as a single word would.
+Otherwise the place goes to the slot and the clause decider like any other, so
+a correction back counts against the term the next time.
+
+A sound match goes further: the lists write nothing for it, not a glued span
+and not a single word in neither list. A word in neither list is not always the
+term: `superbase` is not `Supabase`, and a person called Alama is not `Ollama`.
+The decider never writes a term with no accepted sentence, so a first sighting
+is offered, not written. A rule keeps the shortcut, because the slot reads some
+unknown names as AUX and would refuse a `heard:` form a correction taught.
+Outside English the decider declines, so a sound match in neither list stays
+open and keeps the word that was heard.
 
 If the list cannot be read the gate stops auto-applying entirely and leaves
 every place open. `--word-gate <word>` prints both verdicts and the

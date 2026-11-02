@@ -1207,11 +1207,14 @@ enum VocabularyPass {
         /// write a name the text did not have, and can refuse a reading
         /// outright.
         case full
-        /// Any source with the clause decider on: written when neither list
-        /// knows the heard word, otherwise asked of the slot, which may put the
-        /// heard word back. A glued span is written only when one of its words
-        /// is in neither list, and asked otherwise.
+        /// A rule with the clause decider on: written when neither list knows
+        /// the heard word, otherwise asked of the slot, which may put the heard
+        /// word back. A glued span is written only when one of its words is in
+        /// neither list, and asked otherwise.
         case slot
+        /// A sound match with the clause decider on: the lists write nothing.
+        /// The place is asked of the slot and then of the clause decider.
+        case asked
     }
 
     /// What the two free rules settle.
@@ -1226,7 +1229,8 @@ enum VocabularyPass {
     /// 1. **The two word lists.** A word neither `NSSpellChecker` nor the
     ///    tokenizer's vocabulary has ever seen is not a word the speaker meant.
     ///    Write the term. Free, no model, and the only rule here that is
-    ///    absolute rather than relative to the sentence.
+    ///    absolute rather than relative to the sentence. Under `.asked` it
+    ///    writes nothing and the place is asked.
     /// 2. **Can a name stand in that spot?** Mask the span, take the ten words
     ///    the model would put there, tag them. A spot that wants a verb, an
     ///    adverb or a preposition cannot hold a name, so the reading is
@@ -1242,15 +1246,16 @@ enum VocabularyPass {
     /// never offered a way back from. Rules therefore get `.lists` — the two
     /// word lists, and only in the direction that keeps what is already there.
     /// The sound path writes nothing until somebody says so, so it gets
-    /// `.full`. With the clause decider on, both get `.slot`: the term stays
+    /// `.full`. With the clause decider on, a rule gets `.slot`: the term stays
     /// on the pill when the decider offers, so a refusal no longer undoes a
     /// lesson the user cannot get back, and a glued span reaches the decider.
+    /// A sound match gets `.asked`, so a word in neither list reaches it too.
     ///
-    /// This is what settles `Versal -> Vercel`. `Versal` is in neither list,
-    /// so the rule that wrote it is right and there is nothing left to decide.
-    /// `Versailles -> Vercel` fires the same rule in the same sentence and is
-    /// *not* settled here: the spell checker knows the word and the lists say
-    /// nothing, so it is left to `SentenceGate`.
+    /// With the flag off, this is what settles `Versal -> Vercel`. `Versal` is
+    /// in neither list, so the rule that wrote it is right and there is
+    /// nothing left to decide. `Versailles -> Vercel` fires the same rule in
+    /// the same sentence and is *not* settled here: the spell checker knows
+    /// the word and the lists say nothing, so it is left to `SentenceGate`.
     static func settle(
         _ changes: [Change], in text: String, by policy: [Standing: Gating],
         slot: ((Change) -> SlotGate.Reading?)?
@@ -1285,6 +1290,12 @@ enum VocabularyPass {
                     Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
                         + " glues to the term — the rule's write is left to the sentence")
                     return nil
+                case (.asked, _):
+                    // A write here stood unless the decider would leave a term
+                    // it has sentences for. On the 165 bench both wrong writes
+                    // left after the glue fix came from here.
+                    Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
+                        + (glued ? " glues to the term" : " is in neither word list") + " — asked")
                 case (.slot, true):
                     // Six of the eight wrong writes on the 165 bench were
                     // glued spans written past three corrections back.
