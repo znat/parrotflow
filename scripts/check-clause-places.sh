@@ -119,6 +119,16 @@ check "a case-only rendering of an ordinary word is not a rule" \
   "$(cased "Can you resend me the invite?")" "Can you resend me the invite?"
 check "a case-only rendering of a non-word still writes" \
   "$(cased "The rate limiter keeps its counters in upstash.")" "The rate limiter keeps its counters in Upstash."
+casedvars() {
+  PARROTFLOW_CONFIG_DIR="$WORK/cased" "$BIN" --pipeline "$WORK/cased.yaml" "$1" --vars --warm 2>/dev/null \
+    | sed -nE -e 's/^out:  //p' -e 's/^var   vocabulary\.clause_(offered|left|written) = /\1 /p' | paste -sd'|' -
+}
+check "a case-only place before any sentence is offered, not written" \
+  "$(casedvars "We send the receipts with resend.")" "left 0|offered 1|written 0|We send the receipts with resend."
+check "keeping the ordinary word on the pill is a counter" "$(PARROTFLOW_CONFIG_DIR="$WORK/cased" "$BIN" \
+  --picked resend Resend --in "We send the receipts with resend." 2>/dev/null | tail -1)" "counter Resend"
+check "and the next one is left" \
+  "$(casedvars "We send the receipts with resend.")" "left 1|offered 0|written 0|We send the receipts with resend."
 
 printf '\n  %d/%d\n' "$pass" "$total"
 [ "$pass" -eq "$total" ]

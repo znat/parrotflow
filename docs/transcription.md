@@ -211,6 +211,12 @@ offered as the term. A rendering reaches words the term's spelling cannot:
 A rule alone cannot tell two things apart that are spelled the same. "deployed
 on Vercel against the Versailles castle" has both, and the rule rewrites both.
 
+A rendering that only changes the letter case of an ordinary word is not a
+rule. `heard: resend` under `Resend` would turn "Can you resend me the invite?"
+into the product. Each "resend" is a place the gates read instead, as every
+term's lowercase spelling is when it is an ordinary word. `heard: vercel`
+under `Vercel` is still a rule: no word list knows "vercel".
+
 Per entry:
 
 | | |

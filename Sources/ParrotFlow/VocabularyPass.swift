@@ -396,6 +396,39 @@ enum VocabularyPass {
         return marks.map(\.rule)
     }
 
+    /// `resend` for `Resend`: only the letter case differs, and a word list
+    /// knows the word. Not a rule, or every "resend" becomes the product.
+    static func onlyCases(word heard: String, term: String) -> Bool {
+        heard != term && heard.lowercased() == term.lowercased() && Vocabulary.unseenWord(in: heard) == nil
+    }
+
+    /// Places where a term stands in another letter case and that spelling is
+    /// an ordinary word: "with resend" for `Resend`. No rule writes these and
+    /// the other gatherers skip them. `.sound`, so `settle` asks the slot and
+    /// then the clause decider.
+    ///
+    /// Gathered before any correction too: a cold term never writes. Kokoro
+    /// try-out: 2 first mentions offered instead of missed, 1 ordinary noun
+    /// offered, 0 wrong writes. One No on the pill leaves it after that.
+    static func caseParts(
+        in text: String, terms: [String: Config.Vocabulary.Term], claimed: [Part]
+    ) -> [Part] {
+        var found: [Part] = []
+        var taken = claimed.map(\.range)
+        for (term, entry) in terms.sorted(by: { $0.key < $1.key }) {
+            let spelled = !entry.never && onlyCases(word: term.lowercased(), term: term)
+            guard spelled || entry.heard.contains(where: { onlyCases(word: $0, term: term) }) else { continue }
+            for span in Vocabulary.spans(of: term, in: text, ignoringCase: true)
+            where text[span] != term && !taken.contains(where: { $0.overlaps(span) }) {
+                found.append(Part(
+                    range: span, decoded: String(text[span]), other: term, term: term, standing: .sound
+                ))
+                taken.append(span)
+            }
+        }
+        return found.sorted { $0.range.lowerBound < $1.range.lowerBound }
+    }
+
     // MARK: - Slots and readings
 
     /// The places one term may claim, cut to `limit`, best evidenced first.

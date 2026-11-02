@@ -781,6 +781,9 @@ struct Config: Decodable, Equatable {
     /// Those words open the group instead, and `SoundGroup` decides. See
     /// `docs/proposals/sound-groups.md`.
     ///
+    /// A case-only rendering of an ordinary word is not a rule either. See
+    /// `VocabularyPass.onlyCases(word:term:)` and `VocabularyPass.caseParts`.
+    ///
     /// One rule per source. Two rules with the same left side are a rewrite
     /// that depends on which one the pass reads first.
     var vocabularyRules: [Transcription.Rule] {
@@ -793,6 +796,7 @@ struct Config: Decodable, Equatable {
             .sorted { ($0.source, $0.term) < ($1.source, $1.term) }
             .compactMap { pair in
                 guard !opens.contains(pair.source.lowercased()) else { return nil }
+                guard !VocabularyPass.onlyCases(word: pair.source, term: pair.term) else { return nil }
                 guard written.insert(pair.source).inserted else { return nil }
                 return Transcription.Rule(source: pair.source, replacement: pair.term)
             }

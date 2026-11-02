@@ -1116,13 +1116,14 @@ struct Pipeline: Equatable, Codable {
         // near miss has to raise this or that stage never runs.
         var nearMisses = 0
         var bySound = 0
+        var byCase = 0
         // Where this stage's time goes, split at its two model calls. The
         // stage's own `ms` is one number for all of it.
         var soundSeconds = 0.0
         var gateSeconds = 0.0
         func result(_ text: String, _ vars: [String: Scope.Value]) -> StageResult {
             let wrote: [String: Scope.Value] = [
-                "count": .int(exact.count + nearMisses + bySound),
+                "count": .int(exact.count + nearMisses + bySound + byCase),
                 "changes": .string(exact.changes),
                 "before": .string(handed),
                 "protected": .string(exact.protected),
@@ -1144,6 +1145,9 @@ struct Pipeline: Equatable, Codable {
         let rules = exact.changes
         let beforeRules: String? = handed
         var parts = VocabularyPass.ruleParts(rules, in: text, before: beforeRules)
+        let cased = VocabularyPass.caseParts(in: text, terms: config.vocabulary.terms, claimed: parts)
+        byCase = cased.count
+        parts += cased
 
         // The near misses an exact rule cannot reach. On by default: an exact
         // rule is the narrowest route to a term, and `Praisy`'s list holding

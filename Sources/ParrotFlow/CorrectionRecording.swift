@@ -115,7 +115,7 @@ enum CorrectionRecording {
             return .use(term: already)
         }
         let bare = word.trimmingCharacters(in: .punctuationCharacters)
-        guard !bare.isEmpty else { return .counter(term: term) }
+        guard !bare.isEmpty, !VocabularyPass.onlyCases(word: bare, term: term) else { return .counter(term: term) }
         // What the tagger read, when it read a name at all. A place or an
         // organization picked here is a term too, and labelling it `person`
         // would put a guess in the file under the name of a fact.
@@ -227,6 +227,7 @@ enum CorrectionRecording {
     }
 
     /// The vocabulary term this word is, ignoring case and any possessive.
+    /// `resend` is not `Resend`: it is the ordinary word (`VocabularyPass.onlyCases`).
     static func term(named word: String, in terms: [String]) -> String? {
         var bare = word.trimmingCharacters(in: .whitespaces)
         if let mine = Vocabulary.possessive(in: bare) {
@@ -234,6 +235,8 @@ enum CorrectionRecording {
         }
         bare = bare.trimmingCharacters(in: .punctuationCharacters)
         guard !bare.isEmpty else { return nil }
-        return terms.first { $0.caseInsensitiveCompare(bare) == .orderedSame }
+        return terms.first {
+            $0.caseInsensitiveCompare(bare) == .orderedSame && !VocabularyPass.onlyCases(word: bare, term: $0)
+        }
     }
 }
