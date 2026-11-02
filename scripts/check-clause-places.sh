@@ -14,7 +14,7 @@
 #   a span that glues to the term is asked, and a correction back counts
 #   a case-only rendering of an ordinary word is settled, of a non-word written
 #   a case-only place yields to a longer term and to a sound place
-#   a rendering of ordinary words is a place, not a rule
+#   a rendering of ordinary words is a place, not a rule, and keeps a possessive
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
@@ -173,6 +173,18 @@ printf 'terms:\n  Qonto:\n' > "$WORK/learnt/vocabulary.yaml"
 check "a rendering of ordinary words left in place keeps its capital" "$(PARROTFLOW_CONFIG_DIR="$WORK/learnt" "$BIN" \
   --pipeline "$WORK/learnt.yaml" "Quand on aura fini, on partira." --quiet --warm 2>/dev/null | tail -1)" \
   "Quand on aura fini, on partira."
+
+mkdir -p "$WORK/billed"
+printf 'transcription:\n  languages: [en]\n' > "$WORK/billed/config.yaml"
+printf 'terms:\n  Bill:\n    kind: person\n' > "$WORK/billed/vocabulary.yaml"
+printf 'languages: [en]\nvocabulary:\n  terms:\n    Bill:\n      heard: ["bill'"'"'s"]\npipeline:\n  - vocabulary\n' > "$WORK/billed.yaml"
+for s in "Bill's flight lands at noon." "I booked Bill's hotel for Tuesday." "Bill's manager approved the trip." \
+  "Send Bill's slides to the team."; do
+  PARROTFLOW_CONFIG_DIR="$WORK/billed" "$BIN" --for Bill "$s" >/dev/null 2>&1
+done
+check "a possessive rendering writes the term with its possessive" "$(PARROTFLOW_CONFIG_DIR="$WORK/billed" "$BIN" \
+  --pipeline "$WORK/billed.yaml" "I booked bill's flight yesterday." --quiet --warm 2>/dev/null | tail -1)" \
+  "I booked Bill's flight yesterday."
 
 printf '\n  %d/%d\n' "$pass" "$total"
 [ "$pass" -eq "$total" ]

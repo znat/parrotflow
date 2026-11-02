@@ -398,9 +398,10 @@ enum VocabularyPass {
 
     /// `quand on` for `Qonto`, `resend` for `Resend`: every word is one a word
     /// list knows. Not a rule, or every "quand on" becomes the company. A
-    /// pattern in slashes is not words.
+    /// pattern in slashes is not words, and neither is `404`.
     static func ordinary(_ heard: String) -> Bool {
         !Config.Transcription.Rule(source: heard, replacement: "").isRegex
+            && heard.split(separator: " ").allSatisfy { $0.contains(where: \.isLetter) }
             && Vocabulary.unseenWord(in: heard) == nil
     }
 
@@ -435,7 +436,8 @@ enum VocabularyPass {
             for span in Vocabulary.spans(of: form, in: text, ignoringCase: true)
             where text[span] != term && !taken.contains(where: { $0.overlaps(span) }) {
                 found.append(Part(
-                    range: span, decoded: String(text[span]), other: term, term: term, standing: .sound
+                    range: span, decoded: String(text[span]),
+                    other: Vocabulary.inflected(term, like: String(text[span])), term: term, standing: .sound
                 ))
                 taken.append(span)
             }
@@ -723,7 +725,7 @@ enum VocabularyPass {
     /// Nothing is written here. Each match becomes one more change for the
     /// model to vote on.
     ///
-    /// - Parameter rules: the vocabulary's rules — `Config.vocabularyRules`.
+    /// - Parameter rules: every rendering as a rule — `Config.renderingRules`.
     ///   Not `transcription.rules`: those are a table somebody wrote for
     ///   themselves, and widening them by an edit is a different decision from
     ///   widening a rendering the app learnt. A pattern rule names no spelling

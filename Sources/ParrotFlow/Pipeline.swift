@@ -1158,7 +1158,7 @@ struct Pipeline: Equatable, Codable {
         // on and what that cost over this speaker's archive.
         if step.vocabulary.isOn(\.nearMisses) {
             let reached = VocabularyPass.fuzzyParts(
-                in: text, rules: config.vocabularyRules, claimed: parts
+                in: text, rules: config.renderingRules, claimed: parts
             )
             nearMisses = reached.count
             parts += reached

@@ -628,6 +628,18 @@ cases:
     input: J'ai payé avec Conto hier.
     expect: J'ai payé avec Qonto hier.
 
+  - name: a rendering with no letters is still a rule
+    pipeline: vocabulary-learnt-words
+    input: On a eu une 404 hier.
+    expect: On a eu une Erreur404 hier.
+
+  - name: an ordinary rendering an apostrophe away still opens a near miss
+    pipeline: vocabulary-fuzzy-ordinary
+    input: She deserves Praise's work
+    expect: unchanged
+    expect_vars:
+      vocabulary.slots: 1
+
   # And the counts still have to add up. A pattern rule wrote the second
   # `Vercel` and names no spelling to offer back, so the literal rule beside it
   # is one occurrence short however the pairs are grouped. Declining is the

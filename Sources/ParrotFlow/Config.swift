@@ -788,6 +788,12 @@ struct Config: Decodable, Equatable {
     /// One rule per source. Two rules with the same left side are a rewrite
     /// that depends on which one the pass reads first.
     var vocabularyRules: [Transcription.Rule] {
+        renderingRules.filter { !VocabularyPass.ordinary($0.source) }
+    }
+
+    /// Every rendering as a rule, the ordinary ones too, for the near-miss
+    /// pass: `Praise's` is one apostrophe from `heard: Praises`.
+    var renderingRules: [Transcription.Rule] {
         let opens = SoundGroup.openings(in: vocabulary.terms)
         var written = Set<String>()
         return vocabulary.terms
@@ -797,7 +803,6 @@ struct Config: Decodable, Equatable {
             .sorted { ($0.source, $0.term) < ($1.source, $1.term) }
             .compactMap { pair in
                 guard !opens.contains(pair.source.lowercased()) else { return nil }
-                guard !VocabularyPass.ordinary(pair.source) else { return nil }
                 guard written.insert(pair.source).inserted else { return nil }
                 return Transcription.Rule(source: pair.source, replacement: pair.term)
             }
