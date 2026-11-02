@@ -193,12 +193,11 @@ right whenever the spelling is a word.
 #### Per term
 
 **`kind`** is what the term names: `person`, `place`, `organization` or `word`.
-The correction panel writes it, proposing a value from the macOS word tagger,
-and so does a term created from an answer on the pill. Two things read it.
-`NamePlace` asks whether the heard word and the term are both names, and the
-slot test stands aside when they are. A word picked on the pill under a term
-that says `kind: person` is written as a person. A term written before the key
-existed has no `kind`, and that is not the same as `word`.
+The correction panel writes it, proposing a value from the macOS word tagger.
+One thing reads it: a correction onto a name with no term creates that name as
+a person when the tagger reads nothing and the term it replaced says
+`kind: person`. A pill answer never creates a term. A term written before the
+key existed has no `kind`, and that is not the same as `word`.
 
 **`pronunciations`** is the ways this term actually comes out of the
 recogniser. Each entry does two jobs. It is an exact rule, which is what
@@ -360,8 +359,8 @@ that does not beat its own blind version has not been shown to work. On
 scores 33 of 50.
 
 It is gone. It cost about 900 ms a dictation and an Ollama on the machine, and
-what is left below covers what it covered: two word lists, the slot's part of
-speech, and the two tests that read the sentence. **Everything they leave open
+what is left below covers what it covered: two word lists, the slot check and
+the clause decider. **Everything they leave open
 keeps what arrived** — a rule substitution keeps the term the rule wrote, a
 near miss or a sound match keeps the word that was heard.
 
@@ -406,78 +405,46 @@ Neither list is asked about a span with a space in it. Both halves are ordinary
 words, so the pair is matched glued instead: `red crawl` is `Redcrawl` with a
 space in it. That test cannot tell a split name from an English phrase whose
 glued form is also a term, and `better stack` is one — "how this is a better
-stack for us" shipped as "a BetterStack for us". So a `replacements` rule that
-has already written the term over a glued span is left open here and the two
-sentence tests below decide it, which costs nothing: an open place keeps what
-is already in the text. The sound path has written nothing yet, so it still
-applies the glue and `Ghost E` still becomes `Ghostty`.
-
-With `clause_decider: true` the glue writes nothing on its own, from either
-source. Each word of the span is asked of the two lists: a word in neither
+stack for us" shipped as "a BetterStack for us". So the glue writes nothing on
+its own. Each word of the span is asked of the two lists: a word in neither
 (`Zorb` in `Zorb lix`) writes the term, as a single word would. Otherwise the
-place goes to the slot and the clause decider like any other, so a correction
-back counts against the term the next time.
+place goes to the slot check and the clause decider like any other, so a
+correction back counts against the term the next time.
 
 If the list cannot be read the gate stops auto-applying entirely and leaves
 every place open. `--word-gate <word>` prints both verdicts and the
 decision, and `--word-gate <word> <term>` prints the possessive verdict and the
 decision for that pair; `scripts/check-word-gate.sh` scores them.
 
-**What the lists cannot settle, the slot model can.** The word lists are about
-one word. A second tier reads the slot the word sits in, using mmBERT-small —
-the masked language model `SlotModel` fetches. Mask the word, take the ten most
-likely fillers, put each one back and tag it: the modal tag is what the slot
-wants. A name goes in a `Noun`, `Adjective` or `Pronoun` slot and
-never in a `Verb`, `Adverb` or `Preposition` one, so `merge` -> `Vercel` and
-`ready` -> `Arexvy` are refused. This tier only refuses. It never writes a
-term, and everything it does not refuse it leaves open, `Determiner` slots
-included: those are modifier positions and names do sit in them (`cloud code`,
-`bedrock principles`).
+**What the lists cannot settle, the parser reads.** Two checks read
+parrotflow-syrinx, the parser the tree cutter reads too. They run in English and
+French, the languages the slot head was fitted on. Any other language is
+declined: the word lists settle what they can and the other places stay open.
+A dictation waits at most two seconds for a cached parser, and without one every
+place the parser would read stays open.
 
-Measured over the 50 English cases of `tests/judge-cases.yaml`: 12 written by
-the word lists, 15 refused by the slot, 23 left open, and no error either way.
-`scripts/check-slot-gate.sh` is the run. See `SlotGate`. The route label for
-"left open" is still `judge`, from when a model answered those. ModernBERT
-refused 14 and left 24 on the same set, also with no error; mmBERT-small
-replaced it because it covers French, at no cost in English.
+**The slot check only refuses.** The heard words become one `<mask>`, and a
+small head on the parser's features there gives P that a name, noun or pronoun
+stands in the slot. Under the threshold in
+`built-in/data/vocab-slot.safetensors` the term is refused and what was heard is
+kept. Above it the place goes on to the clause decider.
 
-The model is never waited for. Until it is on disk, every place this tier would
-judge is simply left open, which is the behaviour before this tier. This tier is
-reached only from the sound pass, and that pass is English only, so it was
-measured in English only and runs nowhere else.
-
-**The slot is not asked about one name against another.** It compares the term
-with the word that was heard, and a term is unknown to the tokenizer by
-construction, so a heard word that is itself a name wins every time whatever
-the sentence says: `Eric` against the term `Erik` scored −0.254, −0.253 and
-−0.257 in three different sentences, refusing all three. A place is read as
-name against name when the term says `kind: person`, when `NLTagger` reads the
-heard word as a personal name, or when the heard word is a `heard:` rendering
-somebody wrote down. Those go straight to the portrait, and to the pill when it
-says nothing — which is how a second name starts from nothing. An ordinary word
-against a term — `versus` against `Vercel` — still goes to the slot.
-
-**What the slot cannot settle, the term itself can.** Every sentence you
-confirm a term in is kept in `vocabulary-uses.yaml`, and one of them gives the
-term a portrait: the average of what those sentences look like, with the term
-itself left out. Every sentence you correct a term *out* of is kept there too,
-as a counter-example, and one of those gives the term a second average. Then a
-new sentence is written when it sits closer to the first than to the second,
-and refused when it sits closer to the second. There is no threshold to set:
-the two are compared directly, and a difference under 0.01 says nothing either
-way.
+**The clause decider reads the term's own sentences.** Every sentence you
+confirm a term in is kept in `vocabulary-uses.yaml`, and every sentence you
+correct a term *out* of is kept there too, as a counter-example. The decider
+parses the clause around the place and weighs how close it is to each set,
+whether the heard words are a name, their part of speech, how they sound
+against the term, whether each word is in a word list, and whether this exact
+swap was accepted or refused before. It writes the term, keeps what was heard,
+or offers the place on the pill. A term with no accepted sentence never writes.
+A rule's write is taken back only by a term with sentences, when the decider
+would keep what was heard. The features are listed in
+[configuration.md](configuration.md#transcriptionsentence_repair-and-transcriptionvocabulary);
+`--clause-decide` prints one decision.
 
 This is what separates "how this is a better stack for us" from "BetterStack
-paged me again at three": both look like sentences BetterStack lives in, and
-only the first also looks like the ones it was taken out of. Measured on 20
-held-out sentences
-over four terms: 20 right, 0 wrong, 0 quiet, where the floor rule that came
-before it scores 17 / 2 / 1. A term with no counter-example at all keeps that
-floor rule, and the floor needs three uses: it is read off each use scored
-against the others, so there have to be others. So a term with one use and no
-counter says nothing until it gets either a counter or a third use.
-`--portrait <term> "<sentence>" <word>` prints both scores and the verdict;
-`scripts/check-counter-portrait.sh` is the run.
+paged me again at three": a correction back on the first is a refused sentence,
+and the next sentence like it reads closer to that one than to the term's own.
 
 **Two names with one sound are a group.** `Mik` and `Mick` are two people and
 the decoder writes "Mick" for both. A group is derived, never declared: two
@@ -487,34 +454,13 @@ the other's spelling. The links are transitive, and almost every term is a
 group of one, which behaves exactly as above.
 
 A rendering that opens a group is no longer a substitution rule. The word opens
-the place instead, and every member is a reading of it. Each is scored against
-its own portrait, and one more member has no name — **plain**, the ordinary
-word that sounds like this, whose portrait is the counter rows of the whole
-group pooled. A member below its own floor is out; the best of the rest wins if
-it leads the second by more than 0.01. A named member winning writes its
-spelling, plain winning keeps what was heard, and nobody standing keeps it too.
-Two standing and no lead is an open place, and the pill asks.
-
-A member with no portrait is **unknown**, which is not the same as out: nothing
-is known about it, so it cannot lose a comparison it was never in. One unknown
-member opens the place and the pill lists it, which is the only way that member
-gets a first sentence. And "nobody standing" is the ordinary word winning, so
-it needs an ordinary word to win: with no counter row anywhere in the group
-there is no plain centre, and the place is opened rather than kept — best
-first, so the pill's top row carries the ranking the floors threw away.
-
-Both were measured on decoded audio, 2026-09-10. Two names, three sentences
-each, no counters: every score sat below a floor read off three short
-sentences, and keeping what was heard typed the wrong name and asked nothing.
-Opened instead, the right name is the top row on both held-out sentences —
-Erik 0.791 against Eric 0.649 on "Eric is a musician.", and Eric 0.747 against
-Erik 0.647 on "Eric is a software engineer."
-
-`--portrait <heard> "<sentence>"` prints the group a word opens, every member's
-score and floor, plain's score and the verdict.
-`scripts/check-sound-group.sh` scores the derivation, the decision rule and
-what a correction records; the portraits behind them have no bench of their own.
-See `docs/proposals/sound-groups.md`.
+the place instead, and every member is a reading of it. The clause decider
+reads the clause once per member and tells them apart by how close it is to
+each one's sentences. The member spelled like the heard words is the default
+and needs no sentences; another is written only when it beats it by a fixed
+margin, and offered when it beats it by half. `--sound-group <word>` prints the
+group a word opens; `scripts/check-sound-group.sh` scores the derivation and
+what a correction records.
 
 **What nothing settles is asked.** The pill draws the sentence with the
 readings stacked where the open place is, and a digit answers it. Two readings
@@ -537,51 +483,40 @@ and the count on the pill says how many are left.
 The answers are the reason to ask. What is recorded depends on the word that
 was written, not on which row it sat in: a word that is a term is a **use** of
 that term, with `heard:` set to the spelling it replaced, and an ordinary word
-is a **counter** under the term that was proposed — the half a portrait cannot
-get any other way, because accepting an offer only ever teaches where a term
-*does* live. One correction never writes both: putting `Mick` back over `Mik`
-is a use of Mick and says nothing about Mik. "Something else" writes no row at
-all. A counter-example and the term stops being read against a floor.
+is a **counter** under the term that was proposed — the half the clause decider
+cannot get any other way, because accepting an offer only ever teaches where a
+term *does* live. One correction never writes both: putting `Mick` back over
+`Mik` is a use of Mick and says nothing about Mik. "Something else" writes no
+row at all.
 
-**A name picked on the pill becomes a term.** Every person is a term, and plain
-is for ordinary words — but a person the recogniser spells right is never
-corrected, so nothing ever creates their term and every sentence about them
-piles up as a counter under somebody else's name. When the word picked is not a
-term and the tagger reads it as a name, it is written to `vocabulary.yaml` with
-no pronunciation, under the kind the tagger read — `person`, `place` or
-`organization` — and the sentence is a use of it. A word the tagger cannot read
-is written as a person only when the term proposed over it says `kind: person`,
-which is the one thing left saying this is a name at all. The group then holds
-both names.
+**Keeping the heard word adds nothing to the vocabulary.** A word picked on the
+pill that is not a term is a counter under the term that was offered, whatever
+kind of word it is. A picked "Versailles" used to become a term, and a heard
+"Versailles" was then never a place for Vercel again. Every other member of the
+group offered at that word is refused there too.
 
 **A correction onto a name with no term creates it.** `Anna` corrected to
 `Annah` where only `Anna` is a term is not an ordinary word being put back: it
 is a third person. The rendering is written, the term is created with
 `kind: person`, and the sentence is a use of it — the ordinary correction path,
 which the counter branch used to intercept. A place or an organization put back
-is still a counter, because a counter is what a portrait is built from:
-`Vercel` corrected to `Versailles` says where Vercel does not live. Measured on
-decoded audio, 2026-09-10: five sentences about a third person had become five
-counters under the second, and the pooled plain centre then scored 0.945 on a
-sentence that was hers.
+is still a counter: `Vercel` corrected to `Versailles` says where Vercel does
+not live. Measured on decoded audio, 2026-09-10: five sentences about a third
+person had become five counters under the second.
 
 **A place has one owner.** A sentence recorded under one member is taken off
 every other member of the group, whatever its polarity. The pill records "Eric
 has a new piano." under Eric, you correct it to Erik, and without this both
-names hold the same sentence at the same place and their centres are pulled
-together by the words meant to separate them. A place is the text on either
-side of the term, so the two spellings are the same place. Only a row whose own
-span opens the group goes. The log names the row that moved. The portrait of
-the member that lost it is keyed on a fingerprint of its uses, so it rebuilds
-itself the next time it is read.
+names hold the same sentence at the same place, as evidence for both. A place
+is the text on either side of the term, so the two spellings are the same place.
+Only a row whose own span opens the group goes. The log names the row that
+moved.
 
 **A sentence naming two members of one group is recorded nowhere.** It belongs
-to neither, and the rival clip cannot save it: cutting the window at the other
-name leaves the words between them, which are the sentence. "So I tried again
-with Erik the musician and Eric the software engineer." was kept as a counter
-under Erik on 2026-09-10, and every later "Eric the musician" was refused,
-0.80 against 0.93 and 0.90 against 0.92. Corrections and pill answers both
-refuse it, and the log names the two. Each answer also goes to `trace.jsonl` as `kind: chose`, kept apart from
+to neither. "So I tried again with Erik the musician and Eric the software
+engineer." was kept as a counter under Erik on 2026-09-10, and every later
+"Eric the musician" was refused. Corrections and pill answers both refuse it,
+and the log names the two. Each answer also goes to `trace.jsonl` as `kind: chose`, kept apart from
 the hand edits: a place the app said out loud it could not decide is a harder
 label than a mistake somebody fixed.
 

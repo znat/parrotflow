@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Writes the fixture the Swift slot tokenizer is checked against.
+"""Writes the fixture the Swift tokenizer is checked against.
 
-    scripts/slot-probe-reference.py            -> tests/slot-tokenizer-cases.json
+    scripts/tokenizer-reference.py            -> tests/tokenizer-cases.json
 
-Needs the `tokenizers` package and mmBERT-small's `tokenizer.json`. The Swift
-side reads that same file through `ScalarBPE`, so a disagreement is
-`SlotTokenizer`, not the file.
+Needs the `tokenizers` package and parrotflow-syrinx's `tokenizer.json`, which
+is mmBERT-small's. The Swift side reads that same file through `ScalarBPE`, so
+a disagreement is `ScalarBPE`, not the file.
 
 `tokenizers` and not `transformers.AutoTokenizer`. The two disagree on one
 thing: `tokenizer_config.json` marks `<mask>` `lstrip`, which `transformers`
 applies and the file's own `added_tokens` does not carry. So `"it <mask> that"`
 is `it`, `<mask>`, `that` under `transformers` and `it`, `▁`, `<mask>`, `that`
-here and in Swift. The app never encodes `<mask>` as text — `SlotProbe.at` puts
-the id in — so this fixture describes the path the app takes.
+here and in Swift.
 """
 import argparse
 import json
@@ -21,14 +20,14 @@ import sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOKENIZER = os.path.expanduser(
-    "~/Library/Application Support/ParrotFlow/models/mmbert-small-64/tokenizer.json"
+    "~/Library/Application Support/ParrotFlow/models/parrotflow-syrinx/tokenizer.json"
 )
 LENGTH = 64
 
 # Every class this tokenizer can be got wrong on: the `▁` word-start marker and
-# its prefix space, byte fallback, NFC, the added tokens, the two halves
-# `SlotProbe.at` encodes (a left with no trailing space, a right with one), and
-# the empty string, which must encode to nothing rather than to a lone `▁`.
+# its prefix space, byte fallback, NFC, the added tokens, a left half with no
+# trailing space and a right half with one, and the empty string, which must
+# encode to nothing rather than to a lone `▁`.
 CASES = [
     "we have to do it. That works well",
     "The capital of Ireland is Dublin",
@@ -95,7 +94,7 @@ def main():
     if longest <= LENGTH:
         sys.exit(f"no case is longer than {LENGTH} tokens (longest is {longest})")
 
-    path = args.out or os.path.join(HERE, "tests/slot-tokenizer-cases.json")
+    path = args.out or os.path.join(HERE, "tests/tokenizer-cases.json")
     with open(path, "w") as handle:
         json.dump(out, handle, ensure_ascii=False, indent=1)
         handle.write("\n")

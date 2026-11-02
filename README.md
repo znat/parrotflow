@@ -91,7 +91,8 @@ transcription:
 
 Fix a word once and the pill offers to learn it: Y to keep it, N to skip.
 Next time, "upgrade view" becomes "upgrade Vue". In "re-render the whole
-view", the word stays "view".
+view", the word stays "view". A small parser reads the sentence around each
+place and decides, in English and French. When it cannot tell, the pill asks.
 
 <img src="Resources/readme/vocab.webp" width="640" alt="The pill asks Learn this spelling? over a terminal, with view struck through and Vue in its place, and Yes, No and Edit buttons.">
 
@@ -160,7 +161,7 @@ transcription:
 
 ## Truly local and extensible
 
-**ParrotFlow uses very small models**, such as mmBERT, the Qwen3 0.6B family and spaCy, to understand what you mean, use your vocabulary in context, correct hesitations and repair raw ASR output without relying on a powerful LLM to rewrite what you said.
+**ParrotFlow uses very small models**, such as mmBERT, Qwen3 0.6B and spaCy, to understand what you mean, use your vocabulary in context, correct hesitations and repair raw ASR output without relying on a powerful LLM to rewrite what you said.
 
 
 <table>

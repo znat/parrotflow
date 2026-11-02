@@ -370,12 +370,12 @@ jobs:
       - name: No speaker audio in the repository
         run: scripts/check-no-voice.sh
 
-      # The slot tokenizer is swift-transformers over mmBERT-small's Gemma-style
-      # file, and its mistakes are just as quiet: a lost prefix space or a
-      # dropped accent changes the ten words the gate reads and raises nothing.
-      # Also the tokenizer files alone — 18 MB — never the 269 MB model.
-      - name: The slot tokenizer against HuggingFace's own
-        run: scripts/check-slot-tokenizer.sh
+      # The parser's tokenizer reads mmBERT-small's Gemma-style file, and its
+      # mistakes are quiet: a lost prefix space or a dropped accent changes what
+      # the parser reads and raises nothing. The tokenizer file alone — 17 MB —
+      # never the model.
+      - name: The parser tokenizer against HuggingFace's own
+        run: scripts/check-tokenizer.sh
 
       # Joining two sentences lowercases the word after the period. Getting
       # that wrong writes "ask him nathan knows". NLTagger and the vocabulary
@@ -400,9 +400,8 @@ jobs:
         run: scripts/check-invented-tail.sh
 
       # Several names with one sound: which terms are derived into one group,
-      # what the decision rule does with scores written by hand, and what a
-      # correction against a term records. No model — the portraits behind it
-      # are scored by scripts/check-counter-portrait.sh, which needs one.
+      # and what a correction or a pill answer against a term records. No
+      # model.
       - name: Sound groups
         run: scripts/check-sound-group.sh
 

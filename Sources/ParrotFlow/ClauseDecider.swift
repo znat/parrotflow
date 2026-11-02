@@ -1,15 +1,16 @@
 import CryptoKit
 import Foundation
 
-/// Decides a vocabulary place from the parser clause around it, in place of
-/// `TermPortrait`. One sign-constrained logistic regression over: how close the
-/// clause is to the term's accepted and refused sentences, whether the heard
-/// span is an entity, the part of speech of the heard word and its
-/// neighbours, how it sounds against the term, whether it is a dictionary
-/// word, and whether this exact swap was accepted or refused before.
+/// Decides a vocabulary place from the parser clause around it. One
+/// sign-constrained logistic regression over: how close the clause is to the
+/// term's accepted and refused sentences, whether the heard span is an entity,
+/// the part of speech of the heard word and its neighbours, how it sounds
+/// against the term, whether it is a dictionary word, and whether this exact
+/// swap was accepted or refused before.
 ///
 /// Ported from `training/syntax-parser/vocab_clause_core.py`; the weights were
-/// fitted on public text only. Behind `transcription.vocabulary.clause_decider`.
+/// fitted on public text only. Reads English and French; any other language
+/// is declined and its places stay open.
 enum ClauseDecider {
 
     enum Decision: String {
@@ -559,7 +560,7 @@ extension ClauseDecider {
 }
 
 /// The row vectors, kept on disk under a name that holds the parser revision
-/// and the decider's weights, next to the Qwen portrait store.
+/// and the decider's weights.
 actor ClauseStore {
 
     static let shared = ClauseStore()
@@ -665,13 +666,12 @@ final class ClauseSession {
         return reading
     }
 
-    /// What the parser expects where the heard words stand, as the slot gate's
-    /// route. Refused when the slot head's P that a name, noun or pronoun
+    /// What the parser expects where the heard words stand. Refused when the slot head's P that a name, noun or pronoun
     /// (PROPN, NOUN, PRON) stands there is under the file's threshold: the 5th
     /// percentile of P over UD dev proper nouns. Right / wrong declines against
     /// the argmax UPOS rule: French 135 45/1 (30/7), English judge 13/0 (12/1),
     /// bench 33/1 (25/1).
-    func slot(_ change: VocabularyPass.Change, in text: String) -> SlotGate.Reading? {
+    func slot(_ change: VocabularyPass.Change, in text: String) -> VocabularyPass.SlotReading? {
         let started = Date()
         defer { seconds += Date().timeIntervalSince(started) }
         let heardText = text.replacingCharacters(in: change.range, with: change.was)
@@ -681,7 +681,7 @@ final class ClauseSession {
         else { return nil }
         let tag = UPOS.allCases[Parser.argmax(slot.upos)]
         lines.append("\"\(change.was)\" slot \(tag.rawValue) nominal=\(String(format: "%.3f", slot.nominal))")
-        return SlotGate.Reading(tag: tag.rawValue, route: slot.nominal < slotHead.threshold ? .decline : .open)
+        return VocabularyPass.SlotReading(tag: tag.rawValue, route: slot.nominal < slotHead.threshold ? .decline : .open)
     }
 
     private func parsing(_ text: String) -> ClauseDecider.Parsed {

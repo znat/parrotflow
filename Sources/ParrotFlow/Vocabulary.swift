@@ -41,9 +41,7 @@ import Foundation
 /// similarity it is given is `offer_below:` and a wrong fire costs a menu line
 /// rather than a rewritten word — see `Config.Vocabulary.offerBelow`.
 @available(macOS 14, *)
-actor Vocabulary {
-
-    static let shared = Vocabulary()
+enum Vocabulary {
 
     /// FluidAudio's own metric, so a span this file offers is scored the way
     /// the span it came from was. Normalised Levenshtein on the glued, letters
@@ -225,7 +223,7 @@ actor Vocabulary {
     ///
     /// The auto-apply path reaches this far less often since `dropsPossessive`
     /// leaves that pair open. It is still what writes the reading the
-    /// sentence tests are offered, which is where the possessive has to
+    /// clause decider is offered, which is where the possessive has to
     /// survive.
     static func inflected(_ term: String, like heard: String) -> String {
         guard let (stem, suffix) = possessive(in: heard), !stem.isEmpty,
@@ -262,13 +260,13 @@ actor Vocabulary {
     /// survive by accident, because their stripped form is a word of its own —
     /// `cant`, `wont`, `dont`, `its`, `lets`.
     ///
-    /// Asked here and not in `SlotGate`, because the slot is never consulted
+    /// Asked here and not of the slot, because the slot is never consulted
     /// on a word the free tier has already decided: `I wouldn't do that` reads
     /// slot `Verb`, which the gate blocks, and the word was written anyway.
     ///
     /// A rule, not a threshold, and the same rule `dropsPossessive` is. Writing
     /// a name over `wouldn't` changes what the sentence says, in every
-    /// sentence. It routes rather than refuses: the sentence tests read it.
+    /// sentence. It routes rather than refuses: the clause decider reads it.
     static func dropsApostrophe(heard: String, term: String) -> Bool {
         inner(in: heard) && !inner(in: term)
     }
@@ -358,12 +356,11 @@ actor Vocabulary {
     /// proposal that reaches this stage from a spelling or from a sound has
     /// neither number.
     ///
-    /// **That line has never been measured.** `scripts/check-slot-gate.sh`
-    /// scores this gate on the 50 cases of `tests/judge-cases.yaml` by passing
-    /// `heardScore: -1, termScore: 0` — two constants chosen so the guard is
-    /// always true. So the 47/50 and the zero errors behind this whole tier
-    /// were measured on exactly this function, with no audio in them at all.
-    /// Leaving the line out here loses no evidence, because there is none.
+    /// **That line has never been measured.** `--word-gate` scores this gate
+    /// by passing `heardScore: -1, termScore: 0` — two constants chosen so the
+    /// guard is always true. So what was measured of this tier was measured on
+    /// exactly this function, with no audio in it at all. Leaving the line out
+    /// here loses no evidence, because there is none.
     static func autoApplies(heard: String, term: String) -> Bool {
         // A possessive both sides carry is taken off both before anything is
         // looked up.
@@ -466,24 +463,4 @@ actor Vocabulary {
         guard !forms.contains(where: { Replacements.isRealWord($0) }) else { return false }
         return WordPieces.knows(bare) == false
     }
-
-    /// The masked language model, once per process, and only if it is already
-    /// on disk. `SlotModel` fetches it in the background after the first
-    /// English dictation; nothing here waits for that.
-    private var loadedSlotGate: SlotGate?
-    private var slotGateFailed = false
-
-    func slotGate() async -> SlotGate? {
-        if let loadedSlotGate { return loadedSlotGate }
-        guard !slotGateFailed, SlotModel.isCached else { return nil }
-        do {
-            loadedSlotGate = SlotGate(probe: try await SlotProbe.load())
-        } catch {
-            slotGateFailed = true
-            Log.write("vocabulary: no slot gate (\(error.localizedDescription));"
-                + " the sentence decides, or nothing does")
-        }
-        return loadedSlotGate
-    }
-
 }

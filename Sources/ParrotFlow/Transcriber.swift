@@ -212,71 +212,8 @@ actor Transcriber {
         ModelDownloads.report(Self.speechDownload.id, .downloading(percent: percent))
     }
 
-    /// The slot model fetch, once per process. Cleared when it fails, so the
-    /// next English dictation tries again.
-    private var slotModelFetch: Task<Void, Never>?
-
-    /// True while that fetch is running. Its progress callback reaches this
-    /// actor through an unstructured task, so a percentage can arrive after
-    /// the fetch has already put the real status back — and the menu bar then
-    /// keeps a finished download's number until something else writes to it.
-    private var slotModelRunning = false
-
-    /// Starts the slot model download and does not wait for it.
-    ///
-    /// mmBERT-small, 269 MB, read by the vocabulary gate. The gate stands
-    /// aside until it is on disk — `SlotModel.isCached` — so no dictation waits
-    /// here. It reports progress but never `.failed`: a gate that is not there
-    /// yet is a gate that leaves the place open, not a model error.
-    func warmSlotModel() {
-        guard slotModelFetch == nil else { return }
-        slotModelRunning = true
-        slotModelFetch = Task { [weak self] in
-            guard let self else { return }
-            var failed = false
-            do {
-                try await SlotModel.shared.prepare { label in
-                    Task { await self.reportSlotModel(label) }
-                }
-                // Through `slotGate`, which is what a dictation calls, rather
-                // than loading a probe this throws away: the two must not be
-                // able to warm different things. Preparing the model was only
-                // half of it — the tokenizer and the probe are the other half,
-                // and the first dictation of every launch paid 2.5s for them
-                // while the model sat ready. Measured on three launches.
-                let started = Date()
-                if await Vocabulary.shared.slotGate() != nil {
-                    Log.write(String(
-                        format: "slot gate: warmed in %.1fs", Date().timeIntervalSince(started)
-                    ))
-                }
-            } catch {
-                Log.write("slot model: \(error.localizedDescription);"
-                    + " the vocabulary pass leaves what it cannot settle as it stands")
-                failed = true
-            }
-            await self.finishSlotModel(failed: failed)
-        }
-    }
-
-    private func reportSlotModel(_ label: String) {
-        guard slotModelRunning else { return }
-        // Reported, not recorded. `status` says whether the transcriber can
-        // transcribe, and during this fetch it can.
-        onStatusChange(.downloading(label, blocking: SlotModel.download.blocking))
-    }
-
-    private func finishSlotModel(failed: Bool) {
-        slotModelRunning = false
-        if failed { slotModelFetch = nil }
-        // Whatever was true before this started is true again. Usually
-        // `.ready`, which is what clears the label the fetch put up — unless
-        // the other fetch is still going, and then its label stays.
-        restoreStatusIfIdle()
-    }
-
-    /// The sound model fetch, once per process. Same shape and same reasons
-    /// as the slot model above.
+    /// The sound model fetch, once per process. Cleared when it fails, so the
+    /// next dictation tries again.
     private var soundModelFetch: Task<Void, Never>?
     private var soundModelRunning = false
 
@@ -323,7 +260,7 @@ actor Transcriber {
     /// percentage out of the menu bar, and the one somebody was watching
     /// appeared to stall.
     private func restoreStatusIfIdle() {
-        guard !slotModelRunning, !soundModelRunning else { return }
+        guard !soundModelRunning else { return }
         onStatusChange(status)
     }
 
@@ -626,20 +563,6 @@ actor Transcriber {
         // The acoustic pass is gone — see the commit that removed it. What is
         // left of the vocabulary runs in the pipeline, on text, and needs no
         // audio and no model of its own.
-        // After the vocabulary pass, not before: that pass fetches its own
-        // 98 MB on a first run and this dictation is waiting on it. Two
-        // downloads at once halve the bandwidth of the one somebody is
-        // watching.
-        //
-        // The vocabulary gate's two models, in any language: mmBERT-small
-        // answers in French and so do the word vectors.
-        //
-        // Fetched at launch too. This is the retry: a fetch that failed clears
-        // itself, and the next dictation tries again.
-        if config.readsSlots { warmSlotModel() }
-        if config.readsSentenceGate, #available(macOS 14, *) {
-            Task { await WordVectors.shared.warm() }
-        }
 
         // The sound pass is English only — espeak's letter-to-sound answers for
         // French words and the answer is noise. So is the boundary reading,

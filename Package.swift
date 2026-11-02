@@ -16,10 +16,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.1.0"),
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.7"),
-        // Qwen3-Embedding, for the vectors the vocabulary stage compares. MLX
-        // is the only local path that returns per-token states: Ollama's embed
-        // endpoint returns one pooled vector per text, and pooling loses the
-        // signal (6/8 correct per-token, 2/8 pooled).
+        // MLX runs Qwen3 0.6B Base, which scores sentence boundaries.
         .package(url: "https://github.com/ml-explore/mlx-swift-lm", from: "3.31.4"),
         // The tokenizer only. `MLXHuggingFace` would bring the same thing behind
         // a macro, and swift-syntax with it; the two protocols it fills are four

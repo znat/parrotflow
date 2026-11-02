@@ -380,16 +380,10 @@ wants "and says what it should be"       "$got" "person, place, organization, wo
 
 # --- the clause decider reads with the parser alone --------------------------
 #
-# With it on, nothing loads mmBERT for the slot or the word vectors for the
-# portrait and the slot gap: the launch fetch, the warm-ups and the portrait
-# rebuild all ask the predicates this line prints.
-printf 'transcription:\n  languages: [en]\n  vocabulary:\n    clause_decider: true\n' > "$WORK/config.yaml"
+# The launch fetch and the warm-ups ask the predicate this line prints.
 printf 'terms:\n  Tasmeen:\n' > "$WORK/vocabulary.yaml"
 got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>/dev/null)"
 wants "the clause decider needs the parser" "$got" "vocabulary models: parrotflow-syrinx"
-rejects "and not the slot model"            "$got" "mmbert-small-64"
-rejects "nor the word vectors"              "$got" "qwen3-embedding"
-printf 'transcription:\n  languages: [en]\n' > "$WORK/config.yaml"
 
 printf '\n  %d/%d\n' "$pass" "$total"
 if [ -n "$failed" ]; then

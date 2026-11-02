@@ -171,17 +171,16 @@ check "leaving interpret out of the list loads" "$code" "0"
 check "and it runs anyway, because the list is not its switch" \
   "$(stages)" "sentence_repair → vocabulary → context_spelling"
 
-# --- the vocabulary step's gates ----------------------------------------------
+# --- the vocabulary step -----------------------------------------------------
 #
-# Two tests read the sentence and each has its own switch, both on by default.
-# The line `--check-config` prints is the same predicate that decides whether
-# the model behind each one is fetched, so a gate reported off is a gate
-# nothing is downloaded for.
+# The clause decider reads the sentence for every vocabulary step. The line
+# `--check-config` prints is the same predicate that decides whether its model
+# is fetched.
 
-# The `vocabulary` step lines, one per step, joined with |. Each carries the
-# step's resolved floors and its two switches.
+# The `vocabulary` step lines, one per step, joined with |. The models line
+# under them is not a step.
 steps() {
-  printf '%s\n' "$out" | sed -n 's/^      vocabulary *//p' | tr '\n' '|'
+  printf '%s\n' "$out" | sed -n 's/^      vocabulary *//p' | grep -v '^models:' | tr '\n' '|'
 }
 
 run_config gates_default 'transcription:
@@ -189,35 +188,9 @@ run_config gates_default 'transcription:
   pipeline:
     - vocabulary'
 
-check "a bare - vocabulary line has both gates on and the built-in floors" \
-  "$(steps)" "slot floor en 0.20  fr 0.30  slot on, portrait on|"
-
-run_config gates_slot_off 'transcription:
-  languages: [en]
-  pipeline:
-    - {stage: vocabulary, slot_gate: false}'
-
-check "slot_gate: false loads" "$code" "0"
-check "and reports the slot gate off, the portrait still on" \
-  "$(steps)" "slot floor en 0.20  slot off, portrait on|"
-
-run_config gates_portrait_off 'transcription:
-  languages: [en]
-  pipeline:
-    - {stage: vocabulary, portrait: false}'
-
-check "portrait: false loads" "$code" "0"
-check "and reports the portrait off, the slot gate still on" \
-  "$(steps)" "slot floor en 0.20  slot on, portrait off|"
-
-run_config gates_both_off 'transcription:
-  languages: [en]
-  pipeline:
-    - {stage: vocabulary, slot_gate: false, portrait: false}'
-
-check "both switches off loads" "$code" "0"
-check "and neither model is read" \
-  "$(steps)" "slot floor en 0.20  slot off, portrait off|"
+check "a bare - vocabulary line runs the clause decider" "$(steps)" "clause decider on|"
+check "and names the languages it reads" \
+  "$(printf '%s\n' "$out" | grep -c 'the clause decider reads en, fr')" "1"
 
 run_config gates_file_switch 'transcription:
   languages: [en]
@@ -225,24 +198,34 @@ run_config gates_file_switch 'transcription:
     - vocabulary' 'gate_sentence: false'
 
 check "gate_sentence: false loads" "$code" "0"
-check "and turns both sentence tests off, naming the key" \
-  "$(steps)" "slot floor en 0.20  slot on, portrait off|"
+check "and turns the clause decider off" "$(steps)" "clause decider off|"
 check "and the key is named under the step" \
-  "$(printf '%s\n' "$out" | grep -c 'the sentence tests are off')" "1"
+  "$(printf '%s\n' "$out" | grep -c 'the clause decider is off')" "1"
+
+run_config retired_keys 'transcription:
+  languages: [en]
+  vocabulary:
+    clause_decider: false
+    slot_floor: 0
+  pipeline:
+    - {stage: vocabulary, slot_gate: false, portrait: false, slot_floor: {fe: 3}}'
+
+check "the retired vocabulary keys still load, whatever they hold" "$code" "0"
+check "and each is named as no longer read" \
+  "$(printf '%s\n' "$out" | grep -c 'is no longer read')" "5"
+check "and the clause decider runs anyway" "$(steps)" "clause decider on|"
 
 run_config gates_two_steps 'transcription:
   languages: [en, fr]
   pipeline:
-    - {stage: vocabulary, slot_floor: 0.25}
-    - {stage: vocabulary, slot_floor: 0.45, portrait: false, app: /term/}'
+    - {stage: vocabulary, lowercase_refused: false}
+    - {stage: vocabulary, app: /term/}'
 
 check "two vocabulary steps load" "$code" "0"
-# There is one pass now, so there is one line. Two steps with different floors
-# was expressible and was never a thing anybody ran; the first one's options
-# are carried into the block and the second is dropped with its position.
+# There is one pass now, so there is one line. The first step's options are
+# carried into the block and the second is dropped with its position.
 check "and one line describes the one pass that runs" \
-  "$(steps)" \
-  "slot floor en 0.25  fr 0.25  slot on, portrait on|"
+  "$(steps)" "clause decider on  (lowercase refused off)|"
 
 run_config lowercase_default 'transcription:
   languages: [en]
@@ -250,7 +233,7 @@ run_config lowercase_default 'transcription:
     - vocabulary'
 
 check "a bare - vocabulary line writes a refused glued span in lowercase" \
-  "$(steps)" "slot floor en 0.20  slot on, portrait on|"
+  "$(steps)" "clause decider on|"
 
 run_config lowercase_off 'transcription:
   languages: [en]
@@ -259,7 +242,7 @@ run_config lowercase_off 'transcription:
 
 check "lowercase_refused: false loads" "$code" "0"
 check "and is named on the step's line" \
-  "$(steps)" "slot floor en 0.20  slot on, portrait on  (lowercase refused off)|"
+  "$(steps)" "clause decider on  (lowercase refused off)|"
 
 # --- an option on the wrong stage ---------------------------------------------
 #
@@ -269,7 +252,7 @@ check "and is named on the step's line" \
 run_config option_wrong_stage 'transcription:
   languages: [en]
   pipeline:
-    - {stage: sentence_repair, slot_gate: false}
+    - {stage: sentence_repair, near_misses: false}
     - {stage: vocabulary, marks: [".", "?"]}'
 
 check "an option on a stage that does not read it is refused" \
@@ -277,7 +260,7 @@ check "an option on a stage that does not read it is refused" \
 check "and each message names the stage that does read it" \
   "$(printf '%s\n' "$out" | grep -c 'option on the `vocabulary` stage')" "1"
 check "and the stage it was written on" \
-  "$(printf '%s\n' "$out" | grep -c '`sentence_repair`: `slot_gate:`')" "1"
+  "$(printf '%s\n' "$out" | grep -c '`sentence_repair`: `near_misses:`')" "1"
 
 run_config lowercase_wrong_stage 'transcription:
   languages: [en]
@@ -292,88 +275,10 @@ run_config option_right_stage 'transcription:
   languages: [en]
   pipeline:
     - {stage: sentence_repair, marks: [".", "?"]}
-    - {stage: vocabulary, slot_gate: false, near_misses: false}'
+    - {stage: vocabulary, near_misses: false}'
 
 check "an option on the stage that reads it is not refused" \
   "$(printf '%s\n' "$out" | grep -c 'is an option on the')" "0"
-
-# --- the slot floor, on the step ----------------------------------------------
-
-run_config floor_scalar 'transcription:
-  languages: [en, fr]
-  pipeline:
-    - {stage: vocabulary, slot_floor: 0.35}'
-
-check "a bare number loads" "$code" "0"
-check "and applies to every language" \
-  "$(steps)" "slot floor en 0.35  fr 0.35  slot on, portrait on|"
-
-run_config floor_map 'transcription:
-  languages: [en, fr]
-  pipeline:
-    - {stage: vocabulary, slot_floor: {en: 0.25, fr: 0.45}}'
-
-check "a map loads" "$code" "0"
-check "and each language gets its own" \
-  "$(steps)" "slot floor en 0.25  fr 0.45  slot on, portrait on|"
-
-run_config floor_map_partial 'transcription:
-  languages: [en, fr]
-  pipeline:
-    - {stage: vocabulary, slot_floor: {fr: 0.45}}'
-
-check "a map naming one language loads" "$code" "0"
-check "and the language it misses keeps its built-in floor" \
-  "$(steps)" "slot floor en 0.20  fr 0.45  slot on, portrait on|"
-
-run_config floor_bad 'transcription:
-  languages: [en]
-  pipeline:
-    - {stage: vocabulary, slot_floor: 0}'
-
-check "a floor of 0 on the step is refused" "$code" "1"
-check "and the message names the key that was written" \
-  "$(printf '%s\n' "$out" | grep -c 'pipeline.vocabulary.slot_floor')" "1"
-check "and says what a floor may be, as it always has" \
-  "$(printf '%s\n' "$out" | grep -c 'a number above 0 and at most 2')" "1"
-
-run_config floor_bad_map 'transcription:
-  languages: [en, fr]
-  pipeline:
-    - {stage: vocabulary, slot_floor: {en: 0.20, fr: 3}}'
-
-check "an out-of-range language in a map is refused" "$code" "1"
-check "and the message names that language" \
-  "$(printf '%s\n' "$out" | grep -c 'pipeline.vocabulary.slot_floor.fr')" "1"
-
-run_config floor_idle_language 'transcription:
-  languages: [en]
-  pipeline:
-    - {stage: vocabulary, slot_floor: {en: 0.25, fr: 0.45}}'
-
-check "a floor for a language languages: omits loads" "$code" "0"
-check "and the floor that does run is the step's" \
-  "$(steps)" "slot floor en 0.25  slot on, portrait on|"
-check "and the notice says the other one never runs" \
-  "$(printf '%s\n' "$out" | grep -c 'that floor never runs')" "1"
-
-run_config floor_bad_language 'transcription:
-  languages: [en]
-  pipeline:
-    - {stage: vocabulary, slot_floor: {fe: 0.30}}'
-
-check "a language nothing dictates in is refused" "$code" "1"
-check "and the message says which languages there are" \
-  "$(printf '%s\n' "$out" | grep -c 'one of en, fr')" "1"
-
-run_config floor_bad_shape 'transcription:
-  languages: [en]
-  pipeline:
-    - {stage: vocabulary, slot_floor: "0.20"}'
-
-check "a floor that is neither a number nor a map is refused" "$code" "1"
-check "and the message shows both spellings" \
-  "$(printf '%s\n' "$out" | grep -c 'slot_floor: {en: 0.20, fr: 0.30}')" "1"
 
 # --- the retired numbers stage ------------------------------------------------
 #

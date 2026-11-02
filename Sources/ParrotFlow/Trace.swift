@@ -851,9 +851,9 @@ enum Trace {
     ///
     /// `text` is the line **as heard**, before the change, and `range` is
     /// where `heard` stands in it, in characters. A sentence with the fix
-    /// already in it is worse than none: the term portrait was once scored
-    /// on text after the rule had written the term in, and 4 of 4 cases
-    /// flipped when scored as heard.
+    /// already in it is worse than none: a sentence test was once scored on
+    /// text after the rule had written the term in, and 4 of 4 cases flipped
+    /// when scored as heard.
     ///
     /// This stores the person's own sentences. That is the point of it: a
     /// count table keeps statistics and drops the context, and the context is

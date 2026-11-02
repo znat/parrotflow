@@ -2417,9 +2417,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Every model the app will use, fetched at launch rather than on the
-    /// dictation that first wants one. About 1.47 GB on a default install:
-    /// Parakeet 461 MB, mmBERT-small 269 MB, the word vectors 335 MB, the
-    /// boundary readings 320 MB, the sound model 81 MB.
+    /// dictation that first wants one. About 1.4 GB on a default install:
+    /// Parakeet 461 MB, parrotflow-syrinx 533 MB, the boundary readings
+    /// 320 MB, the sound model 81 MB.
     ///
     /// Each of these used to arrive on first use, and each of them therefore
     /// had a window where the thing it powers was switched on and silently
@@ -2449,10 +2449,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             off: config.audio.speechGate ? nil : ModelDownload.gateOff
         )
         downloads.expect(
-            SlotModel.download,
-            off: config.readsSlots ? nil : ModelDownload.gateOff
-        )
-        downloads.expect(
             SentenceReadings.download,
             off: config.readsSentenceModel ? nil : ModelDownload.gateOff
         )
@@ -2460,10 +2456,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         downloads.expect(
             SyrinxModel.download,
             off: config.readsSyrinx ? nil : ModelDownload.gateOff
-        )
-        downloads.expect(
-            WordVectors.download,
-            off: config.readsSentenceGate ? nil : ModelDownload.gateOff
         )
 
         Task.detached(priority: .background) {
@@ -2496,7 +2488,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The rest together, once speech is in. None of them blocks a
             // dictation: the stages that read them stand aside until they are
             // in memory.
-            if config.readsSlots { await transcriber.warmSlotModel() }
             if config.readsSyrinx { await SyrinxModel.shared.warm() }
             // The boundary readings. 320 MB and a 1.3s load, and a dictation
             // never waits for either: without this the first few dictations of
@@ -2523,11 +2514,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // on the one launch that installed them.
                 NeuralPhonemes.warmCache()
             }
-            // 335 MB, and only the two tests that read the sentence read
-            // them. Someone who switches both off should not pay for it.
-            if #available(macOS 14, *), config.readsSentenceGate {
-                Task.detached(priority: .background) { await WordVectors.shared.warm() }
-            }
         }
     }
 
@@ -2553,9 +2539,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if damaged.contains(NeuralPhonemes.soundDownload.id) {
                 NeuralPhonemes.discardCache()
             }
-            if damaged.contains(SlotModel.download.id) { SlotModel.discardCache() }
             if damaged.contains(SentenceReadings.download.id) { SentenceReadings.discardCache() }
-            if damaged.contains(WordVectors.download.id) { WordVectors.discardCache() }
         }
         if damaged.contains(SyrinxModel.download.id) { SyrinxModel.discardCache() }
         ModelDownloads.shared.retrying()
@@ -4211,8 +4195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .split(separator: " ").map(String.init)
         // A window, not the sentence. The pill is measured for one line, and a
         // long dictation wrapped into a box built for it. Five words either
-        // side is what the portrait cut settled on for the same reason: enough
-        // to place the word, short enough to read at a glance.
+        // side is enough to place the word, short enough to read at a glance.
         let lead = kept.count > Self.learnWindow
             ? "… " + kept.suffix(Self.learnWindow).joined(separator: " ")
             : kept.joined(separator: " ")
@@ -4369,7 +4352,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 rows, said: sentence, near: word, blocking: soundGroups
             ) {
                 wrote = true
-                rebuildPortrait(for: row.term)
                 switch row {
                 case .use(let right, _, _):
                     // One term put back over another — `Mik` to `Mick` — is a
@@ -4391,51 +4373,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return false
         }
         return wrote
-    }
-
-    /// Builds a term's portrait now, because its uses just changed.
-    ///
-    /// `TermPortrait.summary` caches under a fingerprint of the term's stored
-    /// uses, so recording one invalidates it and the *next* dictation naming
-    /// that term pays the rebuild — one embedding pass per use and per
-    /// counter-example, up to `TermUses.keep` of each.
-    ///
-    /// A correction is the moment the uses changed and the moment nobody is
-    /// waiting, so the work moves here. Nothing waits on it and nothing reads
-    /// the result: if it fails, or the app quits first, the next dictation
-    /// rebuilds exactly as it does today. Calling `summary` and dropping the
-    /// answer *is* the rebuild — it is the same call the dictation would make,
-    /// and it writes the same cache.
-    ///
-    /// **How much this is worth is not measured.** The mechanism is certain —
-    /// the fingerprint changes here and the rebuild lands there — but the size
-    /// is not. It cannot be measured from the CLI: `SentenceGate.settle` stands
-    /// aside whenever the word vectors are not loaded, and in a one-shot
-    /// process they never are, so no `--pipeline` run reaches a portrait at
-    /// all. The archive's 26 slow dictations of 957 arrive in bursts that look
-    /// like a session of corrections, which is the reason to think this
-    /// matters, and `gate_ms` on a running app is what would settle it.
-    ///
-    /// Only where a portrait will be read. `SentenceGate` is the only thing
-    /// that reads one, so with `portrait: false` on the step — or the legacy
-    /// `gate_sentence: false` — this would fetch 335 MB of word vectors to
-    /// answer a question nobody asks.
-    private func rebuildPortrait(for term: String) {
-        guard config.readsPortraits else { return }
-        guard #available(macOS 14, *) else { return }
-        Task.detached(priority: .background) {
-            let started = Date()
-            // Nil covers both "too few uses to describe" and "it threw", and
-            // neither is worth a line: nothing was built either way.
-            guard (try? await TermPortrait.shared.summary(for: term)) != nil else { return }
-            // Not "rebuilt". The fingerprint decides whether there was work to
-            // do, and the time says which happened — a rebuild is seconds, a
-            // portrait that was already good is instant.
-            Log.write(String(
-                format: "portrait: %@ is current in %.1fs, so the next dictation does not wait",
-                term, Date().timeIntervalSince(started)
-            ))
-        }
     }
 
     /// The sound groups of the vocabulary as it stands, derived fresh.
@@ -5674,16 +5611,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         wrote: rule.heard, put: rule.corrected, in: config.vocabulary.terms
                     )?.kind
                 )
-                // The sentence too, not only the mapping. It is what a term's
-                // portrait is built from, and this is the only moment the app
-                // knows a sentence is right.
+                // The sentence too, not only the mapping. It is what the clause
+                // decider reads a term against, and this is the only moment the
+                // app knows a sentence is right.
                 do {
                     // The vocabulary's own spelling, not the one that was
                     // typed. Matching is case-insensitive everywhere else, so
                     // saving `praisy` against an existing `Praisy` would file
-                    // the sentence under a second key and build a portrait
-                    // there — while the gate goes on reading `Praisy` and finds
-                    // neither. Nil is a term the vocabulary has not got yet,
+                    // the sentence under a second key — while the gate goes on
+                    // reading `Praisy` and finds neither. Nil is a term the vocabulary has not got yet,
                     // and then what was typed is the name.
                     //
                     // The span stays as typed. It has to be the word standing
@@ -5696,9 +5632,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         [.use(term: term, span: rule.corrected, heard: rule.heard)],
                         said: corrected, near: word, blocking: soundGroups
                     )
-                    rebuildPortrait(for: term)
                 } catch {
-                    // A portrait that missed one sentence is worth less than a
+                    // A term that missed one sentence is worth less than a
                     // correction that refused to save over it.
                     Log.write("could not record the use: \(error.localizedDescription)")
                 }
@@ -6107,7 +6042,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 + " keep what the pipeline settled on")
             return false
         }
-        let placed = OpenPlaces.located(open, in: text, ignoringCase: config.decidesByClause)
+        let placed = OpenPlaces.located(open, in: text, ignoringCase: true)
         guard !placed.isEmpty else { return false }
 
         // The words, as `ChooseRun` counts them. A place's word index is
@@ -6222,9 +6157,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("    before: \(pending.text)")
             Log.write("    after:  \(text)")
         }
-        // The words go in first. Recording an answer is a file write and a
-        // portrait rebuild, and neither is something the person is waiting on
-        // — what they are waiting on is the sentence.
+        // The words go in first. Recording an answer is a file write, and
+        // that is not something the person is waiting on — what they are
+        // waiting on is the sentence.
         //
         // Only the places that were answered. A place the deadline defaulted
         // is not an answer, and a term taught from one would be an opinion
@@ -6276,8 +6211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Both ways, and that is the whole point of asking. A term confirmed is a
     /// sentence it lives in; a term refused is a sentence it does not — and
     /// nothing else in the app collects the second kind except a correction
-    /// somebody makes by hand. Three of them and `TermPortrait` stops reading
-    /// the term against a floor and reads it against its own counter-examples.
+    /// somebody makes by hand. The clause decider reads both.
     ///
     /// These are also the hardest places there are to label. Every free gate
     /// looked at this one and none of them could say.
@@ -6300,26 +6234,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // correction follows: a term picked is a use of that term, and an
         // ordinary word picked is a counter under the term that was proposed.
         // A group place offers several names, and only the one you picked
-        // learns anything.
-        var picked: String?
-        switch CorrectionRecording.picked(
-            word.word, proposedBy: open.term, in: config.vocabulary.terms,
-            creating: !config.decidesByClause
-        ) {
-        case .use(let term): picked = term
-        case .create(let name, let kind):
-            // Nil here is a write that failed, not the counter answer. Filing
-            // it as a counter would store the opposite of what was answered:
-            // you said this is a name, and the term that was proposed would
-            // keep the sentence as a place it does not belong.
-            guard let created = createTerm(named: name, kind: kind) else {
-                Log.write("selector: \(name) could not be written to vocabulary.yaml;"
-                    + " nothing is recorded about \(open.term) either")
-                return
-            }
-            picked = created
-        case .counter: picked = nil
-        }
+        // learns anything. Keeping the heard word adds nothing to the
+        // vocabulary: a picked "Versailles" made a term, and a heard
+        // "Versailles" was then never a place for Vercel again.
+        let picked = CorrectionRecording.term(named: word.word, in: Array(config.vocabulary.terms.keys))
         let replaced = word.word == open.standing ? nil : open.standing
         let rows: [CorrectionRecording.Row] = picked.map {
             [.use(term: $0, span: word.word, heard: replaced)]
@@ -6331,9 +6249,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let written = try CorrectionRecording.apply(
                 rows, said: text, from: .chosen, near: at, blocking: soundGroups
             )
-            for row in written {
-                rebuildPortrait(for: row.term)
-            }
             // The clause decider reads a choice both ways: every other term
             // offered here is refused at this word. Not released, so the
             // chosen term keeps the place. The term spelled like the heard
@@ -6342,23 +6257,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // With no term picked, the heard word kept refuses every other
             // member offered too. Recorded without releasing, so each keeps
             // its counter.
-            if config.decidesByClause, picked == nil, !written.isEmpty {
+            if picked == nil, !written.isEmpty {
                 for other in open.group where other.caseInsensitiveCompare(open.term) != .orderedSame {
                     try TermUses.record(
                         term: other, said: text, span: word.word, from: .chosen, counter: true, near: at
                     )
-                    rebuildPortrait(for: other)
                     Log.write("selector: \(other) refused at \"\(word.word)\" — the heard word was kept")
                 }
             }
-            if config.decidesByClause, let picked, !written.isEmpty {
+            if let picked, !written.isEmpty {
                 let offered = open.group.count > 1 ? open.group : [open.term]
                 for other in offered where other.caseInsensitiveCompare(picked) != .orderedSame
                     && replaced.map({ ClauseDecider.norm($0) != ClauseDecider.norm(other) }) ?? true {
                     try TermUses.record(
                         term: other, said: text, span: word.word, from: .chosen, counter: true, near: at
                     )
-                    rebuildPortrait(for: other)
                     Log.write("selector: \(other) refused at \"\(word.word)\" — \(picked) was chosen")
                 }
             }
@@ -6370,28 +6283,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } catch {
             Log.write("selector: could not record the answer: \(error.localizedDescription)")
-        }
-    }
-
-    /// Writes a bare term for a name, and returns the name it was written
-    /// under. Nil when the file could not be written.
-    ///
-    /// No pronunciation: nothing was misheard. The recogniser spells this name
-    /// correctly, and the term exists so the name has a portrait of its own and
-    /// joins the group that shares its sound.
-    private func createTerm(named word: String, kind: WordKind) -> String? {
-        let bare = word.trimmingCharacters(in: .punctuationCharacters)
-        guard !bare.isEmpty else { return nil }
-        do {
-            try ConfigWriter.addVocabularyTerm(bare, kind: kind)
-            Log.write("selector: \(bare) is a name and was not a term — written to"
-                + " vocabulary.yaml as a \(kind.rawValue), with no pronunciation")
-            flash("Saved  \(bare) is a name", tone: .done)
-            return bare
-        } catch {
-            Log.write("selector: could not write \(bare) to vocabulary.yaml:"
-                + " \(error.localizedDescription)")
-            return nil
         }
     }
 

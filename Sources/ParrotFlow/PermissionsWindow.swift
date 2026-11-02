@@ -1619,7 +1619,7 @@ private struct EspeakCard: View {
 ///
 /// No button. Each of these is fetched again on the dictation that first needs
 /// it — the fetch clears its own handle when it fails, see
-/// `Transcriber.warmSlotModel` — so the only thing to say is what is missing,
+/// `Transcriber.warmSoundModel` — so the only thing to say is what is missing,
 /// what it costs until then, and that nobody has to do anything.
 ///
 /// A blocking failure never reaches here. That one owns the title, the sentence
