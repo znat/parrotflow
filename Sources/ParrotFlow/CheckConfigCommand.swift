@@ -151,6 +151,12 @@ enum CheckConfigCommand {
                     ok = false
                 } else {
                     emit("      clause decider on (trial): it reads English places in place of the portrait")
+                    let reads = [
+                        config.readsSyrinx ? "parrotflow-syrinx" : nil,
+                        config.readsSlots ? "mmbert-small-64" : nil,
+                        config.readsSentenceGate ? "qwen3-embedding" : nil,
+                    ].compactMap { $0 }
+                    emit("      vocabulary models: \(reads.joined(separator: ", "))")
                 }
             }
             // The set the step runs with. Silent when the pipeline holds no

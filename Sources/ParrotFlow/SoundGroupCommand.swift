@@ -186,7 +186,7 @@ enum SoundGroupCommand {
     static func picked(word: String, term: String, sentence: String?, dry: Bool) -> Int32 {
         let config = (try? ConfigStore.load()) ?? Config()
         var answer = CorrectionRecording.picked(
-            word, proposedBy: term, in: config.vocabulary.terms
+            word, proposedBy: term, in: config.vocabulary.terms, creating: !config.decidesByClause
         )
         if case .create(let name, let kind) = answer, !dry {
             do {

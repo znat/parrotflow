@@ -71,7 +71,8 @@ enum SelectorCommand {
             open.append(place)
             answers.append(answer)
         }
-        let located = OpenPlaces.located(open, in: text)
+        let config = (try? ConfigStore.load()) ?? Config()
+        let located = OpenPlaces.located(open, in: text, ignoringCase: config.decidesByClause)
         guard !located.isEmpty else {
             print("NOTHING FOUND")
             return 0

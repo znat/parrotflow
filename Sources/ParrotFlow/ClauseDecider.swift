@@ -68,6 +68,14 @@ enum ClauseDecider {
         let absent: [Double]
         /// For `pair_acc` and `pair_ref`, set by hand.
         let fixed: [Double]
+        /// Features that may only lower z. A refused-sentence match pushes
+        /// toward leaving; its absence is no evidence for writing. Both ways,
+        /// one off-topic refusal wrote `red rock` as Redrock on the bench.
+        let oneSided: Set<Int>
+        /// A single-term place's pair_acc counts only when sim_acc is present
+        /// and at least its mean: a correction made in a deploy clause wrote
+        /// Vercel over a castle's "Versailles" (sim_acc 0.061).
+        let pairGate: Bool
         let write: Double
         let leave: Double
         let minimumPool: Int
@@ -98,6 +106,8 @@ enum ClauseDecider {
             bias = Double(try tensors.floats("bias", shape: [1])[0])
             absent = try tensors.floats("absent", shape: [2]).map(Double.init)
             fixed = try tensors.floats("fixed", shape: [2]).map(Double.init)
+            oneSided = Set((list("one_sided") ?? []).compactMap { Self.names.firstIndex(of: $0) })
+            pairGate = tensors.string("pair_gate") == "sim_acc"
             self.write = write
             self.leave = leave
             minimumPool = pool
@@ -126,7 +136,8 @@ enum ClauseDecider {
             var z = bias
             for (k, value) in f.fitted.enumerated() {
                 if let value {
-                    z += weights[k] * (value - means[k]) / deviations[k]
+                    let part = weights[k] * (value - means[k]) / deviations[k]
+                    z += oneSided.contains(k) ? min(0, part) : part
                 } else if k < absent.count {
                     z += absent[k]
                 }
@@ -356,7 +367,7 @@ enum ClauseDecider {
     static func read(
         _ parsed: Parsed, at range: Range<Int>, heard: String, term: String,
         accepted: [[Float]], refused: [[Float]], pairs: (accepted: Double, refused: Double),
-        model: Model
+        model: Model, shared: Bool = false
     ) -> Reading? {
         let (vector, span, pooled) = place(parsed, at: range, model: model)
         guard !span.isEmpty else { return nil }
@@ -370,6 +381,7 @@ enum ClauseDecider {
         f.sound = sound(heard: heard, term: term)
         f.known = known(heard) ? 1 : 0
         f.pairAccepted = pairs.accepted
+        if model.pairGate, !shared, (f.simAccepted ?? -.infinity) < model.means[0] { f.pairAccepted = 0 }
         f.pairRefused = pairs.refused
         var clause: Range<Int>?
         if let lo = pooled.map({ parsed.clip.tokens[$0].start }).min(), let hi = pooled.map({ parsed.ends[$0] }).max() {
@@ -433,6 +445,32 @@ extension ClauseDecider {
         let gap = ranked.count > 1 ? lead(best, over: ranked[1]) : tie
         if gap >= tie, best.p >= model.write { return .write(best.term) }
         return best.p >= model.leave ? .offer(ranked.prefix(2).map(\.term)) : .leave
+    }
+
+    /// Slots a name cannot stand in: `SlotGate.blocks` read as UPOS.
+    static let slotBlocks: Set<UPOS> = [.verb, .aux, .adv, .adp]
+
+    /// What the parser expects where the heard words stand. The span's tokens
+    /// become one `<mask>` in their window and the window is parsed again. UPOS
+    /// probabilities at the mask; nil when no token stands at `range`.
+    static func slot(_ parsed: Parsed, at range: Range<Int>, parser: Parser) -> [Float]? {
+        let span = parsed.span(range)
+        guard let first = span.first, let window = parsed.clip.windows.first(where: { $0.contains(first) })
+        else { return nil }
+        let inside = Set(span)
+        var words: [String] = [], at: Int?
+        for token in window {
+            guard inside.contains(token) else {
+                words.append(parsed.clip.tokens[token].string)
+                continue
+            }
+            if at == nil {
+                at = words.count
+                words.append("<mask>")
+            }
+        }
+        guard let at, let analysis = parser.analyse(words: Words(joining: words), language: "en") else { return nil }
+        return analysis.parse.words[at].upos
     }
 
     /// The heard run without a closed-class first or last word the term does
@@ -551,7 +589,7 @@ final class ClauseSession {
             parse, at: a ..< b, heard: change.was, term: term,
             accepted: memory.accepted, refused: memory.refused,
             pairs: ClauseDecider.pairs(heard: change.was, term: term, rows: rows, shared: shared, peers: peers),
-            model: model
+            model: model, shared: shared
         ) else {
             lines.append("\"\(change.was)\" -> \(term): no parser token at the place")
             return nil
@@ -567,6 +605,23 @@ final class ClauseSession {
         lines.append(Self.describe(reading, heard: change.was, term: term, clause: clause,
                                    accepted: memory.accepted.count, refused: memory.refused.count))
         return reading
+    }
+
+    /// What the parser expects where the heard words stand, as the slot gate's
+    /// route. Against mmBERT's slot, right declines: judge 12 vs 15, bench 25
+    /// vs 25; one wrong decline ("that ___ added" read AUX 0.95) where mmBERT
+    /// had none.
+    func slot(_ change: VocabularyPass.Change, in text: String) -> SlotGate.Reading? {
+        let started = Date()
+        defer { seconds += Date().timeIntervalSince(started) }
+        let heardText = text.replacingCharacters(in: change.range, with: change.was)
+        let a = text.unicodeScalars.distance(from: text.unicodeScalars.startIndex, to: change.range.lowerBound)
+        guard let upos = ClauseDecider.slot(
+            parsing(heardText), at: a ..< a + change.was.unicodeScalars.count, parser: parser)
+        else { return nil }
+        let tag = UPOS.allCases[Parser.argmax(upos)]
+        lines.append("\"\(change.was)\" slot \(tag.rawValue)")
+        return SlotGate.Reading(tag: tag.rawValue, route: ClauseDecider.slotBlocks.contains(tag) ? .decline : .open)
     }
 
     private func parsing(_ text: String) -> ClauseDecider.Parsed {

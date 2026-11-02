@@ -3489,15 +3489,17 @@ struct Config: Decodable, Equatable {
     ///
     /// One predicate for the same reason `readsBoundaries` is one: three
     /// places warm this model, and a warm that disagrees with the step
-    /// downloads weights nothing will read.
+    /// downloads weights nothing will read. The clause decider reads the
+    /// slot off the parser, so with it on nothing does.
     var readsSlots: Bool {
-        vocabularySteps.contains { $0.vocabulary.isOn(\.slotGate) }
+        !decidesByClause && vocabularySteps.contains { $0.vocabulary.isOn(\.slotGate) }
     }
 
     /// Whether anything will read the 400 MB word vectors. Both tests that
-    /// read the sentence need them, so either switch keeps them.
+    /// read the sentence need them, so either switch keeps them. Neither runs
+    /// with the clause decider on.
     var readsSentenceGate: Bool {
-        gatesSentence
+        !decidesByClause && gatesSentence
             && vocabularySteps.contains {
                 $0.vocabulary.isOn(\.slotGate) || $0.vocabulary.isOn(\.portrait)
             }
@@ -3506,7 +3508,7 @@ struct Config: Decodable, Equatable {
     /// Whether a term's portrait is worth building — see
     /// `AppDelegate.rebuildPortrait`.
     var readsPortraits: Bool {
-        gatesSentence && vocabularySteps.contains { $0.vocabulary.isOn(\.portrait) }
+        !decidesByClause && gatesSentence && vocabularySteps.contains { $0.vocabulary.isOn(\.portrait) }
     }
 
     var resolvedOutputDir: URL {
