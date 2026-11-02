@@ -141,7 +141,7 @@ enum CheckConfigCommand {
             }
             if !vocabularySteps.isEmpty, transcription.vocabulary.clauseDecider == true {
                 if !config.decidesByClause {
-                    emit("      ✗ clause_decider is on but English is not dictated, so it never runs")
+                    emit("      ✗ clause_decider is on but no language it reads (\(ClauseDecider.Model.languages.sorted().joined(separator: ", "))) is dictated, so it never runs")
                     ok = false
                 } else if !config.gatesSentence {
                     emit("      ✗ clause_decider is on but gate_sentence is off, so it never runs")
@@ -150,7 +150,7 @@ enum CheckConfigCommand {
                     emit("      ✗ clause_decider: \(error.localizedDescription)")
                     ok = false
                 } else {
-                    emit("      clause decider on (trial): it reads English places in place of the portrait")
+                    emit("      clause decider on (trial): it reads \(ClauseDecider.Model.languages.sorted().joined(separator: ", ")) places in place of the portrait")
                     let reads = [
                         config.readsSyrinx ? "parrotflow-syrinx" : nil,
                         config.readsSlots ? "mmbert-small-64" : nil,
