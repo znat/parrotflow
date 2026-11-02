@@ -421,11 +421,11 @@ struct Config: Decodable, Equatable {
             /// spelling or through its pronunciations. Its renderings are
             /// exact rules and nothing else, because a rendering is registered
             /// under the term's name and a term with `floor: off` has no entry
-            /// for the spotter to report. A case-only rendering of an ordinary
-            /// word is a place instead (`VocabularyPass.caseParts`). That is the intended reading:
+            /// for the spotter to report. That is the intended reading:
             /// "Claude" and "cloud" come back identical because they *sound*
             /// identical, so the audio separates them no better than the
-            /// spelling does.
+            /// spelling does. A rendering made only of ordinary words, like
+            /// "cloud", is a place instead (`VocabularyPass.wordParts`).
             var never = false
             var pronunciations: [Pronunciation] = []
             /// What kind of thing the term names, written by the correction
@@ -782,8 +782,8 @@ struct Config: Decodable, Equatable {
     /// Those words open the group instead, and `SoundGroup` decides. See
     /// `docs/proposals/sound-groups.md`.
     ///
-    /// A case-only rendering of an ordinary word is not a rule either. See
-    /// `VocabularyPass.onlyCases(word:term:)` and `VocabularyPass.caseParts`.
+    /// A rendering made only of ordinary words is not a rule either. See
+    /// `VocabularyPass.ordinary` and `VocabularyPass.wordParts`.
     ///
     /// One rule per source. Two rules with the same left side are a rewrite
     /// that depends on which one the pass reads first.
@@ -797,7 +797,7 @@ struct Config: Decodable, Equatable {
             .sorted { ($0.source, $0.term) < ($1.source, $1.term) }
             .compactMap { pair in
                 guard !opens.contains(pair.source.lowercased()) else { return nil }
-                guard !VocabularyPass.onlyCases(word: pair.source, term: pair.term) else { return nil }
+                guard !VocabularyPass.ordinary(pair.source) else { return nil }
                 guard written.insert(pair.source).inserted else { return nil }
                 return Transcription.Rule(source: pair.source, replacement: pair.term)
             }

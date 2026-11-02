@@ -14,6 +14,7 @@
 #   a span that glues to the term is asked, and a correction back counts
 #   a case-only rendering of an ordinary word is settled, of a non-word written
 #   a case-only place yields to a longer term and to a sound place
+#   a rendering of ordinary words is a place, not a rule
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
@@ -155,6 +156,23 @@ check "a longer case-only term takes the span first" \
   "$(placed "I asked on stack overflow yesterday.")" '"stack overflow" -> Stack Overflow'
 check "a case-only term does not take a span the sound pass wants" \
   "$(placed "We send the logs to better stack now.")" '"better stack" -> BetterStack'
+
+cat > "$WORK/learnt.yaml" <<'EOF'
+languages: [fr]
+vocabulary:
+  terms:
+    Qonto:
+      pronunciations:
+        - heard: quand on
+pipeline:
+  - vocabulary
+EOF
+mkdir -p "$WORK/learnt"
+printf 'transcription:\n  languages: [fr]\n' > "$WORK/learnt/config.yaml"
+printf 'terms:\n  Qonto:\n' > "$WORK/learnt/vocabulary.yaml"
+check "a rendering of ordinary words left in place keeps its capital" "$(PARROTFLOW_CONFIG_DIR="$WORK/learnt" "$BIN" \
+  --pipeline "$WORK/learnt.yaml" "Quand on aura fini, on partira." --quiet --warm 2>/dev/null | tail -1)" \
+  "Quand on aura fini, on partira."
 
 printf '\n  %d/%d\n' "$pass" "$total"
 [ "$pass" -eq "$total" ]

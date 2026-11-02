@@ -396,32 +396,43 @@ enum VocabularyPass {
         return marks.map(\.rule)
     }
 
-    /// `resend` for `Resend`: at most the letter case differs, and a word
-    /// list knows the word. Not a rule, or every "resend" becomes the product.
-    static func onlyCases(word heard: String, term: String) -> Bool {
-        heard.lowercased() == term.lowercased() && Vocabulary.unseenWord(in: heard) == nil
+    /// `quand on` for `Qonto`, `resend` for `Resend`: every word is one a word
+    /// list knows. Not a rule, or every "quand on" becomes the company. A
+    /// pattern in slashes is not words.
+    static func ordinary(_ heard: String) -> Bool {
+        !Config.Transcription.Rule(source: heard, replacement: "").isRegex
+            && Vocabulary.unseenWord(in: heard) == nil
     }
 
-    /// Places where a term stands in another letter case and that spelling is
-    /// an ordinary word: "with resend" for `Resend`. No rule writes these and
-    /// the other gatherers skip them. `.sound`, so `settle` asks the slot and
-    /// then the clause decider.
+    /// `resend` for `Resend`: an ordinary word, and at most the letter case
+    /// differs.
+    static func onlyCases(word heard: String, term: String) -> Bool {
+        heard.lowercased() == term.lowercased() && ordinary(heard)
+    }
+
+    /// Places where a term stands as ordinary words: "with resend" for
+    /// `Resend`, "quand on" for a learnt `heard: quand on` under `Qonto`. No
+    /// rule writes these and the other gatherers skip them. `.sound`, so
+    /// `settle` asks the slot and then the clause decider.
     ///
     /// Gathered before any correction too: a cold term never writes. Kokoro
     /// try-out: 2 first mentions offered instead of missed, 1 ordinary noun
     /// offered, 0 wrong writes. One No on the pill leaves it after that.
-    static func caseParts(
+    static func wordParts(
         in text: String, terms: [String: Config.Vocabulary.Term], claimed: [Part]
     ) -> [Part] {
+        let forms = terms.flatMap { term, entry -> [(form: String, term: String)] in
+            let spelled = !entry.never && term != term.lowercased() && ordinary(term)
+            return (spelled ? [(term, term)] : [])
+                + entry.heard.filter(ordinary).map { ($0, term) }
+        }
+        .sorted { a, b in
+            a.form.count != b.form.count ? a.form.count > b.form.count : (a.form, a.term) < (b.form, b.term)
+        }
         var found: [Part] = []
         var taken = claimed.map(\.range)
-        let widest = terms.sorted {
-            $0.key.count != $1.key.count ? $0.key.count > $1.key.count : $0.key < $1.key
-        }
-        for (term, entry) in widest where term != term.lowercased() {
-            let spelled = !entry.never && onlyCases(word: term.lowercased(), term: term)
-            guard spelled || entry.heard.contains(where: { onlyCases(word: $0, term: term) }) else { continue }
-            for span in Vocabulary.spans(of: term, in: text, ignoringCase: true)
+        for (form, term) in forms {
+            for span in Vocabulary.spans(of: form, in: text, ignoringCase: true)
             where text[span] != term && !taken.contains(where: { $0.overlaps(span) }) {
                 found.append(Part(
                     range: span, decoded: String(text[span]), other: term, term: term, standing: .sound

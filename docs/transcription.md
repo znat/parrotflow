@@ -200,22 +200,25 @@ a person when the tagger reads nothing and the term it replaced says
 key existed has no `kind`, and that is not the same as `word`.
 
 **`pronunciations`** is the ways this term actually comes out of the
-recogniser. Each entry does two jobs. It is an exact rule, which is what
-reaches the renderings no number can: "Prezi" is 0.33 from "Praisy", and a
-threshold that low would swallow every "praise". And its *sound* is matched on
+recogniser. Each entry does two jobs. It is an exact rule when it holds a
+word no list knows, which is what reaches the renderings no number can:
+"Prezi" is 0.33 from "Praisy", and a threshold that low would swallow every
+"praise". And its *sound* is matched on
 the text, like the term's own: a run of words that sounds like the rendering is
 offered as the term. A rendering reaches words the term's spelling cannot:
 `Silberstein` is 0.90 from the rendering `Silverstein` and 0.56 from
 `Zylbersztejn`.
 
-A rule alone cannot tell two things apart that are spelled the same. "deployed
-on Vercel against the Versailles castle" has both, and the rule rewrites both.
-
-A rendering that differs from the term at most in letter case, when it is an
-ordinary word, is not a rule. `heard: resend` under `Resend` would turn "Can you resend me the invite?"
-into the product. Each "resend" is a place the gates read instead, as every
-term's lowercase spelling is when it is an ordinary word. `heard: vercel`
-under `Vercel` is still a rule: no word list knows "vercel".
+A rule alone cannot tell two things apart that are spelled the same. So a
+rendering made only of words a word list knows is not a rule.
+`heard: quand on` under `Qonto` would turn "Je viendrai quand on aura fini."
+into the company, and `heard: resend` under `Resend` would do the same to every
+"resend". Each place it stands is read by the slot and the clause decider
+instead, like a sound place. The term's own spelling is read the same way when
+it is an ordinary word in another case. Without the parser, the clause decider
+cannot run, so the place is left as heard: "post hog" stays "post hog".
+`heard: Conto` under `Qonto` and `heard: vercel` under `Vercel` are still
+rules: no word list knows those words.
 
 Per entry:
 

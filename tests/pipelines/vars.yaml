@@ -31,7 +31,7 @@ transforms:
 vocabulary:
   terms:
     Supabase:
-      heard: [super base]
+      heard: [super baze]
 pipeline:
   - vocabulary
   - transform: numbers_fr

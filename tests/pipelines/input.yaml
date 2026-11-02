@@ -20,7 +20,7 @@ transforms:
 vocabulary:
   terms:
     Supabase:
-      heard: [super base]
+      heard: [super baze]
 pipeline:
   # Before and after, on purpose. A stage that publishes variables must not
   # disturb the stages either side of it, including when it declines.
