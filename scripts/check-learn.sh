@@ -116,15 +116,16 @@ fi
 # whole mapping under a `floor:` key — which the decoder cannot read back as
 # pronunciations, so the old renderings were reachable only by their raw
 # text, not as terms the sound search or the exact pass would ever find.
-printf 'terms:\n  Claude: {floor: off, heard: [cloud]}\n' > "$WORK/vocabulary.yaml"
+# `clowd`, not `cloud`: a rendering made only of ordinary words is not a rule.
+printf 'terms:\n  Claude: {floor: off, heard: [clowd]}\n' > "$WORK/vocabulary.yaml"
 learn cloude Claude
 wants "floor: off survives the rewrite"   "$(vocab)" "floor: off"
-wants "the old heard: list survives"      "$(vocab)" "heard: [cloud]"
+wants "the old heard: list survives"      "$(vocab)" "heard: [clowd]"
 wants "the new rendering is added beside it" "$(vocab)" "heard: cloude"
 got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>&1)"
 wants "and both renderings are read back" "$got" "1 terms in vocabulary.yaml, 0 matched by sound, 2 by rule"
 before="$(vocab)"
-learn cloud Claude
+learn clowd Claude
 total=$((total + 1))
 if [ "$(vocab)" = "$before" ]; then
   pass=$((pass + 1)); printf '  ✓ a duplicate inside the old heard: list still no-ops\n'
