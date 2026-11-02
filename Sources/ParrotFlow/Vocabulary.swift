@@ -415,6 +415,14 @@ actor Vocabulary {
         return glued == term.lowercased()
     }
 
+    /// The first word of a span that neither list knows: `Zorb` in `Zorb lix`.
+    /// Nil when every word is an ordinary one, as in `better stack`.
+    static func unseenWord(in span: String) -> String? {
+        let stem = possessive(in: span)?.stem ?? span
+        return stem.split(separator: " ").map { String($0.filter(\.isLetter)) }
+            .first { !$0.isEmpty && unseenWord($0) }
+    }
+
     /// Whether writing the term here would take away a possessive the speaker
     /// said.
     ///
