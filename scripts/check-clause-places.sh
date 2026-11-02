@@ -13,6 +13,7 @@
 #   a rule place the decider offers shows the heard word
 #   a span that glues to the term is asked, and a correction back counts
 #   a case-only rendering of an ordinary word is settled, of a non-word written
+#   a case-only place yields to a longer term and to a sound place
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
@@ -103,6 +104,7 @@ vocabulary:
     Resend:
       pronunciations:
         - heard: resend
+        - heard: Resend
     Upstash:
       pronunciations:
         - heard: upstash
@@ -111,7 +113,7 @@ pipeline:
 EOF
 mkdir -p "$WORK/cased"
 printf 'transcription:\n  languages: [en]\n' > "$WORK/cased/config.yaml"
-printf 'terms:\n  Resend:\n  Upstash:\n' > "$WORK/cased/vocabulary.yaml"
+printf 'terms:\n  Resend:\n  Upstash:\n  Bill:\n    kind: person\n' > "$WORK/cased/vocabulary.yaml"
 cased() {
   PARROTFLOW_CONFIG_DIR="$WORK/cased" "$BIN" --pipeline "$WORK/cased.yaml" "$1" --quiet --warm 2>/dev/null | tail -1
 }
@@ -129,6 +131,30 @@ check "keeping the ordinary word on the pill is a counter" "$(PARROTFLOW_CONFIG_
   --picked resend Resend --in "We send the receipts with resend." 2>/dev/null | tail -1)" "counter Resend"
 check "and the next one is left" \
   "$(casedvars "We send the receipts with resend.")" "left 1|offered 0|written 0|We send the receipts with resend."
+check "a person's name corrected to the ordinary word is a counter" "$(PARROTFLOW_CONFIG_DIR="$WORK/cased" "$BIN" \
+  --correction Bill "bill's" --in "Pay the bill's total." 2>/dev/null | tail -1)" "counter Bill \"bill's\""
+
+cat > "$WORK/stacked.yaml" <<'EOF'
+languages: [en]
+vocabulary:
+  terms:
+    Stack:
+    Stack Overflow:
+    BetterStack:
+pipeline:
+  - vocabulary
+EOF
+mkdir -p "$WORK/stacked"
+printf 'transcription:\n  languages: [en]\n' > "$WORK/stacked/config.yaml"
+printf 'terms:\n  Stack:\n  Stack Overflow:\n  BetterStack:\n' > "$WORK/stacked/vocabulary.yaml"
+placed() {
+  PARROTFLOW_CONFIG_DIR="$WORK/stacked" "$BIN" --pipeline "$WORK/stacked.yaml" "$1" --vars --warm 2>/dev/null \
+    | sed -n 's/^var   vocabulary\.clause = //p' | grep -o '"[^"]*" -> [^:]*' | paste -sd'|' -
+}
+check "a longer case-only term takes the span first" \
+  "$(placed "I asked on stack overflow yesterday.")" '"stack overflow" -> Stack Overflow'
+check "a case-only term does not take a span the sound pass wants" \
+  "$(placed "We send the logs to better stack now.")" '"better stack" -> BetterStack'
 
 printf '\n  %d/%d\n' "$pass" "$total"
 [ "$pass" -eq "$total" ]

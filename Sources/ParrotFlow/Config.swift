@@ -421,7 +421,8 @@ struct Config: Decodable, Equatable {
             /// spelling or through its pronunciations. Its renderings are
             /// exact rules and nothing else, because a rendering is registered
             /// under the term's name and a term with `floor: off` has no entry
-            /// for the spotter to report. That is the intended reading:
+            /// for the spotter to report. A case-only rendering of an ordinary
+            /// word is a place instead (`VocabularyPass.caseParts`). That is the intended reading:
             /// "Claude" and "cloud" come back identical because they *sound*
             /// identical, so the audio separates them no better than the
             /// spelling does.

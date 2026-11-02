@@ -115,7 +115,8 @@ enum CorrectionRecording {
             return .use(term: already)
         }
         let bare = word.trimmingCharacters(in: .punctuationCharacters)
-        guard !bare.isEmpty, !VocabularyPass.onlyCases(word: bare, term: term) else { return .counter(term: term) }
+        let stem = Vocabulary.possessive(in: bare)?.stem ?? bare
+        guard !bare.isEmpty, !VocabularyPass.onlyCases(word: stem, term: term) else { return .counter(term: term) }
         // What the tagger read, when it read a name at all. A place or an
         // organization picked here is a term too, and labelling it `person`
         // would put a guess in the file under the name of a fact.
@@ -236,7 +237,7 @@ enum CorrectionRecording {
         bare = bare.trimmingCharacters(in: .punctuationCharacters)
         guard !bare.isEmpty else { return nil }
         return terms.first {
-            $0.caseInsensitiveCompare(bare) == .orderedSame && !VocabularyPass.onlyCases(word: bare, term: $0)
+            $0 == bare || ($0.caseInsensitiveCompare(bare) == .orderedSame && !VocabularyPass.onlyCases(word: bare, term: $0))
         }
     }
 }

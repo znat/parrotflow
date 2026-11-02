@@ -396,10 +396,10 @@ enum VocabularyPass {
         return marks.map(\.rule)
     }
 
-    /// `resend` for `Resend`: only the letter case differs, and a word list
-    /// knows the word. Not a rule, or every "resend" becomes the product.
+    /// `resend` for `Resend`: at most the letter case differs, and a word
+    /// list knows the word. Not a rule, or every "resend" becomes the product.
     static func onlyCases(word heard: String, term: String) -> Bool {
-        heard != term && heard.lowercased() == term.lowercased() && Vocabulary.unseenWord(in: heard) == nil
+        heard.lowercased() == term.lowercased() && Vocabulary.unseenWord(in: heard) == nil
     }
 
     /// Places where a term stands in another letter case and that spelling is
@@ -415,7 +415,10 @@ enum VocabularyPass {
     ) -> [Part] {
         var found: [Part] = []
         var taken = claimed.map(\.range)
-        for (term, entry) in terms.sorted(by: { $0.key < $1.key }) {
+        let widest = terms.sorted {
+            $0.key.count != $1.key.count ? $0.key.count > $1.key.count : $0.key < $1.key
+        }
+        for (term, entry) in widest where term != term.lowercased() {
             let spelled = !entry.never && onlyCases(word: term.lowercased(), term: term)
             guard spelled || entry.heard.contains(where: { onlyCases(word: $0, term: term) }) else { continue }
             for span in Vocabulary.spans(of: term, in: text, ignoringCase: true)

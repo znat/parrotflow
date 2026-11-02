@@ -1145,9 +1145,6 @@ struct Pipeline: Equatable, Codable {
         let rules = exact.changes
         let beforeRules: String? = handed
         var parts = VocabularyPass.ruleParts(rules, in: text, before: beforeRules)
-        let cased = VocabularyPass.caseParts(in: text, terms: config.vocabulary.terms, claimed: parts)
-        byCase = cased.count
-        parts += cased
 
         // The near misses an exact rule cannot reach. On by default: an exact
         // rule is the narrowest route to a term, and `Praisy`'s list holding
@@ -1217,6 +1214,12 @@ struct Pipeline: Equatable, Codable {
             bySound = proposed.count
             parts += proposed
         }
+
+        // After the sound pass, so "stack" for `Stack` cannot take the span
+        // "better stack" needs for `BetterStack`.
+        let cased = VocabularyPass.caseParts(in: text, terms: config.vocabulary.terms, claimed: parts)
+        byCase = cased.count
+        parts += cased
 
         // The places where several terms share the word that was heard. Built
         // before the others and not from parts: a group place carries every
