@@ -147,7 +147,8 @@ not, ask the user before the call.
 
 Exit `0`. The last line is `our app is deployed on Versailles`: "Versailles"
 is an ordinary word, so its rendering is a place, not a rule. The clause
-decider offers it, the heard word stands and the term waits on the pill. The
+decider offers it, so the heard word stands and the place stays open. A
+dictation would put it on the pill; a `--pipeline` run has none. The
 output has `var   vocabulary.clause_offered = 1` and
 `var   vocabulary.changes = ""`. Other features and their exact commands are in
 `features/`.
