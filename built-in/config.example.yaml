@@ -85,6 +85,7 @@ transcription:
     # sound_below: 0.85      # how close a run of words must sound to a term
     # gate_sentence: true    # read the sentence before keeping a match
     # asks: true             # ask before typing a name it could not settle
+    # clause_decider: false  # trial: the parser clause decides in place of the portrait
     #
     # The rest switch off one half of the pass so the other can be scored.
     # See docs/pipelines.md before changing them.

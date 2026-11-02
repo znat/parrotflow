@@ -570,7 +570,28 @@ transcription:
     gate_sentence: true    # read the sentence before keeping a match
     asks: true             # ask before typing a name it could not settle
     slot_floor: {en: 0.20, fr: 0.30}
+    clause_decider: false  # trial: the parser clause decides in place of the portrait
 ```
+
+**`clause_decider` is a trial, off by default.** On, English places are read
+by the clause decider instead of the term portrait. It is one logistic
+regression with fixed signs over: how close the parser clause around the place
+is to the term's accepted and refused sentences, whether the heard words are a
+name (a small NER head on the parser), their part of speech and their
+neighbours', how they sound against the term, whether they are dictionary
+words, and whether this exact swap was accepted or refused before. A term with
+no accepted sentence never writes; it offers or leaves. A slot refusal still
+keeps what was heard. A place several terms share is read once per term on the
+same clause, and the terms are told apart by how close the clause is to each
+one's sentences. The term spelled like the heard words is the default and needs
+no sentences; another is written only when it beats it by a fixed margin, and
+offered when it beats it by half. A sound match of two or
+more words loses an edge word the parser tags ADP, DET, CCONJ, PRON or AUX
+(`on Versal` is proposed as `Versal`) and must still sound like the term. It
+reads parrotflow-syrinx, so turning it on fetches that model, and
+it needs `gate_sentence`. Each dictation publishes `vocabulary.clause` (every
+feature, the score, the decision and the clause offsets per place) and
+`vocabulary.clause_written`, `clause_left`, `clause_offered`, `clause_ms`.
 
 `near_misses`, `by_sound`, `gate`, `slot_gate`, `portrait` and
 `lowercase_refused` are also keys here, all on by default. They are not

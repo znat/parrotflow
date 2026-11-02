@@ -285,6 +285,24 @@ if let at = arguments.firstIndex(of: "--tree-cut") {
     exit(TreeCutCommand.run(text: arguments[at + 1], threshold: threshold))
 }
 
+if let at = arguments.firstIndex(of: "--clause-decide") {
+    if let batch = arguments.firstIndex(of: "--batch"), arguments.indices.contains(batch + 1) {
+        exit(ClauseDecideCommand.batch(path: arguments[batch + 1]))
+    }
+    func value(_ flag: String) -> String? {
+        arguments.firstIndex(of: flag).flatMap {
+            arguments.indices.contains($0 + 1) && !arguments[$0 + 1].hasPrefix("--") ? arguments[$0 + 1] : nil
+        }
+    }
+    guard arguments.indices.contains(at + 1), !arguments[at + 1].hasPrefix("--"),
+          let heard = value("--heard"), let term = value("--term") else {
+        print("usage: ParrotFlow --clause-decide \"<text>\" --heard \"<words>\" --term <term>")
+        print("       ParrotFlow --clause-decide --batch <items.json>")
+        exit(2)
+    }
+    exit(ClauseDecideCommand.run(text: arguments[at + 1], heard: heard, term: term))
+}
+
 if let at = arguments.firstIndex(of: "--sentence-probe") {
     guard #available(macOS 14, *) else {
         print("✗ the sentence probe needs macOS 14 or later")

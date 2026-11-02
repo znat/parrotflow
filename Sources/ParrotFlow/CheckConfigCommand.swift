@@ -139,6 +139,20 @@ enum CheckConfigCommand {
                 emit("      the sentence tests are off —"
                     + " `transcription.vocabulary.gate_sentence: false`")
             }
+            if !vocabularySteps.isEmpty, transcription.vocabulary.clauseDecider == true {
+                if !config.decidesByClause {
+                    emit("      ✗ clause_decider is on but English is not dictated, so it never runs")
+                    ok = false
+                } else if !config.gatesSentence {
+                    emit("      ✗ clause_decider is on but gate_sentence is off, so it never runs")
+                    ok = false
+                } else if case .failure(let error) = ClauseDecider.Model.shared {
+                    emit("      ✗ clause_decider: \(error.localizedDescription)")
+                    ok = false
+                } else {
+                    emit("      clause decider on (trial): it reads English places in place of the portrait")
+                }
+            }
             // The set the step runs with. Silent when the pipeline holds no
             // step at all, which is also what says nothing is downloaded for it.
             if let step = pipeline.steps.first(where: { $0.stage == .sentenceRepair }) {

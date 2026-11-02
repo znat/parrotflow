@@ -53,11 +53,14 @@ struct Parse: Equatable, Sendable {
 
 /// A parse plus what the tree cutter reads per word: the tag head's
 /// P(abandoned) and P(cue), and `s_hidden10` pooled to words, `n * 384`.
+/// `fused` is what the parser and tag heads read, `n * 384`; the clause
+/// decider's NER head reads it too.
 struct Analysis: Sendable {
     let parse: Parse
     let abandoned: [Float]
     let cue: [Float]
     let vectors: [Float]
+    let fused: [Float]
 }
 
 /// Core ML runs the two encoder passes; everything after them runs here.
@@ -303,13 +306,15 @@ private struct Heads {
             scores[rootLabel] = -.infinity
             words.append(Parse.Word(upos: upos, head: head, label: labels[Parser.argmax(scores)]))
         }
-        var tags = tagOut(tagHidden(Array(x[width...]), rows: n).map(elu), rows: n)
+        let fusedWords = Array(x[width...])
+        var tags = tagOut(tagHidden(fusedWords, rows: n).map(elu), rows: n)
         for row in 0 ..< n { softmax(&tags[row * 4 ..< (row + 1) * 4]) }
         return Analysis(
             parse: Parse(words: words),
             abandoned: (0 ..< n).map { tags[$0 * 4 + 1] },
             cue: (0 ..< n).map { tags[$0 * 4 + 2] },
-            vectors: pool(s10, spans)
+            vectors: pool(s10, spans),
+            fused: fusedWords
         )
     }
 

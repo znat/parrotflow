@@ -660,6 +660,26 @@ Then a summary. `scripts/check-disfluency-model-parity.sh` compares it with
 the PyTorch reference on `tests/disfluency-model-parity.json`; it needs the
 model, so it is not in `make test`.
 
+## How the clause decider reads a place
+
+```sh
+$PF --clause-decide "<text>" --heard "<words>" --term <term>   # one place, with the term's stored sentences
+$PF --clause-decide --batch <items.json>                        # many places in one loaded process, JSON lines
+```
+
+`--clause-decide` reads the place where `<words>` first stands in `<text>`,
+with the sentences `vocabulary-uses.yaml` holds for `<term>`, and prints the
+decision (`write`, `leave` or `offer`), p, the score, the clause offsets and
+every feature. It is what `transcription.vocabulary.clause_decider` runs; see
+`docs/configuration.md`.
+
+`--batch` reads `[{"id", "text", "a", "b", "heard", "term", "uses"}]`, offsets
+in Unicode scalars and `uses` in the shape `vocabulary-uses.yaml` stores, and
+prints one JSON line per item, then a summary.
+`scripts/check-clause-decider-parity.sh` compares it with the PyTorch reference
+on `tests/clause-decider-parity.json`; it needs the parser, so it is not in
+`make test`.
+
 ## Is this sentence mark real
 
 ```sh

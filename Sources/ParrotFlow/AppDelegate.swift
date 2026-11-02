@@ -2459,7 +2459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         downloads.expect(NeuralPhonemes.soundDownload)
         downloads.expect(
             SyrinxModel.download,
-            off: config.readsTreeCutter ? nil : ModelDownload.gateOff
+            off: config.readsSyrinx ? nil : ModelDownload.gateOff
         )
         downloads.expect(
             WordVectors.download,
@@ -2497,7 +2497,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // dictation: the stages that read them stand aside until they are
             // in memory.
             if config.readsSlots { await transcriber.warmSlotModel() }
-            if config.readsTreeCutter { await SyrinxModel.shared.warm() }
+            if config.readsSyrinx { await SyrinxModel.shared.warm() }
             // The boundary readings. 320 MB and a 1.3s load, and a dictation
             // never waits for either: without this the first few dictations of
             // a launch keep the periods a pause put in. Not fetched at all when
@@ -2566,7 +2566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if #available(macOS 14, *), config.readsSentenceModel {
             Task { await SentenceReadings.shared.retryNow() }
         }
-        if config.readsTreeCutter { Task { await SyrinxModel.shared.retryNow() } }
+        if config.readsSyrinx { Task { await SyrinxModel.shared.retryNow() } }
         warmModels()
     }
 
@@ -6327,10 +6327,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // mention of a name in a field that holds several dictations.
         let at = text.prefix(word.range.lowerBound).split(separator: " ").count
         do {
-            for row in try CorrectionRecording.apply(
+            let written = try CorrectionRecording.apply(
                 rows, said: text, from: .chosen, near: at, blocking: soundGroups
-            ) {
+            )
+            for row in written {
                 rebuildPortrait(for: row.term)
+            }
+            // The clause decider reads a choice both ways: every other term
+            // offered here is refused at this word. Not released, so the
+            // chosen term keeps the place. The term spelled like the heard
+            // words is skipped when the use row records them: the decider
+            // already counts that row as its refusal.
+            if config.decidesByClause, let picked, !written.isEmpty {
+                let offered = open.group.count > 1 ? open.group : [open.term]
+                for other in offered where other.caseInsensitiveCompare(picked) != .orderedSame
+                    && replaced.map({ ClauseDecider.norm($0) != ClauseDecider.norm(other) }) ?? true {
+                    try TermUses.record(
+                        term: other, said: text, span: word.word, from: .chosen, counter: true, near: at
+                    )
+                    rebuildPortrait(for: other)
+                    Log.write("selector: \(other) refused at \"\(word.word)\" — \(picked) was chosen")
+                }
             }
             let said = TermUses.narrowed(text, to: word.word)
             if let picked {
