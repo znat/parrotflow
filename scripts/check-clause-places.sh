@@ -12,6 +12,7 @@
 #   a heard word in neither word list is still written
 #   a rule place the decider offers shows the heard word
 #   a span that glues to the term is asked, and a correction back counts
+#   a case-only rendering of an ordinary word is settled, of a non-word written
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
@@ -94,6 +95,30 @@ check "a correction back counts against it the next time" \
   "$(glued "$phrase")" "left 1|offered 0|$phrase"
 check "a glued span with a word in neither list is still written" \
   "$(glued "We ship Zorb lix on Fridays." | sed 's/.*|//')" "We ship Zorblix on Fridays."
+
+cat > "$WORK/cased.yaml" <<'EOF'
+languages: [en]
+vocabulary:
+  terms:
+    Resend:
+      pronunciations:
+        - heard: resend
+    Upstash:
+      pronunciations:
+        - heard: upstash
+pipeline:
+  - vocabulary
+EOF
+mkdir -p "$WORK/cased"
+printf 'transcription:\n  languages: [en]\n' > "$WORK/cased/config.yaml"
+printf 'terms:\n  Resend:\n  Upstash:\n' > "$WORK/cased/vocabulary.yaml"
+cased() {
+  PARROTFLOW_CONFIG_DIR="$WORK/cased" "$BIN" --pipeline "$WORK/cased.yaml" "$1" --quiet --warm 2>/dev/null | tail -1
+}
+check "a case-only rendering of an ordinary word is not a rule" \
+  "$(cased "Can you resend me the invite?")" "Can you resend me the invite?"
+check "a case-only rendering of a non-word still writes" \
+  "$(cased "The rate limiter keeps its counters in upstash.")" "The rate limiter keeps its counters in Upstash."
 
 printf '\n  %d/%d\n' "$pass" "$total"
 [ "$pass" -eq "$total" ]
