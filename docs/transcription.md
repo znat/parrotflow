@@ -239,10 +239,13 @@ machine: "Claude" and "cloud" both come back as `cloud`, "Matthieu" and
 "Matthew" both as `Matthew`. No threshold separates them, because the
 distinction is gone before anything downstream can look.
 
-It turns the whole term off, its pronunciations included. Those stay exact
-rules and are not matched by sound. That is the right reading rather than a
-limitation: a term is usually `floor: off` because it *sounds* like the
-ordinary word, so its sound cannot separate the two.
+It turns the whole term off, its pronunciations included. They are not
+matched by sound. That is the right reading rather than a limitation: a term
+is usually `floor: off` because it *sounds* like the ordinary word, so its
+sound cannot separate the two. A pronunciation with a word no list knows stays
+an exact rule. One made only of ordinary words, like `cloud` under `Claude`,
+is not a rule: each place it stands is read by the slot and the clause
+decider.
 
 `floor: off` in YAML is the boolean `false`, not the string. So are `on`,
 `yes` and `no`. The decoder reads both.
