@@ -11,8 +11,9 @@ Local dictation for macOS that you can program.
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=5f46ca&label=release)](https://github.com/znat/parrotflow/releases)
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
 ![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-5f46ca)
+[![As seen on Open Source Alternatives](https://www.opensourcealternatives.to/badge-osa.svg)](https://www.opensourcealternatives.to)
 
-**[Install](#install)** · [What it does](#what-it-does) · [Documentation](docs/README.md)
+**[Install](#install)** · [What it does](#what-it-does) · [Documentation](docs/README.md) · [Website](https://parrotflow.io)
 
 </div>
 
@@ -61,9 +62,7 @@ and a spoken price into digits.
 ```yaml
 transforms:
   - name: github_refs        # Turn PRs into links
-    replace:
-      '[#$1](https://github.com/OWNER/REPO/pull/$1)':
-        ['/\bPR\s*#?(\d+)\b/']
+    command: built-in/github_refs/github_refs.py https://github.com/OWNER/REPO
   - name: slack_mentions     # Add Slack mentions
     command: slack_mentions.py
   - name: money_en           # Format units
@@ -74,9 +73,10 @@ transforms:
 
 Claude Code just wrote `CaretAnchor`. You say it, and the recogniser hears
 "carrot anchor". ParrotFlow reads the window you dictate into and writes
-`CaretAnchor`. It reads the whole window in a terminal or Slack, and the text
-before the caret anywhere else. The screen is read on your Mac, when you press
-the key, and needs the Accessibility permission.
+`CaretAnchor`. It reads the window in every app, except password managers,
+Keychain Access, System Settings and password fields. The screen is read on
+your Mac, when you press the key, and needs the Accessibility permission. Set
+`transcription.context.every_app: false` to read only terminals and Slack.
 
 <img src="Resources/readme/context.webp" width="640" alt="Claude Code in a terminal. The dictated words carrot anchor became CaretAnchor, linked to the same word in Claude's answer above.">
 

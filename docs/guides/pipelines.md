@@ -15,7 +15,7 @@ money formatting, and disfluency cleanup. Order has consequences:
 
 - Dates run before numbers so number formatting does not consume date phrases.
 - Money runs after numbers because it reads normalized amounts.
-- A PR-link replacement can run after numbers so it sees a numeric reference.
+- The PR-link script runs after numbers so it sees a numeric reference.
 
 ## Add a step without replacing the pipeline
 

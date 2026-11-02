@@ -119,7 +119,7 @@ on.
 | Stage | What it does |
 |---|---|
 | `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Every app but known password managers and System Settings, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
-| `input` | What is already *in* the field and where the caret is, published as `input.*`. Never touches the transcript. Every app, and off unless you ask for it — see [Input](#input-what-is-already-in-the-field). |
+| `input` | What is already *in* the field and where the caret is, published as `input.*`. Never touches the transcript. Every app but the same password managers and System Settings, never a password field, and off unless you ask for it or `context_spelling` is on — see [Input](#input-what-is-already-in-the-field). |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
 `numbers` used to be a stage here. It is a shipped transform now, and there is
@@ -1317,7 +1317,9 @@ read, nor are password fields (`ContextReader.deniedBundleIDs`). A password
 manager missing from that list, or a vault open in a browser tab, is read like
 any other window, password fields still excepted. With the switch off, any
 other app is declined out loud. The Slack and terminal readers still read their own apps, and their output
-does not change.
+does not change. `every_app` covers the screen read only. The field read
+reads every app but the denied ones, whatever it says. See
+[What is read, and what is never read](#what-is-read-and-what-is-never-read).
 
 Teams and Outlook get their own readers when the switch is on. In Teams
 (`com.microsoft.teams2`) the reader takes the message list nearest the focus
@@ -1346,6 +1348,48 @@ transcription:
     after_release_seconds: 0.5 # how long the read may run on after the key comes up
 ```
 
+### What is read, and what is never read
+
+Two reads run at each press. The screen read (`context`) reads the window
+around the field. The field read (`input`) reads the focused field: its text
+and where the caret is. `context_spelling` is on by default and turns both on
+at every press, so by default both run.
+
+| | screen read | field read |
+|---|---|---|
+| a terminal or Slack | read | read |
+| any other app | read while `every_app` is on, the default | read, whatever `every_app` says |
+| an app in `ContextReader.deniedBundleIDs` | never | never |
+| any app, while a denied app's panel holds the focus | never | never |
+| a focused element whose app cannot be identified | never | never |
+| a password field (`AXSecureTextField` role or subrole) | skipped, the rest of the window is read | never |
+| a field whose subrole cannot be read | its value skipped | never: it may be a password field |
+
+The denied apps are 1Password, current and older versions, Bitwarden, Apple Passwords,
+KeePassXC, Proton Pass, Enpass, Keychain Access, System Settings, the
+system's password prompt (`SecurityAgent`) and the Touch ID prompt
+(`LocalAuthentication`). The match is by bundle ID, in any case. It is checked
+on the app the press was for and on the process that owns the focused
+element. For a denied app the field read makes no accessibility call at all.
+A password manager missing from the list, or a vault open in a browser tab, is
+read like any other app, password fields still excepted.
+
+A refused field read publishes `input.declined` as `this app is never read: it
+holds passwords or system settings`, `the app that owns the focused field could
+not be identified` or `the focused field is a password field`. In a denied app the screen read is refused too, so context spelling
+has no screen and no text above the caret. It logs `context spelling: no
+screen and no text above the caret` and leaves the sentence as dictated. In a
+password field in any other app, it still has the rest of the window.
+
+**What the log keeps.** At each press the field read logs its character counts
+and whether you were appending or inserting. Where the caret is known, it also
+logs up to 20 characters either side of it, and the first 20 of a selection,
+escaped on one `caret:` line. That is real text from the field, in
+`~/Library/Logs`. A refused read logs only its reason. The screen read logs
+its character count at the press. The `context` stage, when you name it, logs
+what it read, see [Why it is not in the default](#why-it-is-not-in-the-default).
+Context spelling logs the dictated words it matched and the terms it chose.
+
 **How long the read may run.** From the press until
 `after_release_seconds` after the key comes up, 0.5 s by default; 0 stops it
 at the release. At that deadline the generic reader publishes what it found,
@@ -1370,8 +1414,11 @@ not that it is fresher. It is that the pane is certain.
 
 A terminal read costs about 1ms on a small pane and 36–39ms on a long
 scrollback. A Slack walk costs 130–150ms. Both run on a background queue after
-the recorder has started. The read is skipped entirely unless some pipeline
-names the stage.
+the recorder has started. The read runs when `transcription.pipeline` names the
+stage or when `context_spelling` is on (`Context.isConfigured`).
+`context_spelling` is on by default, so in practice the screen is read at every
+press. To skip the read, turn `context_spelling` off and leave `context` out of
+the pipeline.
 
 **This does not fix where the text lands.** If you dictate into one pane and
 switch to another before the transcript is ready, the ⌘V still goes to the pane
@@ -1443,7 +1490,10 @@ that `sentence_repair` loads then scores the sentence as dictated against each
 rewrite, and a rewrite is kept when it wins by enough: "rewrite line" becomes
 `rewrite_line` when the screen shows it. It reads the screen and the field at
 every press, whether or not the pipeline names `context` or `input`, and uses
-the text above the caret when there is no screen. It never waits for the model:
+the text above the caret when there is no screen. Neither read happens in a
+denied app, so there it has nothing to match against and leaves the sentence
+alone. A password field is never read; the rest of its window still is. It
+never waits for the model:
 until it is in memory, the text goes through as dictated. Each rewrite costs one
 model pass, so at most 8 are scored, exact matches first, and scoring stops at 5
 seconds with what it finished. `--context-spelling-test <cases.json>` runs it
@@ -1483,12 +1533,14 @@ selection replaces it, and what is about to be replaced is worth seeing.
 that could put the field into the transcript could paste what you already typed
 back on top of itself.
 
-**Why it is a separate stage.** Two reasons. `context` is terminals-only
-because reading the surrounding screen anywhere else means walking a window's
-children; the box *is* the focused element, so it is one call in a native field,
-a browser and an Electron composer alike. And naming `context` says "read my
-terminal". It must not also come to mean "read what I have typed in every app I
-dictate into". You turn each on by name.
+**Why it is a separate stage.** Two reasons. `context` reads the screen around
+the box. It shares one read with context spelling: `Context.capturePress` takes
+it at the press, and `ContextReader.choose` picks the reader for the app. Outside
+a terminal that read walks the window's children. The box *is* the focused
+element, so reading it is one call in a native field, a browser and an Electron
+composer alike. And naming `context` says "publish what is on screen". It must
+not also come to mean "publish what I have typed in every app I dictate into".
+You turn each on by name.
 
 **Appending or inserting.** This is what the stage is for. A transcript joining
 the end of a paragraph wants a capital and a full stop. One dropped into the
@@ -1522,8 +1574,18 @@ pipeline runs, focus may be elsewhere.
 first is still being transcribed is ordinary, and with one shared slot the
 first would read the second's field.
 
-**While the stage is on, the log holds what was in the field when you
-dictated** — the character counts and where the caret was, not the text itself.
+**Never in a denied app, never in a password field.** The field read uses
+the same list as the screen read, `ContextReader.deniedBundleIDs`, checked on
+the app and on the owner of the focus. An owner that cannot be identified is
+refused, because it may be a denied app. A field with the `AXSecureTextField`
+role or subrole is not read. Neither is a field whose subrole cannot be read,
+because it may be one. Both decline before the field's value is asked for. See
+[What is read, and what is never read](#what-is-read-and-what-is-never-read).
+
+**While the read is on, the log holds part of what was in the field when you
+dictated**: the character counts, where the caret was, and up to 20 characters
+either side of it on a `caret:` line. The read is on whenever the pipeline
+names `input` or `context_spelling` is on, which is the default.
 
 ### Seeing what it captures
 
@@ -1609,9 +1671,11 @@ it by text does not.
 **They only apply to dictation.** The pipeline runs on a transcript on its way
 into a window. A voice command — anything after the activation phrase — is
 routed and transformed on a different path that never assembles a pipeline, so
-an `app:` there gates nothing. `--replace` likewise passes no app, which means
-an app-conditioned stage never runs under it; that is the fail-closed rule
-doing its job on a path with no window, not a bug to work around.
+an `app:` there gates nothing. `--replace` passes no app unless you give one:
+without `--app`, an app-conditioned stage never runs under it. That is the
+fail-closed rule doing its job on a path with no window. `--replace "<text>"
+--app <name>` says who to pretend is in front, the same way as `--pipeline
+--app`, so a stage gated on that app runs.
 
 **Negation reads differently for text and for apps.** `unless:` excludes on
 text; an app is excluded with a negative lookahead inside `app:`. Two idioms
