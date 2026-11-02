@@ -396,6 +396,60 @@ enum VocabularyPass {
         return marks.map(\.rule)
     }
 
+    /// `quand on` for `Qonto`, `resend` for `Resend`: every word is one a word
+    /// list knows. Not a rule, or every "quand on" becomes the company. A
+    /// pattern in slashes is not words, and neither is `404`.
+    static func ordinary(_ heard: String) -> Bool {
+        !Config.Transcription.Rule(source: heard, replacement: "").isRegex
+            && heard.split(separator: " ").allSatisfy { $0.contains(where: \.isLetter) }
+            && Vocabulary.unseenWord(in: heard) == nil
+    }
+
+    /// `resend` for `Resend`: an ordinary word, and at most the letter case
+    /// differs.
+    static func onlyCases(word heard: String, term: String) -> Bool {
+        heard.lowercased() == term.lowercased() && ordinary(heard)
+    }
+
+    /// Places where a term stands as ordinary words: "with resend" for
+    /// `Resend`, "quand on" for a learnt `heard: quand on` under `Qonto`. No
+    /// rule writes these and the other gatherers skip them. `.sound`, so
+    /// `settle` asks the slot and then the clause decider.
+    ///
+    /// Renderings are read in their own language only, as the sound pass reads
+    /// them (`Config.vocabularySounds`): `quand on` is two words in English
+    /// too. `fallback` is the language of a rendering with no `lang:`.
+    ///
+    /// Gathered before any correction too: a cold term never writes. Kokoro
+    /// try-out: 2 first mentions offered instead of missed, 1 ordinary noun
+    /// offered, 0 wrong writes. One No on the pill leaves it after that.
+    static func wordParts(
+        in text: String, terms: [String: Config.Vocabulary.Term], claimed: [Part],
+        language: String, fallback: String
+    ) -> [Part] {
+        let forms = terms.flatMap { term, entry -> [(form: String, term: String)] in
+            let spelled = !entry.never && term != term.lowercased() && ordinary(term)
+            let heard = entry.pronunciations.filter { ($0.lang ?? fallback) == language }.map(\.heard)
+            return (spelled ? [(term, term)] : []) + heard.filter(ordinary).map { ($0, term) }
+        }
+        .sorted { a, b in
+            a.form.count != b.form.count ? a.form.count > b.form.count : (a.form, a.term) < (b.form, b.term)
+        }
+        var found: [Part] = []
+        var taken = claimed.map(\.range)
+        for (form, term) in forms {
+            for span in Vocabulary.spans(of: form, in: text, ignoringCase: true)
+            where text[span] != term && !taken.contains(where: { $0.overlaps(span) }) {
+                found.append(Part(
+                    range: span, decoded: String(text[span]),
+                    other: Vocabulary.inflected(term, like: String(text[span])), term: term, standing: .sound
+                ))
+                taken.append(span)
+            }
+        }
+        return found.sorted { $0.range.lowerBound < $1.range.lowerBound }
+    }
+
     // MARK: - Slots and readings
 
     /// The places one term may claim, cut to `limit`, best evidenced first.
@@ -676,7 +730,7 @@ enum VocabularyPass {
     /// Nothing is written here. Each match becomes one more change for the
     /// model to vote on.
     ///
-    /// - Parameter rules: the vocabulary's rules — `Config.vocabularyRules`.
+    /// - Parameter rules: every rendering as a rule — `Config.renderingRules`.
     ///   Not `transcription.rules`: those are a table somebody wrote for
     ///   themselves, and widening them by an edit is a different decision from
     ///   widening a rendering the app learnt. A pattern rule names no spelling

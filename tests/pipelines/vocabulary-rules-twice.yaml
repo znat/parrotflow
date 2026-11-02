@@ -12,7 +12,7 @@ languages: [en]
 vocabulary:
   terms:
     Vercel:
-      heard: [Versailles]
+      heard: [Vursel]
 pipeline:
   - vocabulary
   - vocabulary

@@ -1116,13 +1116,14 @@ struct Pipeline: Equatable, Codable {
         // near miss has to raise this or that stage never runs.
         var nearMisses = 0
         var bySound = 0
+        var byWord = 0
         // Where this stage's time goes, split at its two model calls. The
         // stage's own `ms` is one number for all of it.
         var soundSeconds = 0.0
         var gateSeconds = 0.0
         func result(_ text: String, _ vars: [String: Scope.Value]) -> StageResult {
             let wrote: [String: Scope.Value] = [
-                "count": .int(exact.count + nearMisses + bySound),
+                "count": .int(exact.count + nearMisses + bySound + byWord),
                 "changes": .string(exact.changes),
                 "before": .string(handed),
                 "protected": .string(exact.protected),
@@ -1157,7 +1158,7 @@ struct Pipeline: Equatable, Codable {
         // on and what that cost over this speaker's archive.
         if step.vocabulary.isOn(\.nearMisses) {
             let reached = VocabularyPass.fuzzyParts(
-                in: text, rules: config.vocabularyRules, claimed: parts
+                in: text, rules: config.renderingRules, claimed: parts
             )
             nearMisses = reached.count
             parts += reached
@@ -1213,6 +1214,15 @@ struct Pipeline: Equatable, Codable {
             bySound = proposed.count
             parts += proposed
         }
+
+        // After the sound pass, so "stack" for `Stack` cannot take the span
+        // "better stack" needs for `BetterStack`.
+        let worded = VocabularyPass.wordParts(
+            in: text, terms: config.vocabulary.terms, claimed: parts,
+            language: Pipeline.language(of: text, config: config), fallback: config.primaryLanguage
+        )
+        byWord = worded.count
+        parts += worded
 
         // The places where several terms share the word that was heard. Built
         // before the others and not from parts: a group place carries every

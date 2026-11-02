@@ -19,7 +19,7 @@ vocabulary:
     Vercel:
       heard: [Versal]
     Supabase:
-      heard: [super base]
+      heard: [super baze]
 pipeline:
   - stage: vocabulary
     review: false

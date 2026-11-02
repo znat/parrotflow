@@ -424,7 +424,8 @@ struct Config: Decodable, Equatable {
             /// for the spotter to report. That is the intended reading:
             /// "Claude" and "cloud" come back identical because they *sound*
             /// identical, so the audio separates them no better than the
-            /// spelling does.
+            /// spelling does. A rendering made only of ordinary words, like
+            /// "cloud", is a place instead (`VocabularyPass.wordParts`).
             var never = false
             var pronunciations: [Pronunciation] = []
             /// What kind of thing the term names, written by the correction
@@ -781,9 +782,18 @@ struct Config: Decodable, Equatable {
     /// Those words open the group instead, and `SoundGroup` decides. See
     /// `docs/proposals/sound-groups.md`.
     ///
+    /// A rendering made only of ordinary words is not a rule either. See
+    /// `VocabularyPass.ordinary` and `VocabularyPass.wordParts`.
+    ///
     /// One rule per source. Two rules with the same left side are a rewrite
     /// that depends on which one the pass reads first.
     var vocabularyRules: [Transcription.Rule] {
+        renderingRules.filter { !VocabularyPass.ordinary($0.source) }
+    }
+
+    /// Every rendering as a rule, the ordinary ones too, for the near-miss
+    /// pass: `Praise's` is one apostrophe from `heard: Praises`.
+    var renderingRules: [Transcription.Rule] {
         let opens = SoundGroup.openings(in: vocabulary.terms)
         var written = Set<String>()
         return vocabulary.terms
