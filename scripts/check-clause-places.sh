@@ -10,6 +10,7 @@
 #   the pill still asks when a later stage only changed the letter case
 #   a slot refusal is read by the decider and offered at most
 #   a write is offered instead where the slot doubts a name, or the swap was refused
+#   a word-list write is offered once that swap was refused
 #   a heard word in neither word list is still written
 #   a rule place the decider offers shows the heard word
 #   a span that glues to the term is asked, and a correction back counts
@@ -99,6 +100,19 @@ terms:
       span: "Versailles"
       counter: true
 EOF
+mkdir -p "$WORK/nonword"
+cat > "$WORK/nonword/vocabulary-uses.yaml" <<'EOF'
+terms:
+  Vercel:
+    - said: "We deploy the web app on Vercel every Friday."
+      span: "Vercel"
+    - said: "Our designer Versal sent the new mockups."
+      span: "Versal"
+      counter: true
+EOF
+check "a word in neither list is offered once that swap was refused" \
+  "$(PARROTFLOW_CONFIG_DIR="$WORK/nonword" "$BIN" --pipeline "$WORK/fixture.yaml" "We deploy on Versal every Friday." \
+    --quiet --warm 2>/dev/null | tail -1)" "We deploy on Versal every Friday."
 check "a write is offered where the slot doubts a name" \
   "$(runvars "$WORK/capped" "We should praise his work.")" "left 0|offered 1|written 0|We should praise his work."
 check "a write is offered where this swap was refused before" \
