@@ -1261,6 +1261,8 @@ enum VocabularyPass {
     /// One entry per change. `true` writes the term, `false` writes back what
     /// the decoder wrote, `nil` is still open. Exactly the shape `settling`
     /// takes, and exactly what `taught` already does for a spelling lesson.
+    /// `capped` holds the open places the clause decider may offer but not
+    /// write.
     ///
     /// The rules, in the order they are asked:
     ///
@@ -1269,8 +1271,8 @@ enum VocabularyPass {
     ///    Write the term. A glued span is written only when one of its words
     ///    is in neither list, and asked otherwise.
     /// 2. **Can a name stand in that spot?** `slot` reads the parser. A spot
-    ///    that wants a verb, an adverb or a preposition cannot hold a name, so
-    ///    the reading is refused.
+    ///    that wants a verb, an adverb or a preposition is unlikely to hold a
+    ///    name, so the place is capped: offered at most, never written.
     ///
     /// Only a rule substitution and a sound proposal are settled here. A near
     /// miss and a wide rule stay open.
@@ -1282,8 +1284,9 @@ enum VocabularyPass {
     /// nothing, so it is left to `SentenceGate`.
     static func settle(
         _ changes: [Change], in text: String, slot: ((Change) -> SlotReading?)?
-    ) -> [Bool?] {
-        changes.map { change -> Bool? in
+    ) -> (decided: [Bool?], capped: Set<Int>) {
+        var capped: Set<Int> = []
+        let decided = changes.enumerated().map { index, change -> Bool? in
             // A place where several terms share the heard word is never
             // settled here. Both readings are names, so the word lists say
             // "not a word" about either of them, and the spot holds a name
@@ -1319,11 +1322,13 @@ enum VocabularyPass {
             switch reading.route {
             case .decline:
                 Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
-                    + " — the spot wants \(reading.tag), which cannot hold a name; refused")
-                return false
+                    + " — the spot wants \(reading.tag), which seldom holds a name; the slot caps it at an offer")
+                capped.insert(index)
+                return nil
             case .open:
                 return nil
             }
         }
+        return (decided, capped)
     }
 }

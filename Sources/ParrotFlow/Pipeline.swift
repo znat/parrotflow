@@ -1277,12 +1277,13 @@ struct Pipeline: Equatable, Codable {
         // a rule that is 4/4 where the models measured were 0/4.
         let gatedAt = Date()
         let settled: [Bool?]
+        var capped: Set<Int> = []
         if step.vocabulary.isOn(\.gate) {
             // Read inside the branch so `gate: false` does not open the parser.
             let span = Trace.current?.open("slot_gate", kind: .part)
             var slot: ((VocabularyPass.Change) -> VocabularyPass.SlotReading?)?
             if let clause = await openClause() { slot = { clause.slot($0, in: text) } }
-            settled = VocabularyPass.settle(changes, in: text, slot: slot)
+            (settled, capped) = VocabularyPass.settle(changes, in: text, slot: slot)
             span?.close("\(changes.count) change(s)")
         } else {
             settled = [Bool?](repeating: nil, count: changes.count)
@@ -1297,7 +1298,7 @@ struct Pipeline: Equatable, Codable {
             defer { span?.close("\(decided.filter { $0 == nil }.count) still open") }
             if let clause = await openClause() {
                 let settledBySentence = await SentenceGate.settle(
-                    changes, in: text, given: decided, clause: clause
+                    changes, in: text, given: decided, capped: capped, clause: clause
                 )
                 clauseVars.merge([
                     "clause_places": .int(clause.places),

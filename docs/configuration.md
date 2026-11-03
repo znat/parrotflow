@@ -584,12 +584,14 @@ is to the term's accepted and refused sentences, whether the heard words are a
 name (a small NER head on the parser), their part of speech and their
 neighbours', how they sound against the term in the dictation's voice, whether
 each word is in a word list (the spell checker in English and French, or the
-tokenizer list), and whether this exact swap was accepted or refused before. A term with
+tokenizer list), and whether this exact swap was accepted before. A swap
+refused before is offered at most. A term with
 no accepted sentence never writes; it offers or leaves. The slot check reads
 the parser too: the heard words become one `<mask>`, and a small head on the
 parser's features there gives P that a name, noun or pronoun stands in the
-slot. Under the threshold in `built-in/data/vocab-slot.safetensors`, the term is
-refused and what was heard is kept. A place several terms share is read once per term on the
+slot. Under the threshold in `built-in/data/vocab-slot.safetensors`, the place
+is offered at most: the clause decider still reads it, and a write becomes an
+offer. A place several terms share is read once per term on the
 same clause, and the terms are told apart by how close the clause is to each
 one's sentences. The term spelled like the heard words is the default and needs
 no sentences; another is written only when it beats it by a fixed margin, and

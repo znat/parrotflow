@@ -20,10 +20,10 @@ enum SentenceGate {
     ///
     /// `settled` carries one entry per change: `true` writes the term, `false`
     /// keeps what was heard, `nil` is still open. A place the word lists
-    /// already refused is not read.
+    /// already refused is not read. A place in `capped` is offered at most.
     static func settle(
         _ changes: [VocabularyPass.Change], in text: String, given settled: [Bool?],
-        clause: ClauseSession
+        capped: Set<Int> = [], clause: ClauseSession
     ) async -> Settled {
         var changes = changes
         var out = settled
@@ -69,7 +69,7 @@ enum SentenceGate {
                 continue
             }
 
-            switch await clause.read(change, term: owner, in: text)?.decision {
+            switch await clause.read(change, term: owner, in: text, capped: capped.contains(index))?.decision {
             case .write?:
                 out[index] = true
                 Log.write("sentence gate: \"\(change.was)\" -> \(owner) — the clause decider writes it")
