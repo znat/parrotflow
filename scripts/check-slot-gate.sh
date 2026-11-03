@@ -41,18 +41,19 @@ export PARROTFLOW_CONFIG_DIR="$WORK"
 if ! python3 -c '
 import sys, yaml
 for number, case in enumerate(yaml.safe_load(open(sys.argv[1]))["cases"], 1):
-    print("\x1f".join([str(number)] + [case[k] for k in ("said", "heard", "term", "expect")]))
+    print("\x1f".join([str(number)] + [case[k] for k in ("said", "heard", "term", "expect")]
+                      + [case.get("route", "")]))
 ' "$ROOT/tests/judge-cases.yaml" > "$WORK/cases"; then
   echo "  ✗ tests/judge-cases.yaml could not be read"
   exit 1
 fi
 
 applied=0; declined=0; asked=0; skipped=0
-wrong_apply=0; wrong_decline=0; total=0
+wrong_apply=0; wrong_decline=0; wrong_route=0; total=0
 
 field() { printf '%s\n' "$1" | awk -v k="$2" '$1 == k { print $2 }'; }
 
-while IFS=$'\x1f' read -r number said heard term expect; do
+while IFS=$'\x1f' read -r number said heard term expect pinned; do
   [ -z "$number" ] && continue
 
   if [ "$("$BIN" --teaching "$said" "$heard" 2>/dev/null | tail -1)" = REVERT ]; then
@@ -81,6 +82,11 @@ while IFS=$'\x1f' read -r number said heard term expect; do
   elif [ "$route" = decline ] && [ "$expect" = approve ]; then
     wrong_decline=$((wrong_decline + 1)); mark="✗"
   fi
+  # A case with `route:` must take that route, open included. Not checked
+  # without the model, where every route is open.
+  if [ -n "$pinned" ] && [ "$slot" != unavailable ] && [ "$route" != "$pinned" ]; then
+    wrong_route=$((wrong_route + 1)); mark="✗"
+  fi
   printf '  %s  %-14s %-10s %-12s %-8s want %s\n' \
     "$mark" "$heard" "$term" "$slot" "$route" "$expect"
 done < "$WORK/cases"
@@ -93,9 +99,10 @@ fi
 
 printf '  %d scored, %d not (tests/judge-cases.yaml)\n' "$total" "$skipped"
 printf '  applied %d   declined %d   open %d\n' "$applied" "$declined" "$asked"
-printf '  wrong applies %d   wrong declines %d\n' "$wrong_apply" "$wrong_decline"
+printf '  wrong applies %d   wrong declines %d   wrong pinned routes %d\n' \
+  "$wrong_apply" "$wrong_decline" "$wrong_route"
 
 # A wrong apply writes a word nobody said with no menu behind it. A wrong
 # decline loses a name the speaker did say. Neither may be traded for fewer
 # open places, so either one fails the run.
-[ "$wrong_apply" -eq 0 ] && [ "$wrong_decline" -eq 0 ]
+[ "$wrong_apply" -eq 0 ] && [ "$wrong_decline" -eq 0 ] && [ "$wrong_route" -eq 0 ]

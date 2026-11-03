@@ -331,9 +331,11 @@ cases:
 
   # ---- written for the slot, 2026-11-03 ----
   # Not harvested. A French verb slot. Tagged as English, the fillers read
-  # as nouns and the place stayed open.
+  # as nouns and the place stayed open, which the score alone does not
+  # catch. `route:` pins it.
 
   - said: "Nous allons verser le budget sur le compte demain."
     heard: "verser"
     term: "Vercel"
     expect: decline
+    route: decline
