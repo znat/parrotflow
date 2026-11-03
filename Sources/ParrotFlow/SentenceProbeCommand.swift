@@ -29,7 +29,8 @@ import MLX
 /// milliseconds each decision took. A row may carry `"mark": "?"` where the
 /// left half does not end with the mark itself. One process per boundary would
 /// pay the 1.3s load every time, so this is the only way to get a latency
-/// number.
+/// number. `--vectors` loads the word vectors as well, so the memory line
+/// describes the process the app actually runs, with both MLX models in it.
 @available(macOS 14, *)
 enum SentenceProbeCommand {
 
@@ -124,7 +125,7 @@ enum SentenceProbeCommand {
     }
 
     /// Every boundary in a file, scored in one loaded process.
-    static func bench(cases path: String, out: String?) -> Int32 {
+    static func bench(cases path: String, out: String?, vectors: Bool) -> Int32 {
         struct Row: Decodable {
             let left: String
             let right: String
@@ -144,6 +145,7 @@ enum SentenceProbeCommand {
                 let rows = try JSONDecoder().decode(
                     [Row].self, from: Data(contentsOf: URL(fileURLWithPath: path))
                 )
+                if vectors { try await WordVectors.shared.prepare() }
                 try await SentenceReadings.shared.prepare()
                 var results: [[String: Any]] = []
                 var times: [Double] = []

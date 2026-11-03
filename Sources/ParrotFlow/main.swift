@@ -29,16 +29,6 @@ if arguments.contains("--schema") {
     exit(SchemaCommand.run())
 }
 
-// Above the config for the same reason: it reads a tokenizer.json and writes
-// nothing, and loading the config would refresh the shipped examples.
-if let at = arguments.firstIndex(of: "--tokenize") {
-    guard arguments.indices.contains(at + 1) else {
-        print("usage: ParrotFlow --tokenize \"<text>\"")
-        exit(2)
-    }
-    exit(ParserCommand.tokenize(arguments[at + 1]))
-}
-
 // The first line of every run, app or command, and above the config for the
 // same reason: loading the config already logs — a transform it refused, a
 // vocabulary.yaml it wrote — and those lines need the stamp above them to say
@@ -133,10 +123,6 @@ func languageList(_ arguments: [String]) -> [String]? {
         .map { $0.trimmingCharacters(in: .whitespaces) }
         .filter { !$0.isEmpty }
     return listed.isEmpty ? nil : listed
-}
-
-if arguments.contains("--serve") {
-    exit(ServeCommand.run())
 }
 
 if arguments.contains("--check-config") {
@@ -248,49 +234,28 @@ if arguments.contains("--sentence-model") {
     exit(SentenceModelCommand.run())
 }
 
-if let at = arguments.firstIndex(of: "--parse") {
-    if let batch = arguments.firstIndex(of: "--batch"), arguments.indices.contains(batch + 1) {
-        exit(ParserCommand.batch(path: arguments[batch + 1], splitOnly: arguments.contains("--split")))
+if arguments.contains("--slot-model") {
+    guard #available(macOS 14, *) else {
+        print("✗ the slot model needs macOS 14 or later")
+        exit(1)
     }
-    guard arguments.indices.contains(at + 1), !arguments[at + 1].hasPrefix("--") else {
-        print("usage: ParrotFlow --parse \"<text>\" [--lang en]")
-        print("       ParrotFlow --parse --batch <items.json> [--split]")
-        exit(2)
-    }
-    exit(ParserCommand.run(text: arguments[at + 1], language: languageList(arguments)?.first ?? "en"))
+    exit(SlotModelCommand.run())
 }
 
-if let at = arguments.firstIndex(of: "--tree-cut") {
-    let threshold = arguments.firstIndex(of: "--threshold").flatMap {
-        arguments.indices.contains($0 + 1) ? Double(arguments[$0 + 1]) : nil
+if let at = arguments.firstIndex(of: "--slot-probe") {
+    guard #available(macOS 14, *) else {
+        print("✗ the slot probe needs macOS 14 or later")
+        exit(1)
     }
-    if let batch = arguments.firstIndex(of: "--batch"), arguments.indices.contains(batch + 1) {
-        exit(TreeCutCommand.batch(path: arguments[batch + 1], threshold: threshold))
+    if let encode = arguments.firstIndex(of: "--encode"), arguments.indices.contains(encode + 1) {
+        exit(SlotProbeCommand.encode(arguments[encode + 1]))
     }
-    guard arguments.indices.contains(at + 1), !arguments[at + 1].hasPrefix("--") else {
-        print("usage: ParrotFlow --tree-cut \"<text>\" [--threshold <x>]")
-        print("       ParrotFlow --tree-cut --batch <items.json> [--threshold <x>]")
+    guard arguments.indices.contains(at + 2) else {
+        print("usage: ParrotFlow --slot-probe \"<left half>\" \"<right half>\"")
+        print("       ParrotFlow --slot-probe --encode \"<text>\"")
         exit(2)
     }
-    exit(TreeCutCommand.run(text: arguments[at + 1], threshold: threshold))
-}
-
-if let at = arguments.firstIndex(of: "--clause-decide") {
-    if let batch = arguments.firstIndex(of: "--batch"), arguments.indices.contains(batch + 1) {
-        exit(ClauseDecideCommand.batch(path: arguments[batch + 1]))
-    }
-    func value(_ flag: String) -> String? {
-        arguments.firstIndex(of: flag).flatMap {
-            arguments.indices.contains($0 + 1) && !arguments[$0 + 1].hasPrefix("--") ? arguments[$0 + 1] : nil
-        }
-    }
-    guard arguments.indices.contains(at + 1), !arguments[at + 1].hasPrefix("--"),
-          let heard = value("--heard"), let term = value("--term") else {
-        print("usage: ParrotFlow --clause-decide \"<text>\" --heard \"<words>\" --term <term> [--language fr]")
-        print("       ParrotFlow --clause-decide --batch <items.json>")
-        exit(2)
-    }
-    exit(ClauseDecideCommand.run(text: arguments[at + 1], heard: heard, term: term, language: value("--language") ?? "en"))
+    exit(SlotProbeCommand.run(left: arguments[at + 1], right: arguments[at + 2]))
 }
 
 if let at = arguments.firstIndex(of: "--sentence-probe") {
@@ -302,7 +267,9 @@ if let at = arguments.firstIndex(of: "--sentence-probe") {
         let out = arguments.firstIndex(of: "--out").flatMap {
             arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
         }
-        exit(SentenceProbeCommand.bench(cases: arguments[bench + 1], out: out))
+        exit(SentenceProbeCommand.bench(
+            cases: arguments[bench + 1], out: out, vectors: arguments.contains("--vectors")
+        ))
     }
     // Only `--bare` and `--window` are taken as options, and only the first of
     // each. Everything else is transcript, including a half that starts with a
@@ -323,7 +290,8 @@ if let at = arguments.firstIndex(of: "--sentence-probe") {
     }
     guard halves.count == 2 else {
         print("usage: ParrotFlow --sentence-probe [--bare] [--window] \"<left half>\" \"<right half>\"")
-        print("       ParrotFlow --sentence-probe --bench <cases.json> [--out <scores.json>]")
+        print("       ParrotFlow --sentence-probe --bench <cases.json>"
+              + " [--out <scores.json>] [--vectors]")
         exit(2)
     }
     if window {
@@ -387,7 +355,10 @@ if let index = arguments.firstIndex(of: "--word-gate") {
     // not another flag.
     let term = arguments.indices.contains(index + 2)
         && !arguments[index + 2].hasPrefix("--") ? arguments[index + 2] : nil
-    exit(WordGateCommand.run(word: arguments[index + 1], term: term))
+    let sentence = arguments.firstIndex(of: "--in").flatMap {
+        arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+    }
+    exit(WordGateCommand.run(word: arguments[index + 1], term: term, sentence: sentence))
 }
 
 if let index = arguments.firstIndex(of: "--lowercase-refused") {
@@ -691,6 +662,25 @@ if let index = arguments.firstIndex(of: "--edit-diff") {
     exit(code)
 }
 
+if let index = arguments.firstIndex(of: "--portrait") {
+    guard #available(macOS 14, *) else {
+        print("✗ portraits need macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 1) else {
+        exit(TermPortraitCommand.all())
+    }
+    let sentence = arguments.indices.contains(index + 2) ? arguments[index + 2] : nil
+    let span = arguments.indices.contains(index + 3) ? arguments[index + 3] : nil
+    // A word and a sentence with no span is the group form: the word is what
+    // was heard, and every term that shares its sound reads the sentence. It
+    // falls back to the term form when the word opens no group.
+    if let sentence, span == nil {
+        exit(TermPortraitCommand.group(heard: arguments[index + 1], sentence: sentence))
+    }
+    exit(TermPortraitCommand.run(term: arguments[index + 1], sentence: sentence, span: span))
+}
+
 if let index = arguments.firstIndex(of: "--picked") {
     guard arguments.indices.contains(index + 2) else {
         print("usage: ParrotFlow --picked <word> <term> --in \"<sentence>\" [--dry]")
@@ -705,12 +695,36 @@ if let index = arguments.firstIndex(of: "--picked") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--name-place") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --name-place <heard> <term>")
+        exit(2)
+    }
+    exit(SoundGroupCommand.namePlace(heard: arguments[index + 1], term: arguments[index + 2]))
+}
+
 if let index = arguments.firstIndex(of: "--sound-group") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --sound-group <word>")
         exit(2)
     }
     exit(SoundGroupCommand.group(arguments[index + 1]))
+}
+
+if let index = arguments.firstIndex(of: "--group-decide") {
+    var members: [String] = []
+    for argument in arguments[(index + 1)...] {
+        if argument.hasPrefix("--") { break }
+        members.append(argument)
+    }
+    guard !members.isEmpty else {
+        print("usage: ParrotFlow --group-decide <term>:<score>:<floor> … [--plain <score>]")
+        exit(2)
+    }
+    let plain = arguments.firstIndex(of: "--plain").flatMap { at in
+        arguments.indices.contains(at + 1) ? Double(arguments[at + 1]) : nil
+    }
+    exit(SoundGroupCommand.decide(members, plain: plain))
 }
 
 if let index = arguments.firstIndex(of: "--correction") {
@@ -725,6 +739,63 @@ if let index = arguments.firstIndex(of: "--correction") {
         wrote: arguments[index + 1], put: arguments[index + 2], sentence: sentence,
         dry: arguments.contains("--dry")
     ))
+}
+
+if let index = arguments.firstIndex(of: "--slot-gap") {
+    guard #available(macOS 14, *) else {
+        print("✗ the slot reference needs macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 3) else {
+        print("usage: ParrotFlow --slot-gap \"<sentence>\" <heard> <term> [--lang <code>]")
+        exit(2)
+    }
+    // Refused rather than defaulted, and one code only. The verdict is read at
+    // that language's floor, so `--lang eng` or `--lang en,fr` would answer
+    // about a language nobody asked about.
+    let slotGapLanguage: String
+    if arguments.contains("--lang") {
+        let listed = languageList(arguments) ?? []
+        // `languageList` reads the first `--lang` and ignores a second one, so
+        // the count is checked here rather than there.
+        guard arguments.filter({ $0 == "--lang" }).count == 1,
+              listed.count == 1, let only = listed.first,
+              DictationLanguage.supported.contains(only) else {
+            print("✗ --lang wants one of"
+                + " \(DictationLanguage.supported.joined(separator: ", "))"
+                + " — the gate knows a floor for those only")
+            exit(2)
+        }
+        slotGapLanguage = only
+    } else {
+        slotGapLanguage = "en"
+    }
+    exit(
+        SlotGapCommand.run(
+            sentence: arguments[index + 1],
+            heard: arguments[index + 2],
+            term: arguments[index + 3],
+            language: slotGapLanguage
+        )
+    )
+}
+
+if let index = arguments.firstIndex(of: "--word-vector") {
+    guard #available(macOS 14, *) else {
+        print("✗ word vectors need macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --word-vector \"<sentence>\" <word> [--around]")
+        exit(2)
+    }
+    exit(
+        WordVectorCommand.run(
+            sentence: arguments[index + 1],
+            word: arguments[index + 2],
+            around: arguments.contains("--around")
+        )
+    )
 }
 
 if let index = arguments.firstIndex(of: "--tag") {

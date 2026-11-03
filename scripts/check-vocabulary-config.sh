@@ -96,16 +96,15 @@ terms:
     floor: off
     heard: [cloud]
   Tasmeen:')"
-wants "off leaves one term matched by sound"  "$got" "2 terms in vocabulary.yaml, 1 matched by sound, 0 by rule"
+wants "off leaves one term matched by sound"  "$got" "2 terms in vocabulary.yaml, 1 matched by sound, 1 by rule"
 # The offered list, not the whole block: `Claude` also appears in the notice
 # naming its legacy `heard:` key, which is a different sentence.
 rejects "and it is not the one turned off"    "$got" "— Claude"
 rejects "off is not reported as a legacy floor" "$got" "per-term \`floor:\` number"
 # A rendering on a term that is never searched for by sound cannot be searched
 # for either: it is registered under its term's name, and that name has no
-# entry for the spotter to report. "cloud" is an ordinary word, so it is not a
-# rule either: each "cloud" is a place the gates read.
-wants "its ordinary-word rendering is not a rule" "$got" "2 terms in vocabulary.yaml, 1 matched by sound, 0 by rule"
+# entry for the spotter to report.
+wants "its rendering is a rule and nothing else" "$got" "2 terms in vocabulary.yaml, 1 matched by sound, 1 by rule"
 
 # --- 3. `floor: no` is the same switch -------------------------------------
 #
@@ -182,7 +181,7 @@ got="$(say 'acoustic: true
 terms:
   Vercel:
     pronunciations:
-      - heard: Vursel
+      - heard: Versailles
         seen: 3
         from: mined
       - heard: Versal
@@ -195,7 +194,7 @@ rejects "the new key is not legacy"        "$got" "is legacy"
 got="$(say 'acoustic: true
 terms:
   Vercel:
-    heard: [Vursel, Versal]')"
+    heard: [Versailles, Versal]')"
 wants "the old key loads the same list"    "$got" "1 terms in vocabulary.yaml, 1 matched by sound, 2 by rule"
 wants "and reads the same way"             "$got" "1 terms in vocabulary.yaml, 1 matched by sound, 2 by rule"
 wants "the old key is named"               "$got" 'renderings on Vercel are written the old way'
@@ -205,9 +204,9 @@ wants "with what to write instead"         "$got" 'The setting is `pronunciation
 # half that is written the old way.
 got="$(say 'acoustic: true
 terms:
-  Vercel: [Vursel]
+  Vercel: [Versailles]
   Praisy:
-    heard: [Prissie]
+    heard: [Prissy]
     pronunciations:
       - heard: Pressy
         seen: 4
@@ -224,11 +223,11 @@ body='acoustic: true
 terms:
   Vercel:
     pronunciations:
-      - heard: Vursel
+      - heard: Versailles
         from: guesswork'
 got="$(say "$body")"
 wants "the rendering still loads"   "$got" "1 matched by sound, 1 by rule"
-wants "and the label is named"      "$got" 'Vercel/Vursel: `from: guesswork`'
+wants "and the label is named"      "$got" 'Vercel/Versailles: `from: guesswork`'
 wants "with what it was read as"    "$got" "so it is read as legacy"
 got="$(complains "$body")"
 rejects "nothing is refused over it" "$got" "from:"
@@ -378,13 +377,6 @@ got="$(say 'terms:
       - heard: Versal')"
 wants "an unknown kind is named"         "$got" "Vercel: \`kind: brand\`"
 wants "and says what it should be"       "$got" "person, place, organization, word"
-
-# --- the clause decider reads with the parser alone --------------------------
-#
-# The launch fetch and the warm-ups ask the predicate this line prints.
-printf 'terms:\n  Tasmeen:\n' > "$WORK/vocabulary.yaml"
-got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>/dev/null)"
-wants "the clause decider needs the parser" "$got" "vocabulary models: parrotflow-syrinx"
 
 printf '\n  %d/%d\n' "$pass" "$total"
 if [ -n "$failed" ]; then

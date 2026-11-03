@@ -130,7 +130,7 @@ $PF --replace "we deployed to super base" [--app <name>]
 $PF --normalize "<text>"
 $PF --dates "<instruction>" "<text>" [--locale FR] [--lang en,fr]
 $PF --inflected <term> <heard>
-$PF --word-gate <word> [term]
+$PF --word-gate <word> [term] [--in "<sentence>"]
 $PF --teaching "<sentence>" <word>
 $PF --suggest "<sentence>" [--lang fr]
 ```
@@ -157,6 +157,18 @@ condition is not about a word at all: a `'s` the heard text carries and the
 term does not would be taken out of the sentence, so this gate leaves it open.
 `scripts/check-word-gate.sh` scores both forms against
 `tests/word-gate-cases.yaml`.
+
+Name the sentence too — with the term, which the model tiers are about —
+`--word-gate merge Vercel --in "Go back to main and merge."` prints
+`slot Verb` and `route decline`. `slot` is what the masked slot wants, from
+ten fillers put back and tagged; `route` is where the proposal goes. The slot
+only ever declines: a name goes in a `Noun`, `Adjective` or `Pronoun` slot and
+never in a `Verb`, `Adverb` or `Preposition` one, and every other proposal
+reads `open` — see `SlotGate`. Nothing is downloaded: with no cached slot
+model the slot reads `unavailable` and the route is `open`.
+`scripts/check-slot-gate.sh` scores the whole route against
+`tests/judge-cases.yaml`. It needs the 269 MB model, so it is not in
+`make test`.
 
 `--teaching` asks whether a substitution sits inside a spelling lesson —
 `--teaching "Hey Barrot Versal Spells V E R C E L" Versal` prints `REVERT`, and
@@ -197,15 +209,14 @@ so a case file states the setup it assumes instead of inheriting this machine's.
   result. It is how a stage whose only contribution is a fact gets scored at
   all, and the first thing to reach for when a condition is not deciding what
   you expected. See [pipelines.md](pipelines.md#variables).
-- `--warm` waits for the models the run reads, and downloads what is missing.
-  Without it, a run waits up to 2 s for a cached parser, as a dictation does.
-  A parser that is not downloaded is skipped
-  (`vocabulary.clause_declined = "parser not downloaded"`) and its download
-  starts. Off by default: the parser is a 533 MB download, and `make test`
-  must not need one. Only what the fixture's own pipeline reads: the parser for
-  a `tree_cutter` step, or for a `vocabulary` step whose clause decider can run
-  (`gate_sentence` on, English or French in the languages), and the 320 MB
-  sentence model for a `sentence_repair` or `context_spelling` step.
+- `--warm` waits for the word vectors and the slot model before the run. The
+  sentence gate never makes a dictation wait, so in a one-shot run nothing has
+  loaded them and the two tests that read the sentence are skipped every time —
+  this is the only way to see them from the command line. Off by default: it is
+  about 600 MB of downloads, and `make test` must not need one. Only what the
+  fixture's own pipeline reads: a fixture with `slot_gate: false` on its
+  `vocabulary` step fetches no slot model, and one with no `vocabulary` step
+  fetches neither.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
 
@@ -301,6 +312,8 @@ $PF --for <term> "<sentence>" [word]
 $PF --against <term> "<sentence>" <word>
 $PF --correction <wrote> <put> --in "<sentence>" [--dry]
 $PF --sound-group <word>
+$PF --group-decide <term>:<score>:<floor>... [--plain <score>]
+$PF --name-place <heard> <term>
 $PF --picked <word> <term> --in "<sentence>" [--dry]
 ```
 
@@ -325,9 +338,11 @@ same one the correction panel would have written.
 `--for` records a sentence a term belongs in, without touching the
 pronunciations. `--against` records the opposite: a sentence where the term
 does not belong, with the ordinary word that stands where it would go. Both
-are written to `vocabulary-uses.yaml`, which the clause decider reads a term
-against. `--against` writes no pronunciation — a counter-example teaches
-nothing about how a word sounds.
+are written to `vocabulary-uses.yaml`, which is what a term's portrait is
+built from. `--against` writes no pronunciation — a counter-example teaches
+nothing about how a word sounds. One of them under a term is enough: the
+portrait stops reading that term against a floor, and a new sentence is written
+when it sits closer to the sentences the term belongs in than to these.
 
 ```
 $ ParrotFlow --against Vercel "I love visiting the Versailles Castle." Versailles
@@ -347,14 +362,36 @@ use Mick "Mick" heard Mik
 
 `--sound-group` prints the terms that share a word's sound, every word that
 opens that group, and whether the word is still a substitution rule — one that
-opens a group of two or more is not. The clause decider reads a group place:
-it picks one member, offers several, or keeps what was heard.
+opens a group of two or more is not. `--group-decide` runs the decision rule on
+scores you write down: a member is `<term>:<score>:<floor>[:<uses>]`, a floor
+of `-` is a member with too few uses to have one, a score of `-` is one that
+could not be scored, `:0` is a member nobody has ever confirmed — unknown,
+which opens the place rather than losing it — and `--plain` is the score
+against the group's pooled counter rows. The last line is the verdict.
+
+```
+$ ParrotFlow --group-decide Mik:0.90:0.80 Mick:0.86:- --plain 0.70
+Mik         0.900  floor 0.800  stands
+Mick        0.860  floor —      stands
+plain       0.700
+write Mik
+```
+
+The same decision with the real portraits behind it is
+`--portrait <heard> "<sentence>"`, which prints the group the word opens, each
+member's score and floor, plain's score and the verdict. A group of one prints
+the same way, so the cold start of a new name is readable: one use, no floor,
+no counter row, nothing decided.
+
+`--name-place` says whether the slot test stands aside at a place: `names` when
+both sides are names and the slot cannot separate them, `ordinary` when it is
+an ordinary word against a term.
 
 `--picked` is what an answer on the pill records, and it records it: `use
-<term>` for a word that is already a term, and `counter <term>` for any other
-word. Keeping the heard word adds nothing to `vocabulary.yaml`. `blocked <a> <b>`
-instead of either means the sentence names two members of one group, so nothing
-is written.
+<term>` for a word that is already a term, `create <name> <kind>` for a name
+that is not one yet — written to `vocabulary.yaml` with no pronunciation, under
+the kind the tagger read — and `counter <term>` for an ordinary word. `blocked <a> <b>` instead of any of
+them means the sentence names two members of one group, so nothing is written.
 `--correction` answers the same way.
 
 `--for` takes `--near <n>`, the word the correction was at. A terminal joins
@@ -519,136 +556,44 @@ is what the trace records: a place after one the answer made longer has moved.
 `scripts/check-selector.sh` scores both halves, 21 cases. The lowercasing of a
 refused glued span is `--lowercase-refused`.
 
-## How a sentence parses
+## What word does this slot want
 
 ```sh
-$PF --parse "<text>" [--lang en]                         # one line per word: head, label, part of speech
-$PF --parse --batch <items.json>                         # many inputs in one loaded process, JSON lines
-$PF --parse --batch <items.json> --split                 # the word split alone, no model
-$PF --tokenize "<text>"                                  # the tokenizer alone, no model
+$PF --slot-model                                           # fetch, compile and load mmBERT-small
+$PF --slot-probe "<left half>" "<right half>"              # the ten words the slot expects, and the time
+$PF --slot-probe --encode "<text>"                         # the tokenizer alone, no model
+$PF --slot-gap "<sentence>" <heard> <term> [--lang fr]     # what the slot says about a rewrite
 ```
 
-`--parse` runs parrotflow-syrinx, our dependency parser, in Core ML. The first call
-fetches it from `znaat/parrotflow-syrinx-coreml` at a pinned revision, about 530 MB.
-English only, because only English has a word splitter. `don't` is two words,
-`do` and `n't`, as in the treebanks the parser learned from.
+The vocabulary pass proposes a rewrite from spelling and sound alone. The slot
+reads the sentence instead: mask the word, ask mmBERT-small for the ten words it
+expects there, and measure both readings against them with the word vectors.
 
 ```
-$PF --parse "don't you know it's fine"
-parser ready in 0.73 s
-1	do	4	aux	AUX	0-2
-2	n't	4	advmod	PART	2-5
-3	you	4	nsubj	PRON	6-9
-4	know	0	root	VERB	10-14
-...
+$PF --slot-gap "The old house looked ghostly in the fog." ghostly Ghostty
+  expected  grey like deserted good lost beautiful white cool green ugly
+  gap       -0.243   refuse
 ```
 
-The columns are the word's index, the word, the index of its head (0 for the
-root), the relation, the part of speech, and its UTF-16 range in the text. The
-model reads 256 ids, `<bos>` and `<eos>` included, so the text gets 254
-subwords. Over that it abstains and says so. It never cuts the text.
+`gap` is `cos(term, centre) − cos(heard, centre)`. Below the floor for the
+language the rewrite is refused; above it the slot has no opinion. The floor is
+`slot_floor:` on the `vocabulary` step, 0.20 in English and 0.30 in French, and
+`--lang` picks which one the verdict is read at. The gap itself is
+the same number either way. It only ever refuses — a term is
+unknown to the tokenizer by construction, so it can never win this comparison.
+The ten words are printed because they explain the number: a slot whose ten
+words are pronouns cannot tell two names apart, and the gap comes out near zero.
+`scripts/check-slot-gap.sh` scores the decisions against
+`tests/slot-gap-cases.yaml`; it needs both models, so it is not in `make test`.
 
-`--batch` reads `[{"id", "text"} | {"id", "words"}]`, each with an optional
-`"language"`, and prints one JSON line per item with its time and memory, then
-a summary. `scripts/check-parser-parity.sh` compares it with the PyTorch
-reference on `tests/parser-parity.json`; it needs the model, so it is not in
-`make test`. `PARROTFLOW_SYRINX_ENDPOINT` points this one download at a mirror
-for tests, and what the mirror serves must still match the pinned hashes.
+`--slot-probe --encode` prints ids and loads no model, which is what
+`scripts/check-slot-tokenizer.sh` compares against HuggingFace's own tokenizer.
 
-## Which self-corrections the parser would take back
-
-```sh
-$PF --tree-cut "<text>" [--threshold <x>]                # each candidate cut, its P(real), and the output
-$PF --tree-cut --batch <items.json> [--threshold <x>]    # many inputs in one loaded process, JSON lines
-```
-
-`--tree-cut` runs the tree cutter and the cut filter on English text. The text
-first loses the hesitation sounds the built-in `fillers` table removes; that
-is the text the parser reads, printed as `view:`. The tree cutter proposes
-each stretch the parse marks as a reparandum, with its cue words. The cut
-filter scores each one, and a cut is kept at P(real) at or above 0.80, or at
-`--threshold`. The output removes the kept cuts from the input as written, so
-the fillers outside a cut are still there.
-
-```
-$PF --tree-cut "We should ship it on Monday, no, on Tuesday."
-parser ready in 0.96 s
-view: We should ship it on Monday, no, on Tuesday.
-  0.923 kept     on Monday, no,
-out:  We should ship it on Tuesday.
-```
-
-`--batch` reads `[{"id", "text"}]` and prints one JSON line per item: the
-view, each candidate's view-word indices, P(real), kept flag and seven text
-features, the cut as indices of the input's words, the output and the time.
-Then a summary. `scripts/check-disfluency-model-parity.sh` compares it with
-the PyTorch reference on `tests/disfluency-model-parity.json`; it needs the
-model, so it is not in `make test`.
-
-## How the clause decider reads a place
-
-```sh
-$PF --clause-decide "<text>" --heard "<words>" --term <term>   # one place, with the term's stored sentences
-$PF --clause-decide --batch <items.json>                        # many places in one loaded process, JSON lines
-```
-
-`--clause-decide` reads the place where `<words>` first stands in `<text>`,
-with the sentences `vocabulary-uses.yaml` holds for `<term>`, and prints the
-decision (`write`, `leave` or `offer`), p, the score, the clause offsets and
-every feature. It is what the `vocabulary` stage runs on every place the word
-lists leave open; see `docs/transcription.md`.
-
-`--language fr` sounds the heard words in the French voice; the default is
-`en`. `--batch` reads `[{"id", "text", "a", "b", "heard", "term", "uses"}]`,
-offsets in Unicode scalars and `uses` in the shape `vocabulary-uses.yaml`
-stores, plus an optional `language`, and prints one JSON line per item, then a
-summary. An item with `"masked": true`
-also prints `slot`, read with the heard words replaced by one `<mask>`: the
-parser's UPOS probabilities there (`mask`, argmax `tag`), the slot head's P
-that a name, noun or pronoun stands there (`nominal`), and `route`: `decline`
-under the head's threshold, else `open`. That is the slot check the vocabulary
-stage runs.
-`scripts/check-clause-decider-parity.sh` compares it with the PyTorch reference
-on `tests/clause-decider-parity.json`; it needs the parser, so it is not in
-`make test`.
-
-## One process for many vocabulary calls
-
-```sh
-$PF --serve                                              # JSON lines on stdin, one answer per line on stdout
-```
-
-`--serve` keeps one process alive, so a replay loads its models once and not
-on every call. Each request is one line, and each command runs the function its
-own flag runs, writes included:
-
-```
-{"id": 1, "cmd": "dictate", "fixture": "/abs/fixture.yaml", "text": "<heard>", "warm": true}
-{"id": 2, "cmd": "picked", "word": "<w>", "term": "<t>", "in": "<sentence>"}
-{"id": 3, "cmd": "correction", "wrote": "<w>", "put": "<p>", "in": "<sentence>"}
-{"id": 4, "cmd": "learn", "heard": "<h>", "corrected": "<c>", "kind": "person", "in": "<sentence>"}
-{"id": 5, "cmd": "reset"}
-```
-
-`dictate` is `--pipeline <fixture> "<text>" --quiet`, with `--warm` when
-`warm` is true. The fixture is read again on every request. `picked`,
-`correction` and `learn` are `--picked`, `--correction` and `--learn`; `in` is
-`--in` and may be left out. `reset` writes `terms: {}` to `vocabulary.yaml` and
-`vocabulary-uses.yaml`. It refuses when `PARROTFLOW_CONFIG_DIR` is not set, so
-it never empties the vocabulary you dictate with. It does not clear what the
-process holds in memory: the clause cache is keyed by the rows it was built
-from.
-
-Each answer is one line with sorted keys. `id` is echoed as given. `code` is
-the exit code of the separate flag, and `said` holds the lines it prints.
-`log` holds the lines the request wrote to the log, without the timestamp: the
-places a dictation offered and how each was settled come back as the
-vocabulary stage's own lines. `dictate` adds `out`, the text, and `vars`, each
-path `--vars` prints with its value. A line that does not decode answers
-`{"id", "error"}` and the next line is still read. End of input exits 0.
-
-One process serves one `PARROTFLOW_CONFIG_DIR`. `scripts/check-serve.sh` checks
-every command against its separate flag.
+mmBERT-small and not ModernBERT, which this stage used to read: the two tie on
+the English bench, and mmBERT-small covers 1,800 languages where ModernBERT is
+English-only. It is not cheaper — the same cache size, and 18 ms per pass
+against 11, because its head is five times wider. Multilingual is the whole
+reason for the swap.
 
 ## Is this sentence mark real
 
@@ -702,7 +647,9 @@ sequences do this.
 boundary, with the mark it read and the milliseconds each decision took. A row
 may carry `"mark": "?"` where the left half does not end with the mark itself,
 and `"mark": ""` for the bare-capital shape.
-It loads the model once, so it is the only way to get a latency number.
+It loads the model once, so it is the only way to get a latency number;
+`--vectors` loads the word vectors as well, so the memory line describes the
+process the app runs.
 
 `--window` builds the prefix and the continuations and stops, as JSON. No model
 is loaded. `--bare` applies to it as well.
@@ -738,6 +685,7 @@ tests/sentence-boundary-cases.json; it needs the model, so it is not in
 `make test`.
 
 `--sentence-model` fetches the Qwen base model the readings are scored with.
+The vocabulary slot gate has its own model and its own command, `--slot-model`.
 
 ## Which sentence marks a pause put there
 
@@ -1202,15 +1150,15 @@ scripts/check-clipboard.sh         # when a rewrite may go to the clipboard, and
 scripts/check-landing.sh           # when a press with nowhere to type pastes after all
 scripts/check-span-rule.sh         # which range a rewrite is written as, before any app sees it
 scripts/check-bug-report.sh        # what a bug report carries, and that it carries no home path
-scripts/check-tokenizer.sh         # the parser tokenizer against HuggingFace's own
+scripts/check-slot-tokenizer.sh    # the slot tokenizer against HuggingFace's own
 scripts/check-sentence-probe.sh    # the three readings of a boundary (needs the model)
 scripts/check-sentence-window.sh   # the window a boundary is read over, against hand-written cases
-scripts/check-parser-parity.sh     # the parser against its PyTorch reference (needs the model)
+scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
+scripts/check-slot-gap.sh          # what the slot says about a rewrite (needs both models)
 scripts/check-sentence-case.sh     # the capital after a mark the join removes
 scripts/check-invented-tail.sh     # the endings the decoder wrote over silence
 scripts/check-sentence-join.sh     # which sentence marks the join removes (needs the model)
 scripts/check-selector.sh          # where an open place lands, and what an answer writes
-scripts/check-serve.sh             # --serve says and writes what the separate flags do
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back
