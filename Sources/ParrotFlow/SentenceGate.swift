@@ -67,7 +67,7 @@ enum SentenceGate {
             return (settled, changes)
         }
         // Only the slot half reads it. With that half off the portrait runs on
-        // a machine the 269 MB was never fetched to.
+        // a machine the 283 MB was never fetched to.
         //
         // A group place is not one of the places it reads: every reading there
         // is a name, so the slot has nothing to separate and is never asked.

@@ -12,7 +12,7 @@
 # scripts/slot-probe-reference.py, which says why the `<mask>` case reads the
 # way it does.
 #
-# Reads the tokenizer files only, never the 269 MB model, so it runs on a
+# Reads the tokenizer files only, never the 283 MB model, so it runs on a
 # machine that has never dictated. If the model cache has no copy, they are
 # fetched from the repository the app fetches from — pinned to a revision. A run
 # that cannot get them fails; it does not pass by skipping.
@@ -22,12 +22,12 @@ BIN="$ROOT/.build/release/ParrotFlow"
 [ -x "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
 
 CASES="$ROOT/tests/slot-tokenizer-cases.json"
-CACHED="$HOME/Library/Application Support/ParrotFlow/models/mmbert-small-64"
+CACHED="$HOME/Library/Application Support/ParrotFlow/models/parrotflow-syrinx-fp16"
 # Pinned, not `main`. tests/slot-tokenizer-cases.json is the answer for one
 # tokenizer.json, so a new one upstream has to fail here rather than quietly
 # become the thing being checked.
-REVISION=a983542a6ae292d0147cbdb9b54eddd00c4f6001
-BASE="https://huggingface.co/znaat/mmbert-small-coreml/resolve/$REVISION"
+REVISION=fcf309cf35dad30cbbb92ddfb3f3c09a5961fd87
+BASE="https://huggingface.co/znaat/parrotflow-syrinx-coreml/resolve/$REVISION"
 
 WORK="$(mktemp -d -t parrotflow-slot-tokenizer)"
 trap 'rm -rf "$WORK"' EXIT

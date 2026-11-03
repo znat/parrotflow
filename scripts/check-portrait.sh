@@ -8,7 +8,7 @@
 # term measured: on its own, the portrait gets both of them wrong. Together with
 # the slot test they come out right — one left open, one kept as it was heard.
 #
-# Not in `make test`: it needs the 400 MB word-vector model and the 269 MB
+# Not in `make test`: it needs the 400 MB word-vector model and the 283 MB
 # slot model. Run it by hand after touching TermPortrait or WordVectors.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

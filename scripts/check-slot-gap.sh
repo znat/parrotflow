@@ -14,7 +14,7 @@
 # The floor is per language, so each case carries `lang:` and it is passed to
 # the binary. English cases sit clear of -0.20, French ones clear of -0.30.
 #
-# Not in `make test`: it needs the 269 MB slot model and the 400 MB
+# Not in `make test`: it needs the 283 MB slot model and the 400 MB
 # word-vector model, which CI has no business downloading. Run it by hand after
 # touching SlotReference or WordVectors.
 set -uo pipefail

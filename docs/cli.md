@@ -168,7 +168,7 @@ reads `open` — see `SlotGate`. It prints `language` first and tags the fillers
 in that language, as the vocabulary pass does. Nothing is downloaded: with no
 cached slot model the slot reads `unavailable` and the route is `open`.
 `scripts/check-slot-gate.sh` scores the whole route against
-`tests/judge-cases.yaml`. It needs the 269 MB model, so it is not in
+`tests/judge-cases.yaml`. It needs the 283 MB model, so it is not in
 `make test`.
 
 `--teaching` asks whether a substitution sits inside a spelling lesson —
@@ -560,7 +560,7 @@ refused glued span is `--lowercase-refused`.
 ## What word does this slot want
 
 ```sh
-$PF --slot-model                                           # fetch, compile and load mmBERT-small
+$PF --slot-model                                           # fetch, compile and load the slot model
 $PF --slot-probe "<left half>" "<right half>"              # the ten words the slot expects, and the time
 $PF --slot-probe --encode "<text>"                         # the tokenizer alone, no model
 $PF --slot-gap "<sentence>" <heard> <term> [--lang fr]     # what the slot says about a rewrite

@@ -379,11 +379,11 @@ back to exact and whole-word.
 **`slot_gate:` and `portrait:` switch the two tests that read the sentence.**
 Both on by default, and each off is a path the stage already has.
 
-- `slot_gate: false` reads no slot model. That is mmBERT-small, 269 MB, and
-  nothing downloads it: rule 2 above is skipped, and the test that asks whether
-  the term belongs where the word was heard is skipped too. Every place is left
-  to the portrait, or to whatever arrived. It is what the stage does today on a
-  machine the weights are not on.
+- `slot_gate: false` reads no slot model. That is mmBERT-small, in the 283 MB
+  parrotflow-syrinx package, and nothing downloads it: rule 2 above is skipped,
+  and the test that asks whether the term belongs where the word was heard is
+  skipped too. Every place is left to the portrait, or to whatever arrived. It
+  is what the stage does today on a machine the weights are not on.
 - `portrait: false` reads no portrait. A term's own sentences say nothing, so
   nothing is authorised on that evidence and a rule's substitution is never
   taken back out. It is what the stage does today for a term with no

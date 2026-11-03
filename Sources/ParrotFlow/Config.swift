@@ -3426,7 +3426,7 @@ struct Config: Decodable, Equatable {
     /// configuration to describe.
     var vocabularyStep: Pipeline.Step? { vocabularySteps.first }
 
-    /// Whether anything will read the 269 MB slot model: a `vocabulary` step
+    /// Whether anything will read the 283 MB slot model: a `vocabulary` step
     /// is in the pipeline and has not switched it off.
     ///
     /// One predicate for the same reason `readsBoundaries` is one: three

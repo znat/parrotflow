@@ -3,6 +3,10 @@ import Foundation
 
 /// mmBERT-small, fetched on the first English dictation and kept.
 ///
+/// It is the `mask` function of the parrotflow-syrinx fp16 package: the
+/// mmBERT-small-64 program added unchanged, bit-equal to it on 641 of 641
+/// probes. The package also holds `parse` and `ner`, unused here.
+///
 /// What it is for: the masked slot the vocabulary gate reads. `SlotReference`
 /// asks it for the ten words a position expects, and `SlotGate` asks it what
 /// part of speech those words are. Both run over `SlotProbe`.
@@ -36,17 +40,21 @@ actor SlotModel {
     /// disk: the downloaded package and the compile of it both exist until the
     /// compile finishes.
     static let download = ModelDownload(
-        id: "slot", name: "mmBERT-small", megabytes: 282, peak: 580,
+        id: "slot", name: "ParrotFlow Syrinx", megabytes: 283, peak: 584,
         group: .language, blocking: false,
         costOfFailure: "a name the word lists cannot settle is left as it stands"
     )
 
-    private static let repository = "znaat/mmbert-small-coreml"
+    private static let repository = "znaat/parrotflow-syrinx-coreml"
     /// Pinned, not `main`. The tokenizer fixture in `tests/` is the answer for
     /// one `tokenizer.json`, and the gap cases are the answer for one set of
     /// weights, so a new upload has to be adopted deliberately.
-    private static let revision = "a983542a6ae292d0147cbdb9b54eddd00c4f6001"
-    private static let packageName = "mmBERT-small-64.mlpackage"
+    private static let revision = "fcf309cf35dad30cbbb92ddfb3f3c09a5961fd87"
+    /// The package, the cache folder, its compiled form and its lock. Not
+    /// `parrotflow-syrinx`: that name in the repository and in `models/` holds
+    /// the older fp32 parse-only package.
+    private static let cacheName = "parrotflow-syrinx-fp16"
+    private static let packageName = "\(cacheName).mlpackage"
 
     private static var files: [String] {
         [
@@ -55,8 +63,7 @@ actor SlotModel {
             "\(packageName)/Data/com.apple.CoreML/weights/weight.bin",
             // The three `AutoTokenizer.from(modelFolder:)` reads. It wants
             // `config.json` and `tokenizer_config.json` beside `tokenizer.json`
-            // and throws without them, which is why this repository holds two
-            // files `znaat/modernbert-coreml` does not.
+            // and throws without them.
             "tokenizer.json",
             "tokenizer_config.json",
             "config.json",
@@ -65,14 +72,14 @@ actor SlotModel {
 
     static var directory: URL {
         AppVariant.supportDirectory
-            .appendingPathComponent("models/mmbert-small-64", isDirectory: true)
+            .appendingPathComponent("models/\(cacheName)", isDirectory: true)
     }
 
     /// The compiled form, which is what gets kept. The `.mlpackage` it was
-    /// built from is deleted after the compile: it is another 269 MB, and a
+    /// built from is deleted after the compile: it is another 283 MB, and a
     /// cache that will not load is re-fetched rather than rebuilt.
     static var compiledURL: URL {
-        directory.appendingPathComponent("mmBERT-small-64.mlmodelc", isDirectory: true)
+        directory.appendingPathComponent("\(cacheName).mlmodelc", isDirectory: true)
     }
 
     /// The folder `AutoTokenizer` reads, which is the cache directory itself.
@@ -88,7 +95,7 @@ actor SlotModel {
     /// cache does not delete the lock somebody is holding.
     private static var lockURL: URL {
         directory.deletingLastPathComponent()
-            .appendingPathComponent("mmbert-small-64.lock")
+            .appendingPathComponent("\(cacheName).lock")
     }
 
     enum Failure: LocalizedError {
@@ -143,6 +150,7 @@ actor SlotModel {
             let loaded = try await task.value
             model = loaded
             ModelDownloads.report(Self.download.id, .installed)
+            RetiredModels.prune(.mmBERTSmall, in: AppVariant.supportDirectory)
             return loaded
         } catch {
             ModelDownloads.report(
@@ -206,6 +214,8 @@ actor SlotModel {
     private static func load() throws -> MLModel {
         let configuration = MLModelConfiguration()
         configuration.computeUnits = .cpuAndGPU
+        // The package's default function is `parse`.
+        configuration.functionName = "mask"
         return try MLModel(contentsOf: compiledURL, configuration: configuration)
     }
 
@@ -231,7 +241,7 @@ actor SlotModel {
         let files = FileManager.default
         try files.createDirectory(at: directory, withIntermediateDirectories: true)
         // A process that quits mid-download leaves its staging directory and
-        // whatever it had fetched, which is up to 269 MB nothing will ever
+        // whatever it had fetched, which is up to 283 MB nothing will ever
         // read. Safe to delete every one of them because `underLock` means no
         // other process is fetching.
         let left = try? files.contentsOfDirectory(atPath: directory.path)
