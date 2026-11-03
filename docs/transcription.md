@@ -492,7 +492,9 @@ row at all.
 pill that is not a term is a counter under the term that was offered, whatever
 kind of word it is. A picked "Versailles" used to become a term, and a heard
 "Versailles" was then never a place for Vercel again. Every other member of the
-group offered at that word is refused there too.
+group offered at that word is refused there too. Those counters carry
+`implied: true` in `vocabulary-uses.yaml`, since nobody refused that term
+directly. The decider does not read the field yet.
 
 **A correction onto a name with no term creates it.** `Anna` corrected to
 `Annah` where only `Anna` is a term is not an ordinary word being put back: it
