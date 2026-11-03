@@ -44,7 +44,8 @@ import NaturalLanguage
 /// Measured over the 50 English cases of `tests/judge-cases.yaml` by
 /// `scripts/check-slot-gate.sh`: 12 applied by the lexical gate, 15 declined
 /// here, 23 left open, and no error of either kind. ModernBERT
-/// declined 14 and left 24 on the same set, also with no error.
+/// declined 14 and left 24 on the same set, also with no error. The six
+/// French cases add 4 declines and 2 open, with no error.
 @available(macOS 14, *)
 struct SlotGate {
 
@@ -66,13 +67,16 @@ struct SlotGate {
         let route: Route
     }
 
-    /// Where one proposal should go. `range` is a range in `text`.
-    func read(in text: String, at range: Range<String.Index>) throws -> Reading {
+    /// Where one proposal should go. `range` is a range in `text`, and
+    /// `language` is the code `Pipeline.language` gives it.
+    func read(
+        in text: String, at range: Range<String.Index>, language: String
+    ) throws -> Reading {
         let (words, span) = Self.sentence(around: range, in: text)
         guard !span.isEmpty, span.upperBound <= words.count else {
             return Reading(tag: "", route: .open)
         }
-        let tag = try wants(words, at: span)
+        let tag = try wants(words, at: span, language: language)
         return Reading(tag: tag, route: Self.blocks.contains(tag) ? .decline : .open)
     }
 
@@ -81,7 +85,7 @@ struct SlotGate {
     /// The modal tag of the most likely fillers of the masked span.
     ///
     /// Ties go to the more likely filler, because the fillers arrive sorted.
-    func wants(_ words: [String], at span: Range<Int>) throws -> String {
+    func wants(_ words: [String], at span: Range<Int>, language: String) throws -> String {
         let (left, right) = Self.masked(words, at: span)
         let slot = try probe.at(left: left, right: right)
 
@@ -92,7 +96,8 @@ struct SlotGate {
             guard !word.isEmpty, word.contains(where: \.isLetter) else { continue }
             let sentence = left + (left.isEmpty ? "" : " ") + word + right
             let at = left.isEmpty ? 0 : left.count + 1
-            guard let tag = Self.tag(in: sentence, at: at, length: word.count) else { continue }
+            guard let tag = Self.tag(in: sentence, at: at, length: word.count, language: language)
+            else { continue }
             if counts[tag] == nil { order.append(tag) }
             counts[tag, default: 0] += 1
         }
@@ -104,14 +109,19 @@ struct SlotGate {
     /// `.lexicalClass` and not `.nameTypeOrLexicalClass`. The question is what
     /// kind of slot this is, and a filler that happens to be a name would come
     /// back `PersonalName` rather than `Noun` and split the vote.
-    private static func tag(in sentence: String, at offset: Int, length: Int) -> String? {
+    ///
+    /// Tagged as English, a French filler is noise: a determiner or a
+    /// preposition comes back `Noun`.
+    private static func tag(
+        in sentence: String, at offset: Int, length: Int, language: String
+    ) -> String? {
         guard let from = sentence.index(
                 sentence.startIndex, offsetBy: offset, limitedBy: sentence.endIndex),
               let to = sentence.index(from, offsetBy: length, limitedBy: sentence.endIndex)
         else { return nil }
         let tagger = NLTagger(tagSchemes: [.lexicalClass])
         tagger.string = sentence
-        tagger.setLanguage(.english, range: sentence.startIndex..<sentence.endIndex)
+        tagger.setLanguage(NLLanguage(rawValue: language), range: sentence.startIndex..<sentence.endIndex)
         return tagger.tag(at: from, unit: .word, scheme: .lexicalClass).0?.rawValue
     }
 

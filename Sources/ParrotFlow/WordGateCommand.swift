@@ -131,11 +131,6 @@ enum WordGateCommand {
         let config = (try? ConfigStore.load()) ?? Config()
         let language = Pipeline.language(of: sentence, config: config)
         print("language   \(language)")
-        guard language == "en" else {
-            print("slot       not english")
-            print("route      open")
-            return
-        }
         guard let range = Vocabulary.spans(of: heard, in: sentence).first else {
             print("slot       not found in the sentence")
             print("route      open")
@@ -146,7 +141,7 @@ enum WordGateCommand {
             print("route      open")
             return
         }
-        guard let reading = try? gate.read(in: sentence, at: range) else {
+        guard let reading = try? gate.read(in: sentence, at: range, language: language) else {
             print("slot       unreadable")
             print("route      open")
             return

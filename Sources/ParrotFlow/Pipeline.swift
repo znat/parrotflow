@@ -1245,6 +1245,7 @@ struct Pipeline: Equatable, Codable {
         //
         // `taught` wins over the gate, because a spelling lesson is settled by
         // a rule that is 4/4 where the models measured were 0/4.
+        let language = Pipeline.language(of: text, config: config)
         let gatedAt = Date()
         let settled: [Bool?]
         if step.vocabulary.isOn(\.gate) {
@@ -1255,7 +1256,8 @@ struct Pipeline: Equatable, Codable {
             let span = Trace.current?.open("slot_gate", kind: .part)
             let slot = step.vocabulary.isOn(\.slotGate) ? await Vocabulary.shared.slotGate() : nil
             settled = VocabularyPass.settle(
-                changes, in: text, by: [.sound: .full, .rule: .lists], gate: slot)
+                changes, in: text, by: [.sound: .full, .rule: .lists], gate: slot,
+                language: language)
             span?.close("\(changes.count) change(s)")
         } else {
             settled = [Bool?](repeating: nil, count: changes.count)
@@ -1269,9 +1271,7 @@ struct Pipeline: Equatable, Codable {
             defer { span?.close("\(decided.filter { $0 == nil }.count) still open") }
             let settledBySentence = await SentenceGate.settle(
                 changes, in: text, given: decided,
-                floor: config.transcription.slotFloor(
-                    for: Pipeline.language(of: text, config: config), on: step
-                ),
+                floor: config.transcription.slotFloor(for: language, on: step),
                 slot: step.vocabulary.isOn(\.slotGate), portrait: step.vocabulary.isOn(\.portrait),
                 terms: config.vocabulary.terms
             )

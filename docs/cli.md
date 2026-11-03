@@ -164,8 +164,9 @@ Name the sentence too — with the term, which the model tiers are about —
 ten fillers put back and tagged; `route` is where the proposal goes. The slot
 only ever declines: a name goes in a `Noun`, `Adjective` or `Pronoun` slot and
 never in a `Verb`, `Adverb` or `Preposition` one, and every other proposal
-reads `open` — see `SlotGate`. Nothing is downloaded: with no cached slot
-model the slot reads `unavailable` and the route is `open`.
+reads `open` — see `SlotGate`. It prints `language` first and tags the fillers
+in that language, as the vocabulary pass does. Nothing is downloaded: with no
+cached slot model the slot reads `unavailable` and the route is `open`.
 `scripts/check-slot-gate.sh` scores the whole route against
 `tests/judge-cases.yaml`. It needs the 269 MB model, so it is not in
 `make test`.
