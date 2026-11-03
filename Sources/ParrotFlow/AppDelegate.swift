@@ -6260,8 +6260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if picked == nil, !written.isEmpty {
                 for other in open.group where other.caseInsensitiveCompare(open.term) != .orderedSame {
                     try TermUses.record(
-                        term: other, said: text, span: word.word, from: .chosen, counter: true, implied: true,
-                        near: at
+                        term: other, said: text, span: word.word, from: .chosen, counter: true, near: at
                     )
                     Log.write("selector: \(other) refused at \"\(word.word)\" — the heard word was kept")
                 }
@@ -6271,8 +6270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 for other in offered where other.caseInsensitiveCompare(picked) != .orderedSame
                     && replaced.map({ ClauseDecider.norm($0) != ClauseDecider.norm(other) }) ?? true {
                     try TermUses.record(
-                        term: other, said: text, span: word.word, from: .chosen, counter: true,
-                        implied: open.group.count > 1, near: at
+                        term: other, said: text, span: word.word, from: .chosen, counter: true, near: at
                     )
                     Log.write("selector: \(other) refused at \"\(word.word)\" — \(picked) was chosen")
                 }

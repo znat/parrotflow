@@ -41,10 +41,6 @@ enum TermUses {
         /// what was heard beside the sentence — the rendering is written to
         /// `vocabulary.yaml`, which the reader of this file does not load.
         var heard: String?
-        /// A counter for another term offered on the same pill, not for the
-        /// one the answer was about. Not read yet.
-        /// An explicit counter for the same row clears it.
-        var implied = false
 
         enum Source: String, Codable {
             /// The correction panel, the spoken command, or `--learn`.
@@ -122,8 +118,7 @@ enum TermUses {
                 return Use(
                     said: said, span: span, from: from ?? .correction,
                     counter: row["counter"] as? Bool ?? false,
-                    heard: row["heard"] as? String,
-                    implied: row["implied"] as? Bool ?? false
+                    heard: row["heard"] as? String
                 )
             }
             if !uses.isEmpty { out[term] = uses }
@@ -147,7 +142,7 @@ enum TermUses {
     /// 2026-09-10.
     static func record(
         term: String, said: String, span: String, from: Use.Source = .correction,
-        counter: Bool = false, heard: String? = nil, implied: Bool = false, near word: Int? = nil
+        counter: Bool = false, heard: String? = nil, near word: Int? = nil
     ) throws {
         let sentence = narrowed(said, to: span, near: word)
         // A word, not a substring. `contains` alone let `Vercelli` in.
@@ -166,16 +161,10 @@ enum TermUses {
             $0.caseInsensitiveCompare(span) == .orderedSame ? nil : $0
         }
         let use = Use(
-            said: sentence, span: span, from: from, counter: counter, heard: other, implied: counter && implied
+            said: sentence, span: span, from: from, counter: counter, heard: other
         )
         if let already = uses.firstIndex(of: use) {
             guard uses[already].counter != counter else {
-                if uses[already].implied, !use.implied {
-                    uses[already].implied = false
-                    all[term] = uses
-                    try write(all)
-                    return
-                }
                 // The same row again. Nothing to write unless this correction
                 // carries the replaced spelling and the stored row predates it
                 // — a row written before `heard` existed never gains one
@@ -429,7 +418,6 @@ enum TermUses {
             "#",
             "# `counter: true` is the opposite: a sentence where the term does not belong,",
             "# recorded when you put an ordinary word back over it. Its `span` is that word.",
-            "# `implied: true` marks a counter for another term offered on the same pill.",
             "",
             "terms:",
         ]
@@ -441,7 +429,6 @@ enum TermUses {
                 lines.append("      span: \(quoted(use.span))")
                 lines.append("      from: \(use.from.rawValue)")
                 if use.counter { lines.append("      counter: true") }
-                if use.implied { lines.append("      implied: true") }
                 if let heard = use.heard, !heard.isEmpty {
                     lines.append("      heard: \(quoted(heard))")
                 }

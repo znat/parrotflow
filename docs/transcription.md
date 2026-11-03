@@ -421,12 +421,11 @@ declined: the word lists settle what they can and the other places stay open.
 A dictation waits at most two seconds for a cached parser, and without one every
 place the parser would read stays open.
 
-**The slot check only caps.** The heard words become one `<mask>`, and a
+**The slot check only refuses.** The heard words become one `<mask>`, and a
 small head on the parser's features there gives P that a name, noun or pronoun
 stands in the slot. Under the threshold in
-`built-in/data/vocab-slot.safetensors` the place still goes to the clause
-decider, but a write becomes an offer. Above it the decider reads the place as
-usual.
+`built-in/data/vocab-slot.safetensors` the term is refused and what was heard is
+kept. Above it the place goes on to the clause decider.
 
 **The clause decider reads the term's own sentences.** Every sentence you
 confirm a term in is kept in `vocabulary-uses.yaml`, and every sentence you
@@ -434,8 +433,8 @@ correct a term *out* of is kept there too, as a counter-example. The decider
 parses the clause around the place and weighs how close it is to each set,
 whether the heard words are a name, their part of speech, how they sound
 against the term, whether each word is in a word list, and whether this exact
-swap was accepted before. A swap refused before is offered at most. It writes
-the term, keeps what was heard, or offers the place on the pill. A term with no accepted sentence never writes.
+swap was accepted or refused before. It writes the term, keeps what was heard,
+or offers the place on the pill. A term with no accepted sentence never writes.
 A rule's write is taken back only by a term with sentences, when the decider
 would keep what was heard. The features are listed in
 [configuration.md](configuration.md#transcriptionsentence_repair-and-transcriptionvocabulary);
@@ -492,9 +491,7 @@ row at all.
 pill that is not a term is a counter under the term that was offered, whatever
 kind of word it is. A picked "Versailles" used to become a term, and a heard
 "Versailles" was then never a place for Vercel again. Every other member of the
-group offered at that word is refused there too. Those counters carry
-`implied: true` in `vocabulary-uses.yaml`, since nobody refused that term
-directly. The decider does not read the field yet.
+group offered at that word is refused there too.
 
 **A correction onto a name with no term creates it.** `Anna` corrected to
 `Annah` where only `Anna` is a term is not an ordinary word being put back: it

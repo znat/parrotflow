@@ -354,12 +354,7 @@ def main():
              "ner": C.ner_entity(ner, p, span), **C.pos_features(p, span),
              "sound": sound(heard, term, language), "known": C.known(heard, word_lists(heard)),
              "pair_acc": pair_acc, "pair_ref": pair_ref}
-        # A single-term place reads pair_ref as a cap, not as a weight.
-        g = f if shared else dict(f, pair_ref=0.0)
-        d, prob, z, _ = C.decide(model, g, shared=shared)
-        f["pair_acc"] = g["pair_acc"]
-        if not shared and f["pair_ref"] and d == "write":
-            d = "offer"
+        d, prob, z, _ = C.decide(model, f, shared=shared)
         clause = [min(p["starts"][k] for k in toks), max(p["ends"][k] for k in toks)] if toks else None
         return dict(decision=d, p=round(prob, 6), z=round(z, 6), clause=clause,
                     features={k: (round(x, 6) if x is not None else None) for k, x in f.items()})

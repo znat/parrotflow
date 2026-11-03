@@ -70,17 +70,15 @@ enum LearnCommand {
                     continue
                 }
                 if said != use.said { cut += 1 }
-                var now = TermUses.Use(
+                let now = TermUses.Use(
                     said: said, span: use.span, from: use.from, counter: use.counter,
-                    heard: use.heard, implied: use.implied
+                    heard: use.heard
                 )
                 // The custom `==` is on the sentence and the span, so two rows
                 // that narrow to the same sentence collapse into one. The last
                 // wins, which is how `record` settles two rows that disagree
                 // about whether the term belongs there.
                 if let already = kept.firstIndex(of: now) {
-                    // As in `record`: an explicit counter is not made implied again.
-                    if kept[already].counter == now.counter, !kept[already].implied { now.implied = false }
                     kept[already] = now
                 } else {
                     kept.append(now)
