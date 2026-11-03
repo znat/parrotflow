@@ -26,8 +26,9 @@ import Foundation
 /// Ollama running on the machine.
 ///
 /// It is gone because the free gates now cover what it covered: the two word
-/// lists and the slot's part of speech (`settle`), and the clause decider
-/// (`SentenceGate`). What none of them settles keeps what arrived.
+/// lists (`settle`), the slot's part of speech (`SlotGate`), and the two tests
+/// that read the sentence (`SentenceGate`). What none of them settles keeps
+/// what arrived.
 ///
 /// The numbers are kept because they are what any replacement has to beat.
 /// PR #102 holds the 74 clips; `scripts/validate-judge.py`,
@@ -136,7 +137,7 @@ enum VocabularyPass {
             if let slots {
                 found.append("vocabulary: max_slots is \(slots) and nothing reads it."
                     + " It capped one model call, and this stage makes none — the word"
-                    + " lists, the slot's part of speech and the clause decider decide,"
+                    + " lists, the slot's part of speech and the two sentence tests decide,"
                     + " and every place they leave open keeps what arrived. Delete the line")
             }
             return found
@@ -212,8 +213,8 @@ enum VocabularyPass {
         ///
         /// Empty everywhere else, which is every place in a vocabulary where
         /// no two terms share a sound. A group place carries every member as a
-        /// reading rather than one alternative, and only the clause decider
-        /// decides it — see `SoundGroup`.
+        /// reading rather than one alternative, and only the portrait decides
+        /// it — see `SoundGroup`.
         var group: [String] = []
     }
 
@@ -396,60 +397,6 @@ enum VocabularyPass {
         return marks.map(\.rule)
     }
 
-    /// `quand on` for `Qonto`, `resend` for `Resend`: every word is one a word
-    /// list knows. Not a rule, or every "quand on" becomes the company. A
-    /// pattern in slashes is not words, and neither is `404`.
-    static func ordinary(_ heard: String) -> Bool {
-        !Config.Transcription.Rule(source: heard, replacement: "").isRegex
-            && heard.split(separator: " ").allSatisfy { $0.contains(where: \.isLetter) }
-            && Vocabulary.unseenWord(in: heard) == nil
-    }
-
-    /// `resend` for `Resend`: an ordinary word, and at most the letter case
-    /// differs.
-    static func onlyCases(word heard: String, term: String) -> Bool {
-        heard.lowercased() == term.lowercased() && ordinary(heard)
-    }
-
-    /// Places where a term stands as ordinary words: "with resend" for
-    /// `Resend`, "quand on" for a learnt `heard: quand on` under `Qonto`. No
-    /// rule writes these and the other gatherers skip them. `.sound`, so
-    /// `settle` asks the slot and then the clause decider.
-    ///
-    /// Renderings are read in their own language only, as the sound pass reads
-    /// them (`Config.vocabularySounds`): `quand on` is two words in English
-    /// too. `fallback` is the language of a rendering with no `lang:`.
-    ///
-    /// Gathered before any correction too: a cold term never writes. Kokoro
-    /// try-out: 2 first mentions offered instead of missed, 1 ordinary noun
-    /// offered, 0 wrong writes. One No on the pill leaves it after that.
-    static func wordParts(
-        in text: String, terms: [String: Config.Vocabulary.Term], claimed: [Part],
-        language: String, fallback: String
-    ) -> [Part] {
-        let forms = terms.flatMap { term, entry -> [(form: String, term: String)] in
-            let spelled = !entry.never && term != term.lowercased() && ordinary(term)
-            let heard = entry.pronunciations.filter { ($0.lang ?? fallback) == language }.map(\.heard)
-            return (spelled ? [(term, term)] : []) + heard.filter(ordinary).map { ($0, term) }
-        }
-        .sorted { a, b in
-            a.form.count != b.form.count ? a.form.count > b.form.count : (a.form, a.term) < (b.form, b.term)
-        }
-        var found: [Part] = []
-        var taken = claimed.map(\.range)
-        for (form, term) in forms {
-            for span in Vocabulary.spans(of: form, in: text, ignoringCase: true)
-            where text[span] != term && !taken.contains(where: { $0.overlaps(span) }) {
-                found.append(Part(
-                    range: span, decoded: String(text[span]),
-                    other: Vocabulary.inflected(term, like: String(text[span])), term: term, standing: .sound
-                ))
-                taken.append(span)
-            }
-        }
-        return found.sorted { $0.range.lowerBound < $1.range.lowerBound }
-    }
-
     // MARK: - Slots and readings
 
     /// The places one term may claim, cut to `limit`, best evidenced first.
@@ -612,13 +559,13 @@ enum VocabularyPass {
     /// the group Mick and Mik belong to, and Mick is then what is already
     /// written. It is offered once, as the heard reading.
     ///
-    /// Nothing is written here. A group place always reaches the clause
-    /// decider — the word lists cannot separate two names that are both names.
+    /// Nothing is written here. A group place always reaches the portrait —
+    /// the word lists cannot separate two names that are both names.
     static func groupSlots(in text: String, groups: [SoundGroup.Group]) -> [Slot] {
         var found: [(at: Range<String.Index>, group: SoundGroup.Group, order: Int)] = []
         for group in groups where group.isGroup {
             for opening in group.openings.sorted() {
-                for at in SoundGroup.places(of: opening, in: text) {
+                for at in TermPortrait.places(of: opening, in: text) {
                     found.append((at, group, found.count))
                 }
             }
@@ -730,7 +677,7 @@ enum VocabularyPass {
     /// Nothing is written here. Each match becomes one more change for the
     /// model to vote on.
     ///
-    /// - Parameter rules: every rendering as a rule — `Config.renderingRules`.
+    /// - Parameter rules: the vocabulary's rules — `Config.vocabularyRules`.
     ///   Not `transcription.rules`: those are a table somebody wrote for
     ///   themselves, and widening them by an edit is a different decision from
     ///   widening a rendering the app learnt. A pattern rule names no spelling
@@ -1048,6 +995,11 @@ enum VocabularyPass {
         /// alphabetical — `owner` is the one that offered `now`.
         let terms: [String]
         /// The term that offered `now`, when one did. See `Slot.owner`.
+        ///
+        /// `SentenceGate` still reads `terms.first` for the portrait it asks,
+        /// which has the same fault. Left alone here: which portrait that gate
+        /// reads is a measured decision, and moving it belongs in a change
+        /// that re-runs the bench.
         let owner: String?
         /// Where the reading came from, carried through from the slot. Read by
         /// `settle`, which gates one source and not the others.
@@ -1169,8 +1121,8 @@ enum VocabularyPass {
     /// as heard.
     ///
     /// A span that glues to a term — `Better Stack` for `BetterStack` — and
-    /// that the sentence then refused is the ordinary phrase, and the clause
-    /// decider has just said so. Putting back what the decoder wrote puts back its
+    /// that the sentence then refused is the ordinary phrase, and the portrait
+    /// has just said so. Putting back what the decoder wrote puts back its
     /// capitals too, and those are there because it thought it was writing a
     /// name.
     ///
@@ -1245,15 +1197,16 @@ enum VocabularyPass {
     private static let brackets: Set<Character> = ["(", ")", "[", "]", "{", "}"]
     private static let enders: Set<Character> = [".", "?", "!"]
 
-    /// What the parser expects where the heard words stand — see
-    /// `ClauseSession.slot`.
-    struct SlotReading {
-        enum Route {
-            case decline, open
-        }
-
-        let tag: String
-        let route: Route
+    /// How far a source may be settled without a model.
+    enum Gating {
+        /// The two word lists, and nothing else. They can only say "keep what
+        /// is written there", so a source gated this way is never refused and
+        /// never has a name written over it that was not already there.
+        case lists
+        /// The lists, then the two questions `SlotGate` asks. This one can
+        /// write a name the text did not have, and can refuse a reading
+        /// outright.
+        case full
     }
 
     /// What the two free rules settle.
@@ -1261,21 +1214,29 @@ enum VocabularyPass {
     /// One entry per change. `true` writes the term, `false` writes back what
     /// the decoder wrote, `nil` is still open. Exactly the shape `settling`
     /// takes, and exactly what `taught` already does for a spelling lesson.
-    /// `capped` holds the open places the clause decider may offer but not
-    /// write.
     ///
-    /// The rules, in the order they are asked:
+    /// The rules, in the order they are asked, which is the order they were
+    /// measured in:
     ///
     /// 1. **The two word lists.** A word neither `NSSpellChecker` nor the
     ///    tokenizer's vocabulary has ever seen is not a word the speaker meant.
-    ///    Write the term. A glued span is written only when one of its words
-    ///    is in neither list, and asked otherwise.
-    /// 2. **Can a name stand in that spot?** `slot` reads the parser. A spot
-    ///    that wants a verb, an adverb or a preposition is unlikely to hold a
-    ///    name, so the place is capped: offered at most, never written.
+    ///    Write the term. Free, no model, and the only rule here that is
+    ///    absolute rather than relative to the sentence.
+    /// 2. **Can a name stand in that spot?** Mask the span, take the ten words
+    ///    the model would put there, tag them. A spot that wants a verb, an
+    ///    adverb or a preposition cannot hold a name, so the reading is
+    ///    impossible and there is nothing to ask. Refuse it.
     ///
-    /// Only a rule substitution and a sound proposal are settled here. A near
-    /// miss and a wide rule stay open.
+    /// There was a third — write the term when its span reads worst in the
+    /// sentence — and it is gone. See `SlotGate` for what it cost.
+    ///
+    /// **What each source may be settled by is not the same.** A rule
+    /// substitution is already written into the text, so keeping one costs
+    /// nothing and refusing one leaves the speaker with a rewrite they were
+    /// never offered a way back from. Rules therefore get `.lists` — the two
+    /// word lists, and only in the direction that keeps what is already there.
+    /// The sound path writes nothing until somebody says so, so it gets
+    /// `.full`.
     ///
     /// This is what settles `Versal -> Vercel`. `Versal` is in neither list,
     /// so the rule that wrote it is right and there is nothing left to decide.
@@ -1283,52 +1244,52 @@ enum VocabularyPass {
     /// *not* settled here: the spell checker knows the word and the lists say
     /// nothing, so it is left to `SentenceGate`.
     static func settle(
-        _ changes: [Change], in text: String, slot: ((Change) -> SlotReading?)?
-    ) -> (decided: [Bool?], capped: Set<Int>) {
-        var capped: Set<Int> = []
-        let decided = changes.enumerated().map { index, change -> Bool? in
+        _ changes: [Change], in text: String, by policy: [Standing: Gating],
+        gate: SlotGate?
+    ) -> [Bool?] {
+        changes.map { change -> Bool? in
             // A place where several terms share the heard word is never
             // settled here. Both readings are names, so the word lists say
             // "not a word" about either of them, and the spot holds a name
-            // whichever one wins.
+            // whichever one wins. Only the portraits can separate them.
             guard change.group.count < 2 else {
                 Log.write("vocabulary gate: \"\(change.was)\" opens"
-                    + " \(change.group.joined(separator: "/")) — left to the sentence gate")
+                    + " \(change.group.joined(separator: "/")) — left to the portraits")
                 return nil
             }
-            guard change.standing == .rule || change.standing == .sound else { return nil }
+            guard let allowed = policy[change.standing] else { return nil }
             // The reading that is actually going in, not the canonical term.
             // `Precy's -> Praisy's` keeps its possessive; asking about
             // `Praisy` made `dropsPossessive` read it as one being thrown
             // away, and the name was reverted.
             if Vocabulary.autoApplies(heard: change.was, term: change.now) {
-                if Vocabulary.glues(heard: change.was, term: change.now) {
-                    // Six of the eight wrong writes on the 165 bench were
-                    // glued spans written past three corrections back.
-                    if let word = Vocabulary.unseenWord(in: change.was) {
-                        Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
-                            + " glues to the term and \"\(word)\" is in neither word list — written, not asked")
-                        return true
-                    }
+                // A span that glues to the term is matched before any list is
+                // read, so `better stack -> BetterStack` was written in every
+                // sentence and nothing could refuse it. Left open instead when
+                // a rule already wrote it: an open rule place keeps the rule's
+                // write, so this costs nothing on its own and lets the two
+                // sentence tests see the place. Under `.full` nothing has been
+                // written yet and the glue still decides, which is what keeps
+                // `Ghost E -> Ghostty` on the sound path.
+                if allowed == .lists, Vocabulary.glues(heard: change.was, term: change.now) {
                     Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
-                        + " glues to the term, but each word is in a word list — asked")
-                } else {
-                    Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
-                        + " is in neither word list — written, not asked")
-                    return true
+                        + " glues to the term — the rule's write is left to the sentence")
+                    return nil
                 }
+                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
+                    + " is in neither word list — written, not asked")
+                return true
             }
-            guard let slot, let reading = slot(change) else { return nil }
+            guard allowed == .full, let gate else { return nil }
+            guard let reading = try? gate.read(in: text, at: change.range) else { return nil }
             switch reading.route {
             case .decline:
                 Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
-                    + " — the spot wants \(reading.tag), which seldom holds a name; the slot caps it at an offer")
-                capped.insert(index)
-                return nil
+                    + " — the spot wants \(reading.tag), which cannot hold a name; refused")
+                return false
             case .open:
                 return nil
             }
         }
-        return (decided, capped)
     }
 }

@@ -10,6 +10,6 @@ languages: [en]
 vocabulary:
   terms:
     Vercel:
-      heard: [Vursel]
+      heard: [Versailles]
 pipeline:
   - vocabulary

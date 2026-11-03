@@ -3,13 +3,15 @@ import Yams
 
 /// The sentences a term has been confirmed in, and where it sat in each.
 ///
-/// The clause decider reads a term against these: how close the clause around
-/// a place is to the sentences the term was confirmed in, and to the ones it
-/// was corrected out of.
+/// A term's portrait is built from these: the mean of the context vectors,
+/// each sentence with the term itself removed. It says what kind of sentence
+/// the term appears in, which is the one thing the six shipped tests cannot
+/// read.
 ///
-/// **Sentences, not vectors.** A vector is unreadable and does not survive a
-/// change of model. A sentence is recomputed. It also lets the user see,
-/// correct or delete whatever taught a term.
+/// **Sentences, not vectors.** A vector of 1024 numbers is unreadable and does
+/// not survive a change of model, and both models here are expected to change.
+/// A sentence is recomputed. It also lets the user see, correct or delete
+/// whatever taught a term.
 ///
 /// Its own file, not `vocabulary.yaml`. That one is hand-edited, and a term
 /// with eight sentences under it would bury the list it exists to hold.
@@ -21,11 +23,12 @@ enum TermUses {
         /// already written in.
         let said: String
         /// The term inside `said`. Kept because a sentence can hold the word
-        /// twice, and the decider needs to know which one is the place.
+        /// twice, and the portrait needs to know which one to leave out.
         let span: String
-        /// Who put it here. Sentences somebody typed by hand read differently
-        /// from real dictation, and telling them apart afterwards is the only
-        /// way to know which you are looking at.
+        /// Who put it here. A portrait built from sentences somebody typed by
+        /// hand behaves differently from one built out of real dictation, and
+        /// telling them apart afterwards is the only way to know which you are
+        /// looking at.
         var from: Source = .correction
         /// The other polarity: a sentence where this term does *not* belong.
         ///
@@ -33,23 +36,24 @@ enum TermUses {
         /// `Vercel` and you put `Versailles` back. That says nothing about a
         /// term called Versailles, and everything about where Vercel lives.
         /// `span` is then the word standing at the site, not the term.
+        ///
+        /// Three of them under one term and `TermPortrait` builds a second
+        /// centre from them, and reads a new sentence against both.
         var counter: Bool = false
         /// The spelling this correction replaced, when it is known.
         ///
         /// A counter's `span` is already the other word, so this is only ever
         /// set on a use. Without it a term's first correction has no record of
-        /// what was heard beside the sentence — the rendering is written to
-        /// `vocabulary.yaml`, which the reader of this file does not load.
+        /// what was heard anywhere `TermPortrait` can reach — the rendering is
+        /// written to `vocabulary.yaml`, and the portrait has no Config — so a
+        /// sentence holding both spellings could not be cut and taught the term
+        /// backwards. Measured: 0.959 and authorising where the cut gives 0.898.
         var heard: String?
-        /// A counter for another term offered on the same pill, not for the
-        /// one the answer was about. Not read yet.
-        /// An explicit counter for the same row clears it.
-        var implied = false
 
         enum Source: String, Codable {
             /// The correction panel, the spoken command, or `--learn`.
             case correction
-            /// Written by hand with `--learn --in`, to give a term sentences early.
+            /// Written by hand with `--learn --in`, to fill a portrait early.
             case seeded
             /// Answered on the pill, before anything was typed.
             ///
@@ -72,11 +76,12 @@ enum TermUses {
     ///
     /// Not a quality limit: with a threshold read off the term's own uses,
     /// more of them separate better rather than worse. This bounds the work of
-    /// reading a term's rows, which is one parse per use.
+    /// recomputing a portrait, which is one forward pass per use.
     ///
     /// Each polarity has its own budget. Shared, a term corrected forty times
-    /// the wrong way would evict every confirmed use, and the bound this exists
-    /// for is the number of confirmed uses.
+    /// the wrong way would evict the uses its portrait is built from and leave
+    /// it with no portrait at all, and the bound this exists for is the number
+    /// of confirmed uses.
     static let keep = 40
 
     /// The file is there and cannot be parsed as a whole.
@@ -122,8 +127,7 @@ enum TermUses {
                 return Use(
                     said: said, span: span, from: from ?? .correction,
                     counter: row["counter"] as? Bool ?? false,
-                    heard: row["heard"] as? String,
-                    implied: row["implied"] as? Bool ?? false
+                    heard: row["heard"] as? String
                 )
             }
             if !uses.isEmpty { out[term] = uses }
@@ -147,7 +151,7 @@ enum TermUses {
     /// 2026-09-10.
     static func record(
         term: String, said: String, span: String, from: Use.Source = .correction,
-        counter: Bool = false, heard: String? = nil, implied: Bool = false, near word: Int? = nil
+        counter: Bool = false, heard: String? = nil, near word: Int? = nil
     ) throws {
         let sentence = narrowed(said, to: span, near: word)
         // A word, not a substring. `contains` alone let `Vercelli` in.
@@ -166,16 +170,10 @@ enum TermUses {
             $0.caseInsensitiveCompare(span) == .orderedSame ? nil : $0
         }
         let use = Use(
-            said: sentence, span: span, from: from, counter: counter, heard: other, implied: counter && implied
+            said: sentence, span: span, from: from, counter: counter, heard: other
         )
         if let already = uses.firstIndex(of: use) {
             guard uses[already].counter != counter else {
-                if uses[already].implied, !use.implied {
-                    uses[already].implied = false
-                    all[term] = uses
-                    try write(all)
-                    return
-                }
                 // The same row again. Nothing to write unless this correction
                 // carries the replaced spelling and the stored row predates it
                 // — a row written before `heard` existed never gains one
@@ -194,7 +192,8 @@ enum TermUses {
         }
         uses.append(use)
         // A budget per polarity, oldest dropped. Sharing one, a term corrected
-        // forty times the wrong way evicts every confirmed use.
+        // forty times the wrong way evicts every use its portrait is built
+        // from, and the term is then left with no portrait at all.
         for polarity in [false, true] {
             let over = uses.filter { $0.counter == polarity }.count - keep
             guard over > 0 else { continue }
@@ -232,14 +231,16 @@ enum TermUses {
     /// Takes a place away from every term but the one that just claimed it.
     ///
     /// A sentence has one owner per place. Two members of a sound group both
-    /// holding it are the same evidence for both: the pill records "Eric has a
-    /// new piano." under Eric, the correction that follows records "Erik has a
-    /// new piano." under Erik, and the first row stays. Polarity does not
-    /// matter — a counter is a claim on the place too.
+    /// holding it pull their centres toward each other: the pill records "Eric
+    /// has a new piano." under Eric, the correction that follows records "Erik
+    /// has a new piano." under Erik, and the first row stays. Polarity does not
+    /// matter — a counter is a claim on the place too, and the group's plain
+    /// centre is built out of counters.
     ///
     /// Only a row whose own span is one of `openings` goes, so a row standing
     /// at the same place with an unrelated word in it is left alone. Returns
-    /// the terms that lost a row.
+    /// the terms that lost a row; their portraits are keyed on a fingerprint of
+    /// their uses, so each rebuilds itself the next time it is read.
     @discardableResult
     static func release(
         _ said: String, at span: String, from terms: [String], to owner: String,
@@ -395,15 +396,11 @@ enum TermUses {
     /// the stages after `vocabulary` rewrote the transcript, so it cannot
     /// simply take the first: picking the hit nearest that position is how the
     /// right one of two mentions is found.
-    static func occurrences(
-        of span: String, in text: String, ignoringCase: Bool = false
-    ) -> [Range<String.Index>] {
+    static func occurrences(of span: String, in text: String) -> [Range<String.Index>] {
         func word(_ c: Character) -> Bool { c.isLetter || c.isNumber }
         var found: [Range<String.Index>] = []
         var from = text.startIndex
-        while let at = text.range(
-            of: span, options: ignoringCase ? [.caseInsensitive] : [], range: from ..< text.endIndex
-        ) {
+        while let at = text.range(of: span, range: from ..< text.endIndex) {
             let before = at.lowerBound == text.startIndex
                 || !word(text[text.index(before: at.lowerBound)])
             let after = at.upperBound == text.endIndex || !word(text[at.upperBound])
@@ -429,7 +426,6 @@ enum TermUses {
             "#",
             "# `counter: true` is the opposite: a sentence where the term does not belong,",
             "# recorded when you put an ordinary word back over it. Its `span` is that word.",
-            "# `implied: true` marks a counter for another term offered on the same pill.",
             "",
             "terms:",
         ]
@@ -441,7 +437,6 @@ enum TermUses {
                 lines.append("      span: \(quoted(use.span))")
                 lines.append("      from: \(use.from.rawValue)")
                 if use.counter { lines.append("      counter: true") }
-                if use.implied { lines.append("      implied: true") }
                 if let heard = use.heard, !heard.isEmpty {
                     lines.append("      heard: \(quoted(heard))")
                 }
@@ -455,7 +450,7 @@ enum TermUses {
     /// as itself written as an escape.
     ///
     /// A raw newline is folded back into a space by the parser, which changes
-    /// the sentence a term is read against. A raw control character —
+    /// the sentence the portrait is built from. A raw control character —
     /// `\u{7}`, say — makes the whole file unparseable, and then nothing is
     /// ever recorded again.
     private static func quoted(_ text: String) -> String {

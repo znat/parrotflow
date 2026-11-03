@@ -13,9 +13,10 @@ import Foundation
 ///   is written under Mik: the two share a sound, and the sentence is Mick's
 ///   evidence, not evidence against Mik.
 ///
-/// The second used to write both rows: every sentence one member lived in was
-/// stored as a place the other does not, so the loser's counter-examples
-/// filled up with sentences about its own group.
+/// The second used to write both rows, and those are the rows that poisoned
+/// the portraits: every sentence one member lived in was stored as a place the
+/// other does not, so the loser's counter centre filled up with sentences
+/// about its own group. See `docs/proposals/sound-groups.md`.
 enum CorrectionRecording {
 
     /// One row to write in `vocabulary-uses.yaml`.
@@ -84,8 +85,8 @@ enum CorrectionRecording {
         // A person only. On the pill you are choosing between names offered
         // for one sound, and a place or a company picked there is a name you
         // chose. A correction is the other direction — a term taken back out —
-        // and `Vercel` corrected to `Versailles` is a counter-example, not a
-        // new member of the group.
+        // and `Vercel` corrected to `Versailles` is the counter-example the
+        // portrait is built from, not a new member of the group.
         guard kind == .person else { return nil }
         return (name, kind)
     }
@@ -103,11 +104,13 @@ enum CorrectionRecording {
         case counter(term: String)
     }
 
-    /// Which of the three a word put back over `term` is, for `learns`.
+    /// Which of the three this answer is.
     ///
-    /// The tagger or the proposing term says whether the word is a name. The
-    /// pill does not ask this: keeping the heard word there adds nothing to
-    /// the vocabulary.
+    /// A person the recogniser spells right never gets a term the ordinary
+    /// way: nothing is ever corrected, so nothing ever creates one, and every
+    /// sentence about them piles up as a counter under somebody else's name.
+    /// The pill is the one place that can tell — the word was picked over a
+    /// name, and the tagger or the proposing term says it is a name too.
     static func picked(
         _ word: String, proposedBy term: String, in terms: [String: Config.Vocabulary.Term]
     ) -> Picked {
@@ -115,8 +118,7 @@ enum CorrectionRecording {
             return .use(term: already)
         }
         let bare = word.trimmingCharacters(in: .punctuationCharacters)
-        let stem = Vocabulary.possessive(in: bare)?.stem ?? bare
-        guard !bare.isEmpty, !VocabularyPass.onlyCases(word: stem, term: term) else { return .counter(term: term) }
+        guard !bare.isEmpty else { return .counter(term: term) }
         // What the tagger read, when it read a name at all. A place or an
         // organization picked here is a term too, and labelling it `person`
         // would put a guess in the file under the name of a fact.
@@ -228,7 +230,6 @@ enum CorrectionRecording {
     }
 
     /// The vocabulary term this word is, ignoring case and any possessive.
-    /// `resend` is not `Resend`: it is the ordinary word (`VocabularyPass.onlyCases`).
     static func term(named word: String, in terms: [String]) -> String? {
         var bare = word.trimmingCharacters(in: .whitespaces)
         if let mine = Vocabulary.possessive(in: bare) {
@@ -236,8 +237,6 @@ enum CorrectionRecording {
         }
         bare = bare.trimmingCharacters(in: .punctuationCharacters)
         guard !bare.isEmpty else { return nil }
-        return terms.first {
-            $0 == bare || ($0.caseInsensitiveCompare(bare) == .orderedSame && !VocabularyPass.onlyCases(word: bare, term: $0))
-        }
+        return terms.first { $0.caseInsensitiveCompare(bare) == .orderedSame }
     }
 }

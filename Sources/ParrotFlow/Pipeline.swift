@@ -54,12 +54,6 @@ struct Pipeline: Equatable, Codable {
         /// sentence it stands in — see `VocabularyPass` and `SentenceGate`.
         /// The pipeline entry is `- vocabulary`. It calls no model.
         case vocabulary
-        /// Self-corrections taken back: the parrotflow-syrinx tree cutter
-        /// proposes cuts and the cut filter keeps the likely ones — see
-        /// `TreeCutter`. Switched by `transcription.disfluency`, after
-        /// `vocabulary`. English only. Not `disfluency`: that namespace is the
-        /// Python transform's.
-        case treeCutter = "tree_cutter"
         /// A span respelled the way the screen writes it — see
         /// `ContextSpelling`. Switched by `transcription.context_spelling`,
         /// and last, after every listed step.
@@ -129,14 +123,50 @@ struct Pipeline: Equatable, Codable {
         /// whatever arrived, which is what the gate was measured against and
         /// the only way to measure it again.
         var gate: Bool?
+        /// Written `slot_gate:`. Whether anything reads the mmBERT slot — the
+        /// part of speech the spot wants, in `SlotGate`, and the ten words it
+        /// expects there, in `SlotReference`.
+        ///
+        /// One switch for both because they are one model, and the promise the
+        /// switch makes is that `false` downloads nothing. Each half takes the
+        /// path it already has on a machine the 269 MB is not on: the lexical
+        /// gate settles what the word lists settle and asks nothing more, and
+        /// the sentence gate is left to the portrait alone.
+        var slotGate: Bool?
+        /// Written `portrait:`. Whether a term's own sentences and its
+        /// counter-examples may settle a proposal — see `TermPortrait`.
+        ///
+        /// `false` takes the path a term with too few uses already has: the
+        /// portrait says nothing, and the slot's refusal is all that can speak.
+        var portrait: Bool?
         /// Written `lowercase_refused:`. Whether a glued span the sentence
         /// refuses is written back in lowercase instead of as heard.
         ///
         /// `false` puts the span back exactly as the decoder wrote it, which
         /// is what every other refusal in this stage does.
         var lowercaseRefused: Bool?
+        /// Written `slot_floor:`. How far the heard word must win by before
+        /// `SlotReference` refuses the rewrite. A language it does not name
+        /// keeps the built-in value for that language — see
+        /// `Transcription.slotFloor(for:on:)`.
+        var slotFloor: SlotFloor?
         /// How many places one sentence may offer — see `VocabularyPass.Caps`.
         var caps: VocabularyPass.Caps?
+
+        /// What `slot_floor:` said, in either spelling.
+        ///
+        ///     slot_floor: 0.20                 every language
+        ///     slot_floor: {en: 0.20, fr: 0.30} one at a time
+        ///
+        /// A language the map does not name keeps its built-in floor.
+        struct SlotFloor: Equatable, Codable {
+            var everyLanguage: Double?
+            var byLanguage: [String: Double] = [:]
+
+            func value(for language: String) -> Double? {
+                byLanguage[language] ?? everyLanguage
+            }
+        }
 
         /// Every switch is on until it is written false.
         func isOn(_ option: KeyPath<VocabularyOptions, Bool?>) -> Bool {
@@ -149,7 +179,10 @@ struct Pipeline: Equatable, Codable {
                 nearMisses: nearMisses ?? base.nearMisses,
                 bySound: bySound ?? base.bySound,
                 gate: gate ?? base.gate,
+                slotGate: slotGate ?? base.slotGate,
+                portrait: portrait ?? base.portrait,
                 lowercaseRefused: lowercaseRefused ?? base.lowercaseRefused,
+                slotFloor: slotFloor ?? base.slotFloor,
                 caps: caps ?? base.caps
             )
         }
@@ -317,7 +350,7 @@ struct Pipeline: Equatable, Codable {
 
     var stages: [Stage] { steps.map(\.stage) }
 
-    /// What actually runs: the fixed passes, then the list.
+    /// What actually runs: the two fixed passes, then the list.
     ///
     /// `interpret` reads the decoder's own word timings and `vocabulary` is
     /// handed spans measured before any of this started. Both are wrong
@@ -331,7 +364,7 @@ struct Pipeline: Equatable, Codable {
     /// notice that says so.
     ///
     /// Only the first such line's options come across, and each one it writes
-    /// wins over the block: a config that writes `near_misses:` on the line has
+    /// wins over the block: a config that writes `slot_floor:` on the line has
     /// said the number exactly once, and moving the key should not silently
     /// drop it. The position does not come across, which is the whole point.
     static func resolved(config: Config) -> Pipeline {
@@ -349,11 +382,8 @@ struct Pipeline: Equatable, Codable {
             steps.append(Step(
                 stage: .vocabulary, vocabulary: written.over(blocks.vocabulary.options)))
         }
-        if blocks.disfluency.enabled {
-            steps.append(Step(stage: .treeCutter))
-        }
         steps += carried.filter {
-            ![.sentenceRepair, .vocabulary, .treeCutter, .contextSpelling].contains($0.stage)
+            $0.stage != .sentenceRepair && $0.stage != .vocabulary && $0.stage != .contextSpelling
         }
         if blocks.contextSpelling.enabled {
             steps.append(Step(stage: .contextSpelling))
@@ -817,8 +847,6 @@ struct Pipeline: Equatable, Codable {
         case .vocabulary:
             return await settleVocabulary(step, on: text, config: config, scope: scope,
                                         )
-        case .treeCutter:
-            return await cutTrees(on: text, config: config, scope: scope)
         case .contextSpelling:
             return await ContextSpelling.apply(to: text, scope: scope)
         case .transform:
@@ -1013,44 +1041,6 @@ struct Pipeline: Equatable, Codable {
         return StageResult(text: outcome.text, vars: ["count": .int(outcome.count(.join))])
     }
 
-    /// Self-corrections taken back — see `TreeCutter`. Fails open: every
-    /// decline returns the text as it arrived and says why in `declined`.
-    private func cutTrees(on text: String, config: Config, scope: Scope) async -> StageResult {
-        func declined(_ why: String) -> StageResult {
-            Log.write("tree_cutter: declined — \(why)")
-            return StageResult(text: text, vars: [
-                "count": .int(0), "kept": .int(0), "dropped": .int(0),
-                "candidates": .string(""), "declined": .string(why),
-            ])
-        }
-        guard scope["language"] == .string("en") else { return declined("not English") }
-        let ready = await SyrinxModel.shared.ready(within: SyrinxModel.dictationWait)
-        guard let loaded = ready.loaded else { return declined(ready.reason) }
-        let threshold = config.transcription.disfluency.threshold ?? loaded.cutFilter.threshold
-        let span = Trace.current?.open("tree cutter", kind: .part)
-        let outcome = TreeCutter.run(
-            text, parser: loaded.parser, filter: loaded.cutFilter, threshold: threshold
-        )
-        let kept = outcome.candidates.filter(\.kept).count
-        span?.close("\(kept) of \(outcome.candidates.count) kept")
-        if let why = outcome.declined { return declined(why) }
-        let words = TreeCutter.Spans(outcome.view).strings
-        let listed = outcome.candidates.map { candidate in
-            let said = candidate.words.map { words[$0] }.joined(separator: " ")
-            return "\"\(said)\" \(String(format: "%.3f", candidate.pReal))"
-                + (candidate.kept ? " kept" : " dropped")
-        }
-        Pipeline.logRewrite(by: "tree_cutter", from: text, to: outcome.text)
-        return StageResult(text: outcome.text, vars: [
-            "count": .int(outcome.candidates.count),
-            "kept": .int(kept),
-            "dropped": .int(outcome.candidates.count - kept),
-            "threshold": .double(threshold),
-            "candidates": .string(listed.joined(separator: "; ")),
-            "declined": .string(""),
-        ])
-    }
-
     /// `priced.. The` -> `priced. The`.
     ///
     /// The decoder writes two full stops now and then, and the second one
@@ -1085,9 +1075,11 @@ struct Pipeline: Equatable, Codable {
     /// not loaded, a sentence model that is not on disk. Losing a gate costs a
     /// name; losing the sentence costs the sentence.
     ///
-    /// What decides is the two word lists, the slot's part of speech, and the
-    /// clause decider — see `VocabularyPass.settle` and `SentenceGate`. Every
-    /// place they leave open keeps what arrived.
+    /// **Nothing here calls a model.** Every substitution used to be put to a
+    /// local model, one KEEP or REVERT each, at about 900 ms a dictation. What
+    /// decides now is the two word lists, the slot's part of speech, and the
+    /// two tests that read the sentence — see `VocabularyPass.settle` and
+    /// `SentenceGate`. Every place they leave open keeps what arrived.
     ///
     /// The mechanics are in `VocabularyPass`. This is the wiring: which
     /// substitutions are gathered, which gates run, and which variables come
@@ -1116,14 +1108,16 @@ struct Pipeline: Equatable, Codable {
         // near miss has to raise this or that stage never runs.
         var nearMisses = 0
         var bySound = 0
-        var byWord = 0
         // Where this stage's time goes, split at its two model calls. The
-        // stage's own `ms` is one number for all of it.
+        // stage's own `ms` is one number for all of it, so it cannot tell a
+        // pronunciation the model has never been asked for from a term
+        // portrait being rebuilt. Those are the two things that put a
+        // dictation past a second here.
         var soundSeconds = 0.0
         var gateSeconds = 0.0
         func result(_ text: String, _ vars: [String: Scope.Value]) -> StageResult {
             let wrote: [String: Scope.Value] = [
-                "count": .int(exact.count + nearMisses + bySound + byWord),
+                "count": .int(exact.count + nearMisses + bySound),
                 "changes": .string(exact.changes),
                 "before": .string(handed),
                 "protected": .string(exact.protected),
@@ -1158,7 +1152,7 @@ struct Pipeline: Equatable, Codable {
         // on and what that cost over this speaker's archive.
         if step.vocabulary.isOn(\.nearMisses) {
             let reached = VocabularyPass.fuzzyParts(
-                in: text, rules: config.renderingRules, claimed: parts
+                in: text, rules: config.vocabularyRules, claimed: parts
             )
             nearMisses = reached.count
             parts += reached
@@ -1178,20 +1172,6 @@ struct Pipeline: Equatable, Codable {
         // Nothing is written here either. The floor is 0.85 and it was
         // measured over 20891 dictations — see `phonemeParts` for what fires
         // and what it costs.
-        // Opened once, on first need: the sound pass trims with it, the
-        // sentence gate decides with it.
-        var clauseVars: [String: Scope.Value] = [:]
-        var clause: ClauseSession?
-        var clauseAsked = false
-        func openClause() async -> ClauseSession? {
-            guard !clauseAsked else { return clause }
-            clauseAsked = true
-            guard config.gatesSentence else { return nil }
-            let opened = await Self.clauseSession(language: Pipeline.language(of: text, config: config))
-            if let why = opened.declined { clauseVars["clause_declined"] = .string(why) }
-            clause = opened.session
-            return clause
-        }
         if step.vocabulary.isOn(\.bySound) {
             let spoken = Pipeline.language(of: text, config: config)
             let sounds = config.vocabularySounds(in: spoken)
@@ -1201,28 +1181,13 @@ struct Pipeline: Equatable, Codable {
                 in: text, sounds: sounds, voice: Phonemes.voice(for: spoken),
                 language: spoken, floor: config.soundBelow, claimed: parts
             )
-            var proposed = heard
-            if heard.contains(where: { $0.decoded.contains(" ") }), let clause = await openClause() {
-                proposed = clause.trimmingEdges(
-                    heard, in: text, sounds: sounds, voice: Phonemes.voice(for: spoken), floor: config.soundBelow
-                )
-            }
             soundSeconds = Date().timeIntervalSince(askedAt)
             sound?.close(sounds.isEmpty
                 ? "no terms with a sound"
-                : "\(proposed.count) of \(sounds.count) over the floor")
-            bySound = proposed.count
-            parts += proposed
+                : "\(heard.count) of \(sounds.count) over the floor")
+            bySound = heard.count
+            parts += heard
         }
-
-        // After the sound pass, so "stack" for `Stack` cannot take the span
-        // "better stack" needs for `BetterStack`.
-        let worded = VocabularyPass.wordParts(
-            in: text, terms: config.vocabulary.terms, claimed: parts,
-            language: Pipeline.language(of: text, config: config), fallback: config.primaryLanguage
-        )
-        byWord = worded.count
-        parts += worded
 
         // The places where several terms share the word that was heard. Built
         // before the others and not from parts: a group place carries every
@@ -1251,8 +1216,13 @@ struct Pipeline: Equatable, Codable {
         // spells names into it on runs where nothing was even offered.
         var census = "vocabulary: \(slots.count) slot(s) from \(parts.count) proposal(s)"
         if bySound > 0 { census += " (\(bySound) by sound)" }
-        if config.gatesSentence {
-            census += ", sentence gate on (slot + clause)"
+        // Which of the two halves is on, not just that the gate is: a place
+        // decided by the portrait alone reads nothing like one both tests saw.
+        let reading = [
+            step.vocabulary.isOn(\.slotGate) ? "slot" : nil, step.vocabulary.isOn(\.portrait) ? "portrait" : nil,
+        ].compactMap { $0 }
+        if config.gatesSentence, !reading.isEmpty {
+            census += ", sentence gate on (\(reading.joined(separator: " + ")))"
         }
         if !slots.isEmpty, ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
             census += " — " + slots.map {
@@ -1277,13 +1247,15 @@ struct Pipeline: Equatable, Codable {
         // a rule that is 4/4 where the models measured were 0/4.
         let gatedAt = Date()
         let settled: [Bool?]
-        var capped: Set<Int> = []
         if step.vocabulary.isOn(\.gate) {
-            // Read inside the branch so `gate: false` does not open the parser.
+            // `slot_gate: false` passes no gate at all, which is the path a
+            // machine without the 269 MB model already takes: the word lists
+            // settle what they settle and the slot is never asked. Read inside
+            // the branch so `gate: false` does not load it either.
             let span = Trace.current?.open("slot_gate", kind: .part)
-            var slot: ((VocabularyPass.Change) -> VocabularyPass.SlotReading?)?
-            if let clause = await openClause() { slot = { clause.slot($0, in: text) } }
-            (settled, capped) = VocabularyPass.settle(changes, in: text, slot: slot)
+            let slot = step.vocabulary.isOn(\.slotGate) ? await Vocabulary.shared.slotGate() : nil
+            settled = VocabularyPass.settle(
+                changes, in: text, by: [.sound: .full, .rule: .lists], gate: slot)
             span?.close("\(changes.count) change(s)")
         } else {
             settled = [Bool?](repeating: nil, count: changes.count)
@@ -1291,30 +1263,22 @@ struct Pipeline: Equatable, Codable {
         var decided: [Bool?] = changes.indices.map { index in
             index < taught.count && taught[index] ? false : settled[index]
         }
-        // The clause decider, on whatever is still open. Without a session
-        // the places stay open.
-        if config.gatesSentence {
+        // The two tests that read the sentence, on whatever is still open.
+        if config.gatesSentence, #available(macOS 14, *) {
             let span = Trace.current?.open("sentence_gate", kind: .part)
             defer { span?.close("\(decided.filter { $0 == nil }.count) still open") }
-            if let clause = await openClause() {
-                let settledBySentence = await SentenceGate.settle(
-                    changes, in: text, given: decided, capped: capped, clause: clause
-                )
-                clauseVars.merge([
-                    "clause_places": .int(clause.places),
-                    "clause_written": .int(clause.tally[.write] ?? 0),
-                    "clause_left": .int(clause.tally[.leave] ?? 0),
-                    "clause_offered": .int(clause.tally[.offer] ?? 0),
-                    "clause_ms": .int(Int((clause.seconds * 1000).rounded())),
-                    "clause": .string(clause.lines.joined(separator: "; ")),
-                ]) { _, new in new }
-                for line in clause.lines { Log.write("clause decider: \(line)") }
-                decided = settledBySentence.decided
-                // A group place comes back proposing the member that won, or
-                // carrying the ones still standing. Nothing else in a change
-                // moves.
-                changes = settledBySentence.changes
-            }
+            let settledBySentence = await SentenceGate.settle(
+                changes, in: text, given: decided,
+                floor: config.transcription.slotFloor(
+                    for: Pipeline.language(of: text, config: config), on: step
+                ),
+                slot: step.vocabulary.isOn(\.slotGate), portrait: step.vocabulary.isOn(\.portrait),
+                terms: config.vocabulary.terms
+            )
+            decided = settledBySentence.decided
+            // A group place comes back proposing the member that won, or
+            // carrying the ones still standing. Nothing else in a change moves.
+            changes = settledBySentence.changes
         }
         gateSeconds = Date().timeIntervalSince(gatedAt)
 
@@ -1338,15 +1302,6 @@ struct Pipeline: Equatable, Codable {
         // twice, and the last stage is the one whose places are still open.
         // Recording only a non-empty list would leave an earlier stage's
         // question standing after a later one had settled it.
-        // A rule place left open shows the heard word and the term waits on
-        // the pill.
-        var shown = decided
-        if clause != nil {
-            for index in changes.indices where decided[index] == nil && !(index < taught.count && taught[index]) {
-                let change = changes[index]
-                if change.standing == .rule, String(text[change.range]) == change.now { shown[index] = false }
-            }
-        }
         if case .int(let run)? = scope["press.run"] {
             OpenPlaces.record(run: run, changes.indices.compactMap { index in
                 // The term that offered the reading, not the first of the
@@ -1361,7 +1316,7 @@ struct Pipeline: Equatable, Codable {
                     was: change.was, now: change.now,
                     // What `settling` is about to copy: a rule has already
                     // written its term over the span, a sound proposal has not.
-                    wrote: String(text[change.range]) == change.now && shown[index] != false,
+                    wrote: String(text[change.range]) == change.now,
                     term: term,
                     word: text[..<change.range.lowerBound]
                         .split(separator: " ").count,
@@ -1388,7 +1343,7 @@ struct Pipeline: Equatable, Codable {
         var writing = changes
         if step.vocabulary.isOn(\.lowercaseRefused) {
             let terms = Array(config.vocabulary.terms.keys)
-            for index in changes.indices where shown[index] == false {
+            for index in changes.indices where decided[index] == false {
                 guard !(index < taught.count && taught[index]) else { continue }
                 let change = changes[index]
                 guard Vocabulary.glues(heard: change.was, term: change.now) else { continue }
@@ -1412,11 +1367,11 @@ struct Pipeline: Equatable, Codable {
         // Each place written the way it was settled, and a place nothing
         // settled left exactly as it already stands: a rule substitution keeps
         // the term it wrote, a sound proposal keeps the word that was heard.
-        let chosen = VocabularyPass.settling(shown, in: text, changes: writing)
+        let chosen = VocabularyPass.settling(decided, in: text, changes: writing)
         // What the stage undid, in the words it put back. Named `reverted`
         // rather than `kept_as_decoded`: every place on this list is a
         // substitution somebody has to answer for.
-        let reverted = zip(writing, shown).filter { $0.1 == false }.map {
+        let reverted = zip(writing, decided).filter { $0.1 == false }.map {
             "\($0.0.now) -> \($0.0.was)"
         }
         Pipeline.logRewrite(by: "vocabulary", from: text, to: chosen)
@@ -1424,33 +1379,7 @@ struct Pipeline: Equatable, Codable {
             "slots": .int(slots.count),
             "reverted": .string(reverted.joined(separator: "; ")),
             "judged": .string(chosen),
-        ].merging(clauseVars) { old, _ in old })
-    }
-
-    /// The clause decider for one dictation, or why there is none. It waits for
-    /// the parser as the tree cutter does; without it the places stay open.
-    static func clauseSession(language: String) async -> (session: ClauseSession?, declined: String?) {
-        guard ClauseDecider.Model.languages.contains(language) else { return (nil, "no clause decider for \(language)") }
-        let model: ClauseDecider.Model
-        switch ClauseDecider.Model.shared {
-        case .success(let loaded): model = loaded
-        case .failure(let error):
-            Log.write("clause decider: \(error.localizedDescription); the places stay open")
-            return (nil, error.localizedDescription)
-        }
-        let slotHead: ClauseDecider.SlotHead
-        switch ClauseDecider.SlotHead.shared {
-        case .success(let loaded): slotHead = loaded
-        case .failure(let error):
-            Log.write("clause decider: \(error.localizedDescription); the places stay open")
-            return (nil, error.localizedDescription)
-        }
-        let ready = await SyrinxModel.shared.ready(within: SyrinxModel.dictationWait)
-        guard let loaded = ready.loaded else {
-            Log.write("clause decider: \(ready.reason); the places stay open")
-            return (nil, ready.reason)
-        }
-        return (ClauseSession(parser: loaded.parser, model: model, slotHead: slotHead, language: language), nil)
+        ])
     }
 
     /// Whichever kind of transform the step named.

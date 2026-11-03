@@ -32,7 +32,7 @@ transforms:
 vocabulary:
   terms:
     Supabase:
-      heard: [super baze]
+      heard: [super base]
 pipeline:
   - vocabulary
   - transform: first

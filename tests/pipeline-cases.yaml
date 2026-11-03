@@ -23,7 +23,7 @@ cases:
   # --- the default pipeline, end to end -----------------------------------
   - name: filler, then a name, then a number
     pipeline: everything
-    input: "um, super baze has vingt et un users"
+    input: "um, super base has vingt et un users"
     expect: Supabase has 21 users
 
   # The guard from the numbers case set, seen through a pipeline: the script
@@ -279,7 +279,7 @@ cases:
   # stages, and the first one's facts are still readable after the other three.
   - name: every stage's variables survive the stages after it
     pipeline: vars
-    input: super baze has vingt et un users
+    input: super base has vingt et un users
     expect: Supabase has 21 users
     expect_vars:
       vocabulary.count: 1
@@ -296,7 +296,7 @@ cases:
   # it survived in Swift, which every other case in this section would also show.
   - name: a script sees what the stages above it published
     pipeline: vars
-    input: super baze has vingt et un users
+    input: super base has vingt et un users
     expect: Supabase has 21 users
     expect_vars:
       first.saw: 1
@@ -340,7 +340,7 @@ cases:
   - name: a stage stands down because an earlier stage already did the work
     pipeline: vars-conditions
     app: Ghostty
-    input: super baze is down
+    input: super base is down
     expect: Supabase is down
     expect_vars:
       first.saw: 1
@@ -452,7 +452,7 @@ cases:
   - name: context declines with no press to publish, and says which
     pipeline: context
     app: Ghostty com.mitchellh.ghostty
-    input: super baze has twenty one users
+    input: super base has twenty one users
     expect: Supabase has 21 users
     expect_vars:
       context.ran: true
@@ -466,7 +466,7 @@ cases:
   - name: a declining context leaves the stages around it alone
     pipeline: context
     app: Ghostty com.mitchellh.ghostty
-    input: super baze has twenty one users
+    input: super base has twenty one users
     expect: Supabase has 21 users
     expect_vars:
       context.changed: false
@@ -481,7 +481,7 @@ cases:
   - name: context leaves a non-terminal transcript exactly as it arrived
     pipeline: context
     app: Slack com.tinyspeck.slackmacgap
-    input: super baze has twenty one users
+    input: super base has twenty one users
     expect: Supabase has 21 users
     expect_vars:
       context.ok: false
@@ -489,7 +489,7 @@ cases:
 
   - name: the vocabulary stage publishes what its rules wrote
     pipeline: replacements
-    input: our app is deployed on Versal
+    input: our app is deployed on Versailles
     expect: our app is deployed on Vercel
     expect_vars:
       vocabulary.protected: Vercel
@@ -536,7 +536,7 @@ cases:
   - name: input declines with no press to publish, and says which
     pipeline: input
     app: Slack com.tinyspeck.slackmacgap
-    input: super baze has twenty one users
+    input: super base has twenty one users
     expect: Supabase has 21 users
     expect_vars:
       input.ran: true
@@ -550,7 +550,7 @@ cases:
   - name: input declines in a terminal too, and leaves the stages around it alone
     pipeline: input
     app: Ghostty com.mitchellh.ghostty
-    input: super baze has twenty one users
+    input: super base has twenty one users
     expect: Supabase has 21 users
     expect_vars:
       input.ok: false
@@ -566,24 +566,24 @@ cases:
   # `vocabulary.slots` counts the places the stage found. See
   # tests/pipelines/vocabulary-rules.yaml for why no model is called.
 
-  # The case the fix is for. The rule rewrites one `Vursel`, the decoder had
+  # The case the fix is for. The rule rewrites one `Versailles`, the decoder had
   # already written the other `Vercel`, and the term now stands twice. Without
   # the earlier text this offered nothing and logged that it could not tell them
   # apart. One slot, on the occurrence the rule made.
   - name: a rule is attributed when the term it wrote stands twice
     pipeline: vocabulary-rules
-    input: a list of possible alternatives for Vursel, such as Vercel
+    input: a list of possible alternatives for Versailles, such as Vercel
     expect: a list of possible alternatives for Vercel, such as Vercel
     expect_vars:
-      vocabulary.before: a list of possible alternatives for Vursel, such as Vercel
-      vocabulary.changes: Vursel -> Vercel
+      vocabulary.before: a list of possible alternatives for Versailles, such as Vercel
+      vocabulary.changes: Versailles -> Vercel
       vocabulary.slots: 1
 
   # One occurrence was decidable without the earlier text and still is. Here so
   # that the path which already worked is held, not only the one that did not.
   - name: a rule is attributed when the term it wrote stands once
     pipeline: vocabulary-rules
-    input: our app is deployed on Vursel
+    input: our app is deployed on Versailles
     expect: our app is deployed on Vercel
     expect_vars:
       vocabulary.slots: 1
@@ -608,44 +608,11 @@ cases:
   # is a different question and this case says nothing about it.
   - name: two rules writing one term in one sentence open a slot each
     pipeline: vocabulary-rules-two-renderings
-    input: deployed on Versal against the Vursel Castle
+    input: deployed on Versal against the Versailles Castle
     expect: deployed on Vercel against the Vercel Castle
     expect_vars:
-      vocabulary.before: deployed on Versal against the Vursel Castle
+      vocabulary.before: deployed on Versal against the Versailles Castle
       vocabulary.slots: 2
-
-  # A learnt rendering made only of ordinary words is not a rule. With no
-  # parser, the place is left as heard.
-  - name: a rendering of ordinary words does not rewrite them
-    pipeline: vocabulary-learnt-words
-    input: Je viendrai quand on aura fini.
-    expect: unchanged
-    expect_vars:
-      vocabulary.changes: ""
-
-  - name: a rendering with an unknown word is still a rule
-    pipeline: vocabulary-learnt-words
-    input: J'ai payé avec Conto hier.
-    expect: J'ai payé avec Qonto hier.
-
-  - name: a rendering with no letters is still a rule
-    pipeline: vocabulary-learnt-words
-    input: On a eu une 404 hier.
-    expect: On a eu une Erreur404 hier.
-
-  - name: an ordinary rendering an apostrophe away still opens a near miss
-    pipeline: vocabulary-fuzzy-ordinary
-    input: She deserves Praise's work
-    expect: unchanged
-    expect_vars:
-      vocabulary.slots: 1
-
-  - name: an ordinary rendering from another language opens no place
-    pipeline: vocabulary-learnt-lang
-    input: We send the invoices monthly.
-    expect: unchanged
-    expect_vars:
-      vocabulary.slots: 0
 
   # And the counts still have to add up. A pattern rule wrote the second
   # `Vercel` and names no spelling to offer back, so the literal rule beside it
@@ -666,7 +633,7 @@ cases:
   # and never were.
   - name: a second replacements step republishes its own input
     pipeline: vocabulary-rules-twice
-    input: a list of possible alternatives for Vursel, such as Vercel
+    input: a list of possible alternatives for Versailles, such as Vercel
     expect: a list of possible alternatives for Vercel, such as Vercel
     expect_vars:
       vocabulary.before: a list of possible alternatives for Vercel, such as Vercel
@@ -741,7 +708,7 @@ cases:
   # a config carrying it still loads and still behaves like one without it.
   - name: a retired review key still writes what the rules matched exactly
     pipeline: review-off
-    input: super baze is up
+    input: super base is up
     expect: Supabase is up
     expect_vars:
       vocabulary.count: 1

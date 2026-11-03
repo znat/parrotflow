@@ -92,18 +92,14 @@ enum OpenPlaces {
     ///
     /// Returned left to right, which is the order the questions are asked in
     /// and the order the write walks.
-    ///
-    /// `ignoringCase`, with the clause decider on: a later stage that only
-    /// changed the letter case (context spelling wrote `versailles`) still
-    /// leaves a question to ask.
-    static func located(_ places: [Open], in text: String, ignoringCase: Bool = false) -> [Placed] {
+    static func located(_ places: [Open], in text: String) -> [Placed] {
         var found: [Placed] = []
         var taken: [Range<String.Index>] = []
         func words(before at: String.Index) -> Int {
             text[..<at].split(separator: " ").count
         }
         for place in places {
-            let hits = TermUses.occurrences(of: place.standing, in: text, ignoringCase: ignoringCase)
+            let hits = TermUses.occurrences(of: place.standing, in: text)
                 .filter { hit in !taken.contains { $0.overlaps(hit) } }
             guard let at = hits.min(by: {
                 abs(words(before: $0.lowerBound) - place.word)
@@ -154,9 +150,7 @@ enum OpenPlaces {
             } else if answer > 0, answer < options.count {
                 word = refusing(place, options[answer])
             } else {
-                // What stands there, as it landed: a case-insensitive hit
-                // keeps the case a later stage wrote.
-                word = String(text[place.range])
+                word = place.open.standing
             }
             // Where it ended up, not where it was asked about. A place after
             // one that got longer or shorter has moved, and the trace's whole

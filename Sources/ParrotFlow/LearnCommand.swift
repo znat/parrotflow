@@ -6,20 +6,19 @@ import Foundation
 /// The same code path the correction panel uses, minus the UI. Useful on its
 /// own, and it makes the config-rewriting logic testable without a GUI.
 ///
-/// `--in` records the sentence as well, which is what the clause decider reads
-/// a term against. The panel always has one; this command only has one if it is
+/// `--in` records the sentence as well, which is what a term's portrait is
+/// built from. The panel always has one; this command only has one if it is
 /// given, so without it the mapping is saved and nothing else.
 enum LearnCommand {
     static func run(
-        heard: String, corrected: String, kind: WordKind? = nil, sentence: String? = nil,
-        say: (String) -> Void = { print($0) }
+        heard: String, corrected: String, kind: WordKind? = nil, sentence: String? = nil
     ) -> Int32 {
         do {
             try ConfigWriter.addVocabularyPronunciation(
                 term: corrected, heard: heard, kind: kind
             )
         } catch {
-            say("✗ \(error.localizedDescription)")
+            print("✗ \(error.localizedDescription)")
             return 1
         }
         // The mapping is already saved by here, so a sentence that could not be
@@ -27,19 +26,20 @@ enum LearnCommand {
         // the correction was lost when it was not.
         if let sentence, !sentence.isEmpty {
             do {
-                // From the terminal, so it was typed and not lived. Sentences
-                // somebody invented read differently from real dictation.
+                // From the terminal, so it was typed and not lived. A portrait
+                // built out of sentences somebody invented behaves differently
+                // from one built out of real dictation.
                 try TermUses.record(
                     term: corrected, said: sentence, span: corrected, from: .seeded,
                     heard: heard
                 )
             } catch {
-                say("! the sentence was not recorded in"
+                print("! the sentence was not recorded in"
                     + " \(TermUses.url.lastPathComponent): \(error.localizedDescription)")
             }
         }
         Trace.correction(heard: heard, corrected: corrected, via: "learn")
-        say("✓ \(heard) → \(corrected)")
+        print("✓ \(heard) → \(corrected)")
         return 0
     }
 
@@ -70,17 +70,15 @@ enum LearnCommand {
                     continue
                 }
                 if said != use.said { cut += 1 }
-                var now = TermUses.Use(
+                let now = TermUses.Use(
                     said: said, span: use.span, from: use.from, counter: use.counter,
-                    heard: use.heard, implied: use.implied
+                    heard: use.heard
                 )
                 // The custom `==` is on the sentence and the span, so two rows
                 // that narrow to the same sentence collapse into one. The last
                 // wins, which is how `record` settles two rows that disagree
                 // about whether the term belongs there.
                 if let already = kept.firstIndex(of: now) {
-                    // As in `record`: an explicit counter is not made implied again.
-                    if kept[already].counter == now.counter, !kept[already].implied { now.implied = false }
                     kept[already] = now
                 } else {
                     kept.append(now)
@@ -137,8 +135,8 @@ enum LearnCommand {
     /// belong in, with the ordinary word that stands where it would go.
     ///
     /// No pronunciation is written: this teaches nothing about how a word
-    /// sounds. The clause decider reads a term against these as well as
-    /// against its uses.
+    /// sounds. It is the other half of a portrait: three of these and the term
+    /// is read against them instead of against a floor.
     static func against(term: String, sentence: String, span: String) -> Int32 {
         guard TermUses.occurrence(of: span, in: sentence) != nil else {
             print("✗ \"\(span)\" does not stand as a word in that sentence")
