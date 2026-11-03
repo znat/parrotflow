@@ -21,7 +21,7 @@ import sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOKENIZER = os.path.expanduser(
-    "~/Library/Application Support/ParrotFlow/models/mmbert-small-64/tokenizer.json"
+    "~/Library/Application Support/ParrotFlow/models/parrotflow-syrinx-fp16/tokenizer.json"
 )
 LENGTH = 64
 

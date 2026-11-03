@@ -7,7 +7,7 @@ import Foundation
 ///     ParrotFlow --slot-model
 ///       slot model 43%…
 ///     ✓ slot model ready in 38.4s
-///       cache   ~/Library/Application Support/ParrotFlow/models/mmbert-small-64
+///       cache   ~/Library/Application Support/ParrotFlow/models/parrotflow-syrinx-fp16
 ///       inputs  input_ids [1, 64]
 ///       outputs logits [1, 64, 256000]
 ///

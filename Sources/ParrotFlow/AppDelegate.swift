@@ -562,7 +562,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
         // Before anything asks for a model, and whatever the config says: a
         // cache nothing reads is 300 MB whether transcription is on or not.
-        RetiredModels.prune(in: AppVariant.supportDirectory)
+        RetiredModels.prune(.modernBERT, in: AppVariant.supportDirectory)
         loadConfig(announceErrors: false)
         watchConfig()
 
@@ -630,7 +630,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         // After the preview flags return. Those launches draw a panel and
-        // quit; nothing there transcribes, and fetching 1.47 GB for them
+        // quit; nothing there transcribes, and fetching 1.48 GB for them
         // is what `warmUpTranscriber` avoided by sitting below this point.
         // The one button the setup screen offers for a download that did not
         // arrive. The window reports the fetches; it does not own them.
@@ -2417,8 +2417,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Every model the app will use, fetched at launch rather than on the
-    /// dictation that first wants one. About 1.47 GB on a default install:
-    /// Parakeet 461 MB, mmBERT-small 269 MB, the word vectors 335 MB, the
+    /// dictation that first wants one. About 1.48 GB on a default install:
+    /// Parakeet 461 MB, parrotflow-syrinx 283 MB, the word vectors 335 MB, the
     /// boundary readings 320 MB, the sound model 81 MB.
     ///
     /// Each of these used to arrive on first use, and each of them therefore

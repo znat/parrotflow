@@ -11,7 +11,7 @@
 # route is a decision by default and not a question asked of anything. `SlotGate` settles some of them with a
 # masked language model — see that file for the rules and their order.
 #
-# Not in `make test` and not in CI: it needs the 269 MB slot model, which
+# Not in `make test` and not in CI: it needs the 283 MB slot model, which
 # CI has no business downloading. Run it by hand after touching `SlotGate`,
 # `Vocabulary.autoApplies` or the tag sets. Nothing is downloaded here either —
 # with no cached model every case is left open and the run says so.

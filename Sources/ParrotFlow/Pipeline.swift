@@ -129,7 +129,7 @@ struct Pipeline: Equatable, Codable {
         ///
         /// One switch for both because they are one model, and the promise the
         /// switch makes is that `false` downloads nothing. Each half takes the
-        /// path it already has on a machine the 269 MB is not on: the lexical
+        /// path it already has on a machine the 283 MB is not on: the lexical
         /// gate settles what the word lists settle and asks nothing more, and
         /// the sentence gate is left to the portrait alone.
         var slotGate: Bool?
@@ -1250,7 +1250,7 @@ struct Pipeline: Equatable, Codable {
         let settled: [Bool?]
         if step.vocabulary.isOn(\.gate) {
             // `slot_gate: false` passes no gate at all, which is the path a
-            // machine without the 269 MB model already takes: the word lists
+            // machine without the 283 MB model already takes: the word lists
             // settle what they settle and the slot is never asked. Read inside
             // the branch so `gate: false` does not load it either.
             let span = Trace.current?.open("slot_gate", kind: .part)
