@@ -419,12 +419,15 @@ the word lists, 15 refused by the slot, 23 left open, and no error either way.
 `scripts/check-slot-gate.sh` is the run. See `SlotGate`. The route label for
 "left open" is still `judge`, from when a model answered those. ModernBERT
 refused 14 and left 24 on the same set, also with no error; mmBERT-small
-replaced it because it covers French, at no cost in English.
+replaced it because it covers French, at no cost in English. The six French
+cases add 4 refusals and 2 left open, with no error.
 
 The model is never waited for. Until it is on disk, every place this tier would
 judge is simply left open, which is the behaviour before this tier. This tier is
-reached only from the sound pass, and that pass is English only, so it was
-measured in English only and runs nowhere else.
+reached only from the sound pass, which runs in every language. The fillers are
+tagged in the dictation's language, because tagged as English a French filler is
+noise. Over 573 French dictations that turned 10 of 821 places from an offer
+into a refusal, 9 of them rightly, and changed no write and no output text.
 
 **The slot is not asked about one name against another.** It compares the term
 with the word that was heard, and a term is unknown to the tokenizer by

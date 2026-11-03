@@ -1245,7 +1245,7 @@ enum VocabularyPass {
     /// nothing, so it is left to `SentenceGate`.
     static func settle(
         _ changes: [Change], in text: String, by policy: [Standing: Gating],
-        gate: SlotGate?
+        gate: SlotGate?, language: String
     ) -> [Bool?] {
         changes.map { change -> Bool? in
             // A place where several terms share the heard word is never
@@ -1281,7 +1281,8 @@ enum VocabularyPass {
                 return true
             }
             guard allowed == .full, let gate else { return nil }
-            guard let reading = try? gate.read(in: text, at: change.range) else { return nil }
+            guard let reading = try? gate.read(in: text, at: change.range, language: language)
+            else { return nil }
             switch reading.route {
             case .decline:
                 Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""

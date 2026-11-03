@@ -12,8 +12,8 @@ import Foundation
 /// measures both readings against them with `WordVectors`. Negative means the
 /// heard word fits better.
 ///
-/// **mmBERT-small and not ModernBERT.** ModernBERT is English-only, which is
-/// the reason this whole gate is English-only. mmBERT-small covers 1,800
+/// **mmBERT-small and not ModernBERT.** ModernBERT is English-only, which was
+/// the reason this whole gate was English-only. mmBERT-small covers 1,800
 /// languages and ties it here: 192 of the 238 bench cases each at the shipped
 /// floor, AUC 0.888 against 0.887, eight decisions flipped. It is not cheaper —
 /// see `SlotModel` for what it costs, and for why mmBERT was not given the

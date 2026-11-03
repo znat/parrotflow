@@ -16,15 +16,12 @@
 # `Vocabulary.autoApplies` or the tag sets. Nothing is downloaded here either —
 # with no cached model every case is left open and the run says so.
 #
-# Nine of the 59 cases are not scored, and both exclusions are made by shipped
-# code rather than by a list here:
+# Four of the 60 cases are not scored. They are spelling lessons:
+# `VocabularyPass.teaching` reverts them with no model, so they are not a
+# routing decision — scripts/check-spells-rule.sh is where that rule is scored.
 #
-#   five are French. `Pipeline.language` says so, and the model is English.
-#   four are spelling lessons. `VocabularyPass.teaching` reverts them with no
-#   model, so they are not a routing decision — scripts/check-spells-rule.sh
-#   is where that rule is scored.
-#
-# That leaves the 50 English cases the routing was measured on.
+# Six cases are French. The slot tags its fillers in the language
+# `Pipeline.language` reads, as the pass does.
 #
 # Runs against a scratch PARROTFLOW_CONFIG_DIR, so it says nothing about the
 # config on the machine. The language detector needs `languages: [en, fr]`,
@@ -65,11 +62,6 @@ while IFS=$'\x1f' read -r number said heard term expect; do
   fi
 
   out="$("$BIN" --word-gate "$heard" "$term" --in "$said" 2>/dev/null)"
-  if [ "$(field "$out" language)" != en ]; then
-    skipped=$((skipped + 1))
-    printf '  ·  %-14s %-10s not english\n' "$heard" "$term"
-    continue
-  fi
 
   total=$((total + 1))
   route="$(field "$out" route)"
