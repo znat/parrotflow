@@ -8,7 +8,9 @@
 #
 #   a pill answer that keeps the heard word adds no term
 #   the pill still asks when a later stage only changed the letter case
-#   a slot refusal puts the heard word back over a rule's write
+#   a slot refusal is read by the decider and offered at most
+#   a write is offered instead where the slot doubts a name, or the swap was refused
+#   a word-list write is offered once that swap was refused
 #   a heard word in neither word list is still written
 #   a rule place the decider offers shows the heard word
 #   a span that glues to the term is asked, and a correction back counts
@@ -65,12 +67,57 @@ run() {
   PARROTFLOW_CONFIG_DIR="$WORK/run" "$BIN" --pipeline "$WORK/fixture.yaml" "$1" --quiet --warm 2>/dev/null | tail -1
 }
 
-check "a slot refusal puts the heard word back" \
-  "$(run "We should praise his work.")" "We should praise his work."
+runvars() {
+  PARROTFLOW_CONFIG_DIR="$1" "$BIN" --pipeline "$WORK/fixture.yaml" "$2" --vars --warm 2>/dev/null \
+    | sed -nE -e 's/^out:  //p' -e 's/^var   vocabulary\.clause_(offered|left|written) = /\1 /p' | paste -sd'|' -
+}
+
+check "a slot refusal is read by the decider and offered at most" \
+  "$(runvars "$WORK/run" "We should praise his work.")" "left 0|offered 1|written 0|We should praise his work."
 check "a word in neither list is still written" \
   "$(run "We deploy on Versal every Friday.")" "We deploy on Vercel every Friday."
 check "an offered rule place shows the heard word" \
   "$(run "We deploy our apps on Versailles every week.")" "We deploy our apps on Versailles every week."
+
+mkdir -p "$WORK/capped"
+cat > "$WORK/capped/vocabulary-uses.yaml" <<'EOF'
+terms:
+  Praisy:
+    - said: "We should thank Praisy for his work."
+      span: "Praisy"
+      heard: "praise"
+    - said: "We should invite Praisy to the review."
+      span: "Praisy"
+  Vercel:
+    - said: "We deploy the web app on Vercel every Friday."
+      span: "Vercel"
+      heard: "Versailles"
+    - said: "The Vercel preview build failed again this morning."
+      span: "Vercel"
+    - said: "I moved the API routes to Vercel last week."
+      span: "Vercel"
+    - said: "We visited the palace of Versailles during the summer holidays."
+      span: "Versailles"
+      counter: true
+EOF
+mkdir -p "$WORK/nonword"
+cat > "$WORK/nonword/vocabulary-uses.yaml" <<'EOF'
+terms:
+  Vercel:
+    - said: "We deploy the web app on Vercel every Friday."
+      span: "Vercel"
+    - said: "Our designer Versal sent the new mockups."
+      span: "Versal"
+      counter: true
+EOF
+check "a word in neither list is offered once that swap was refused" \
+  "$(PARROTFLOW_CONFIG_DIR="$WORK/nonword" "$BIN" --pipeline "$WORK/fixture.yaml" "We deploy on Versal every Friday." \
+    --quiet --warm 2>/dev/null | tail -1)" "We deploy on Versal every Friday."
+check "a write is offered where the slot doubts a name" \
+  "$(runvars "$WORK/capped" "We should praise his work.")" "left 0|offered 1|written 0|We should praise his work."
+check "a write is offered where this swap was refused before" \
+  "$(runvars "$WORK/capped" "We deploy the staging app on Versailles every night.")" \
+  "left 0|offered 1|written 0|We deploy the staging app on Versailles every night."
 
 # Needs espeak-ng: these places come from the sound pass.
 cat > "$WORK/glued.yaml" <<'EOF'

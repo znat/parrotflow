@@ -356,7 +356,7 @@ machine. What decides now is local to the app:
    glues to the term is written only when one of its words is in neither list.
 2. **The slot check.** The heard words become one `<mask>`, and a small head
    on the parser gives P that a name, noun or pronoun stands there. Under its
-   threshold the term is refused.
+   threshold the place is offered at most.
 3. **The clause decider** reads the parser clause around the place against the
    term's accepted and refused sentences, and writes, keeps what was heard, or
    offers the place on the pill. See

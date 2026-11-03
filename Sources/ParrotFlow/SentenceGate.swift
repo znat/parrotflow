@@ -20,10 +20,10 @@ enum SentenceGate {
     ///
     /// `settled` carries one entry per change: `true` writes the term, `false`
     /// keeps what was heard, `nil` is still open. A place the word lists
-    /// already refused is not read.
+    /// already refused is not read. A place in `capped` is offered at most.
     static func settle(
         _ changes: [VocabularyPass.Change], in text: String, given settled: [Bool?],
-        clause: ClauseSession
+        capped: Set<Int> = [], clause: ClauseSession
     ) async -> Settled {
         var changes = changes
         var out = settled
@@ -57,11 +57,16 @@ enum SentenceGate {
             if out[index] == true {
                 // The clause decider takes a write back only from a term it
                 // has sentences for, and only when it would leave the place.
-                if let reading = await clause.read(change, term: owner, in: text),
-                   !reading.cold, reading.decision == .leave {
+                // A swap refused before is offered at most.
+                let reading = await clause.read(change, term: owner, in: text)
+                if let reading, !reading.cold, reading.decision == .leave {
                     out[index] = false
                     Log.write("sentence gate: \"\(change.was)\" -> \(owner) taken back out"
                         + " — the clause decider leaves it")
+                } else if reading?.features.pairRefused == 1 {
+                    out[index] = nil
+                    Log.write("sentence gate: \"\(change.was)\" -> \(owner) offered, not written"
+                        + " — this swap was refused before")
                 } else {
                     Log.write("sentence gate: \"\(change.was)\" -> \(owner) already written,"
                         + " and the clause decider does not object")
@@ -69,7 +74,7 @@ enum SentenceGate {
                 continue
             }
 
-            switch await clause.read(change, term: owner, in: text)?.decision {
+            switch await clause.read(change, term: owner, in: text, capped: capped.contains(index))?.decision {
             case .write?:
                 out[index] = true
                 Log.write("sentence gate: \"\(change.was)\" -> \(owner) — the clause decider writes it")

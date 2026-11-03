@@ -271,6 +271,45 @@ check "and evict no confirmed use" 3 \
 PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --tidy-uses >/dev/null 2>&1
 check "--tidy-uses keeps a counter marked" 1 "$(matches '^      counter: true' "$AY")"
 check "and keeps the confirmed uses beside it" 3 "$(matches '^    - said:' "$AY")"
+check "and a file without implied counters gains none" 0 "$(matches '^      implied: true' "$AY")"
+
+# A counter recorded for another term offered on the same pill is marked implied.
+IMPLIED="$WORK/implied"; mkdir -p "$IMPLIED"
+IY="$IMPLIED/vocabulary-uses.yaml"
+cat > "$IY" <<'EOF'
+terms:
+  "Mick":
+    - said: "Mik fixed the build."
+      span: "Mik"
+      from: chosen
+      counter: true
+      implied: true
+    - said: "Mik paired with me."
+      span: "Mik"
+      from: chosen
+      counter: true
+EOF
+PARROTFLOW_CONFIG_DIR="$IMPLIED" "$BIN" --tidy-uses >/dev/null 2>&1
+check "--tidy-uses keeps an implied counter marked" 1 "$(matches '^      implied: true' "$IY")"
+check "and leaves an explicit counter unmarked" 2 "$(matches '^      counter: true' "$IY")"
+PARROTFLOW_CONFIG_DIR="$IMPLIED" "$BIN" --against Mick "Mik fixed the build." Mik >/dev/null 2>&1
+check "an explicit counter on the same row clears the mark" 0 "$(matches '^      implied: true' "$IY")"
+cat > "$IY" <<'EOF'
+terms:
+  "Mick":
+    - said: "We shipped the fix. Mik paired with me."
+      span: "Mik"
+      from: chosen
+      counter: true
+    - said: "Mik paired with me."
+      span: "Mik"
+      from: chosen
+      counter: true
+      implied: true
+EOF
+PARROTFLOW_CONFIG_DIR="$IMPLIED" "$BIN" --tidy-uses >/dev/null 2>&1
+check "--tidy-uses merges two rows into one" 1 "$(matches '^    - said:' "$IY")"
+check "and an implied row does not mark an explicit one" 0 "$(matches '^      implied: true' "$IY")"
 
 [ "$failed" -eq 0 ] && echo "Every check passed." || echo "Failed: term-uses"
 exit "$failed"

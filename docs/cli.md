@@ -607,7 +607,7 @@ also prints `slot`, read with the heard words replaced by one `<mask>`: the
 parser's UPOS probabilities there (`mask`, argmax `tag`), the slot head's P
 that a name, noun or pronoun stands there (`nominal`), and `route`: `decline`
 under the head's threshold, else `open`. That is the slot check the vocabulary
-stage runs.
+stage runs; a `decline` place is offered at most.
 `scripts/check-clause-decider-parity.sh` compares it with the PyTorch reference
 on `tests/clause-decider-parity.json`; it needs the parser, so it is not in
 `make test`.

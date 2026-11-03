@@ -6,7 +6,7 @@ import Foundation
 /// term's accepted and refused sentences, whether the heard span is an entity,
 /// the part of speech of the heard word and its neighbours, how it sounds
 /// against the term, whether it is a dictionary word, and whether this exact
-/// swap was accepted or refused before.
+/// swap was accepted before. A swap refused before is offered at most.
 ///
 /// Ported from `training/syntax-parser/vocab_clause_core.py`; the weights were
 /// fitted on public text only. Reads English and French; any other language
@@ -85,7 +85,8 @@ enum ClauseDecider {
         let bias: Double
         /// For `sim_acc` and `sim_ref`: the value when the feature is absent.
         let absent: [Double]
-        /// For `pair_acc` and `pair_ref`, set by hand.
+        /// For `pair_acc` and `pair_ref`, set by hand. A single-term place
+        /// reads `pair_ref` as a cap instead: it turns a write into an offer.
         let fixed: [Double]
         /// Features that may only lower z. A refused-sentence match pushes
         /// toward leaving; its absence is no evidence for writing. Both ways,
@@ -138,7 +139,7 @@ enum ClauseDecider {
 
         static let shared: Result<Model, Error> = Result { try Model(contentsOf: fileURL) }
 
-        func score(_ f: Features) -> Double {
+        func score(_ f: Features, shared: Bool = false) -> Double {
             var z = bias
             for (k, value) in f.fitted.enumerated() {
                 if let value {
@@ -148,18 +149,21 @@ enum ClauseDecider {
                     z += absent[k]
                 }
             }
-            return z + fixed[0] * f.pairAccepted + fixed[1] * f.pairRefused
+            return z + fixed[0] * f.pairAccepted + (shared ? fixed[1] * f.pairRefused : 0)
         }
 
-        func decide(_ f: Features, clause: Range<Int>?) -> Reading {
-            let z = score(f)
+        /// `capped`: the slot check doubts a name stands here, so a write
+        /// becomes an offer.
+        func decide(_ f: Features, clause: Range<Int>?, shared: Bool = false, capped: Bool = false) -> Reading {
+            let z = score(f, shared: shared)
             let p = 1 / (1 + exp(-z))
-            let decision: Decision
+            var decision: Decision
             if f.simAccepted == nil {
                 decision = p >= leave ? .offer : .leave
             } else {
                 decision = p >= write ? .write : p < leave ? .leave : .offer
             }
+            if decision == .write, capped || (!shared && f.pairRefused == 1) { decision = .offer }
             return Reading(features: f, z: z, p: p, decision: decision, clause: clause)
         }
     }
@@ -375,7 +379,7 @@ enum ClauseDecider {
     static func read(
         _ parsed: Parsed, at range: Range<Int>, heard: String, term: String,
         accepted: [[Float]], refused: [[Float]], pairs: (accepted: Double, refused: Double),
-        model: Model, voice: String, shared: Bool = false
+        model: Model, voice: String, shared: Bool = false, capped: Bool = false
     ) -> Reading? {
         let (vector, span, pooled) = place(parsed, at: range, model: model)
         guard !span.isEmpty else { return nil }
@@ -395,7 +399,7 @@ enum ClauseDecider {
         if let lo = pooled.map({ parsed.clip.tokens[$0].start }).min(), let hi = pooled.map({ parsed.ends[$0] }).max() {
             clause = lo ..< hi
         }
-        return model.decide(f, clause: clause)
+        return model.decide(f, clause: clause, shared: shared, capped: capped)
     }
 }
 
@@ -464,7 +468,7 @@ extension ClauseDecider {
         let hiddenBias: [Float]
         let outWeight: [Float]
         let outBias: Float
-        /// Under it the slot refuses.
+        /// Under it the slot caps the place at an offer.
         let threshold: Double
 
         init(contentsOf url: URL) throws {
@@ -632,7 +636,8 @@ final class ClauseSession {
     /// One place, read on `text` with the heard words put back at it. The
     /// clause offsets in the trace line are mapped back to `text`.
     func read(
-        _ change: VocabularyPass.Change, term: String, in text: String, counted: Bool = true, shared: Bool = false
+        _ change: VocabularyPass.Change, term: String, in text: String, counted: Bool = true, shared: Bool = false,
+        capped: Bool = false
     ) async -> ClauseDecider.Reading? {
         let started = Date()
         defer { seconds += Date().timeIntervalSince(started) }
@@ -648,7 +653,7 @@ final class ClauseSession {
             parse, at: a ..< b, heard: change.was, term: term,
             accepted: memory.accepted, refused: memory.refused,
             pairs: ClauseDecider.pairs(heard: change.was, term: term, rows: rows, shared: shared, peers: peers),
-            model: model, voice: Phonemes.voice(for: language), shared: shared
+            model: model, voice: Phonemes.voice(for: language), shared: shared, capped: capped
         ) else {
             lines.append("\"\(change.was)\" -> \(term): no parser token at the place")
             return nil
@@ -666,9 +671,10 @@ final class ClauseSession {
         return reading
     }
 
-    /// What the parser expects where the heard words stand. Refused when the slot head's P that a name, noun or pronoun
-    /// (PROPN, NOUN, PRON) stands there is under the file's threshold: the 5th
-    /// percentile of P over UD dev proper nouns. Right / wrong declines against
+    /// What the parser expects where the heard words stand. Capped at an offer
+    /// when the slot head's P that a name, noun or pronoun (PROPN, NOUN, PRON)
+    /// stands there is under the file's threshold: the 5th percentile of P over
+    /// UD dev proper nouns. Right / wrong declines against
     /// the argmax UPOS rule: French 135 45/1 (30/7), English judge 13/0 (12/1),
     /// bench 33/1 (25/1).
     func slot(_ change: VocabularyPass.Change, in text: String) -> VocabularyPass.SlotReading? {
