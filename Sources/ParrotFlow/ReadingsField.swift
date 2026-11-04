@@ -67,7 +67,7 @@ struct ReadingsField: Encodable, Sendable {
                 at: from[collapsed.distance(from: collapsed.startIndex, to: boundary.at)],
                 mark: mark,
                 wordAt: from[collapsed.distance(from: collapsed.startIndex, to: boundary.next.lowerBound)],
-                means: Dictionary(uniqueKeysWithValues: scores.map { ($0.key, $0.mean) }),
+                means: Dictionary(scores.map { ($0.key, $0.mean) }) { first, _ in first },
                 winner: best.key
             ))
         }
