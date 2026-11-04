@@ -273,6 +273,8 @@ then do with them.
   fails silently.
 - **`parse`** is there only when the transform also declares `parse: true`.
   See [the parse](#the-parse) below.
+- **`readings`** is there only when the transform also declares
+  `readings: true`. See [the sentence readings](#the-sentence-readings) below.
 
 **Out**, on stdout — and only what this stage contributes:
 
@@ -401,6 +403,62 @@ on top of the parse.
   it, as its `head` does.
 
 It adds about 1 KB per word to the envelope. Ask for it only if you read it.
+
+### The sentence readings
+
+`readings: true` beside `returns: json` adds the scores `sentence_repair`
+reads a sentence boundary by. Each boundary is read three ways by
+`Qwen3-0.6B-Base`: with the mark the transcriber wrote, with a comma, and with
+nothing at all.
+
+```json
+"readings": {
+  "language": "en",
+  "boundaries": [
+    { "at": 23, "mark": ".", "word_at": 25,
+      "means": { ".": -3.5018, ",": -3.4308, "join": -3.3369 },
+      "winner": "join" }
+  ]
+}
+```
+
+That is `You should see a parrot. At the top right of your screen.`: the
+period after `parrot` is read as a pause, not a sentence end.
+
+- **Which boundaries.** A sentence mark followed by a capital: `word. Capital`,
+  `word? Capital`, and `word! Capital` if `!` is in the `marks:` of
+  `sentence_repair`. The guards are the stage's: a mark inside a run of marks
+  (an ellipsis), a mark after a single letter (`J. Smith`) or after anything
+  but a letter or a digit, and a word in the abbreviations list are not
+  boundaries. A doubled full stop `..` is read as one. `word. lowercase` and a
+  capital with no mark in front of it are not read.
+- **`at`** is the character offset of the mark in `text`, and **`word_at`**
+  that of the capital after it, in the units of `tokens` and `parse`. For a
+  doubled full stop `at` is its first stop.
+- **`mark`** is the mark written there.
+- **`means`** holds, per reading, the log-probability of the text after the
+  boundary divided by its token count. The keys are the mark, every mark in
+  `marks:` that does not end a sentence (the comma, and the colon in French),
+  and `join` for no mark. The window is 12 words either side, and the
+  readings of one boundary are scored in one batch, exactly as the stage does.
+- **`winner`** is the reading `sentence_repair` would pick: the highest
+  mean, with an exact tie going to the first in key order above.
+  `sentence_repair` removes the mark when `join` wins, and leaves it
+  otherwise.
+- **`language`** is the scope's language. Readings are made in English and
+  French only, the languages `sentence_repair` runs in.
+
+`boundaries` is empty when there are none. When there are some and they could
+not be read, it is empty and **`missing`** says why: the language is not
+English or French, the model is not in memory yet, or a boundary could not be
+read. Never partial. The log says the same, and the transcript goes through
+either way.
+
+Nothing here loads the model. It is the 320 MB model `sentence_repair`
+already loads at launch, and a transform that asks for the readings makes the
+app load it even with that stage off. Like `tokens`, the readings are of the
+text that stage was handed, so a transform after `sentence_repair` sees only
+the boundaries it left.
 `disfluency.py` reads it: the cut filter scores each cut the parse's
 `reparandum` arcs propose from these vectors and the `abandoned` and `cue`
 tags.

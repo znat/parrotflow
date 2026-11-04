@@ -276,6 +276,9 @@ enum EvalCommand {
             if transform.parse != nil, #available(macOS 14, *) {
                 _ = try? await SyrinxParser.shared.prepare()
             }
+            if transform.readings, #available(macOS 14, *) {
+                try? await SentenceReadings.shared.prepare()
+            }
             output = await pipeline.run(text, config: config, seed: seed)
             done.signal()
         }
