@@ -60,7 +60,11 @@ enum ParserCommand {
         var footprint: [String: Double] = [:]
         if withMask {
             let loaded = Blocking.run { () async -> String? in
-                do { _ = try await SlotModel.shared.prepare(); return nil } catch { return error.localizedDescription }
+                // One prediction, so the mask's weights are resident before the footprint is read.
+                do {
+                    _ = try await SlotProbe.load().at(left: "we can try", right: " tomorrow")
+                    return nil
+                } catch { return error.localizedDescription }
             }
             if let loaded {
                 print("✗ slot model unavailable: \(loaded)")

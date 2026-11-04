@@ -791,8 +791,8 @@ words. Each item prints one JSON line: the word records with full-precision
 tags, the ids of each window, and `ms`, `parse_ms` and `ner_ms`; or
 `{"id", "abstain"}`. A summary line ends it: load seconds, first, median and
 slowest item, the memory footprint after each load and at the end, and the
-peak. `--with-mask` loads the slot model's `mask` first, to measure all three
-functions loaded together.
+peak. `--with-mask` loads the slot model's `mask` and runs one prediction on
+it first, to measure all three functions resident together.
 
 `--encode` prints the parser tokenizer's ids for the whole string.
 `scripts/check-parser-tokenizer.sh` compares them with HuggingFace's, and
