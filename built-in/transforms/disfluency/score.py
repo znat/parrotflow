@@ -59,21 +59,26 @@ _spec = importlib.util.spec_from_file_location("disfluency", TRANSFORM)
 disfluency = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(disfluency)
 
-def collapsed(text, parse=None):
+def language(case):
+    return case.get("lang") or case.get("language") or "en"
+
+
+def collapsed(text, lang="en", parse=None):
     """The transform's own entry point, and the passes it named itself into.
 
     `applied` is how a case can be checked for the right reason rather than
     only the right answer — a cut made by the wrong pass still prints the
     string you wanted.
     """
-    out, applied, _ = disfluency.clean(text, "en", parse)
+    out, applied, _ = disfluency.clean(text, lang, parse)
     return out, applied
 
 
 def record(binary):
     """The parse of every case, as the envelope carries it."""
-    inputs = sorted({c["input"] for c in yaml.safe_load(CASES.read_text())["cases"]})
-    items = [{"id": str(i), "language": "en", "text": t} for i, t in enumerate(inputs)]
+    langs = {c["input"]: language(c) for c in yaml.safe_load(CASES.read_text())["cases"]}
+    inputs = sorted(langs)
+    items = [{"id": str(i), "language": langs[t], "text": t} for i, t in enumerate(inputs)]
     # A scratch config: the binary loads one, and prunes its transforms/built-in.
     with tempfile.NamedTemporaryFile("w", suffix=".json") as batch, \
             tempfile.TemporaryDirectory() as config:
@@ -116,7 +121,7 @@ def score(verbose):
             unparsed["keep" if "expect" not in case else "change"] += 1
             print(f"  ✗ {case['input']}\n      (no parse recorded — run --record)")
             continue
-        got, applied = collapsed(case["input"], parses.get(case["input"]))
+        got, applied = collapsed(case["input"], language(case), parses.get(case["input"]))
         # No `expect` means "comes back exactly as it went in" — the --eval
         # contract, in docs/cli.md.
         keep = "expect" not in case
@@ -210,8 +215,9 @@ def main():
     if args.record:
         record(args.record)
     elif args.text:
+        parse = json.loads(PARSES.read_text()).get(args.text)
         out, applied, declined = disfluency.clean(
-            args.text, "en", json.loads(PARSES.read_text()).get(args.text))
+            args.text, (parse or {}).get("language", "en"), parse)
         print(out)
         if applied:
             print("  " + ", ".join(dict.fromkeys(applied)), file=sys.stderr)

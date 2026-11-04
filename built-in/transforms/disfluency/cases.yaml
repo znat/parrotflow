@@ -142,6 +142,7 @@ cases:
     input: "and by the way, pirate James spells G G A M E Z"
   - probe: meant
     input: "Le x.y, x.y pour slack et pour le terminal."
+    lang: fr
   - probe: meant
     input: "Hey, yeah, yeah. Apparently, fifty should be in digits"
   - probe: meant
@@ -152,10 +153,13 @@ cases:
     input: "it was a very very long afternoon"
   - probe: meant
     input: "vous vous êtes trompé de fichier"
+    lang: fr
   - probe: meant
     input: "nous nous sommes vus hier"
+    lang: fr
   - probe: meant
     input: "c'est très très bien fait"
+    lang: fr
   - probe: meant
     input: "I went over it again and again and again"
   - probe: meant
@@ -181,13 +185,16 @@ cases:
   # lowercase because of this one.
   - probe: meant
     input: "Pas d'article avant, pas de A avec accent avant, pas de sur"
+    lang: fr
   # Single letters that are real words — each loses a subject/verb/article.
   - probe: meant
     input: "I imagine we can try it tomorrow"
   - probe: meant
     input: "il a acheté le fichier hier"
+    lang: fr
   - probe: meant
     input: "je crois qu'il y a un souci"
+    lang: fr
   - probe: meant
     input: "we need a answer before Friday"
   # A dictated list label, not a false start.
@@ -263,6 +270,7 @@ cases:
   # A hyphen is not a clitic: "peut" is a modal and "an" is a determiner.
   - probe: meant
     input: "ça n'est pas disponible il peut peut-être simplement envoyer un message"
+    lang: fr
   - probe: meant
     input: "it's an anti-bounds system for decreasing traffic"
   # A term of yours that no list of function words holds. See NEVER_START.
