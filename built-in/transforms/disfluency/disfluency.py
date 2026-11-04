@@ -438,21 +438,24 @@ def fold(text):
 def placed(said, out, parse):
     """The parse's words that survive the string rules, placed in `out`.
 
-    The parse is of `said`, the text this stage was handed. `out` is `said`
-    with spans cut, and every rule cuts the earlier copy, so `out` is matched
-    into `said` from the right: "foods like like Chi" keeps the second "like",
-    and its parse. A word survives when every letter of it is matched. Found by
-    its spelling, not by `at`: `at` counts Characters, and Python counts code
-    points. None when `out` is not `said` with spans cut.
+    The parse is of `said`, the text this stage was handed. Every rule cuts
+    whole tokens, the earlier copy, so the tokens of `out` are matched into
+    those of `said` from the right: "foods like like Chi" keeps the second
+    "like", and its parse. Tokens, not letters: matched letter by letter, the
+    "e" of "like e every" was taken for the cut fragment. A parse word survives
+    when every letter of it is in a matched token, so punctuation never does;
+    the rule does not read it. Found by its spelling, not
+    by `at`: `at` counts Characters, and Python counts code points. None when
+    `out` is not `said` with tokens cut.
     """
-    folded, to_out = fold(said), [None] * len(said)
-    i = len(said) - 1
-    for j, c in reversed(list(enumerate(fold(out)))):
-        while i >= 0 and folded[i] != c:
+    heard, to_out = list(WORD.finditer(said)), [None] * len(said)
+    i = len(heard) - 1
+    for token in reversed(list(WORD.finditer(out))):
+        while i >= 0 and fold(heard[i].group()) != fold(token.group()):
             i -= 1
         if i < 0:
             return None
-        to_out[i] = j
+        to_out[heard[i].start():heard[i].end()] = range(token.start(), token.end())
         i -= 1
     words, cursor = [], 0
     for i, word in enumerate(parse["words"], 1):

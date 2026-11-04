@@ -123,6 +123,7 @@ cases:
   - probe: phrase
     input: "I mean I mean I want want this."
     expect: "I want this."
+    misses: the parse reads "want" as the object of the surviving "mean"
   - probe: phrase
     input: "I think I think we should try it."
     expect: "I think we should try it."
@@ -279,6 +280,7 @@ cases:
   - probe: marker
     input: "So use like you know five maximum eight lines."
     expect: "So use five maximum eight lines."
+    misses: the parse tags "like" a subordinator, so only "you know" goes
   - probe: marker
     input: "And you know, the comments should be just enough."
     expect: "And the comments should be just enough."
@@ -293,6 +295,16 @@ cases:
   - probe: marker
     input: "You know what I mean? It's about when everything goes right. I mean you should try."
     expect: "You know what I mean? It's about when everything goes right. You should try."
+    misses: the parse reads "you should try" as the object of "mean"
+
+  # A marker right before a cut the string rules made. Matched letter by letter
+  # into the parse, the word before the cut was lost and the marker kept.
+  - probe: marker
+    input: "So like the the parser is fine."
+    expect: "So the parser is fine."
+  - probe: marker
+    input: "Then like e everyone was there."
+    expect: "Then everyone was there."
 
   # --- meant: the marker is doing work --------------------------------------
   - probe: meant
