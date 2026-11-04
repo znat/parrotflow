@@ -166,7 +166,7 @@ def corpus():
 
     The case set says it is right on the cases someone thought of. This says
     what it does to 281 real dictations, which is the only place an unguarded
-    rule shows itself.
+    rule shows itself. The trace holds no parse, so the filler rule is skipped.
     """
     if not TRACE.exists():
         sys.exit(f"no trace at {TRACE}")
@@ -205,10 +205,13 @@ def main():
     if args.record:
         record(args.record)
     elif args.text:
-        out, applied = collapsed(args.text)
+        out, applied, declined = disfluency.clean(
+            args.text, "en", json.loads(PARSES.read_text()).get(args.text))
         print(out)
         if applied:
             print("  " + ", ".join(dict.fromkeys(applied)), file=sys.stderr)
+        if declined:
+            print("  " + declined, file=sys.stderr)
     elif args.corpus:
         corpus()
     else:
