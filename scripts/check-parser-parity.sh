@@ -56,6 +56,8 @@ for case in want:
     else:
         if row.get("language") != case["language"]:
             problems.append(f"language want {case['language']} got {row.get('language')}")
+        if row.get("tag_names") != case["tag_names"]:
+            problems.append(f"tag_names want {case['tag_names']} got {row.get('tag_names')}")
         for key in ("ids", "ner_ids"):
             if [w[key] for w in row.get("windows", [])] != [w[key] for w in case["windows"]]:
                 problems.append(f"{key} differ")
@@ -66,7 +68,8 @@ for case in want:
             for key in EXACT:
                 if a[key] != b.get(key):
                     problems.append(f"word {k + 1} {key} want {a[key]!r} got {b.get(key)!r}")
-            gap = max((abs(x - y) for x, y in zip(a["tags"], b.get("tags", [9] * 4))), default=9)
+            mine = b.get("tags", [])
+            gap = max((abs(x - y) for x, y in zip(a["tags"], mine)), default=9) if len(mine) == len(a["tags"]) else 9
             if gap > 1e-4:
                 problems.append(f"word {k + 1} tags differ by {gap:.2g}")
     passed += not problems

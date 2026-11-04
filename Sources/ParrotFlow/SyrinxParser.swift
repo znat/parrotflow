@@ -146,7 +146,12 @@ actor SyrinxParser {
     private var failure: String?
     private static let backoff: TimeInterval = 300
 
-    func warm() {
+    /// Whether the setup row is the parser's to report: true when no
+    /// vocabulary step loads the mask from the same package.
+    private var ownsRow = false
+
+    func warm(ownsRow: Bool = false) {
+        self.ownsRow = ownsRow
         guard loaded == nil, loading == nil else { return }
         if let retryAfter, Date() < retryAfter { return }
         let task = start(progress: nil)
@@ -162,9 +167,9 @@ actor SyrinxParser {
     }
 
     /// For the setup screen's repair button.
-    func retryNow() {
+    func retryNow(ownsRow: Bool = false) {
         retryAfter = nil
-        warm()
+        warm(ownsRow: ownsRow)
     }
 
     struct Ready {
@@ -209,7 +214,8 @@ actor SyrinxParser {
 
     private func start(progress: (@Sendable (String) -> Void)?) -> Task<Parser, Error> {
         if let loading { return loading }
-        let task = Task<Parser, Error> { try await Self.build(progress: progress) }
+        let owns = ownsRow
+        let task = Task<Parser, Error> { try await Self.build(progress: progress, ownsRow: owns) }
         loading = task
         Task { await settle(task) }
         return task
@@ -243,11 +249,11 @@ actor SyrinxParser {
         }
     }
 
-    /// The setup row is the package's. The parser writes to it only for a
-    /// fetch it started itself.
-    private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
+    /// The setup row is the package's. The parser writes to it for a fetch it
+    /// started itself, or when no mask load will.
+    private static func build(progress: (@Sendable (String) -> Void)?, ownsRow: Bool) async throws -> Parser {
         let weights = try Parser.Weights(contentsOf: Parser.headsURL)
-        let fetched = try await SlotModel.onDisk(progress: progress)
+        let reports = try await SlotModel.onDisk(progress: progress) || ownsRow
         let parser: Parser
         do {
             parser = try Parser(
@@ -256,7 +262,7 @@ actor SyrinxParser {
                 weights: weights
             )
         } catch {
-            if fetched {
+            if reports {
                 ModelDownloads.report(
                     SlotModel.download.id,
                     .failed(ModelDownloads.failure(error, needs: SlotModel.download.peakLabel))
@@ -264,7 +270,7 @@ actor SyrinxParser {
             }
             throw error
         }
-        if fetched { ModelDownloads.report(SlotModel.download.id, .installed) }
+        if reports { ModelDownloads.report(SlotModel.download.id, .installed) }
         // The first prediction after a load took 167 to 223 ms against 10 to 16 ms warm.
         _ = try? ParseField.of("I mean it.", language: "en", parser: parser)
         return parser

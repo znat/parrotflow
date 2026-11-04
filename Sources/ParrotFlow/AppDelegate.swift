@@ -719,7 +719,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyConfig()
         // A reload that adds `parse: true`. At launch `warmModels` does it, after speech.
         if announceErrors, config.readsParse, #available(macOS 14, *) {
-            Task.detached(priority: .background) { await SyrinxParser.shared.warm() }
+            let ownsRow = !config.readsSlots
+                Task.detached(priority: .background) { await SyrinxParser.shared.warm(ownsRow: ownsRow) }
         }
         // After the load, not with the other watchers: a transform can be
         // renamed, removed or pointed at a different file, so which files are
@@ -2499,7 +2500,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // in memory.
             if config.readsSlots { await transcriber.warmSlotModel() }
             if #available(macOS 14, *), config.readsParse {
-                Task.detached(priority: .background) { await SyrinxParser.shared.warm() }
+                let ownsRow = !config.readsSlots
+                Task.detached(priority: .background) { await SyrinxParser.shared.warm(ownsRow: ownsRow) }
             }
             // The boundary readings. 320 MB and a 1.3s load, and a dictation
             // never waits for either: without this the first few dictations of
@@ -2569,7 +2571,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { await SentenceReadings.shared.retryNow() }
         }
         if #available(macOS 14, *), config.readsParse {
-            Task { await SyrinxParser.shared.retryNow() }
+            let ownsRow = !config.readsSlots
+            Task { await SyrinxParser.shared.retryNow(ownsRow: ownsRow) }
         }
         warmModels()
     }

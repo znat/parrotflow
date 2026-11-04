@@ -132,7 +132,9 @@ enum ParserCommand {
                     FileHandle.standardError.write(Data("  \(label)\n".utf8))
                 }
                 let seconds = Date().timeIntervalSince(started)
-                if !quiet { print(String(format: "parser ready in %.2f s", seconds)) }
+                if !quiet {
+                    FileHandle.standardError.write(Data(String(format: "parser ready in %.2f s\n", seconds).utf8))
+                }
                 return (parser, seconds)
             } catch {
                 print("✗ parser unavailable: \(error.localizedDescription)")
