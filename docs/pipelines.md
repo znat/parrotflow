@@ -772,7 +772,8 @@ Its envelope then carries a `parse` field: per word the tree, the part of
 speech, the features, the named entity and four tag probabilities. The fields
 are in [authoring.md](authoring.md#the-parse). `parse: vectors` sends the same
 parse, plus the parser's hidden state per word
-([the word vectors](authoring.md#the-word-vectors)). The stage waits at most 2
+([the word vectors](authoring.md#the-word-vectors)); `disfluency` then also
+runs the tree cutter after its rules. The stage waits at most 2
 seconds for the parser and runs without it after that. On any other body the
 key is refused, and so is a value that is not a boolean or `vectors`;
 `--check-config` names the transform. With no transform asking, the parser is

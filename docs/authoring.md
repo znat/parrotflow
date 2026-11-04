@@ -401,6 +401,9 @@ on top of the parse.
   it, as its `head` does.
 
 It adds about 1 KB per word to the envelope. Ask for it only if you read it.
+`disfluency.py` reads it: the cut filter scores each cut the parse's
+`reparandum` arcs propose from these vectors and the `abandoned` and `cue`
+tags.
 
 ## Recipe: a language
 
@@ -484,7 +487,7 @@ to a built-in stage or to the router have nowhere else to be and stay in
 
 | Where | Sets |
 |---|---|
-| `built-in/transforms/<name>/` | `dates` (133, two languages), `numbers` (99, two languages), `grammar` (17), `email` (26), `join`, `priorities`, `disfluency` (100) |
+| `built-in/transforms/<name>/` | `dates` (133, two languages), `numbers` (99, two languages), `grammar` (17), `email` (26), `join`, `priorities`, `disfluency` (107) |
 | `tests/` | `spelling` (62), `french` (45), `routing` (45), `wake` (25), `split` (14), `generic`, `dates`, `inplace`, `pipeline`, `replacement`, `word-gate` (25) |
 
 Each has a runner in `scripts/`, or a `score.py` beside the set as `dates`

@@ -305,7 +305,9 @@ unwired](docs/pipelines.md#what-ships-unwired).
   taken out: a word said twice, *"the the prompt"* → *"the prompt"*; a phrase
   begun again, *"in the ter in the terminal"*; and a marker that carries
   nothing, *"so use like you know five"* → *"so use five"*. Only that last one
-  wants a parse; the rest are string work.
+  wants a parse; the rest are string work. With `parse: vectors`, a cut the
+  parse proposes and a small classifier confirms runs after them: *"the red
+  one, no, the blue one"* → *"the blue one"*.
 - [dates](built-in/transforms/dates) — a dictated date or time in the shape it
   was said, *"at ten fifteen"* → *"at 10:15"*. One script per language, above
   the numbers step; English is in the pipeline and French is two lines of

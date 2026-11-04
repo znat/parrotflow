@@ -337,3 +337,21 @@ cases:
   - probe: marker
     input: "I mean, what I mean is this."
     expect: "What I mean is this."
+
+  # --- tree: a cut the parse proposes and the cut filter keeps ---------------
+  # Needs `parse: vectors`. A doubled "I" inside a restart: the "spelled aloud"
+  # guard keeps "I I", so no string rule reaches it.
+  - probe: tree
+    input: "I wa I I want to see the map."
+    expect: "I want to see the map."
+  - probe: tree
+    input: "We need the red one, no, the blue one."
+    expect: "We need the blue one."
+  # The same sentence said twice. The parse draws arcs from the first sentence
+  # to the second, and `groups` merges the fragment's arc with them, so the
+  # filter drops that group and keeps only "I I".
+  - probe: tree
+    input: "I want to see it. I wa I I want to see it."
+    expect: "I want to see it. I want to see it."
+    misses: arc grouping merges the fragment with arcs from the first sentence
+    got: "I want to see it. Wa I want to see it."
