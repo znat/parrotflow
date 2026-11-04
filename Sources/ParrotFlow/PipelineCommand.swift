@@ -179,6 +179,7 @@ enum PipelineCommand {
         // the app and wrong here, where a skipped gate and a gate that decided
         // nothing print the same sentence.
         if warm, #available(macOS 14, *) {
+            let readsParse = config.readsParse
             let failures = Blocking.run { () async -> [String] in
                 var found: [String] = []
                 // Only what the pipeline's own steps will read. A fixture that
@@ -192,6 +193,11 @@ enum PipelineCommand {
                 if config.readsSlots {
                     do { _ = try await SlotModel.shared.prepare() } catch {
                         found.append("slot model — \(error.localizedDescription)")
+                    }
+                }
+                if readsParse {
+                    do { _ = try await SyrinxParser.shared.prepare() } catch {
+                        found.append("parser — \(error.localizedDescription)")
                     }
                 }
                 // Only for a pipeline that holds the step. It is 320 MB, and a

@@ -1422,10 +1422,21 @@ struct Pipeline: Equatable, Codable {
             // for every way it can go wrong, and nil means keep the
             // transcript. Logged either way: a stage you wrote yourself is
             // exactly the one whose before and after you want on the record.
+            var parse: ParseField?
+            if transform.asksForParse, transform.returnsJSON, #available(macOS 14, *) {
+                let language: String
+                if case .string(let value)? = scope["language"] {
+                    language = value
+                } else {
+                    language = Pipeline.language(of: text, config: config)
+                }
+                parse = await SyrinxParser.field(for: text, language: language, stage: name)
+            }
             let outcome = CommandRunner.run(
                 command, on: text, in: transform.folder, seconds: transform.timeout,
                 structured: transform.returnsJSON,
-                context: transform.returnsJSON ? CommandRunner.Context(scope: scope) : nil
+                context: transform.returnsJSON ? CommandRunner.Context(scope: scope) : nil,
+                parse: parse
             )
             guard let result = outcome else {
                 return StageResult(text: text, vars: ["ok": .bool(false)])
