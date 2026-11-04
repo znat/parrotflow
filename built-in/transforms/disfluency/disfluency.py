@@ -22,8 +22,15 @@ verb with a real object half the time — "we'll let you know" must survive. It
 reads the syrinx parse the app puts in the envelope (`parse: true`), and is
 skipped, and says so, when the envelope has none.
 
+With `parse: vectors`, the tree cutter runs after the rules. It reads the
+parse's reparandum arcs as proposed cuts, and the cut filter V keeps one when
+P(real) >= 0.75 and no rule already cut one of its words. Without vectors it is
+skipped.
+
 `returns: json` publishes `disfluency.applied`, the passes that fired, and
-`disfluency.edits`, how many cuts they made.
+`disfluency.edits`, how many cuts they made. With the tree cutter,
+`disfluency.tree_cuts` and `disfluency.tree_dropped`: proposals applied, and
+dropped by V.
 
 Hesitation sounds are NOT here. They have to run before the `numbers`
 transforms — a filler inside a number splits it, "two uh two three" gives
@@ -42,9 +49,12 @@ No `when:`. A condition has to be a superset of everything the stage can act
 on, and these five rules share no shape. An earlier backreference condition
 silently stopped matching once the pass learned fragments.
 """
+import base64
 import json
+import math
 import os
 import re
+import struct
 import sys
 from collections import namedtuple
 
@@ -582,10 +592,9 @@ def resolve(text, markers, words):
     """Every marker judged against what was said, then cut a sentence at a time.
 
     Judged first because a cut changes the sentence the next marker is judged
-    in. Sentences replaced from the right because a cut moves every offset
-    after it.
+    in.
     """
-    per_sentence = {}
+    spans = []
     for phrase, verb in markers.items():
         for m in marker_pattern(phrase).finditer(text):
             sentence, a, b, offset = sentence_of(text, m.start(), m.end())
@@ -597,21 +606,377 @@ def resolve(text, markers, words):
                 token = anchored(tree, verb, a, b)
                 name = phrase
             if wants_cut(tree, name, token, a, b):
-                slot = per_sentence.setdefault(offset, [sentence, []])
-                slot[1].append((a, b, phrase))
+                spans.append((m.start(), m.end(), phrase))
+    return cut_spans(text, spans)
+
+
+def cut_spans(text, spans):
+    """Delete `(start, end, name)` spans of `text` with `cut`, a sentence at a
+    time. Returns the text and the names, sentences from the right.
+
+    Sentences replaced from the right because a cut moves every offset after
+    it. A span across a stop gives a slice that overlaps the next sentence's,
+    so overlapping slices become one.
+    """
+    slices = []
+    for start, end, name in spans:
+        sentence, _, _, lo = sentence_of(text, start, end)
+        slices.append([lo, lo + len(sentence), [(start, end, name)]])
+    merged = []
+    for lo, hi, held in sorted(slices):
+        if merged and lo < merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], hi)
+            merged[-1][2].extend(held)
+        else:
+            merged.append([lo, hi, held])
 
     applied = []
-    for offset in sorted(per_sentence, reverse=True):
-        sentence, spans = per_sentence[offset]
-        text = text[:offset] + cut(sentence, [(a, b) for a, b, _ in spans]) \
-            + text[offset + len(sentence):]
-        applied.extend(p for _, _, p in sorted(spans))
+    for lo, hi, held in reversed(merged):
+        text = text[:lo] + cut(text[lo:hi], [(a - lo, b - lo) for a, b, _ in held]) + text[hi:]
+        applied.extend(name for _, _, name in sorted(held))
     return text, applied
 
 
-def clean(text, language="en", parse=None):
+# ----------------------------------------------------------------- tree cutter
+
+# Ported from training/syntax-parser, names and logic kept so the two diff by
+# eye: syrinx_retrain/tags.py, audio_cue/candidates.py, audio_cue/cues.py,
+# cut_check/candidates.py, cut_check/clf.py, cut_check/vec.py,
+# cv_first_pass/heads.py, cv_first_pass/labels.py, weight_edit/evaluate.py.
+
+OTHER, ABANDONED, CUE, REPAIR = range(4)
+AFTER_CUES = {'no', 'sorry', 'non', 'pardon', 'perdón', 'perdon'}
+
+CUE_MARKERS = [m.split() for m in ("i mean", "i meant", "no", "sorry", "or rather", "wait", "actually",
+                                   "scratch that", "strike that")]
+
+NEXT = 4
+DIM = 384
+THRESHOLD = 0.75
+FILTER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cut-filter.json")
+
+# `tokens`: the parse words with a letter or digit, which must all survive the
+# rules. `held`: every parse word inside `words`, punctuation too, so "bor-"
+# goes whole.
+Proposal = namedtuple("Proposal", ("words", "tokens", "held", "score"))
+
+
+def subtree(node, heads):
+    found = {node}
+    while True:
+        extra = {i for i, h in enumerate(heads, 1) if h in found} - found
+        if not extra:
+            return found
+        found |= extra
+
+
+def is_filler(label, upos):
+    return label == 'discourse' or upos == 'INTJ'
+
+
+def gap_cues(gap, heads, labels, upos):
+    """Filler words in the gap, plus the gap's non-punctuation words whose head chain reaches one
+    without leaving the gap ("I" of "I mean", "de le" of "du coup")."""
+    fillers = {j for j in gap if is_filler(labels[j - 1], upos[j - 1])}
+    found = set(fillers)
+    for j in gap:
+        if j in fillers or upos[j - 1] == 'PUNCT':
+            continue
+        k = heads[j - 1]
+        while k in gap and k not in fillers:
+            k = heads[k - 1]
+        if k in fillers:
+            found.add(j)
+    return found
+
+
+def derive_tags(words, heads, labels, upos):
+    """One tag index per word. Precedence: abandoned > cue > repair > other."""
+    n = len(words)
+    abandoned, cue, repair = set(), set(), set()
+    for dep, (head, label) in enumerate(zip(heads, labels), 1):
+        if label != 'reparandum' or head == 0:
+            continue
+        span = subtree(dep, heads)
+        abandoned |= span
+        repair.add(head)
+        if head <= max(span):
+            continue
+        cue |= gap_cues(range(max(span) + 1, head), heads, labels, upos)
+        k = head + 1
+        while k <= n and upos[k - 1] == 'PUNCT':
+            k += 1
+        if (k <= n and is_filler(labels[k - 1], upos[k - 1]) and words[k - 1].casefold() in AFTER_CUES
+                and k in subtree(head, heads)):
+            cue.add(k)
+    tags = [OTHER] * n
+    for i in range(1, n + 1):
+        if i in abandoned:
+            tags[i - 1] = ABANDONED
+        elif i in cue:
+            tags[i - 1] = CUE
+        elif i in repair:
+            tags[i - 1] = REPAIR
+    return tags
+
+
+def cut_ids(tags, upos):
+    """Word ids (1-based, punctuation excluded) the app would delete: abandoned and cue words."""
+    return {i for i, (t, u) in enumerate(zip(tags, upos), 1) if t in (ABANDONED, CUE) and u != 'PUNCT'}
+
+
+def groups(p):
+    """[(token ids 1-based that are cut, repair heads)] per reparandum arc, chains and overlaps merged."""
+    heads, labels, upos, ws = p['heads'], p['labels'], p['upos'], p['words']
+    n = len(ws)
+    cutset = cut_ids(derive_tags(ws, heads, labels, upos), upos)
+    arcs = []
+    for dep, (head, label) in enumerate(zip(heads, labels), 1):
+        if label != 'reparandum' or head == 0:
+            continue
+        span = subtree(dep, heads)
+        cues = set()
+        if head > max(span):
+            cues |= gap_cues(range(max(span) + 1, head), heads, labels, upos)
+            k = head + 1
+            while k <= n and upos[k - 1] == 'PUNCT':
+                k += 1
+            if (k <= n and is_filler(labels[k - 1], upos[k - 1]) and ws[k - 1].casefold() in AFTER_CUES
+                    and k in subtree(head, heads)):
+                cues.add(k)
+        toks = (span | cues) & cutset
+        if toks:
+            arcs.append([toks, {head}])
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(arcs)):
+            for j in range(i + 1, len(arcs)):
+                a, b = arcs[i], arcs[j]
+                if a[0] & b[0] or a[1] & b[0] or b[1] & a[0] or a[1] & b[1]:
+                    arcs[i] = [a[0] | b[0], a[1] | b[1]]
+                    del arcs[j]
+                    merged = True
+                    break
+            if merged:
+                break
+    return arcs, cutset
+
+
+def norm(word):
+    return re.sub(r"[^\w']", '', word.casefold().replace('’', "'")).strip("'")
+
+
+def words(text):
+    """Whitespace words of a text with their character spans."""
+    return [(m.group(), m.start(), m.end()) for m in re.finditer(r'\S+', text)]
+
+
+def token_words(clip_parse):
+    """For each parser token, the index of the whitespace word holding it, or None for punctuation."""
+    text = clip_parse['text']
+    out = []
+    bounds = [(m.start(), m.end()) for m in re.finditer(r'\S+', text)]
+    for (s, _), w in zip(clip_parse['spans'], clip_parse['words']):
+        if not any(c.isalnum() for c in w):
+            out.append(None)
+            continue
+        out.append(next(k for k, (a, b) in enumerate(bounds) if a <= s < b))
+    return out
+
+
+def text_cue(fn, cw, b):
+    after = [fn[i] for i in range(b, min(len(fn), b + 2)) if i not in cw]
+    seq = [fn[i] for i in cw] + ['|'] + after
+    return int(any(seq[k:k + len(m)] == m for m in CUE_MARKERS for k in range(len(seq))))
+
+
+def of_clip(p, text):
+    """[candidate without a verdict] for one parsed text."""
+    tw = p['tw']
+    fn = [norm(w) for w, _, _ in words(text)]
+    out = []
+    for toks, _ in groups(p)[0]:
+        cw = sorted({tw[t - 1] for t in toks if tw[t - 1] is not None})
+        if not cw:
+            continue
+        b = cw[-1] + 1
+        out.append(dict(a=cw[0], b=b, words=cw, contiguous=cw == list(range(cw[0], b)),
+                        p_abandoned=[p['abandoned'][t - 1] for t in sorted(toks)], p_cue=[p['cue'][t - 1] for t in sorted(toks)],
+                        text_cue=text_cue(fn, set(cw), b), at_end=b >= len(fn)))
+    return out
+
+
+def text_features(c):
+    pa, pc = c['p_abandoned'], c['p_cue']
+    return [max(pa), sum(pa) / len(pa), max(pc), math.log(len(c['words'])), float(c['text_cue']), float(c['contiguous']),
+            float(c['at_end'])]
+
+
+def word_vectors(vectors, tw, n):
+    w, cnt = [[0.0] * DIM for _ in range(n)], [0] * n
+    for t, i in enumerate(tw):
+        if i is not None:
+            w[i] = [x + y for x, y in zip(w[i], vectors[t])]
+            cnt[i] += 1
+    return w, cnt
+
+
+def half(x):
+    return struct.unpack('<e', struct.pack('<e', x))[0]
+
+
+def of_cand(w, cnt, a, b):
+    k = min(NEXT, b - a)
+
+    def mean(idx):
+        idx = [i for i in idx if i < len(cnt) and cnt[i] > 0]
+        if not idx:
+            return [0.0] * DIM
+        total = sum(cnt[i] for i in idx)
+        return [half(sum(w[i][d] for i in idx) / total) for d in range(DIM)]
+    return mean(range(a, b)) + mean(range(b, b + k)) + mean([a - 1] if a > 0 else [])
+
+
+_filter = None
+
+
+def cut_filter(row):
+    """V: P(real) = sigmoid(((x - mu) / sd) . w + b)."""
+    global _filter
+    if _filter is None:
+        with open(FILTER) as f:
+            _filter = json.load(f)
+    m = _filter
+    z = sum((x - mu) / sd * w for x, mu, sd, w in zip(row, m['mu'], m['sd'], m['w'])) + m['b']
+    return 1 / (1 + math.exp(-z))
+
+
+def clip_parse(said, parse):
+    """The envelope's parse in the shape the training code reads, or None
+    when a word is not in `said`. Offsets by spelling, as `placed` finds them."""
+    names = parse["tag_names"]
+    at_abandoned, at_cue = names.index("abandoned"), names.index("cue")
+    p = dict(text=said, words=[], spans=[], heads=[], labels=[], upos=[], abandoned=[], cue=[])
+    cursor = 0
+    for word in parse["words"]:
+        start = said.find(word["text"], cursor)
+        if start < 0:
+            return None
+        cursor = start + len(word["text"])
+        p['words'].append(word["text"])
+        p['spans'].append((start, cursor))
+        p['heads'].append(word["head"])
+        p['labels'].append(word["deprel"])
+        p['upos'].append(word["upos"])
+        p['abandoned'].append(word["tags"][at_abandoned])
+        p['cue'].append(word["tags"][at_cue])
+    p['tw'] = token_words(p)
+    return p
+
+
+def proposals(said, parse):
+    """Every tree cut of `said`, scored by V. Needs `parse: vectors`."""
+    p = clip_parse(said, parse)
+    if p is None:
+        raise ValueError("the parse is of another text")
+    vectors = [struct.unpack('<%de' % DIM, base64.b64decode(word["vector"])) for word in parse["words"]]
+    bounds = words(said)
+    w, cnt = word_vectors(vectors, p['tw'], len(bounds))
+    ww = [next(k for k, (_, a, b) in enumerate(bounds) if a <= s < b) for s, _ in p['spans']]
+    out = []
+    for c in of_clip(p, said):
+        row = text_features(c) + of_cand(w, cnt, c['a'], c['b'])
+        cw = set(c['words'])
+        tokens = [t for t, i in enumerate(p['tw'], 1) if i in cw]
+        held = [t for t, k in enumerate(ww, 1) if k in cw]
+        out.append(Proposal(c['words'], tokens, held, cut_filter(row)))
+    return out
+
+
+# The rules keep a doubled letter as a spelling, "it takes A A batteries", and
+# so does the tree cutter. "I" is the one capital letter said as a word: "I I"
+# is a stutter, and the parse reads it. Vetoing every guard instead cost 6
+# fixes on AMI dev and saved no false cut.
+SPELLING = ("spelled aloud", "a letter among letters")
+
+
+def guarded(said, cw):
+    """Whether the whitespace words `cw` of `said` are the first copy of a
+    spelling the rules keep."""
+    bounds = words(said)
+    found = list(WORD.finditer(said))
+    held = [k for k, m in enumerate(found)
+            if any(bounds[i][1] <= m.start() < bounds[i][2] for i in cw)]
+    if not held or held != list(range(held[0], held[-1] + 1)):
+        return False
+    i, n = held[0], len(held)
+    tokens = [bare(m.group()) for m in found]
+    if tokens[i:i + n] != tokens[i + n:i + 2 * n]:
+        return False
+    return set(tokens[i:i + n]) != {"i"} and protecting(tokens, i, n, said, found) in SPELLING
+
+
+def tree_cut(said, out, parse):
+    """Apply each proposal V keeps whose words all survived the rules and that
+    is not a spelling. Returns the text, how many were applied, how many V
+    dropped."""
+    found = proposals(said, parse)
+    survivors = placed(said, out, parse)
+    if survivors is None:
+        raise ValueError("the parse is of another text")
+    alive = {w.i for w in survivors}
+    spoken = {w.i for w in survivors if any(c.isalnum() for c in w.text)}
+    gone, spans, applied, dropped = set(), [], 0, 0
+    for proposal in found:
+        if proposal.score < THRESHOLD:
+            dropped += 1
+            continue
+        tokens = set(proposal.held)
+        if not set(proposal.tokens) <= alive or tokens & gone or spoken <= gone | tokens:
+            continue
+        if guarded(said, proposal.words):
+            continue
+        gone |= tokens
+        applied += 1
+        run = None
+        for w in survivors:
+            if w.i not in tokens:
+                run = None
+            elif run is not None and not out[run[1]:w.start].strip():
+                run[1] = w.end
+            else:
+                run = [w.start, w.end]
+                spans.append(run)
+    out, _ = cut_spans(out, [(a, b, "tree cut") for a, b in spans])
+    return out, applied, dropped
+
+
+def word_fillers(said, out, language, parse, applied):
+    """The filler rule. Returns the text and why it was skipped, if it was."""
+    markers = MARKERS.get(language, {})
+    # Nothing said that a parse could judge. `resolve` builds these same
+    # patterns and does nothing when none of them matches, so this cannot
+    # change the text; it only keeps `declined` empty.
+    if not any(marker_pattern(phrase).search(out) for phrase in markers):
+        return out, ""
+    if not parse:
+        return out, "word fillers: no parse"
+    try:
+        found = placed(said, out, parse)
+        if found is None:
+            return out, "word fillers: the parse is of another text"
+        out, marked = resolve(out, markers, found)
+    except Exception as error:
+        return out, "word fillers: %s" % error
+    applied.extend(marked)
+    return out, ""
+
+
+def clean(text, language="en", parse=None, tally=None):
     """Every rule, in order. Returns the text, the passes that fired, and why
-    a rule was skipped if one was.
+    a rule was skipped if one was. `tally`, a dict, gets `tree_cuts` and
+    `tree_dropped` when the tree cutter ran.
 
     One entry point because `score.py` used to call `collapse` and so never ran
     the marker rule — the case set scored 91/100 against the module's own
@@ -622,29 +987,25 @@ def clean(text, language="en", parse=None):
     applied = []
     try:
         out = collapse(text, applied)
+        # The parse rule last: by now "I mean I mean" is one marker, and a
+        # restart that hid a marker has been cleared out of the way.
+        out, declined = word_fillers(text, out, language, parse, applied)
     except Exception:
         # Fail open — never drop the whole transcript because a guard threw.
-        return text, [], ""
+        out, applied, declined = text, [], ""
 
-    # The parse rule last: by now "I mean I mean" is one marker, and a restart
-    # that hid a marker has been cleared out of the way.
-    markers = MARKERS.get(language, {})
-    # Nothing said that a parse could judge. `resolve` builds these same
-    # patterns and does nothing when none of them matches, so this cannot
-    # change the text; it only keeps `declined` empty.
-    if not any(marker_pattern(phrase).search(out) for phrase in markers):
-        return out, applied, ""
-    if not parse:
-        return out, applied, "word fillers: no parse"
+    tokens = (parse or {}).get("words")
+    if not tokens or not all("vector" in word for word in tokens):
+        return out, applied, declined
     try:
-        words = placed(text, out, parse)
-        if words is None:
-            return out, applied, "word fillers: the parse is of another text"
-        out, marked = resolve(out, markers, words)
+        out, cuts, dropped = tree_cut(text, out, parse)
     except Exception as error:
-        return out, applied, "word fillers: %s" % error
-    applied.extend(marked)
-    return out, applied, ""
+        reason = "tree cut: %s" % (str(error) or type(error).__name__)
+        return out, applied, "; ".join(filter(None, (declined, reason)))
+    applied.extend(["tree cut"] * cuts)
+    if tally is not None:
+        tally.update(tree_cuts=cuts, tree_dropped=dropped)
+    return out, applied, declined
 
 
 def main():
@@ -652,9 +1013,10 @@ def main():
     raw = sys.stdin.read()
     payload = json.loads(raw) if structured else {"text": raw}
 
+    tally = {}
     out, applied, declined = clean(
         payload["text"], (payload.get("ctx") or {}).get("language", "en"),
-        payload.get("parse"))
+        payload.get("parse"), tally)
 
     if not structured:
         sys.stdout.write(out)
@@ -666,7 +1028,7 @@ def main():
         # Deduplicated: three of the same fault name it once.
         "vars": {"applied": ", ".join(dict.fromkeys(applied)),
                  "edits": len(applied),
-                 "declined": declined},
+                 "declined": declined, **tally},
     }))
     return 0
 

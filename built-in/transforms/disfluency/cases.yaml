@@ -142,6 +142,7 @@ cases:
     input: "and by the way, pirate James spells G G A M E Z"
   - probe: meant
     input: "Le x.y, x.y pour slack et pour le terminal."
+    lang: fr
   - probe: meant
     input: "Hey, yeah, yeah. Apparently, fifty should be in digits"
   - probe: meant
@@ -152,10 +153,13 @@ cases:
     input: "it was a very very long afternoon"
   - probe: meant
     input: "vous vous êtes trompé de fichier"
+    lang: fr
   - probe: meant
     input: "nous nous sommes vus hier"
+    lang: fr
   - probe: meant
     input: "c'est très très bien fait"
+    lang: fr
   - probe: meant
     input: "I went over it again and again and again"
   - probe: meant
@@ -164,6 +168,7 @@ cases:
     input: "the code is two two three"
   - probe: meant
     input: "il en reste quatre-vingt six six"
+    lang: fr
 
   # --- fragment: a word begun, abandoned, then said in full ---
   - probe: fragment
@@ -174,6 +179,7 @@ cases:
     expect: "Of course vocabulary is important. Like teammates names Slack mentions."
   - probe: fragment
     input: "c c'est exactement ça"
+    lang: fr
     expect: "c'est exactement ça"
 
   # --- meant: the fragment rule's own traps ---
@@ -181,13 +187,16 @@ cases:
   # lowercase because of this one.
   - probe: meant
     input: "Pas d'article avant, pas de A avec accent avant, pas de sur"
+    lang: fr
   # Single letters that are real words — each loses a subject/verb/article.
   - probe: meant
     input: "I imagine we can try it tomorrow"
   - probe: meant
     input: "il a acheté le fichier hier"
+    lang: fr
   - probe: meant
     input: "je crois qu'il y a un souci"
+    lang: fr
   - probe: meant
     input: "we need a answer before Friday"
   # A dictated list label, not a false start.
@@ -263,6 +272,7 @@ cases:
   # A hyphen is not a clitic: "peut" is a modal and "an" is a determiner.
   - probe: meant
     input: "ça n'est pas disponible il peut peut-être simplement envoyer un message"
+    lang: fr
   - probe: meant
     input: "it's an anti-bounds system for decreasing traffic"
   # A term of yours that no list of function words holds. See NEVER_START.
@@ -337,3 +347,21 @@ cases:
   - probe: marker
     input: "I mean, what I mean is this."
     expect: "What I mean is this."
+
+  # --- tree: a cut the parse proposes and the cut filter keeps ---------------
+  # Needs `parse: vectors`. A doubled "I" inside a restart: the "spelled aloud"
+  # guard keeps "I I", so no string rule reaches it.
+  - probe: tree
+    input: "I wa I I want to see the map."
+    expect: "I want to see the map."
+  - probe: tree
+    input: "We need the red one, no, the blue one."
+    expect: "We need the blue one."
+  # The same sentence said twice. The parse draws arcs from the first sentence
+  # to the second, and `groups` merges the fragment's arc with them, so the
+  # filter drops that group and keeps only "I I".
+  - probe: tree
+    input: "I want to see it. I wa I I want to see it."
+    expect: "I want to see it. I want to see it."
+    misses: arc grouping merges the fragment with arcs from the first sentence
+    got: "I want to see it. Wa I want to see it."
