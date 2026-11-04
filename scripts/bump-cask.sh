@@ -81,7 +81,7 @@ cask "parrotflow" do
 
   app "ParrotFlow.app"
 
-  # So `parrotflow --setup-parsing` works. Every subcommand is reachable only
+  # So `parrotflow --check-config` works. Every subcommand is reachable only
   # by a 52-character path otherwise, and the first thing anyone types is the
   # name. The binary refuses to start the app when it is run from a terminal
   # with no arguments — see main.swift.
