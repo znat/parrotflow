@@ -322,6 +322,11 @@ transforms:
   # `parse: true` hands it the syrinx parse, about 34 ms at 60 words. Without
   # one the other four still run and `disfluency.declined` says what was lost.
   #
+  # `parse: vectors` in its place also runs the tree cutter after the rules: a
+  # cut the parse proposes, kept when the cut filter scores it 0.75 or more.
+  # It costs 3 to 6 ms of Python at 20 to 120 words, and about 1 KB per word
+  # of envelope.
+  #
   # `returns: json` is not optional. It is what sends `ctx.language` and the
   # parse in, and the language picks the markers: English has three, French
   # none yet.
