@@ -160,7 +160,7 @@ transcription:
 
 ## Truly local and extensible
 
-**ParrotFlow uses very small models**, such as mmBERT, the Qwen3 0.6B family and spaCy, to understand what you mean, use your vocabulary in context, correct hesitations and repair raw ASR output without relying on a powerful LLM to rewrite what you said.
+**ParrotFlow uses very small models**, such as mmBERT and the Qwen3 0.6B family, to understand what you mean, use your vocabulary in context, correct hesitations and repair raw ASR output without relying on a powerful LLM to rewrite what you said.
 
 
 <table>

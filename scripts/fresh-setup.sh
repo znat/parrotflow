@@ -11,11 +11,10 @@ set -eu
 cd "$(dirname "$0")/.."
 . scripts/variant.sh
 
-ESPEAK=1 PARSING=1 CONFIG=0 INSTALL=1
+ESPEAK=1 CONFIG=0 INSTALL=1
 for arg in "$@"; do
     case "$arg" in
         --keep-espeak) ESPEAK=0 ;;
-        --keep-parsing) PARSING=0 ;;
         --config)      CONFIG=1 ;;
         --no-install)  INSTALL=0 ;;
         -h|--help)
@@ -23,7 +22,6 @@ for arg in "$@"; do
 usage: scripts/fresh-setup.sh [options]
 
   --keep-espeak   leave eSpeak NG installed
-  --keep-parsing  leave the spaCy venv in place
   --config        move the config directory aside too
   --no-install    stop after the reset, do not build or launch
 
@@ -37,10 +35,6 @@ done
 # set -u lets an empty HOME through, and every path below would then be under /.
 : "${HOME:?HOME must be set and non-empty}"
 SUPPORT="$HOME/Library/Application Support/$DISPLAY_NAME"
-# Not under $SUPPORT: the parsing venv has no variant suffix, because both
-# builds read the one copy. So a reset that only cleared $SUPPORT left it, and
-# the install that fetches it on first need had nothing left to do.
-PARSING_DIR="$HOME/Library/Application Support/ParrotFlow/python"
 SHARED="$HOME/Library/Application Support/FluidAudio/Models"
 G2P="$HOME/.cache/fluidaudio/Models"
 STAMP="$(date +%Y-%m-%d-%H%M%S)"
@@ -60,8 +54,6 @@ echo "  delete the speech models, which the other build reads from the same plac
 echo "      $SHARED/{parakeet-tdt-0.6b-v3,silero-vad}"
 echo "      $G2P"
 espeak_here && echo "  brew uninstall espeak-ng — this takes it from the other build too"
-[ "$PARSING" -eq 1 ] && [ -d "$PARSING_DIR" ] \
-    && echo "  delete the spaCy venv — the other build reads the same copy"
 [ "$CONFIG" -eq 1 ] && echo "  move $HOME/$CONFIG_DIR aside"
 [ "$INSTALL" -eq 1 ] && echo "  build, install and launch it again"
 echo
@@ -96,16 +88,8 @@ done
 rm -rf "$G2P"
 echo "==> Shared speech models deleted."
 
-# Deleted for the same reason. This run only fetches it again if a dictation
-# asks for a parse; `ParsingInstall.finishQuietly` rebuilds it on the first
-# marker said.
-if [ "$PARSING" -eq 1 ] && [ -d "$PARSING_DIR" ]; then
-    rm -rf "$PARSING_DIR"
-    echo "==> spaCy venv deleted."
-fi
-
 # Whatever earlier runs left behind. Nothing writes these any more.
-find "$SHARED" "$SUPPORT" "$(dirname "$G2P")" "$(dirname "$PARSING_DIR")" -maxdepth 1 \
+find "$SHARED" "$SUPPORT" "$(dirname "$G2P")" -maxdepth 1 \
     -name "*.moved-*" -exec rm -rf {} + 2>/dev/null || true
 
 if espeak_here; then

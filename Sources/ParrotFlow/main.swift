@@ -141,12 +141,6 @@ if arguments.contains("--trace-view") {
     exit(TraceViewCommand.run(arguments))
 }
 
-// Above the config, like the two around it: this reports on an install and has
-// to answer while one is half-finished.
-if arguments.contains("--setup-parsing") {
-    exit(SetupParsingCommand.run(check: arguments.contains("--check")))
-}
-
 if arguments.contains("--microphones") {
     if let at = arguments.firstIndex(of: "--set") {
         // `--set ""` clears the list, and a missing value must not do the same

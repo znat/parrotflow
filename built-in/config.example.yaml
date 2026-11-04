@@ -318,13 +318,13 @@ transforms:
   # ~0.04s for the first four rules, mostly the python3 start.
   #
   # The fifth wants a dependency parse, because "you know" is a real verb with
-  # a real object half the time — "we'll let you know" has to survive. Run
-  # `ParrotFlow --setup-parsing` and it is used; without it the other four
-  # still run and `disfluency.declined` says what was lost. No interpreter is
-  # named here: the script finds the venv itself.
+  # a real object half the time — "we'll let you know" has to survive.
+  # `parse: true` hands it the syrinx parse, about 34 ms at 60 words. Without
+  # one the other four still run and `disfluency.declined` says what was lost.
   #
-  # `returns: json` is not optional. It is what sends `ctx.language` in, and
-  # the marker rule is English-only.
+  # `returns: json` is not optional. It is what sends `ctx.language` and the
+  # parse in, and the language picks the markers: English has three, French
+  # none yet.
   - name: disfluency
     description: delete hesitations, repeats and false starts
     # Nobody asks for "disfluency" out loud. `say:` is what the keyed path
@@ -333,6 +333,7 @@ transforms:
     say: [repetitions, hesitations, false starts]
     command: built-in/disfluency/disfluency.py
     returns: json
+    parse: true
     tests: { path: built-in/disfluency/cases.yaml }
 
   # Opens the last dictation's timeline in a text editor: every step, every

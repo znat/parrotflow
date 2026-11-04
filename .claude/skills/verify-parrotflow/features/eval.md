@@ -25,15 +25,17 @@ Preconditions:
 
 - A run is open (`RUN` from `start.sh`). The scratch config is the shipped
   default, which defines `disfluency` as a `command:` transform with
-  `built-in/disfluency/cases.yaml` beside it. No model is involved.
+  `built-in/disfluency/cases.yaml` beside it and `parse: true`. The only model
+  is the syrinx parser, from the slot model's package in the scratch home.
 
 - **Score disfluency.** Run
   `.claude/skills/verify-parrotflow/scripts/pf.sh "$RUN" eval-disfluency --eval disfluency`.
   Exit `0`. Takes about 40 s. The output contains
-  `change   55/58 = 95%`, `keep     44/44 = 100%   <- must come back byte for byte`,
-  `overall  99/102 = 97%`, a `by probe` block (`marker    5/7  ←`,
-  `word      24/25  ←`), and three `✗` cases, the first
-  `So I'd like to consolidate consolidate that on something  [change, word]`.
+  `change   57/60 = 95%`, `keep     44/44 = 100%   <- must come back byte for byte`,
+  `overall  101/104 = 97%`, a `by probe` block (`marker    7/9  ←`,
+  `phrase    10/11  ←`), and three `✗` cases, the first
+  `I mean I mean I want want this.  [change, phrase]`. They are the three
+  cases `cases.yaml` names with `misses:`; `--eval` does not read that key.
 - **Proof.** Keep `.out` and `.exit`. Quote the three summary lines.
 
 ## Gotchas

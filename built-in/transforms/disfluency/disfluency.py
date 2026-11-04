@@ -6,6 +6,7 @@ rewrite on stdout.
       description: delete hesitations, repeats and false starts
       command: disfluency.py
       returns: json
+      parse: true
 
 Four rules, in this order:
 
@@ -18,7 +19,8 @@ Four rules, in this order:
 The first four are string work: no model, no network, and they run on every
 transcript. The fifth needs a dependency parse, because "you know" is a real
 verb with a real object half the time — "we'll let you know" must survive. It
-is skipped, and says so, when spaCy is not installed.
+reads the syrinx parse the app puts in the envelope (`parse: true`), and is
+skipped, and says so, when the envelope has none.
 
 `returns: json` publishes `disfluency.applied`, the passes that fired, and
 `disfluency.edits`, how many cuts they made.
@@ -400,27 +402,86 @@ def collapse_repeats(text, applied):
 
 # ---------------------------------------------------------------- word fillers
 
-# A clause marker and the verb the test is run on.
-CLAUSE = {"i mean": "mean", "you know": "know"}
+# The markers each language has, and the form of the verb each is judged on.
+# `like` has no verb, so it goes on its tag. A language with no entry has no
+# filler rule.
+MARKERS = {
+    "en": {"i mean": "mean", "you know": "know", "like": None},
+}
 
-# Hedges. Read only with --hedges: deleting one changes what was claimed.
-HEDGES = {"i think": "think", "i guess": "guess", "i would say": "say"}
-
+# Universal Dependencies relations, as the syrinx parse names them.
 # The marker verb's own object. If it has one, the marker is doing work.
-OBJECT = {"ccomp", "dobj", "obj", "xcomp", "acomp", "attr", "oprd"}
+OBJECT = {"ccomp", "obj", "xcomp"}
 
-# The marker sitting in one of these is an object itself — "we'll let you know".
-ARGUMENT = {"ccomp", "xcomp", "relcl", "advcl", "csubj", "pobj", "conj", "acl",
-            "dobj", "obj"}
+# The marker sitting in one of these is an argument itself — "we'll let you know".
+ARGUMENT = {"acl", "advcl", "ccomp", "conj", "csubj", "nmod", "obj", "obl", "xcomp"}
 
-# `like` has no verb to test, so it goes on the tag. A verb ("I like it"), a
-# preposition ("like a cat") and a subordinator ("like I said") all stay.
+# A verb ("I like it"), a preposition ("like a cat") and a subordinator ("like
+# I said") all stay.
 LIKE_KEEPS = {"VERB", "AUX", "ADP", "SCONJ"}
 
 # Take the comma with the marker. Without this, "And you know, the comments
 # should be" leaves "And, the comments should be" — 8 of 186 cuts did.
 COMMA_BEFORE = re.compile(r"[,;]\s*$")
 COMMA_AFTER = re.compile(r"^\s*[,;]")
+
+# One word of the parse. `i` and `head` are the parse's 1-based indices,
+# `start` and `end` offsets into the text the filler rule reads.
+Word = namedtuple("Word", ("i", "text", "start", "end", "upos", "head", "dep"))
+
+
+def fold(text):
+    """Lower case, one code point for one: "İ".lower() is two."""
+    return "".join(c.lower() if len(c.lower()) == 1 else c for c in text)
+
+
+def placed(said, out, parse):
+    """The parse's words that survive the string rules, placed in `out`.
+
+    The parse is of `said`, the text this stage was handed. Every rule cuts
+    whole tokens, the earlier copy, so the tokens of `out` are matched into
+    those of `said` from the right: "foods like like Chi" keeps the second
+    "like", and its parse. Tokens, not letters: matched letter by letter, the
+    "e" of "like e every" was taken for the cut fragment. A parse word survives
+    when every letter of it is in a matched token, so punctuation never does;
+    the rule does not read it. Found by its spelling, not
+    by `at`: `at` counts Characters, and Python counts code points. None when
+    `out` is not `said` with tokens cut.
+    """
+    heard, to_out = list(WORD.finditer(said)), [None] * len(said)
+    i = len(heard) - 1
+    for token in reversed(list(WORD.finditer(out))):
+        while i >= 0 and fold(heard[i].group()) != fold(token.group()):
+            i -= 1
+        if i < 0:
+            return None
+        to_out[heard[i].start():heard[i].end()] = range(token.start(), token.end())
+        i -= 1
+    words, cursor = [], 0
+    for i, word in enumerate(parse["words"], 1):
+        start = said.find(word["text"], cursor)
+        if start < 0:
+            return None
+        cursor = start + len(word["text"])
+        first = to_out[start]
+        if first is None or any(to_out[k] != first + k - start for k in range(start, cursor)):
+            continue
+        words.append(Word(i, word["text"], first, first + cursor - start,
+                          word["upos"], word["head"], word["deprel"]))
+    return words
+
+
+def tree_of(words, lo, hi):
+    """The words of one sentence, offsets made relative to it.
+
+    A long text is parsed in windows of several sentences with one root, so a
+    word whose head is in another sentence, or was cut, is a root here. That is
+    how a parse of the sentence alone would have it.
+    """
+    inside = [w for w in words if lo <= w.start < hi]
+    ids = {w.i for w in inside}
+    return [w._replace(start=w.start - lo, end=w.end - lo,
+                       dep=w.dep if w.head in ids else "root") for w in inside]
 
 
 def sentence_of(text, at, end):
@@ -435,21 +496,21 @@ def sentence_of(text, at, end):
     return text[lo:hi], at - lo, end - lo, lo
 
 
-def anchored(doc, lemma, a, b):
+def anchored(tree, verb, a, b):
     """The marker's OWN verb, not the sentence's first one.
 
     Looked up by span because a sentence can hold the same marker twice and
     mean different things by them: "You know, do you know who owns this
     account?" — the first is a filler and the second is the verb of the
-    question. Matching on lemma alone gave both the first one's verdict and cut
-    both, which left "Do who owns this account?".
+    question. Matching on the form alone gave both the first one's verdict and
+    cut both, which left "Do who owns this account?".
     """
-    return next((t for t in doc
-                 if a <= t.idx < b and t.lemma_ == lemma
-                 and t.pos_ in ("VERB", "AUX")), None)
+    return next((w for w in tree
+                 if a <= w.start < b and w.text.lower() == verb
+                 and w.upos in ("VERB", "AUX")), None)
 
 
-def substitution(doc, a, b):
+def substitution(tree, a, b):
     """A noun on both sides of the marker is a self-correction, not a filler.
 
     "I was with James I mean Peter, sorry" — deleting the marker leaves BOTH
@@ -457,24 +518,24 @@ def substitution(doc, a, b):
     above this and consumes these; this catches the ones it misses. Four of 186
     cuts, at the cost of one good cut.
     """
-    outside = [t for t in doc if not t.is_punct and (t.idx + len(t.text) <= a or t.idx >= b)]
-    before = [t for t in outside if t.idx < a]
-    after = [t for t in outside if t.idx >= b]
+    outside = [w for w in tree if w.upos != "PUNCT" and (w.end <= a or w.start >= b)]
+    before = [w for w in outside if w.start < a]
+    after = [w for w in outside if w.start >= b]
     if not before or not after:
         return False
-    return before[-1].pos_ in ("NOUN", "PROPN") and after[0].pos_ in ("NOUN", "PROPN")
+    return before[-1].upos in ("NOUN", "PROPN") and after[0].upos in ("NOUN", "PROPN")
 
 
-def wants_cut(doc, marker, token, a, b):
+def wants_cut(tree, marker, token, a, b):
     if marker == "like":
-        return token is not None and token.pos_ not in LIKE_KEEPS
+        return token is not None and token.upos not in LIKE_KEEPS
     if token is None:
         return False
-    if any(c.dep_ in OBJECT for c in token.children):
+    if any(w.head == token.i and w.dep in OBJECT for w in tree):
         return False
-    if token.dep_ in ARGUMENT:
+    if token.dep in ARGUMENT:
         return False
-    return not substitution(doc, a, b)
+    return not substitution(tree, a, b)
 
 
 def cut(sentence, spans):
@@ -517,24 +578,25 @@ def marker_pattern(phrase):
     return re.compile(r"\b" + phrase.replace(" ", r"\s+") + r"\b", re.I)
 
 
-def resolve(text, markers, nlp):
+def resolve(text, markers, words):
     """Every marker judged against what was said, then cut a sentence at a time.
 
-    Judged first because a cut changes the parse of its own sentence. Sentences
-    replaced from the right because a cut moves every offset after it.
+    Judged first because a cut changes the sentence the next marker is judged
+    in. Sentences replaced from the right because a cut moves every offset
+    after it.
     """
     per_sentence = {}
-    for phrase, lemma in markers.items():
+    for phrase, verb in markers.items():
         for m in marker_pattern(phrase).finditer(text):
             sentence, a, b, offset = sentence_of(text, m.start(), m.end())
-            doc = nlp(sentence)
-            if lemma is None:
-                token = next((t for t in doc if t.idx <= a < t.idx + len(t.text)), None)
+            tree = tree_of(words, offset, offset + len(sentence))
+            if verb is None:
+                token = next((w for w in tree if w.start <= a < w.end), None)
                 name = "like"
             else:
-                token = anchored(doc, lemma, a, b)
+                token = anchored(tree, verb, a, b)
                 name = phrase
-            if wants_cut(doc, name, token, a, b):
+            if wants_cut(tree, name, token, a, b):
                 slot = per_sentence.setdefault(offset, [sentence, []])
                 slot[1].append((a, b, phrase))
 
@@ -547,77 +609,42 @@ def resolve(text, markers, nlp):
     return text, applied
 
 
-def spacy_or_none():
-    """spaCy, if this Mac has it.
-
-    `ParrotFlow --setup-parsing` builds a venv under Application Support, and
-    the app runs a transform through whichever `python3` it resolved — which is
-    not that venv. So look inside it, but only for a matching version: a
-    site-packages built for 3.13 holds C extensions a 3.12 cannot load.
-    """
-    try:
-        import spacy
-        return spacy
-    except ImportError:
-        pass
-    version = "python%d.%d" % sys.version_info[:2]
-    site = os.path.expanduser(
-        "~/Library/Application Support/ParrotFlow/python/lib/%s/site-packages" % version)
-    if not os.path.isdir(site):
-        return None
-    sys.path.append(site)
-    try:
-        import spacy
-        return spacy
-    except Exception:
-        return None
-
-
-def clean(text, language="en"):
+def clean(text, language="en", parse=None):
     """Every rule, in order. Returns the text, the passes that fired, and why
     a rule was skipped if one was.
 
     One entry point because `score.py` used to call `collapse` and so never ran
     the marker rule — the case set scored 91/100 against the module's own
     100/100, and the nine it missed were the only ones that need a parse.
+
+    `parse` is the envelope's syrinx parse of `text`, or None.
     """
     applied = []
-    declined = ""
     try:
         out = collapse(text, applied)
     except Exception:
         # Fail open — never drop the whole transcript because a guard threw.
-        return text, [], "", ""
+        return text, [], ""
 
     # The parse rule last: by now "I mean I mean" is one marker, and a restart
     # that hid a marker has been cleared out of the way.
-    if language != "en":
-        return out, applied, "", ""
-    markers = dict(CLAUSE)
-    markers["like"] = None
-
-    # Nothing said that a parse could judge, so nothing is loaded. `resolve`
-    # builds these same patterns and does nothing when none of them matches,
-    # so this cannot change the text. It skips `import spacy` and a model
-    # load — measured 0.53s and 0.21s, against 0.04s for the rest of this
-    # file — on every dictation that carries no marker at all.
+    markers = MARKERS.get(language, {})
+    # Nothing said that a parse could judge. `resolve` builds these same
+    # patterns and does nothing when none of them matches, so this cannot
+    # change the text; it only keeps `declined` empty.
     if not any(marker_pattern(phrase).search(out) for phrase in markers):
-        return out, applied, "", ""
-
-    spacy = spacy_or_none()
-    if spacy is None:
-        # A marker was said and there is nothing to judge it with. `needs` is
-        # what the app watches for: it installs the parsing Python in the
-        # background, so the next dictation carrying a marker is judged. Only
-        # reached behind the gate above, so nothing is fetched for a person
-        # who never says one.
-        return out, applied, "word fillers: no spacy — run ParrotFlow --setup-parsing", "parsing"
+        return out, applied, ""
+    if not parse:
+        return out, applied, "word fillers: no parse"
     try:
-        out, marked = resolve(out, markers, spacy.load("en_core_web_sm"))
-        applied.extend(marked)
+        words = placed(text, out, parse)
+        if words is None:
+            return out, applied, "word fillers: the parse is of another text"
+        out, marked = resolve(out, markers, words)
     except Exception as error:
-        declined = "word fillers: %s" % error
-    return out, applied, declined, ""
+        return out, applied, "word fillers: %s" % error
+    applied.extend(marked)
+    return out, applied, ""
 
 
 def main():
@@ -625,8 +652,9 @@ def main():
     raw = sys.stdin.read()
     payload = json.loads(raw) if structured else {"text": raw}
 
-    out, applied, declined, needs = clean(
-        payload["text"], (payload.get("ctx") or {}).get("language", "en"))
+    out, applied, declined = clean(
+        payload["text"], (payload.get("ctx") or {}).get("language", "en"),
+        payload.get("parse"))
 
     if not structured:
         sys.stdout.write(out)
@@ -638,8 +666,7 @@ def main():
         # Deduplicated: three of the same fault name it once.
         "vars": {"applied": ", ".join(dict.fromkeys(applied)),
                  "edits": len(applied),
-                 "declined": declined,
-                 "needs": needs},
+                 "declined": declined},
     }))
     return 0
 

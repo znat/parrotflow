@@ -205,24 +205,6 @@ that one says nothing.
 *Finish Setup…* stays in the menu bar while eSpeak NG is missing, and opening it
 that way shows the command again — it is the only route back to it.
 
-**The Python a parse needs.** Once eSpeak NG is here, the app installs it in the
-background: about 170 MB into `~/Library/Application Support/ParrotFlow/python`.
-Nothing is asked and nothing waits for it. It is safe to do without a terminal
-because eSpeak NG came from Homebrew and the Homebrew installer installs the
-Command Line Tools, so by then there is a real `python3` to build on.
-
-It pays for the fifth rule of the `disfluency` transform, the one that tells
-"we'll let you know" from "you know, it broke". That rule only runs when a
-dictation carries `you know`, `i mean` or `like` — 3.8% of 24,576 dictations in
-one archive, but the first one was number 10 and all 33 days had one.
-
-A Mac that never installed eSpeak NG still gets it: the transform publishes
-`needs: parsing` the first time the rule is reachable and cannot run, and the
-app installs it then. That dictation keeps its other four rules and says why in
-`disfluency.declined`.
-
-`ParrotFlow --setup-parsing` still does it by hand.
-
 ## Step 3 — Prove transcription works with no voice
 
 Needs no microphone.

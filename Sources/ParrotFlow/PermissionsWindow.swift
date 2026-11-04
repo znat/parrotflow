@@ -479,12 +479,7 @@ final class PermissionsWindowController {
     /// looks for a ticked checkbox, so an install in Terminal lands on its own.
     private func pollEspeak() {
         if Phonemes.locate() != nil {
-            if model.espeak != .found {
-                model.espeak = .found
-                // Homebrew came with it and the Command Line Tools came with
-                // Homebrew, so the rest can be fetched now without asking.
-                ParsingInstall.finishQuietly()
-            }
+            if model.espeak != .found { model.espeak = .found }
             openedTerminalAt = nil
             return
         }

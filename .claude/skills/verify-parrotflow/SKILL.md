@@ -41,7 +41,7 @@ the feature file you need.
   `--audio-recovery`, `--peek`, `--edit-test`, `--span-test`,
   `--clipboard-test`, `--paste-probe`, `--field-dump`, `--context-test`,
   `--set-key`, `--warm`, `--warm-models`, `--slot-model`, `--sentence-model`,
-  `--phonemes`, `--setup-parsing`, `--update-check`, `--update-install`,
+  `--phonemes`, `--update-check`, `--update-install`,
   `--panels`, and the image writers `--panel-sheet`, `--tutorial-sheet`,
   `--tour-film`, `--onboarding-film`. Never read another app's tree
   (`--tree-read`, `--tree-test`). `pf.sh` refuses all of these, and any flag

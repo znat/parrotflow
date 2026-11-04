@@ -476,13 +476,7 @@ enum CommandRunner {
     nonisolated(unsafe) private static var interpreterPath: String??
 
     /// The `python3` a `command:` transform actually runs under.
-    ///
-    /// Exposed because the venv for a parse has to be built on this exact
-    /// interpreter. A site-packages tree built for 3.13 holds C extensions a
-    /// 3.9 cannot load, and `disfluency.py` looks for the tree by its own
-    /// version — so a venv built on a different one is invisible to it. See
-    /// `ParsingInstall.finishQuietly`.
-    static func transformInterpreter() -> String? {
+    private static func transformInterpreter() -> String? {
         // Held across the probe on purpose. A second caller waits for the
         // answer instead of starting a second probe, and the wait is bounded
         // by the deadline in it. It happens once per run of the app.

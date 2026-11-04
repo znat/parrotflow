@@ -234,6 +234,7 @@ then do with them.
     description: delete hesitations, repeats and false starts
     command: disfluency.py
     returns: json
+    parse: true
 ```
 
 **In**, on stdin:
