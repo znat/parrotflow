@@ -278,6 +278,32 @@ check "readings: true on a text command, and readings: scores, fail the check" "
 check "and each is named" \
   "$(printf '%s\n' "$out" | grep -c '"plain" has `readings: true`'),$(printf '%s\n' "$out" | grep -c '"typo" has `readings: scores`, which is not true or false')" "1,1"
 
+# --- sentence_repair.py and the sentence_repair stage, both on ------------------
+
+mkdir -p "$WORK/repair"
+cat > "$WORK/repair/config.yaml" <<'YAML'
+transforms:
+  - name: sentence_repair
+    description: repair sentence boundaries a pause cut
+    command: built-in/sentence_repair/sentence_repair.py
+    returns: json
+    parse: true
+    readings: true
+transcription:
+  pipeline:
+    - transform: sentence_repair
+YAML
+run_config repair
+check "sentence_repair.py as a step with the stage on passes, with one warning" \
+  "$code,$(warnings),$(printf '%s\n' "$out" | grep -c 'sentence_repair: {enabled: false}')" "0,1,1"
+
+cat >> "$WORK/repair/config.yaml" <<'YAML'
+  sentence_repair:
+    enabled: false
+YAML
+run_config repair
+check "with the stage off, no warning" "$code,$(warnings)" "0,0"
+
 echo
 echo "  $pass/$total$failed"
 [ "$pass" = "$total" ]

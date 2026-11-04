@@ -3454,6 +3454,17 @@ struct Config: Decodable, Equatable {
         Pipeline.resolved(config: self).stages.contains(.sentenceRepair)
     }
 
+    /// Whether `sentence_repair.py` is a step while the stage of that name is
+    /// on. The script steps aside on a text the stage has read, so it repairs
+    /// nothing until the stage is turned off.
+    var repairsSentencesTwice: Bool {
+        readsBoundaries && Pipeline.resolved(config: self).steps.contains { step in
+            guard step.stage == .transform, let name = step.transform,
+                  case .command(let command)? = transform(named: name)?.body else { return false }
+            return command.contains("sentence_repair.py")
+        }
+    }
+
     /// Whether anything will read the sentence model: `sentence_repair`,
     /// `context_spelling`, or a transform that asks for the readings.
     var readsSentenceModel: Bool {
