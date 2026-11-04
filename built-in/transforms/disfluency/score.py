@@ -125,9 +125,10 @@ def score(verbose):
                 print(f"  ✓ {case['input']}" + (f"  [{names}]" if names else ""))
             continue
 
-        # A cut the parse does not support, named in the case. Never a keep:
-        # those are the costly half.
-        if case.get("misses") and not keep:
+        # A cut the parse does not support, named in the case with the output
+        # it gives instead. Any other output fails. Never a keep: those are the
+        # costly half.
+        if case.get("misses") and not keep and got == case.get("got"):
             known += 1
             print(f"  ~ {case['input']}\n      got   {got}\n      want  {want}"
                   f"\n      (known miss: {case['misses']})")
