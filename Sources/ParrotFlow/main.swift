@@ -252,14 +252,15 @@ if let at = arguments.firstIndex(of: "--parse") {
         return arguments[index + 1]
     }
     if let path = value(after: "--batch") {
-        exit(ParserCommand.batch(path: path, withMask: arguments.contains("--with-mask")))
+        exit(ParserCommand.batch(path: path, withMask: arguments.contains("--with-mask"),
+                                 vectors: arguments.contains("--vectors")))
     }
     if let text = value(after: "--encode") {
         exit(ParserCommand.encode(text))
     }
     guard arguments.indices.contains(at + 1), !arguments[at + 1].hasPrefix("--") else {
         print("usage: ParrotFlow --parse \"<text>\" [--lang xx]")
-        print("       ParrotFlow --parse --batch <items.json> [--with-mask]")
+        print("       ParrotFlow --parse --batch <items.json> [--with-mask] [--vectors]")
         print("       ParrotFlow --parse --encode \"<text>\"")
         exit(2)
     }

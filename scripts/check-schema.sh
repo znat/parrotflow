@@ -190,6 +190,59 @@ check "and names that transform, not the json one" \
   "$(printf '%s\n' "$out" | grep -c 'has `parse: true`'),$(printf '%s\n' "$out" | grep -c '"plain" has `parse: true`')" "1,1"
 check "parse is a known key" "$(warnings)" "0"
 
+mkdir -p "$WORK/vectors"
+cat > "$WORK/vectors/config.yaml" <<'YAML'
+transforms:
+  - name: reads
+    description: a json script that asks for the parse and its vectors
+    command: cat
+    returns: json
+    parse: vectors
+YAML
+run_config vectors
+check "parse: vectors on a json command passes the check" "$code,$(warnings)" "0,0"
+
+cat > "$WORK/vectors/config.yaml" <<'YAML'
+transforms:
+  - name: plain
+    description: a text script that asks for the vectors
+    command: cat
+    parse: vectors
+  - name: typo
+    description: a json script with a value parse does not take
+    command: cat
+    returns: json
+    parse: words
+YAML
+run_config vectors
+check "parse: vectors on a text command, and parse: words, fail the check" "$code" "1"
+check "and each is named" \
+  "$(printf '%s\n' "$out" | grep -c '"plain" has `parse: vectors`'),$(printf '%s\n' "$out" | grep -c '"typo" has `parse: words`, which is not true, false or vectors')" "1,1"
+
+cat > "$WORK/vectors/config.yaml" <<'YAML'
+transforms:
+  - name: off
+    description: a text script that turns the parse off
+    command: cat
+    parse: false
+  - name: empty
+    description: a text script with an empty parse
+    command: cat
+    parse:
+  - name: capital
+    description: a json script that writes the value in capitals
+    command: cat
+    returns: json
+    parse: Vectors
+  - name: quoted
+    description: a json script that quotes true
+    command: cat
+    returns: json
+    parse: "true"
+YAML
+run_config vectors
+check "parse: false or empty on a text command, parse: Vectors and a quoted true pass the check" "$code,$(warnings)" "0,0"
+
 echo
 echo "  $pass/$total$failed"
 [ "$pass" = "$total" ]

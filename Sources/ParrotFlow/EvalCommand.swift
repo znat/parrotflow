@@ -273,7 +273,7 @@ enum EvalCommand {
         if let language { seed.set("language", .string(language)) }
         Task {
             // Loaded before the case, so no case is scored on the 2 s timeout.
-            if transform.asksForParse, #available(macOS 14, *) {
+            if transform.parse != nil, #available(macOS 14, *) {
                 _ = try? await SyrinxParser.shared.prepare()
             }
             output = await pipeline.run(text, config: config, seed: seed)

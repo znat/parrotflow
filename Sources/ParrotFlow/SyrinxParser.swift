@@ -1,7 +1,7 @@
 import CoreML
 import Foundation
 
-/// What a `returns: json` transform that declares `parse: true` gets as `parse`.
+/// What a `returns: json` transform that declares `parse: true` or `parse: vectors` gets as `parse`.
 struct ParseField: Encodable, Sendable {
     struct Word: Encodable, Sendable {
         /// Character offset and length into the text, as `Tagger.Token` counts them.
@@ -15,8 +15,19 @@ struct ParseField: Encodable, Sendable {
         let deprel: String
         let ner: String?
         let tags: [Float]
+        let vector: [Float16]?
 
-        enum CodingKeys: String, CodingKey { case at, len, text, upos, feats, head, deprel, ner, tags }
+        enum CodingKeys: String, CodingKey { case at, len, text, upos, feats, head, deprel, ner, tags, vector }
+
+        /// Base64 of the little-endian float16 values.
+        var packedVector: String? {
+            guard let vector else { return nil }
+            var bytes = Data(capacity: vector.count * 2)
+            for value in vector {
+                withUnsafeBytes(of: value.bitPattern.littleEndian) { bytes.append(contentsOf: $0) }
+            }
+            return bytes.base64EncodedString()
+        }
 
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
@@ -29,6 +40,7 @@ struct ParseField: Encodable, Sendable {
             try c.encode(deprel, forKey: .deprel)
             try c.encode(ner, forKey: .ner)
             try c.encode(tags.map { (Double($0) * 10_000).rounded() / 10_000 }, forKey: .tags)
+            try c.encodeIfPresent(packedVector, forKey: .vector)
         }
     }
 
@@ -52,7 +64,7 @@ struct ParseField: Encodable, Sendable {
 
     /// The text split into words and windows, each window parsed on its own.
     /// Throws `Abstained` when a window does not fit or has no single root.
-    static func of(_ text: String, language: String, parser: Parser) throws -> ParseField {
+    static func of(_ text: String, language: String, parser: Parser, vectors: Bool = false) throws -> ParseField {
         let scalars = Array(text.unicodeScalars)
         guard scalars.contains(where: { !WordSplit.isSpace($0) }) else { throw Abstained(.empty, "no words") }
         var found: [WordSplit.Word] = []
@@ -62,7 +74,9 @@ struct ParseField: Encodable, Sendable {
             guard !words.isEmpty else { continue }
             let strings = words.map(\.text)
             guard parser.fits(strings) else { throw Abstained(.subwords, "a window over \(Parser.length) subwords") }
-            guard let analysed = try parser.analyse(strings) else { throw Abstained(.tree, "no single root") }
+            guard let analysed = try parser.analyse(strings, vectors: vectors) else {
+                throw Abstained(.tree, "no single root")
+            }
             try finite(analysed)
             found += words
             windows.append(analysed)
@@ -71,10 +85,12 @@ struct ParseField: Encodable, Sendable {
     }
 
     /// One window over words given as they are, joined by single spaces.
-    static func of(words strings: [String], language: String, parser: Parser) throws -> ParseField {
+    static func of(words strings: [String], language: String, parser: Parser, vectors: Bool = false) throws -> ParseField {
         guard !strings.isEmpty else { throw Abstained(.empty, "no words") }
         guard parser.fits(strings) else { throw Abstained(.subwords, "over \(Parser.length) subwords") }
-        guard let analysed = try parser.analyse(strings) else { throw Abstained(.tree, "no single root") }
+        guard let analysed = try parser.analyse(strings, vectors: vectors) else {
+            throw Abstained(.tree, "no single root")
+        }
         try finite(analysed)
         var words: [WordSplit.Word] = []
         var at = 0
@@ -92,6 +108,9 @@ struct ParseField: Encodable, Sendable {
     private static func finite(_ window: Parser.Window) throws {
         guard window.words.allSatisfy({ $0.tags.allSatisfy(\.isFinite) }) else {
             throw Abstained(.numbers, "a probability that is not a number")
+        }
+        guard window.vectors?.allSatisfy(\.isFinite) ?? true else {
+            throw Abstained(.numbers, "a vector value that is not a number")
         }
     }
 
@@ -111,7 +130,8 @@ struct ParseField: Encodable, Sendable {
                 out.append(Word(
                     at: at, len: character[split.scalars.upperBound - 1] - at + 1, text: split.text,
                     upos: word.upos, feats: word.feats, head: word.head == 0 ? 0 : word.head + base,
-                    deprel: word.deprel, ner: ner, tags: word.tags
+                    deprel: word.deprel, ner: ner, tags: word.tags,
+                    vector: window.vectors.map { Array($0[k * Parser.width ..< (k + 1) * Parser.width]) }
                 ))
             }
         }
@@ -285,7 +305,7 @@ actor SyrinxParser {
     }
 
     /// The `parse` field for one stage, or nil with a log line saying why.
-    static func field(for text: String, language: String, stage: String) async -> ParseField? {
+    static func field(for text: String, language: String, stage: String, vectors: Bool) async -> ParseField? {
         guard text.unicodeScalars.contains(where: { !WordSplit.isSpace($0) }) else { return nil }
         let ready = await shared.ready(within: dictationWait)
         guard let parser = ready.parser else {
@@ -293,7 +313,7 @@ actor SyrinxParser {
             return nil
         }
         do {
-            return try ParseField.of(text, language: language, parser: parser)
+            return try ParseField.of(text, language: language, parser: parser, vectors: vectors)
         } catch {
             Log.write("pipeline: \(stage) runs without the parse — \(error.localizedDescription)")
             return nil
