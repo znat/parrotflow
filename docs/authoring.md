@@ -403,6 +403,9 @@ on top of the parse.
   it, as its `head` does.
 
 It adds about 1 KB per word to the envelope. Ask for it only if you read it.
+`disfluency.py` reads it: the cut filter scores each cut the parse's
+`reparandum` arcs propose from these vectors and the `abandoned` and `cue`
+tags.
 
 ### The sentence readings
 
@@ -448,20 +451,19 @@ period after `parrot` is read as a pause, not a sentence end.
 - **`language`** is the scope's language. Readings are made in English and
   French only, the languages `sentence_repair` runs in.
 
-`boundaries` is empty when there are none. When there are some and they could
-not be read, it is empty and **`missing`** says why: the language is not
-English or French, the model is not in memory yet, or a boundary could not be
-read. Never partial. The log says the same, and the transcript goes through
-either way.
+`boundaries` is empty when there are none. It is also empty when they cannot
+be read, and then **`missing`** says why: the language is not English or
+French, the model is not in memory yet, or a boundary could not be read. Never
+partial. The log says the same, and the transcript goes through either way.
 
 Nothing here loads the model. It is the 320 MB model `sentence_repair`
 already loads at launch, and a transform that asks for the readings makes the
 app load it even with that stage off. Like `tokens`, the readings are of the
 text that stage was handed, so a transform after `sentence_repair` sees only
 the boundaries it left.
-`disfluency.py` reads it: the cut filter scores each cut the parse's
-`reparandum` arcs propose from these vectors and the `abandoned` and `cue`
-tags.
+
+Only a pipeline step gets the readings. A transform asked for by name or from
+the pill gets the bare text, as every command does on that path.
 
 ## Recipe: a language
 
