@@ -244,7 +244,7 @@ actor SyrinxParser {
 
     private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
         let heads = try Tensors(contentsOf: Parser.headsURL)
-        let parser = try await SlotModel.shared.compiled(progress: progress) {
+        let parser = try await SlotModel.compiled(progress: progress) {
             try Parser(
                 parse: try model("parse"), ner: try model("ner"),
                 tokenizer: try ScalarBPE(contentsOf: SlotModel.tokenizerDirectory.appendingPathComponent("tokenizer.json")),

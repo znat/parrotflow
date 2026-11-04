@@ -142,7 +142,7 @@ actor SlotModel {
         if let loading { return try await loading.value }
 
         let task = Task<MLModel, Error> {
-            try await self.compiled(progress: progress, open: Self.load)
+            try await Self.compiled(progress: progress, open: Self.load)
         }
         loading = task
         defer { loading = nil }
@@ -166,13 +166,14 @@ actor SlotModel {
 
     /// Makes sure the compiled package is on disk, then returns what `open`
     /// builds from it. A cache that will not open is fetched again, once.
-    /// `SyrinxParser` comes in here too, for `parse` and `ner`.
-    func compiled<T>(
+    /// `SyrinxParser` comes in here too, for `parse` and `ner`. Static, so a
+    /// load does not hold the actor.
+    static func compiled<T>(
         progress: (@Sendable (String) -> Void)?, open: () throws -> T
     ) async throws -> T {
-        if Self.isCached {
+        if isCached {
             // Compiled and on disk, so this launch only has to open it.
-            ModelDownloads.report(Self.download.id, .loading)
+            ModelDownloads.report(download.id, .loading)
             do { return try open() } catch {
                 Log.write(
                     "slot model: the cached copy will not load"
@@ -180,18 +181,19 @@ actor SlotModel {
                 )
             }
         }
-        if let fetching {
-            try await fetching.value
-        } else {
-            let task = Task { try await Self.underLock { try await Self.fetch(progress: progress) } }
-            fetching = task
-            defer { fetching = nil }
-            try await task.value
-        }
+        try await shared.fetchOnce(progress: progress)
         // The compile is the long half of this one — the .mlpackage is built
         // and then deleted — and it happens inside `fetch`.
-        ModelDownloads.report(Self.download.id, .loading)
+        ModelDownloads.report(download.id, .loading)
         return try open()
+    }
+
+    private func fetchOnce(progress: (@Sendable (String) -> Void)?) async throws {
+        if let fetching { return try await fetching.value }
+        let task = Task { try await Self.underLock { try await Self.fetch(progress: progress) } }
+        fetching = task
+        defer { fetching = nil }
+        try await task.value
     }
 
     /// One process at a time inside `fetch`.
