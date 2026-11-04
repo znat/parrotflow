@@ -42,7 +42,8 @@ actor SlotModel {
     static let download = ModelDownload(
         id: "slot", name: "ParrotFlow Syrinx", megabytes: 283, peak: 584,
         group: .language, blocking: false,
-        costOfFailure: "a name the word lists cannot settle is left as it stands"
+        costOfFailure: "a name the word lists cannot settle is left as it stands,"
+            + " and a transform that asks for the parse runs without it"
     )
 
     private static let repository = "znaat/parrotflow-syrinx-coreml"
