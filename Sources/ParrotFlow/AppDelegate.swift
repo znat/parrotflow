@@ -714,6 +714,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let ownsRow = !config.readsSlots
                 Task.detached(priority: .background) { await SyrinxParser.shared.warm(ownsRow: ownsRow) }
         }
+        if announceErrors, config.readsReadings, #available(macOS 14, *) {
+            Task.detached(priority: .background) { await SentenceReadings.shared.warm() }
+        }
         // After the load, not with the other watchers: a transform can be
         // renamed, removed or pointed at a different file, so which files are
         // worth watching is only known once the config has been read.

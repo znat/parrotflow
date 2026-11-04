@@ -373,9 +373,7 @@ struct Pipeline: Equatable, Codable {
         let blocks = config.transcription
         var steps: [Step] = []
         if blocks.sentenceRepair.enabled {
-            let written = line(.sentenceRepair)?.repair ?? RepairOptions()
-            steps.append(Step(
-                stage: .sentenceRepair, repair: written.over(blocks.sentenceRepair.options)))
+            steps.append(Step(stage: .sentenceRepair, repair: repairOptions(config: config)))
         }
         if blocks.vocabulary.enabled {
             let written = line(.vocabulary)?.vocabulary ?? VocabularyOptions()
@@ -389,6 +387,14 @@ struct Pipeline: Equatable, Codable {
             steps.append(Step(stage: .contextSpelling))
         }
         return Pipeline(steps: steps)
+    }
+
+    /// The options the `sentence_repair` step runs with, whether or not it is
+    /// on: the first `pipeline:` line's, over the block's.
+    static func repairOptions(config: Config) -> RepairOptions {
+        let written = config.transcription.pipeline?.steps
+            .first { $0.stage == .sentenceRepair }?.repair ?? RepairOptions()
+        return written.over(config.transcription.sentenceRepair.options)
     }
 
     /// The language this text was judged to be in.
@@ -1046,16 +1052,29 @@ struct Pipeline: Equatable, Codable {
     /// and the pause gate keeps working.
     static func collapsingDoubledStop(_ text: String) -> String {
         guard text.contains("..") else { return text }
+        return collapsingDoubledStopMapped(text).text
+    }
+
+    /// The same, and for each Character of the result the offset of the one
+    /// it came from. A collapsed `..` maps to its first stop.
+    static func collapsingDoubledStopMapped(_ text: String) -> (text: String, from: [Int]) {
         var out = ""
+        var from: [Int] = []
         var run = 0
-        for character in text {
-            if character == "." { run += 1; continue }
-            out += String(repeating: ".", count: run == 2 ? 1 : run)
+        func flush(_ end: Int) {
+            let kept = run == 2 ? 1 : run
+            out += String(repeating: ".", count: kept)
+            from += (0 ..< kept).map { end - run + $0 }
             run = 0
-            out.append(character)
         }
-        out += String(repeating: ".", count: run == 2 ? 1 : run)
-        return out
+        for (offset, character) in text.enumerated() {
+            if character == "." { run += 1; continue }
+            flush(offset)
+            out.append(character)
+            from.append(offset)
+        }
+        flush(text.count)
+        return (out, from)
     }
 
     /// Every substitution the vocabulary pass made, settled where it stands.
@@ -1419,11 +1438,19 @@ struct Pipeline: Equatable, Codable {
                 parse = await SyrinxParser.field(for: text, language: language, stage: name,
                                                  vectors: request == .vectors)
             }
+            var readings: ReadingsField?
+            if transform.readings, transform.returnsJSON, #available(macOS 14, *) {
+                let language: String
+                if case .string(let value)? = scope["language"] { language = value } else {
+                    language = Pipeline.language(of: text, config: config)
+                }
+                readings = await ReadingsField.of(text, language: language, config: config, stage: name)
+            }
             let outcome = CommandRunner.run(
                 command, on: text, in: transform.folder, seconds: transform.timeout,
                 structured: transform.returnsJSON,
                 context: transform.returnsJSON ? CommandRunner.Context(scope: scope) : nil,
-                parse: parse
+                parse: parse, readings: readings
             )
             guard let result = outcome else {
                 return StageResult(text: text, vars: ["ok": .bool(false)])

@@ -243,6 +243,41 @@ YAML
 run_config vectors
 check "parse: false or empty on a text command, parse: Vectors and a quoted true pass the check" "$code,$(warnings)" "0,0"
 
+# --- readings: true only on a returns: json command -----------------------------
+
+mkdir -p "$WORK/readings"
+cat > "$WORK/readings/config.yaml" <<'YAML'
+transforms:
+  - name: reads
+    description: a json script that asks for the sentence readings
+    command: cat
+    returns: json
+    readings: true
+  - name: off
+    description: a text script that turns the readings off
+    command: cat
+    readings: false
+YAML
+run_config readings
+check "readings: true on a json command, and false on a text one, pass the check" "$code,$(warnings)" "0,0"
+
+cat > "$WORK/readings/config.yaml" <<'YAML'
+transforms:
+  - name: plain
+    description: a text script that asks for the readings
+    command: cat
+    readings: true
+  - name: typo
+    description: a json script with a value readings does not take
+    command: cat
+    returns: json
+    readings: scores
+YAML
+run_config readings
+check "readings: true on a text command, and readings: scores, fail the check" "$code" "1"
+check "and each is named" \
+  "$(printf '%s\n' "$out" | grep -c '"plain" has `readings: true`'),$(printf '%s\n' "$out" | grep -c '"typo" has `readings: scores`, which is not true or false')" "1,1"
+
 echo
 echo "  $pass/$total$failed"
 [ "$pass" = "$total" ]

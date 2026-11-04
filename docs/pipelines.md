@@ -779,6 +779,26 @@ key is refused, and so is a value that is not a boolean or `vectors`;
 `--check-config` names the transform. With no transform asking, the parser is
 never loaded.
 
+#### `readings: true`
+
+A `returns: json` command can ask for the scores `sentence_repair` decides a
+sentence boundary by:
+
+```yaml
+  - name: sentence_repair
+    command: sentence_repair.py
+    returns: json
+    readings: true
+```
+
+Its envelope then carries a `readings` field: per `word. Capital` or
+`word? Capital` boundary, the mean log-probability of each reading and the one
+the stage would pick. The fields are in
+[authoring.md](authoring.md#the-sentence-readings). Nothing waits for the
+model: until it is in memory the field says it is missing. On any other body
+the key is refused, and so is a value that is not a boolean; `--check-config`
+names the transform.
+
 ### `join`, which fits a clip to the box it lands in
 
 `built-in/transforms/join/join.py` reads `input.*` and decides two things: what

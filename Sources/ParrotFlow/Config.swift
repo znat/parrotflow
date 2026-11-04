@@ -873,6 +873,7 @@ struct Config: Decodable, Equatable {
         var confirm = true
         var returnsJSON = false
         var parse: Transform.ParseRequest?
+        var readings = false
         var body: Transform.Body?
         var folder: TransformFolder?
         var timeout: Double?
@@ -906,7 +907,7 @@ struct Config: Decodable, Equatable {
 
         enum CodingKeys: String, CodingKey, CaseIterable {
             case name, description, display, confirm, prompt, content, replace, command
-            case tests, returns, offer, model, say, done, failed, parse
+            case tests, returns, offer, model, say, done, failed, parse, readings
             case offerKey = "key"
             case timeout = "timeout_seconds"
         }
@@ -1067,6 +1068,18 @@ struct Config: Decodable, Equatable {
                 unreadable = unreadable
                     ?? "has `parse: \(parse == .vectors ? "vectors" : "true")`, which only a `command:` with `returns: json` can read"
             }
+            if c.contains(.readings), !((try? c.decodeNil(forKey: .readings)) ?? false) {
+                if let value = try? c.decode(Bool.self, forKey: .readings) {
+                    readings = value
+                } else {
+                    let written = (try? c.decode(String.self, forKey: .readings)) ?? ""
+                    unreadable = unreadable ?? "has `readings: \(written)`, which is not true or false"
+                }
+            }
+            if readings, !(returnsJSON && !command.isEmpty) {
+                unreadable = unreadable
+                    ?? "has `readings: true`, which only a `command:` with `returns: json` can read"
+            }
         }
 
         /// A prompt file, read verbatim. No front matter, no templating: what is
@@ -1198,6 +1211,7 @@ struct Config: Decodable, Equatable {
                 display: entry.display,
                 folder: entry.folder, timeout: entry.timeout,
                 confirm: entry.confirm, returnsJSON: entry.returnsJSON, parse: entry.parse,
+                readings: entry.readings,
                 offer: entry.offer, offerKey: entry.offerKey, done: entry.done,
                 failed: entry.failed,
                 say: entry.say,
@@ -1282,6 +1296,9 @@ struct Config: Decodable, Equatable {
             case tree
             case vectors
         }
+        /// `readings: true`: the envelope also carries Qwen's readings of
+        /// each sentence boundary. Only on a `returns: json` command.
+        var readings = false
         /// Whether this gets a chip on the pill after a dictation, next to
         /// Correct.
         ///
@@ -3433,10 +3450,15 @@ struct Config: Decodable, Equatable {
         Pipeline.resolved(config: self).stages.contains(.sentenceRepair)
     }
 
-    /// Whether anything will read the sentence model: `sentence_repair` or
-    /// `context_spelling`.
+    /// Whether anything will read the sentence model: `sentence_repair`,
+    /// `context_spelling`, or a transform that asks for the readings.
     var readsSentenceModel: Bool {
-        readsBoundaries || transcription.contextSpelling.enabled
+        readsBoundaries || transcription.contextSpelling.enabled || readsReadings
+    }
+
+    /// Whether some transform asks for the sentence readings.
+    var readsReadings: Bool {
+        transforms.contains { $0.readings }
     }
 
     /// The `vocabulary` steps in the pipeline. More than one is legal, so

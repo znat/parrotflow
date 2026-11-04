@@ -130,6 +130,8 @@ enum CommandRunner {
         /// Only for a transform that declared `parse: true`, and only when the
         /// parser answered for this stage's text. See `ParseField`.
         let parse: ParseField?
+        /// Only for a transform that declared `readings: true`. See `ReadingsField`.
+        let readings: ReadingsField?
     }
 
     /// What must come back. Both keys optional, because a script that only
@@ -179,11 +181,12 @@ enum CommandRunner {
     /// found nothing.
     static func run(
         _ command: String, on text: String, in folder: TransformFolder?,
-        seconds: TimeInterval?, structured: Bool, context: Context?, parse: ParseField? = nil
+        seconds: TimeInterval?, structured: Bool, context: Context?, parse: ParseField? = nil,
+        readings: ReadingsField? = nil
     ) -> Output? {
         try? attempt(
             command, on: text, in: folder, seconds: seconds, structured: structured,
-            context: context, parse: parse
+            context: context, parse: parse, readings: readings
         ).get()
     }
 
@@ -198,7 +201,8 @@ enum CommandRunner {
     /// The same run, and the failure when there is one instead of nil.
     static func attempt(
         _ command: String, on text: String, in folder: TransformFolder?,
-        seconds: TimeInterval?, structured: Bool, context: Context?, parse: ParseField? = nil
+        seconds: TimeInterval?, structured: Bool, context: Context?, parse: ParseField? = nil,
+        readings: ReadingsField? = nil
     ) -> Result<Output, Failure> {
         let timeout = seconds ?? Self.timeout
         let folder = folder ?? TransformFolder(configDirectory: ConfigStore.directory, name: "")
@@ -291,7 +295,7 @@ enum CommandRunner {
                 tokens: Tagger.tokens(in: text, language: language),
                 trace: snapshot,
                 aligned: snapshot?.decodedText == text,
-                parse: parse)
+                parse: parse, readings: readings)
             if let encoded = try? encoder.encode(envelope) {
                 payload = encoded
             } else {
