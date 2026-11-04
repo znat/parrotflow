@@ -169,10 +169,14 @@ struct Config: Decodable, Equatable {
 
     /// The lists as scope values, for a transform that is a program rather than
     /// a table. Joined on `; ` because a `Scope.Value` is a scalar.
+    ///
+    /// `abbreviations` is always there, the built-in list when none is written,
+    /// so `sentence_repair.py` reads the list `SentenceJoin` reads.
     var listVariables: [String: Scope.Value] {
-        lists.reduce(into: [:]) { out, entry in
-            out[entry.key] = .string(entry.value.joined(separator: "; "))
-        }
+        lists.merging(["abbreviations": Self.defaultAbbreviations]) { written, _ in written }
+            .reduce(into: [:]) { out, entry in
+                out[entry.key] = .string(entry.value.joined(separator: "; "))
+            }
     }
 
     /// The words you dictate that the recogniser gets wrong, and what the app
