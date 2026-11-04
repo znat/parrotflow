@@ -200,8 +200,9 @@ each `engine.py`.
 
 The app copies `built-in/transforms/` into
 `~/.config/parrotflow/transforms/built-in/` on every launch. Not all of it is
-in the default pipeline: `email`, `join`, `priorities`, `parse` and
-`substitutions` are there with their case files and no step.
+in the default pipeline: `email`, `join`, `priorities`, `parse`,
+`sentence_repair` and `substitutions` are there with their case files and no
+step.
 
 The default pipeline holds what is free and needs nothing running. A prompt
 transform costs about a second and does nothing without Ollama.
@@ -281,6 +282,48 @@ It publishes `sentence_repair.count`: how many boundaries were joined.
 
 Delete the line to turn the step off. A pipeline without it does not read
 boundaries at all, and nothing is downloaded for it.
+
+### `sentence_repair.py`, the same repair as a transform
+
+`built-in/transforms/sentence_repair/` does this repair as a pipeline step. It
+runs after `vocabulary`, so it sees the names that stage wrote. It reads the
+syrinx parse and Qwen's readings from its envelope and calls no model itself.
+It ships unwired. To try it, turn the stage off and make it the first step:
+
+```yaml
+transcription:
+  sentence_repair:
+    enabled: false
+  pipeline:
+    - transform: sentence_repair
+    # … the rest of your steps
+```
+
+Three rules, one per shape:
+
+| Shape | What it does |
+|---|---|
+| `word. lowercase` | The period goes, unless the word before it is in `lists.abbreviations`. No model: in 9,399 clips this shape was never a sentence end. |
+| `word Capital` | A capital mid-sentence is lowercased, unless a guard below keeps it. No pause gate. |
+| `word. Capital`, `word? Capital` | Qwen's readings decide, as in the stage. When `join` wins, the mark goes and the next word is re-cased by the rule above. |
+
+A capital stays when the parse tags it `PROPN`, when it is in a named entity,
+when it is joined to a capitalised `PROPN` at most two words away as
+`compound`, `amod`, `flat` or `nmod` (Hugging Face), when it is one letter,
+when it has a capital after its first letter (PR, iOS), when it is `I` or
+starts with `I'`, when it is a nationality word in the dictated language, or
+when the `vocabulary` stage wrote it. A doubled full stop `..` is written as
+one. The rules are the same in every language; only the nationality list
+differs, and French's is empty.
+
+**It never runs twice.** If the `sentence_repair` stage ran on the text, the
+script changes nothing and says so in `sentence_repair.declined`.
+`--check-config` warns when both are on.
+
+Each rule that needs the parse or the readings is skipped when the envelope
+has none, and `declined` says which. It publishes `sentence_repair.count`
+(joins, as the stage does), `periods` and `capitals`. Score it with
+`built-in/transforms/sentence_repair/score.py`.
 
 ## The name stage
 
@@ -786,8 +829,9 @@ sentence boundary by:
 
 ```yaml
   - name: sentence_repair
-    command: sentence_repair.py
+    command: built-in/sentence_repair/sentence_repair.py
     returns: json
+    parse: true
     readings: true
 ```
 

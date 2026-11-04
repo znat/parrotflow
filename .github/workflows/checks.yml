@@ -156,6 +156,11 @@ jobs:
       - name: Disfluency
         run: built-in/transforms/disfluency/score.py
 
+      # Sentence boundaries. The cases read the parse and Qwen's readings
+      # recorded in envelopes.json beside them.
+      - name: Sentence repair
+        run: built-in/transforms/sentence_repair/score.py
+
       - name: Replacements
         # The fuzzy half asks NSSpellChecker whether a word is real, and that
         # service intermittently times out — a timeout reads as "known word", so

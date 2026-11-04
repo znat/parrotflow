@@ -460,7 +460,8 @@ Nothing here loads the model. It is the 320 MB model `sentence_repair`
 already loads at launch, and a transform that asks for the readings makes the
 app load it even with that stage off. Like `tokens`, the readings are of the
 text that stage was handed, so a transform after `sentence_repair` sees only
-the boundaries it left.
+the boundaries it left. `built-in/transforms/sentence_repair/sentence_repair.py`
+reads them, with the parse, to repair the boundaries as a pipeline step.
 
 Only a pipeline step gets the readings. A transform asked for by name or from
 the pill gets the bare text, as every command does on that path.

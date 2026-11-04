@@ -112,6 +112,10 @@ transcription:
   # language, and a step can carry a condition of its own. See
   # docs/pipelines.md.
   pipeline:
+    # The sentence_repair block above, as a step after `vocabulary`: see the
+    # transform below. To try it, set `sentence_repair: {enabled: false}` and
+    # uncomment this line.
+    # - transform: sentence_repair
     # Hesitation sounds, above the number stages and not below them: a filler
     # inside a number splits it, and "two uh two three" comes out "two uh 23".
     - transform: fillers
@@ -330,6 +334,18 @@ transforms:
   # `returns: json` is not optional. It is what sends `ctx.language` and the
   # parse in, and the language picks the markers: English has three, French
   # none yet.
+  # Sentence marks a pause wrote, taken out again. "word. lowercase" loses the
+  # period, a capital mid-sentence is lowercased unless the parse says it is a
+  # name, and "word. Capital" joins where Qwen reads one sentence. Reads the
+  # parse and the readings and calls no model. It steps aside while the
+  # `sentence_repair` block is on. See docs/pipelines.md.
+  - name: sentence_repair
+    description: repair sentence boundaries a pause cut
+    command: built-in/sentence_repair/sentence_repair.py
+    returns: json
+    parse: true
+    readings: true
+
   - name: disfluency
     description: delete hesitations, repeats and false starts
     # Nobody asks for "disfluency" out loud. `say:` is what the keyed path

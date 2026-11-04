@@ -1,0 +1,77 @@
+# Validation set for `sentence_repair`. Invented sentences, each in the shape
+# a pause gives the decoder. Scored with `score.py` beside this file, against
+# the parse and the readings recorded in envelopes.json.
+#
+# `expect` left out: the text must come back byte for byte.
+
+cases:
+
+  # --- periods: "word. lowercase" ---
+  - probe: period
+    input: "we tested the build. then we shipped it to the team"
+    expect: "we tested the build then we shipped it to the team"
+  - probe: period
+    input: "the second run was faster.. and nobody knows why"
+    expect: "the second run was faster and nobody knows why"
+  - probe: period
+    input: "on a testé la version. puis on l'a envoyée à l'équipe"
+    lang: fr
+    expect: "on a testé la version puis on l'a envoyée à l'équipe"
+  - probe: period
+    input: "it costs approx. ten euros a month for the whole team"
+  - probe: period
+    input: "we ship the parser, the tokeniser, etc. and the tests come after"
+  - probe: period
+    input: "use a short name, e.g. the folder name, for the branch"
+  - probe: period
+    input: "the deadline is on the second... and nobody is ready"
+  - probe: period
+    input: "that is the whole list.."
+    expect: "that is the whole list."
+
+  # --- capitals: a capital mid-sentence ---
+  - probe: capital
+    input: "we can format the functions And then ship them on the same day"
+    expect: "we can format the functions and then ship them on the same day"
+  - probe: capital
+    input: "I looked at the logs and saw Many errors in a row"
+    expect: "I looked at the logs and saw many errors in a row"
+  - probe: capital
+    input: "okay, So the next step is to rerun the whole suite"
+    expect: "okay, so the next step is to rerun the whole suite"
+  - probe: capital
+    input: "I sent the draft to Sarah before the meeting"
+  - probe: capital
+    input: "we moved the models to Hugging Face last week"
+  - probe: capital
+    input: "the docs are only in English and French for now"
+  - probe: capital
+    input: "the PR is open and the fix works on iOS"
+  - probe: capital
+    input: "plan B is ready and I'll send it tonight"
+  - probe: capital
+    input: "the release goes out on Friday if the checks are green"
+  - probe: capital
+    input: "the agent writes Notes for each step"
+    written: [Notes]
+  - probe: capital
+    input: "the agent writes Notes for each step"
+    expect: "the agent writes notes for each step"
+
+  # --- joins: "word. Capital", read by Qwen ---
+  - probe: join
+    input: "you should see a parrot. At the top right of your screen."
+    expect: "you should see a parrot at the top right of your screen."
+  - probe: join
+    input: "I will ask him. Nathan knows the answer."
+  - probe: join
+    input: "we finished the migration. The tests are all green now."
+  - probe: join
+    input: "did you try the other model? Because the first one was slow"
+  - probe: join
+    input: "est-ce que tu peux regarder ? Parce que la version de ce matin plante"
+    lang: fr
+  - probe: join
+    input: "on a regardé la page. Avec le tableau des résultats en bas"
+    lang: fr
+    expect: "on a regardé la page avec le tableau des résultats en bas"
