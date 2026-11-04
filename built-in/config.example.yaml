@@ -318,7 +318,9 @@ transforms:
   # ~0.04s for the first four rules, mostly the python3 start.
   #
   # The fifth wants a dependency parse, because "you know" is a real verb with
-  # a real object half the time — "we'll let you know" has to survive.
+  # a real object half the time — "we'll let you know" has to survive. A
+  # marker the parse reads as part of a correction stays: "the rain, I mean
+  # the sun" never becomes "the rain the sun".
   # `parse: true` hands it the syrinx parse, about 34 ms at 60 words. Without
   # one the other four still run and `disfluency.declined` says what was lost.
   #

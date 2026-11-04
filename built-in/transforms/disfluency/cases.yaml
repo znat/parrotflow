@@ -47,6 +47,8 @@ cases:
     input: "so that like two hundred forty-three is is always return two four three."
     # `like` goes too now: the marker rule reads it as a filler, which it is.
     expect: "so that two hundred forty-three is always return two four three."
+    misses: the tag head reads "two hundred" as abandoned, so "like" is held as a cue
+    got: "so that like two hundred forty-three is always return two four three."
   - probe: word
     input: "the substitution with the brackets and and then there would be a code step"
     expect: "the substitution with the brackets and then there would be a code step"
@@ -291,8 +293,8 @@ cases:
   - probe: marker
     input: "So use like you know five maximum eight lines."
     expect: "So use five maximum eight lines."
-    misses: the parse tags "like" a subordinator, so only "you know" goes
-    got: "So use like five maximum eight lines."
+    misses: the tag head reads "five maximum eight" as a correction, so both markers are held as its cue
+    got: "So use like you know five maximum eight lines."
   - probe: marker
     input: "And you know, the comments should be just enough."
     expect: "And the comments should be just enough."
@@ -357,6 +359,15 @@ cases:
   - probe: tree
     input: "We need the red one, no, the blue one."
     expect: "We need the blue one."
+  # "I mean" as the cue of a correction. The filler rule leaves it, so the
+  # tree cutter takes the cue and the first try together. Cut alone, it gave
+  # "Put it in the left panel the right panel".
+  - probe: tree
+    input: "Put it in the left panel I mean the right panel."
+    expect: "Put it in the right panel."
+  - probe: tree
+    input: "I want the small one, I mean the large one."
+    expect: "I want the large one."
   # The same sentence said twice. The parse draws arcs from the first sentence
   # to the second, and `groups` merges the fragment's arc with them, so the
   # filter drops that group and keeps only "I I".
