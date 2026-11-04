@@ -26,8 +26,9 @@ written as one, as the decoder meant.
 
 A capital stays when any of these holds: the parse tags it PROPN; it is in a
 named entity; it hangs off a capitalised PROPN at most two words away as
-compound, amod, flat or nmod (Hugging Face, Red Cross); it is one letter; it
-has a capital after its first letter (PR, iOS); it is "I" or starts with
+compound, amod, flat or nmod (Hugging Face, Red Cross); it is one letter,
+unless a joined mark is before it and the parse calls it a function word (the
+article "A"); it has a capital after its first letter (PR, iOS); it is "I" or starts with
 "I'"; it is a nationality word in the dictated language; the `vocabulary`
 stage wrote it.
 
@@ -56,6 +57,9 @@ NATIONALITIES = {
     "fr": frozenset(),
 }
 NAME_PARTS = frozenset({"compound", "amod", "flat", "nmod"})
+# A one-letter word of these classes after a joined mark is "A" or "À", not a
+# spelled letter. Mid-sentence the parser tags spelled letters DET too.
+FUNCTION_WORDS = frozenset({"DET", "ADP", "PRON", "CCONJ", "SCONJ", "AUX", "PART"})
 # A capital after one of these, or after a line break, starts something.
 OPENERS = re.compile(r"[.?!:;\"“”\n]")
 
@@ -77,7 +81,7 @@ def characters(text):
         regional = 0x1F1E6 <= code <= 0x1F1FF
         joined = (
             unicodedata.category(char) in ("Mn", "Me", "Mc")
-            or char == "‍" or previous == "‍"
+            or char == "\u200d" or previous == "\u200d"
             or 0xFE00 <= code <= 0xFE0F or 0x1F3FB <= code <= 0x1F3FF
             or 0xE0020 <= code <= 0xE007F
             or (char == "\n" and previous == "\r")
@@ -139,7 +143,8 @@ GUARDS = (
     ("name", lambda i, words, facts: words[i].upos == "PROPN"),
     ("entity", lambda i, words, facts: bool(words[i].ner)),
     ("in a name", lambda i, words, facts: in_a_name(i, words)),
-    ("letter", lambda i, words, facts: len(words[i].text) == 1),
+    ("letter", lambda i, words, facts: len(words[i].text) == 1 and not (
+        facts.get("joined") and words[i].upos in FUNCTION_WORDS)),
     ("capitals", lambda i, words, facts: any(c.isupper() for c in words[i].text[1:])),
     ("I", lambda i, words, facts: words[i].text == "I" or words[i].text.startswith(("I'", "I’"))),
     ("nationality", lambda i, words, facts: words[i].text.lower() in facts["nationalities"]),
@@ -197,7 +202,7 @@ def joins(text, readings, words, facts):
         while start > 0 and text[start - 1].isspace():
             start -= 1
         edits.append(Edit(start, end, "", "join"))
-        if not kept(starts[word], words, facts):
+        if not kept(starts[word], words, {**facts, "joined": True}):
             edits.append(lowered(words[starts[word]], "recased"))
     return edits
 
