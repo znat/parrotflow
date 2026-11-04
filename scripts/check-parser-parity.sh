@@ -106,5 +106,7 @@ print(f"\n  {passed}/{len(want)}  (tests/parser-parity.json, {vectors} word vect
 print(f"  load {summary.get('load_s', 0):.2f} s, first parse {summary.get('first_ms', 0):.0f} ms, "
       f"then median {summary.get('median_ms', 0):.1f} ms, slowest {summary.get('max_ms', 0):.1f} ms, "
       f"peak {summary.get('peak_mb', 0):.0f} MB")
-sys.exit(0 if passed == len(want) else 1)
+if not vectors:
+    print("  ✗ the fixture has no word vectors to compare")
+sys.exit(0 if passed == len(want) and vectors else 1)
 PY
