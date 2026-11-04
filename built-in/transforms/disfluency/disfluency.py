@@ -430,6 +430,10 @@ ARGUMENT = {"acl", "advcl", "ccomp", "conj", "csubj", "nmod", "obj", "obl", "xco
 # I said") all stay.
 LIKE_KEEPS = {"VERB", "AUX", "ADP", "SCONJ"}
 
+# A marker the tag head puts in a correction stays (`in_correction`).
+HOLD = 0.5
+NEAR = 3
+
 # Take the comma with the marker. Without this, "And you know, the comments
 # should be" leaves "And, the comments should be" — 8 of 186 cuts did.
 COMMA_BEFORE = re.compile(r"[,;]\s*$")
@@ -588,17 +592,36 @@ def marker_pattern(phrase):
     return re.compile(r"\b" + phrase.replace(" ", r"\s+") + r"\b", re.I)
 
 
-def resolve(text, markers, words):
+def in_correction(parse, words):
+    """The parse indices of `words` the tag head puts in a correction the
+    rules left: read as its cue, or within NEAR spoken words of a word read as
+    abandoned.
+
+    A marker there is the cue of "the rain, I mean the sun". Cut alone it
+    leaves "the rain the sun", so it stays for the tree cutter.
+    """
+    names = parse["tag_names"]
+    at_abandoned, at_cue = names.index("abandoned"), names.index("cue")
+    spoken = [w.i for w in words if any(c.isalnum() for c in w.text)]
+    tags = [parse["words"][i - 1]["tags"] for i in spoken]
+    return {i for k, i in enumerate(spoken)
+            if tags[k][at_cue] >= HOLD
+            or any(t[at_abandoned] >= HOLD for t in tags[max(k - NEAR, 0):k + NEAR + 1])}
+
+
+def resolve(text, markers, words, held=frozenset()):
     """Every marker judged against what was said, then cut a sentence at a time.
 
     Judged first because a cut changes the sentence the next marker is judged
-    in.
+    in. A marker with a word in `held` stays.
     """
     spans = []
     for phrase, verb in markers.items():
         for m in marker_pattern(phrase).finditer(text):
             sentence, a, b, offset = sentence_of(text, m.start(), m.end())
             tree = tree_of(words, offset, offset + len(sentence))
+            if any(w.i in held for w in tree if a <= w.start < b):
+                continue
             if verb is None:
                 token = next((w for w in tree if w.start <= a < w.end), None)
                 name = "like"
@@ -966,7 +989,7 @@ def word_fillers(said, out, language, parse, applied):
         found = placed(said, out, parse)
         if found is None:
             return out, "word fillers: the parse is of another text"
-        out, marked = resolve(out, markers, found)
+        out, marked = resolve(out, markers, found, in_correction(parse, found))
     except Exception as error:
         return out, "word fillers: %s" % error
     applied.extend(marked)
