@@ -775,7 +775,7 @@ from the scope; here it falls back to the first configured language.
 ```sh
 $PF --parse "I want to, I mean, I need a ticket to Paris on Tuesday."
 $PF --parse "Je n'ai pas vu qu'il l'aimait." --lang fr
-$PF --parse --batch items.json [--with-mask]
+$PF --parse --batch items.json [--with-mask] [--vectors]
 $PF --parse --encode "<text>"
 ```
 
@@ -792,7 +792,8 @@ tags, the ids of each window, and `ms`, `parse_ms` and `ner_ms`; or
 `{"id", "abstain"}`. A summary line ends it: load seconds, first, median and
 slowest item, the memory footprint after each load and at the end, and the
 peak. `--with-mask` loads the slot model's `mask` and runs one prediction on
-it first, to measure all three functions resident together.
+it first, to measure all three functions resident together. `--vectors` adds
+each word's `vector`, as `parse: vectors` sends it.
 
 `--encode` prints the parser tokenizer's ids for the whole string.
 `scripts/check-parser-tokenizer.sh` compares them with HuggingFace's, and

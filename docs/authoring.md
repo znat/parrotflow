@@ -364,18 +364,42 @@ named entities and the tag head's four probabilities, per word:
 - **`tags`** are the tag head's probabilities, in `tag_names` order, rounded to
   4 decimal places. `abandoned` is a word the speaker dropped, `cue` a word that
   announces a correction (`I mean`), `repair` the words that replace it.
+- **`vector`** is there only with `parse: vectors` in place of `parse: true`.
+  See [the word vectors](#the-word-vectors) below.
 
 It is absent, never partial, when the parser is not on disk yet, has not
 loaded within 2 seconds, failed to load in the last 5 minutes, or abstains: no
 words, a window over 256 subwords, a one-word NER chunk over 256, a window
-without a single root, or a probability that is not a number. The log says
-which, and the transcript goes through either way. Read it defensively.
+without a single root, or a probability or vector value that is not a number.
+The log says which, and the transcript goes through either way. Read it
+defensively.
 
 The parser is the `parse` and `ner` functions of the package the vocabulary
 slot gate already downloads, 283 MB, so it costs no second download. Nothing
 loads unless some transform asks. It is computed per stage, against the text
 that stage was handed, like `tokens`. `--parse "<text>"` prints the same thing
 (see [cli.md](cli.md#the-syrinx-parse-of-a-sentence)).
+
+#### The word vectors
+
+`parse: vectors` sends the same parse, and each word also gets `vector`: the
+parser's hidden state for that word, for a script that runs its own classifier
+on top of the parse.
+
+- It is the `s_hidden10` output of the `parse` function: the syntax path after
+  its 11th block, before any norm. That is the state the cut filter was
+  trained on.
+- Per word, it is the mean over the word's subwords, rounded to float16. A
+  word's subwords are the ones `words` was encoded into, so a punctuation word
+  has its own vector.
+- It is base64 of 384 little-endian float16 values: 768 bytes, 1,024
+  characters. In Python:
+  `numpy.frombuffer(base64.b64decode(word["vector"]), dtype="<f2")`.
+- A long text is parsed in windows, and each window runs on its own. No word
+  is in two windows, so each word has one vector, from the window that parsed
+  it, as its `head` does.
+
+It adds about 1 KB per word to the envelope. Ask for it only if you read it.
 
 ## Recipe: a language
 

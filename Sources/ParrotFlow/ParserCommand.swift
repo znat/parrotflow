@@ -5,7 +5,7 @@ import Foundation
 /// label, part of speech, features, NER type, character offset-length and the
 /// four tag probabilities.
 ///
-/// `--parse --batch <file.json> [--with-mask]` reads `[{"id", "language",
+/// `--parse --batch <file.json> [--with-mask] [--vectors]` reads `[{"id", "language",
 /// "text" | "words"}]` and prints one JSON line per item, then a summary.
 /// `--parse --encode "<text>"` prints the tokenizer's ids for the whole string.
 @available(macOS 14, *)
@@ -43,7 +43,7 @@ enum ParserCommand {
         }
     }
 
-    static func batch(path: String, withMask: Bool) -> Int32 {
+    static func batch(path: String, withMask: Bool, vectors: Bool) -> Int32 {
         struct Item: Decodable {
             let id: String
             let language: String?
@@ -85,9 +85,9 @@ enum ParserCommand {
                 let field: ParseField
                 do {
                     if let words = item.words {
-                        field = try ParseField.of(words: words, language: language, parser: parser)
+                        field = try ParseField.of(words: words, language: language, parser: parser, vectors: vectors)
                     } else {
-                        field = try ParseField.of(item.text ?? "", language: language, parser: parser)
+                        field = try ParseField.of(item.text ?? "", language: language, parser: parser, vectors: vectors)
                     }
                 } catch let abstained as ParseField.Abstained {
                     line["abstain"] = abstained.code.rawValue
@@ -105,11 +105,13 @@ enum ParserCommand {
                 line["ner_ms"] = field.windows.reduce(0) { $0 + $1.nerSeconds } * 1000
                 line["windows"] = field.windows.map { ["ids": $0.ids, "ner_ids": $0.nerIDs] }
                 line["words"] = field.words.map { word -> [String: Any] in
-                    [
+                    var out: [String: Any] = [
                         "at": word.at, "len": word.len, "text": word.text, "upos": word.upos,
                         "feats": word.feats, "head": word.head, "deprel": word.deprel,
                         "ner": word.ner ?? NSNull(), "tags": word.tags.map(Double.init),
                     ]
+                    out["vector"] = word.packedVector
+                    return out
                 }
             }
         }

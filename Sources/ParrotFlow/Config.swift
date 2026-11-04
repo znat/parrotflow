@@ -872,8 +872,7 @@ struct Config: Decodable, Equatable {
         var display = ""
         var confirm = true
         var returnsJSON = false
-        /// `parse: true` — add the syrinx parse to the envelope.
-        var parse = false
+        var parse: Transform.ParseRequest?
         var body: Transform.Body?
         var folder: TransformFolder?
         var timeout: Double?
@@ -1055,10 +1054,18 @@ struct Config: Decodable, Equatable {
             }
             unreadable = unreadable ?? bodyProblem
 
-            parse = try c.decodeIfPresent(Bool.self, forKey: .parse) ?? false
-            if parse, !(returnsJSON && !command.isEmpty) {
+            if c.contains(.parse), !((try? c.decodeNil(forKey: .parse)) ?? false) {
+                let written = (try? c.decode(String.self, forKey: .parse)) ?? ""
+                switch (try? c.decode(Bool.self, forKey: .parse), written.lowercased()) {
+                case (true?, _), (nil, "true"): parse = .tree
+                case (false?, _), (nil, "false"): parse = nil
+                case (nil, "vectors"): parse = .vectors
+                default: unreadable = unreadable ?? "has `parse: \(written)`, which is not true, false or vectors"
+                }
+            }
+            if let parse, !(returnsJSON && !command.isEmpty) {
                 unreadable = unreadable
-                    ?? "has `parse: true`, which only a `command:` with `returns: json` can read"
+                    ?? "has `parse: \(parse == .vectors ? "vectors" : "true")`, which only a `command:` with `returns: json` can read"
             }
         }
 
@@ -1190,7 +1197,7 @@ struct Config: Decodable, Equatable {
                 name: entry.name, description: entry.description,
                 display: entry.display,
                 folder: entry.folder, timeout: entry.timeout,
-                confirm: entry.confirm, returnsJSON: entry.returnsJSON, asksForParse: entry.parse,
+                confirm: entry.confirm, returnsJSON: entry.returnsJSON, parse: entry.parse,
                 offer: entry.offer, offerKey: entry.offerKey, done: entry.done,
                 failed: entry.failed,
                 say: entry.say,
@@ -1266,9 +1273,15 @@ struct Config: Decodable, Equatable {
         /// the transcript, `sed` is still a transform, and nothing anybody has
         /// already written has to change.
         var returnsJSON: Bool = false
-        /// `parse: true`: the envelope also carries the syrinx parse of the
-        /// text. Only on a `returns: json` command; anything else is refused.
-        var asksForParse: Bool = false
+        /// `parse: true` or `parse: vectors`: the envelope also carries the
+        /// syrinx parse of the text. Only on a `returns: json` command;
+        /// anything else is refused.
+        var parse: ParseRequest?
+
+        enum ParseRequest: Equatable {
+            case tree
+            case vectors
+        }
         /// Whether this gets a chip on the pill after a dictation, next to
         /// Correct.
         ///
@@ -3450,7 +3463,7 @@ struct Config: Decodable, Equatable {
     /// Whether some transform asks for the syrinx parse, and so whether the
     /// parser is loaded at all.
     var readsParse: Bool {
-        transforms.contains(where: \.asksForParse)
+        transforms.contains { $0.parse != nil }
     }
 
     /// Whether anything will read the 400 MB word vectors. Both tests that

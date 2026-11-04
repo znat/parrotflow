@@ -38,6 +38,8 @@ final class Parser: @unchecked Sendable {
         let ner: [String?]
         let ids: [Int]
         let nerIDs: [[Int]]
+        /// Per word, `width` values of `s_hidden10`. Only when asked.
+        let vectors: [Float16]?
         let parseSeconds: Double
         let nerSeconds: Double
     }
@@ -170,7 +172,7 @@ final class Parser: @unchecked Sendable {
 
     /// Nil when the words do not fit one parse or the tree has no single root.
     /// Throws `ParseField.Abstained` for a one-word NER chunk that does not fit.
-    func analyse(_ words: [String]) throws -> Window? {
+    func analyse(_ words: [String], vectors: Bool = false) throws -> Window? {
         guard !words.isEmpty else { return nil }
         let (ids, spans) = subwords(words)
         guard ids.count <= Self.length, !spans.contains(where: \.isEmpty) else { return nil }
@@ -182,6 +184,7 @@ final class Parser: @unchecked Sendable {
             s: try rows(output, "s_hidden", count: ids.count),
             spans: spans
         ) else { return nil }
+        let pooled = vectors ? mean(try rows(output, "s_hidden10", count: ids.count), spans) : nil
         let parseSeconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1e9
 
         started = DispatchTime.now().uptimeNanoseconds
@@ -202,7 +205,7 @@ final class Parser: @unchecked Sendable {
             }
         }
         let nerSeconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1e9
-        return Window(words: parsed, ner: types, ids: ids, nerIDs: nerIDs,
+        return Window(words: parsed, ner: types, ids: ids, nerIDs: nerIDs, vectors: pooled,
                       parseSeconds: parseSeconds, nerSeconds: nerSeconds)
     }
 
@@ -494,6 +497,21 @@ private func pool(_ hidden: [Float], _ spans: [Range<Int>]) -> [Float] {
             var sum: Float = 0
             for at in span { sum += share * hidden[at * width + column] }
             out[word * width + column] = Float(Float16(sum))
+        }
+    }
+    return out
+}
+
+/// Mean per word as torch's `mean(0)` sums, then divides, then rounds to float16.
+/// `pool`'s order gave one-step float16 differences on 0.01% of the values.
+private func mean(_ hidden: [Float], _ spans: [Range<Int>]) -> [Float16] {
+    let width = Parser.width
+    var out = [Float16](repeating: 0, count: spans.count * width)
+    for (word, span) in spans.enumerated() {
+        for column in 0 ..< width {
+            var sum: Float = 0
+            for at in span { sum += hidden[at * width + column] }
+            out[word * width + column] = Float16(sum / Float(span.count))
         }
     }
     return out

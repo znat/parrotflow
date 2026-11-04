@@ -756,7 +756,7 @@ whatever came next would have needed something else. A command needs nothing
 added ever again — which is the point, and the reason it is worth the process
 start.
 
-#### `parse: true`
+#### `parse: true` and `parse: vectors`
 
 A `returns: json` command can ask for the syrinx parse of its text:
 
@@ -770,10 +770,13 @@ A `returns: json` command can ask for the syrinx parse of its text:
 
 Its envelope then carries a `parse` field: per word the tree, the part of
 speech, the features, the named entity and four tag probabilities. The fields
-are in [authoring.md](authoring.md#the-parse). The stage waits at most 2
+are in [authoring.md](authoring.md#the-parse). `parse: vectors` sends the same
+parse, plus the parser's hidden state per word
+([the word vectors](authoring.md#the-word-vectors)). The stage waits at most 2
 seconds for the parser and runs without it after that. On any other body the
-key is refused, and `--check-config` names the transform. With no transform
-asking, the parser is never loaded.
+key is refused, and so is a value that is not a boolean or `vectors`;
+`--check-config` names the transform. With no transform asking, the parser is
+never loaded.
 
 ### `join`, which fits a clip to the box it lands in
 
