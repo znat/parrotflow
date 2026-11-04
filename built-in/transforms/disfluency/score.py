@@ -31,6 +31,7 @@ changing a case or the parser.
 """
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -77,11 +78,14 @@ def record(binary):
     inputs = sorted({c["input"] for c in yaml.safe_load(CASES.read_text())["cases"]
                      if says_marker(c["input"])})
     items = [{"id": str(i), "language": "en", "text": t} for i, t in enumerate(inputs)]
-    with tempfile.NamedTemporaryFile("w", suffix=".json") as batch:
+    # A scratch config: the binary loads one, and prunes its transforms/built-in.
+    with tempfile.NamedTemporaryFile("w", suffix=".json") as batch, \
+            tempfile.TemporaryDirectory() as config:
         json.dump(items, batch)
         batch.flush()
         run = subprocess.run([binary, "--parse", "--batch", batch.name],
-                             capture_output=True, text=True, check=False)
+                             capture_output=True, text=True, check=False,
+                             env={**os.environ, "PARROTFLOW_CONFIG_DIR": config})
     rows = {}
     for line in run.stdout.splitlines():
         row = json.loads(line) if line.startswith("{") else {}
