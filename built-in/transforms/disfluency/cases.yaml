@@ -45,7 +45,6 @@ cases:
     expect: "the replace dialogue and the vocabulary replacement dialogue"
   - probe: word
     input: "so that like two hundred forty-three is is always return two four three."
-    parse: true
     # `like` goes too now: the marker rule reads it as a filler, which it is.
     expect: "so that two hundred forty-three is always return two four three."
   - probe: word
@@ -118,13 +117,11 @@ cases:
   # and no English phrase starting "I ..." was ever collapsed.
   - probe: phrase
     input: "I mean I mean what I want is this."
-    parse: true
-    # The surviving "I mean" is a marker, and spaCy parses it as parataxis —
+    # The surviving "I mean" is a marker, and the parse has no object under it —
     # without an explicit "that" it is not the verb of the clause after it.
     expect: "What I want is this."
   - probe: phrase
     input: "I mean I mean I want want this."
-    parse: true
     expect: "I want this."
   - probe: phrase
     input: "I think I think we should try it."
@@ -169,7 +166,6 @@ cases:
   # --- fragment: a word begun, abandoned, then said in full ---
   - probe: fragment
     input: "Yeah. I mean w we can try I'm not exactly sure how it's gonna work."
-    parse: true
     expect: "Yeah. We can try I'm not exactly sure how it's gonna work."
   - probe: fragment
     input: "Of course vocabulary is important. Like t teammates names Slack mentions."
@@ -278,66 +274,51 @@ cases:
     input: "the source is B B C news and she spells it m a r c"
 
   # --- marker: a discourse marker that carries nothing ----------------------
-  # Needs spaCy. Not a word list: "you know" is a real verb with a real object
+  # Needs the parse. Not a word list: "you know" is a real verb with a real object
   # half the time, and deleting the string destroys the sentence.
   - probe: marker
-    parse: true
     input: "So use like you know five maximum eight lines."
     expect: "So use five maximum eight lines."
   - probe: marker
-    parse: true
     input: "And you know, the comments should be just enough."
     expect: "And the comments should be just enough."
   - probe: marker
-    parse: true
     input: "Then like I'm twelve."
     expect: "Then I'm twelve."
   # Across a boundary. Every case above is one sentence, which is exactly how
   # the space and the capital went missing without anything failing.
   - probe: marker
-    parse: true
     input: "It works fine. I mean the hesitations part. And then we ship."
     expect: "It works fine. The hesitations part. And then we ship."
   - probe: marker
-    parse: true
     input: "You know what I mean? It's about when everything goes right. I mean you should try."
     expect: "You know what I mean? It's about when everything goes right. You should try."
 
   # --- meant: the marker is doing work --------------------------------------
   - probe: meant
-    parse: true
     input: "Okay, we'll let you know."
   - probe: meant
-    parse: true
     input: "You see what I mean?"
   - probe: meant
-    parse: true
     input: "Do you know who owns this account?"
   - probe: meant
-    parse: true
     input: "And therefore you know what you are allowed to modify without risk."
   - probe: meant
-    parse: true
     input: "Unless you know it's gonna fail in that case, mention it's failing."
   - probe: meant
-    parse: true
     input: "like a cat on a mat"
   # A hedge, not a filler: "I think THAT we should" — deleting it turns an
-  # opinion into an assertion. Only `--hedges` touches these.
+  # opinion into an assertion. The filler rule has no marker for it.
   - probe: meant
-    parse: true
     input: "I think we should do this before Friday."
   # A self-correction, not a filler. Cutting the cue alone keeps both names.
   - probe: meant
-    parse: true
     input: "So the other day I was with James I mean Peter, sorry."
   # Two markers, one sentence, different jobs. Matching on lemma alone gave the
   # second one the first one's verdict and cut both.
   - probe: marker
-    parse: true
     input: "You know, do you know who owns this account?"
     expect: "Do you know who owns this account?"
   - probe: marker
-    parse: true
     input: "I mean, what I mean is this."
     expect: "What I mean is this."

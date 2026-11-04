@@ -6,6 +6,7 @@
     built-in/transforms/disfluency/score.py --text "the the prompt"
     built-in/transforms/disfluency/score.py --corpus   # every edit it would
                                                         # make to the archive
+    built-in/transforms/disfluency/score.py --record .build/debug/ParrotFlow
 
 `ParrotFlow --eval disfluency` answers a different question, and the numbers
 differ for a reason worth knowing: `--eval` scores the copy **installed** at
@@ -21,11 +22,18 @@ The transform is loaded from `disfluency.py` beside this file rather than
 reimplemented here. A runner that reimplements the thing it scores
 drifts from it, and the number then describes code nobody ships.
 
-**No model call anywhere in this file.**
+The filler rule reads the syrinx parse. A case that says a marker is scored
+with the parse in `parses.json`, which `--record` writes with the binary's
+`--parse --batch`, so this runs anywhere and skips nothing. Record again after
+changing a case or the parser.
+
+**No model call anywhere in this file**, except the binary `--record` runs.
 """
 import argparse
 import json
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 import importlib.util
 
@@ -39,46 +47,72 @@ except ImportError:
 HERE = Path(__file__).resolve().parent
 TRANSFORM = HERE / "disfluency.py"
 CASES = HERE / "cases.yaml"
+PARSES = HERE / "parses.json"
+# What the filler rule reads of a parse word.
+FIELDS = ("text", "upos", "head", "deprel")
 TRACE = Path.home() / "Recordings/ParrotFlow/trace.jsonl"
 
 _spec = importlib.util.spec_from_file_location("disfluency", TRANSFORM)
 disfluency = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(disfluency)
 
-def collapsed(text):
+def says_marker(text):
+    return any(disfluency.marker_pattern(phrase).search(text)
+               for phrase in disfluency.MARKERS["en"])
+
+
+def collapsed(text, parse=None):
     """The transform's own entry point, and the passes it named itself into.
 
     `applied` is how a case can be checked for the right reason rather than
     only the right answer — a cut made by the wrong pass still prints the
     string you wanted.
     """
-    applied = []
-    out, applied, _, _ = disfluency.clean(text)
+    out, applied, _ = disfluency.clean(text, "en", parse)
     return out, applied
+
+
+def record(binary):
+    """The parse of every case that says a marker, as the envelope carries it."""
+    inputs = sorted({c["input"] for c in yaml.safe_load(CASES.read_text())["cases"]
+                     if says_marker(c["input"])})
+    items = [{"id": str(i), "language": "en", "text": t} for i, t in enumerate(inputs)]
+    with tempfile.NamedTemporaryFile("w", suffix=".json") as batch:
+        json.dump(items, batch)
+        batch.flush()
+        run = subprocess.run([binary, "--parse", "--batch", batch.name],
+                             capture_output=True, text=True, check=False)
+    rows = {}
+    for line in run.stdout.splitlines():
+        row = json.loads(line) if line.startswith("{") else {}
+        if "words" in row:
+            rows[inputs[int(row["id"])]] = {
+                "language": row["language"],
+                "words": [{k: w[k] for k in FIELDS} for w in row["words"]]}
+    missing = [t for t in inputs if t not in rows]
+    if missing:
+        sys.exit(f"{binary} --parse gave nothing for {len(missing)} of {len(inputs)}:\n"
+                 + run.stdout[-2000:] + run.stderr[-2000:])
+    PARSES.write_text("{\n" + ",\n".join(
+        f"{json.dumps(t, ensure_ascii=False)}: {json.dumps(rows[t], ensure_ascii=False)}"
+        for t in inputs) + "\n}\n")
+    print(f"  {len(rows)} parses written to {PARSES.name}")
 
 
 def score(verbose):
     """The two failure kinds counted apart, because they cost differently."""
     cases = yaml.safe_load(CASES.read_text())["cases"]
-    passed = missed = damaged = wrong = 0
-    skipped_changes = skipped_keeps = 0
-
-    # `parse: true` marks a case whose expected output depends on the marker
-    # rule — every `marker` probe, and four older cases that now also lose a
-    # filler. CI has no venv, so those are skipped there rather than counted as
-    # failures — but loudly, so a green run never means more than it did.
-    parsing = disfluency.spacy_or_none() is not None
+    parses = json.loads(PARSES.read_text())
+    passed = missed = damaged = wrong = unparsed = 0
 
     for case in cases:
-        if case.get("parse") and not parsing:
-            # Counted apart. Lumping them together printed "keep 44/44" on a
-            # machine where eight of those keeps never ran.
-            if "expect" in case:
-                skipped_changes += 1
-            else:
-                skipped_keeps += 1
+        if says_marker(case["input"]) and case["input"] not in parses:
+            # A failure, not a skip: a skipped case once printed "keep 44/44"
+            # on a machine where eight of those keeps never ran.
+            unparsed += 1
+            print(f"  ✗ {case['input']}\n      (no parse recorded — run --record)")
             continue
-        got, applied = collapsed(case["input"])
+        got, applied = collapsed(case["input"], parses.get(case["input"]))
         # No `expect` means "comes back exactly as it went in" — the --eval
         # contract, in docs/cli.md.
         keep = "expect" not in case
@@ -105,14 +139,10 @@ def score(verbose):
     total = len(cases)
     keeps = sum(1 for c in cases if "expect" not in c)
     changes = total - keeps
-    skipped = skipped_changes + skipped_keeps
-    total -= skipped
-    changes -= skipped_changes
-    keeps -= skipped_keeps
     print(f"\n  {passed}/{total}   collapse {changes - missed - wrong}/{changes}"
           f"   keep {keeps - damaged}/{keeps}")
-    if skipped:
-        print(f"    {skipped} marker case(s) skipped — no spacy on this machine")
+    if unparsed:
+        print(f"    {unparsed} marker case(s) with no parse recorded")
     if missed:
         print(f"    {missed} left the stutter in")
     if wrong:
@@ -159,9 +189,13 @@ def main():
     parser.add_argument("--text", help="run the pass on one string")
     parser.add_argument("--corpus", action="store_true", help="every edit to the archive")
     parser.add_argument("--verbose", action="store_true", help="show passing cases")
+    parser.add_argument("--record", metavar="BINARY",
+                        help="write parses.json with this ParrotFlow binary's --parse")
     args = parser.parse_args()
 
-    if args.text:
+    if args.record:
+        record(args.record)
+    elif args.text:
         out, applied = collapsed(args.text)
         print(out)
         if applied:
