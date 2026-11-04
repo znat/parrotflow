@@ -63,6 +63,7 @@ struct ParseField: Encodable, Sendable {
             let strings = words.map(\.text)
             guard parser.fits(strings) else { throw Abstained(.subwords, "a window over \(Parser.length) subwords") }
             guard let analysed = try parser.analyse(strings) else { throw Abstained(.tree, "no single root") }
+            try finite(analysed)
             found += words
             windows.append(analysed)
         }
@@ -74,6 +75,7 @@ struct ParseField: Encodable, Sendable {
         guard !strings.isEmpty else { throw Abstained(.empty, "no words") }
         guard parser.fits(strings) else { throw Abstained(.subwords, "over \(Parser.length) subwords") }
         guard let analysed = try parser.analyse(strings) else { throw Abstained(.tree, "no single root") }
+        try finite(analysed)
         var words: [WordSplit.Word] = []
         var at = 0
         for string in strings {
@@ -84,6 +86,13 @@ struct ParseField: Encodable, Sendable {
         }
         return field(strings.joined(separator: " "), language: language, words: words,
                      windows: [analysed], tagNames: parser.tagNames)
+    }
+
+    /// `JSONEncoder` throws on NaN, and one would cost the script its whole envelope.
+    private static func finite(_ window: Parser.Window) throws {
+        guard window.words.allSatisfy({ $0.tags.allSatisfy(\.isFinite) }) else {
+            throw Abstained(.numbers, "a probability that is not a number")
+        }
     }
 
     private static func field(
@@ -110,7 +119,7 @@ struct ParseField: Encodable, Sendable {
     }
 
     struct Abstained: LocalizedError {
-        enum Code: String { case empty, subwords, tree }
+        enum Code: String { case empty, subwords, tree, numbers }
         let code: Code
         let reason: String
         init(_ code: Code, _ reason: String) {
@@ -210,20 +219,12 @@ actor SyrinxParser {
         do {
             loaded = try await task.value
             failure = nil
-            ModelDownloads.report(SlotModel.download.id, .installed)
             RetiredModels.prune(.syrinx, in: AppVariant.supportDirectory)
             RetiredModels.prune(.parrotSyrinx, in: AppVariant.supportDirectory)
         } catch {
             // The other process holding the lock lets go on its own; that is not a damaged cache.
             if case SlotModel.Failure.busy = error {} else { retryAfter = Date().addingTimeInterval(Self.backoff) }
             failure = error.localizedDescription
-            // A heads file that will not read is the bundle's fault, not the download's.
-            if !(error is Parser.Failure) {
-                ModelDownloads.report(
-                    SlotModel.download.id,
-                    .failed(ModelDownloads.failure(error, needs: SlotModel.download.peakLabel))
-                )
-            }
         }
         loading = nil
     }
@@ -242,15 +243,28 @@ actor SyrinxParser {
         }
     }
 
+    /// The setup row is the package's. The parser writes to it only for a
+    /// fetch it started itself.
     private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
         let weights = try Parser.Weights(contentsOf: Parser.headsURL)
-        let parser = try await SlotModel.compiled(progress: progress) {
-            try Parser(
+        let fetched = try await SlotModel.onDisk(progress: progress)
+        let parser: Parser
+        do {
+            parser = try Parser(
                 parse: try model("parse"), ner: try model("ner"),
                 tokenizer: try ScalarBPE(contentsOf: SlotModel.tokenizerDirectory.appendingPathComponent("tokenizer.json")),
                 weights: weights
             )
+        } catch {
+            if fetched {
+                ModelDownloads.report(
+                    SlotModel.download.id,
+                    .failed(ModelDownloads.failure(error, needs: SlotModel.download.peakLabel))
+                )
+            }
+            throw error
         }
+        if fetched { ModelDownloads.report(SlotModel.download.id, .installed) }
         // The first prediction after a load took 167 to 223 ms against 10 to 16 ms warm.
         _ = try? ParseField.of("I mean it.", language: "en", parser: parser)
         return parser
@@ -266,6 +280,7 @@ actor SyrinxParser {
 
     /// The `parse` field for one stage, or nil with a log line saying why.
     static func field(for text: String, language: String, stage: String) async -> ParseField? {
+        guard text.unicodeScalars.contains(where: { !WordSplit.isSpace($0) }) else { return nil }
         let ready = await shared.ready(within: dictationWait)
         guard let parser = ready.parser else {
             Log.write("pipeline: \(stage) runs without the parse — \(ready.reason)")

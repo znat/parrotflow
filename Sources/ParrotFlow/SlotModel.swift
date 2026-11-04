@@ -165,11 +165,19 @@ actor SlotModel {
     /// The fetch in flight in this process, so the mask and the parser share one.
     private var fetching: Task<Void, Error>?
 
+    /// Fetches the package when it is not on disk, and says whether it did.
+    /// What `SyrinxParser` calls: a parser that will not open is its own
+    /// failure and never re-fetches a cache the mask may be reading.
+    static func onDisk(progress: (@Sendable (String) -> Void)?) async throws -> Bool {
+        if isCached { return false }
+        try await shared.fetchOnce(progress: progress)
+        return true
+    }
+
     /// Makes sure the compiled package is on disk, then returns what `open`
     /// builds from it. A cache that will not open is fetched again, once.
-    /// `SyrinxParser` comes in here too, for `parse` and `ner`. Static, so a
-    /// load does not hold the actor.
-    static func compiled<T>(
+    /// Static, so a load does not hold the actor.
+    private static func compiled<T>(
         progress: (@Sendable (String) -> Void)?, open: () throws -> T
     ) async throws -> T {
         if isCached {
@@ -218,7 +226,7 @@ actor SlotModel {
 
     /// Deletes the cache, so the next `prepare` fetches it again.
     ///
-    /// `build` already re-fetches a cache that will not load, once. This is for
+    /// `compiled` already re-fetches a cache that will not load, once. This is for
     /// the retry after that one failed too.
     static func discardCache() {
         try? FileManager.default.removeItem(at: directory)

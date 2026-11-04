@@ -1424,12 +1424,8 @@ struct Pipeline: Equatable, Codable {
             // exactly the one whose before and after you want on the record.
             var parse: ParseField?
             if transform.asksForParse, transform.returnsJSON, #available(macOS 14, *) {
-                let language: String
-                if case .string(let value)? = scope["language"] {
-                    language = value
-                } else {
-                    language = Pipeline.language(of: text, config: config)
-                }
+                var language = ""
+                if case .string(let value)? = scope["language"] { language = value }
                 parse = await SyrinxParser.field(for: text, language: language, stage: name)
             }
             let outcome = CommandRunner.run(

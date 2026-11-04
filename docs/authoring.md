@@ -366,9 +366,10 @@ named entities and the tag head's four probabilities, per word:
   announces a correction (`I mean`), `repair` the words that replace it.
 
 It is absent, never partial, when the parser is not on disk yet, has not
-loaded within 2 seconds, or abstains: no words, or a window over 256 subwords.
-The log says which, and the transcript goes through either way. Read it
-defensively.
+loaded within 2 seconds, failed to load in the last 5 minutes, or abstains: no
+words, a window over 256 subwords, a one-word NER chunk over 256, a window
+without a single root, or a probability that is not a number. The log says
+which, and the transcript goes through either way. Read it defensively.
 
 The parser is the `parse` and `ner` functions of the package the vocabulary
 slot gate already downloads, 283 MB, so it costs no second download. Nothing

@@ -10,6 +10,9 @@
 # must abstain here too, for any reason.
 #
 # Needs the parrotflow-syrinx-fp16 model cache, so it is not in `make test`.
+# It uses the app's own cache under $HOME and fetches the package there when
+# it is missing. A load also removes the retired parrotflow-syrinx and
+# parrot-syrinx caches from that folder.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
@@ -63,7 +66,7 @@ for case in want:
             for key in EXACT:
                 if a[key] != b.get(key):
                     problems.append(f"word {k + 1} {key} want {a[key]!r} got {b.get(key)!r}")
-            gap = max(abs(x - y) for x, y in zip(a["tags"], b.get("tags", [9] * 4)))
+            gap = max((abs(x - y) for x, y in zip(a["tags"], b.get("tags", [9] * 4))), default=9)
             if gap > 1e-4:
                 problems.append(f"word {k + 1} tags differ by {gap:.2g}")
     passed += not problems
