@@ -169,6 +169,27 @@ check "a value the parser refuses fails the check" "$code" "1"
 check "and a typo beside it is still named" \
   "$(printf '%s\n' "$out" | grep -cxF '  ⚠ hotkey.moed: not a setting. Did you mean "mode"?')" "1"
 
+# --- parse: true only on a returns: json command --------------------------------
+
+mkdir -p "$WORK/parse"
+cat > "$WORK/parse/config.yaml" <<'YAML'
+transforms:
+  - name: reads
+    description: a json script that asks for the parse
+    command: cat
+    returns: json
+    parse: true
+  - name: plain
+    description: a text script that asks for the parse
+    command: cat
+    parse: true
+YAML
+run_config parse
+check "parse: true on a text command fails the check" "$code" "1"
+check "and names that transform, not the json one" \
+  "$(printf '%s\n' "$out" | grep -c 'has `parse: true`'),$(printf '%s\n' "$out" | grep -c '"plain" has `parse: true`')" "1,1"
+check "parse is a known key" "$(warnings)" "0"
+
 echo
 echo "  $pass/$total$failed"
 [ "$pass" = "$total" ]

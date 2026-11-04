@@ -270,6 +270,8 @@ then do with them.
   the word offsets in `trace.asr.words` line up with it. It is false as soon as
   any stage rewrites. Check it before using a word offset: acting on a stale one
   fails silently.
+- **`parse`** is there only when the transform also declares `parse: true`.
+  See [the parse](#the-parse) below.
 
 **Out**, on stdout — and only what this stage contributes:
 
@@ -315,6 +317,65 @@ so will you the first time a stage misbehaves.
 > first, then the config. `--pipeline <fixture> "<text>" --vars` is how you
 > check, before it matters. `transforms/built-in/` is different: it is
 > refreshed on every launch, so the shipped scripts there are always current.
+
+### The parse
+
+`parse: true` beside `returns: json` adds the syrinx parse of `text` to the
+envelope. It is the dependency tree, the part of speech, the features, the
+named entities and the tag head's four probabilities, per word:
+
+```json
+"parse": {
+  "language": "en",
+  "tag_names": ["other", "abandoned", "cue", "repair"],
+  "words": [
+    { "at": 0, "len": 1, "text": "I", "upos": "PRON",
+      "feats": { "Number": "Sing", "Person": "1" },
+      "head": 2, "deprel": "nsubj", "ner": null,
+      "tags": [0.0334, 0.9666, 0.0, 0.0] }
+  ]
+}
+```
+
+- **`language`** is the scope's language, the one `tokens` uses. The parse runs
+  in every language. The language only picks the splitter's table: `fr` splits
+  French elisions (`qu'`, `l'`, `c'`, either apostrophe), every other language
+  English clitics (`n't`, `'s`, `'ll`, ...).
+- **`words`** are the splitter's words, not `tokens`' words. Punctuation is its
+  own word, split off both ends of each run of non-space characters.
+- **`at`** and **`len`** count characters into `text`, as in `tokens`. The
+  splitter walks code points, so a word that splits a grapheme cluster (an
+  emoji with a skin tone, a combining accent standing alone) gets the cluster
+  that holds its first code point, and two words can share one cluster.
+- **`upos`** is the Universal Dependencies part of speech, one of 17.
+- **`feats`** maps a feature (`Number`, `Person`, `Gender`, `Mood`, `Tense`,
+  `VerbForm`, `Voice`, `Degree`) to its value. A feature the word does not
+  carry is left out, so it is often `{}`.
+- **`head`** is the 1-based index into `words` of the word this one depends on.
+  `0` is a root. A long text is parsed in windows of whole sentences, and each
+  window has one root, so a text can have several.
+- **`deprel`** is the Universal Dependencies relation to the head, `root` for a
+  root. `reparandum` marks a word the speaker took back.
+- **`ner`** is the type of the named entity holding this word, or `null`. One
+  of `date`, `time`, `duration`, `number`, `quantity`, `money`, `percent`,
+  `person`, `organization`, `location`, `product`, `event`, `work of art`.
+  Two neighbours with the same type can be two entities: the field says the
+  type, not where a span starts.
+- **`tags`** are the tag head's probabilities, in `tag_names` order, rounded to
+  4 decimal places. `abandoned` is a word the speaker dropped, `cue` a word that
+  announces a correction (`I mean`), `repair` the words that replace it.
+
+It is absent, never partial, when the parser is not on disk yet, has not
+loaded within 2 seconds, failed to load in the last 5 minutes, or abstains: no
+words, a window over 256 subwords, a one-word NER chunk over 256, a window
+without a single root, or a probability that is not a number. The log says
+which, and the transcript goes through either way. Read it defensively.
+
+The parser is the `parse` and `ner` functions of the package the vocabulary
+slot gate already downloads, 283 MB, so it costs no second download. Nothing
+loads unless some transform asks. It is computed per stage, against the text
+that stage was handed, like `tokens`. `--parse "<text>"` prints the same thing
+(see [cli.md](cli.md#the-syrinx-parse-of-a-sentence)).
 
 ## Recipe: a language
 

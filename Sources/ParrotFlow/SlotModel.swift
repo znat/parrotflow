@@ -5,7 +5,7 @@ import Foundation
 ///
 /// It is the `mask` function of the parrotflow-syrinx fp16 package: the
 /// mmBERT-small-64 program added unchanged, bit-equal to it on 641 of 641
-/// probes. The package also holds `parse` and `ner`, unused here.
+/// probes. The package also holds `parse` and `ner`, which `SyrinxParser` reads.
 ///
 /// What it is for: the masked slot the vocabulary gate reads. `SlotReference`
 /// asks it for the ten words a position expects, and `SlotGate` asks it what
@@ -42,7 +42,8 @@ actor SlotModel {
     static let download = ModelDownload(
         id: "slot", name: "ParrotFlow Syrinx", megabytes: 283, peak: 584,
         group: .language, blocking: false,
-        costOfFailure: "a name the word lists cannot settle is left as it stands"
+        costOfFailure: "a name the word lists cannot settle is left as it stands,"
+            + " and a transform that asks for the parse runs without it"
     )
 
     private static let repository = "znaat/parrotflow-syrinx-coreml"
@@ -142,7 +143,7 @@ actor SlotModel {
         if let loading { return try await loading.value }
 
         let task = Task<MLModel, Error> {
-            try await Self.build(progress: progress)
+            try await Self.compiled(progress: progress, open: Self.load)
         }
         loading = task
         defer { loading = nil }
@@ -161,24 +162,47 @@ actor SlotModel {
         }
     }
 
-    private static func build(
-        progress: (@Sendable (String) -> Void)?
-    ) async throws -> MLModel {
+    /// The fetch in flight in this process, so the mask and the parser share one.
+    private var fetching: Task<Void, Error>?
+
+    /// Fetches the package when it is not on disk, and says whether it did.
+    /// What `SyrinxParser` calls: a parser that will not open is its own
+    /// failure and never re-fetches a cache the mask may be reading.
+    static func onDisk(progress: (@Sendable (String) -> Void)?) async throws -> Bool {
+        if isCached { return false }
+        try await shared.fetchOnce(progress: progress)
+        return true
+    }
+
+    /// Makes sure the compiled package is on disk, then returns what `open`
+    /// builds from it. A cache that will not open is fetched again, once.
+    /// Static, so a load does not hold the actor.
+    private static func compiled<T>(
+        progress: (@Sendable (String) -> Void)?, open: () throws -> T
+    ) async throws -> T {
         if isCached {
             // Compiled and on disk, so this launch only has to open it.
             ModelDownloads.report(download.id, .loading)
-            do { return try load() } catch {
+            do { return try open() } catch {
                 Log.write(
                     "slot model: the cached copy will not load"
                         + " (\(error.localizedDescription)); fetching it again"
                 )
             }
         }
-        try await underLock { try await fetch(progress: progress) }
+        try await shared.fetchOnce(progress: progress)
         // The compile is the long half of this one — the .mlpackage is built
-        // and then deleted — and it happens inside `load`.
+        // and then deleted — and it happens inside `fetch`.
         ModelDownloads.report(download.id, .loading)
-        return try load()
+        return try open()
+    }
+
+    private func fetchOnce(progress: (@Sendable (String) -> Void)?) async throws {
+        if let fetching { return try await fetching.value }
+        let task = Task { try await Self.underLock { try await Self.fetch(progress: progress) } }
+        fetching = task
+        defer { fetching = nil }
+        try await task.value
     }
 
     /// One process at a time inside `fetch`.
@@ -202,7 +226,7 @@ actor SlotModel {
 
     /// Deletes the cache, so the next `prepare` fetches it again.
     ///
-    /// `build` already re-fetches a cache that will not load, once. This is for
+    /// `compiled` already re-fetches a cache that will not load, once. This is for
     /// the retry after that one failed too.
     static func discardCache() {
         try? FileManager.default.removeItem(at: directory)

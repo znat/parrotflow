@@ -97,6 +97,8 @@ mv "$APP/Contents/Resources/built-in/config.example.yaml" "$APP/Contents/Resourc
 # no business in the bundle. See WordPieces.fileURL.
 cp "$ROOT/built-in/data/wordpiece.txt" "$APP/Contents/Resources/wordpiece.txt"
 cp "$ROOT/built-in/data/parsing-requirements.txt" "$APP/Contents/Resources/parsing-requirements.txt"
+# The syrinx parser's heads and adapters. See Parser.headsURL.
+cp "$ROOT/built-in/data/syrinx-heads.safetensors" "$APP/Contents/Resources/syrinx-heads.safetensors"
 
 # SwiftPM resource bundles, which the binary looks for beside itself.
 #

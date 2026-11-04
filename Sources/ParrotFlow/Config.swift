@@ -872,6 +872,8 @@ struct Config: Decodable, Equatable {
         var display = ""
         var confirm = true
         var returnsJSON = false
+        /// `parse: true` — add the syrinx parse to the envelope.
+        var parse = false
         var body: Transform.Body?
         var folder: TransformFolder?
         var timeout: Double?
@@ -905,7 +907,7 @@ struct Config: Decodable, Equatable {
 
         enum CodingKeys: String, CodingKey, CaseIterable {
             case name, description, display, confirm, prompt, content, replace, command
-            case tests, returns, offer, model, say, done, failed
+            case tests, returns, offer, model, say, done, failed, parse
             case offerKey = "key"
             case timeout = "timeout_seconds"
         }
@@ -1052,6 +1054,12 @@ struct Config: Decodable, Equatable {
                 (body, source, bodyProblem) = readTable(tablePath)
             }
             unreadable = unreadable ?? bodyProblem
+
+            parse = try c.decodeIfPresent(Bool.self, forKey: .parse) ?? false
+            if parse, !(returnsJSON && !command.isEmpty) {
+                unreadable = unreadable
+                    ?? "has `parse: true`, which only a `command:` with `returns: json` can read"
+            }
         }
 
         /// A prompt file, read verbatim. No front matter, no templating: what is
@@ -1182,7 +1190,7 @@ struct Config: Decodable, Equatable {
                 name: entry.name, description: entry.description,
                 display: entry.display,
                 folder: entry.folder, timeout: entry.timeout,
-                confirm: entry.confirm, returnsJSON: entry.returnsJSON,
+                confirm: entry.confirm, returnsJSON: entry.returnsJSON, asksForParse: entry.parse,
                 offer: entry.offer, offerKey: entry.offerKey, done: entry.done,
                 failed: entry.failed,
                 say: entry.say,
@@ -1258,6 +1266,9 @@ struct Config: Decodable, Equatable {
         /// the transcript, `sed` is still a transform, and nothing anybody has
         /// already written has to change.
         var returnsJSON: Bool = false
+        /// `parse: true`: the envelope also carries the syrinx parse of the
+        /// text. Only on a `returns: json` command; anything else is refused.
+        var asksForParse: Bool = false
         /// Whether this gets a chip on the pill after a dictation, next to
         /// Correct.
         ///
@@ -3434,6 +3445,12 @@ struct Config: Decodable, Equatable {
     /// downloads weights nothing will read.
     var readsSlots: Bool {
         vocabularySteps.contains { $0.vocabulary.isOn(\.slotGate) }
+    }
+
+    /// Whether some transform asks for the syrinx parse, and so whether the
+    /// parser is loaded at all.
+    var readsParse: Bool {
+        transforms.contains(where: \.asksForParse)
     }
 
     /// Whether anything will read the 400 MB word vectors. Both tests that

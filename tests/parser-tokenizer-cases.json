@@ -1,0 +1,981 @@
+[
+ {
+  "text": "we have to do it. That works well",
+  "ids": [
+   783,
+   791,
+   577,
+   749,
+   665,
+   235265,
+   2995,
+   3598,
+   1578
+  ],
+  "tokens": [
+   "▁we",
+   "▁have",
+   "▁to",
+   "▁do",
+   "▁it",
+   ".",
+   "▁That",
+   "▁works",
+   "▁well"
+  ]
+ },
+ {
+  "text": "The capital of Ireland is Dublin",
+  "ids": [
+   714,
+   6037,
+   576,
+   14083,
+   603,
+   28998
+  ],
+  "tokens": [
+   "▁The",
+   "▁capital",
+   "▁of",
+   "▁Ireland",
+   "▁is",
+   "▁Dublin"
+  ]
+ },
+ {
+  "text": "we have to do it <mask> that works well",
+  "ids": [
+   783,
+   791,
+   577,
+   749,
+   665,
+   235248,
+   4,
+   674,
+   3598,
+   1578
+  ],
+  "tokens": [
+   "▁we",
+   "▁have",
+   "▁to",
+   "▁do",
+   "▁it",
+   "▁",
+   "<mask>",
+   "▁that",
+   "▁works",
+   "▁well"
+  ]
+ },
+ {
+  "text": "Naïve café résumé, don't you think",
+  "ids": [
+   6526,
+   236370,
+   524,
+   18688,
+   96537,
+   235269,
+   1453,
+   235303,
+   235251,
+   692,
+   1742
+  ],
+  "tokens": [
+   "▁Na",
+   "ï",
+   "ve",
+   "▁café",
+   "▁résumé",
+   ",",
+   "▁don",
+   "'",
+   "t",
+   "▁you",
+   "▁think"
+  ]
+ },
+ {
+  "text": "Le château de Versailles, ça vaut le déplacement",
+  "ids": [
+   1709,
+   57709,
+   581,
+   84120,
+   235269,
+   20133,
+   88761,
+   709,
+   159055
+  ],
+  "tokens": [
+   "▁Le",
+   "▁château",
+   "▁de",
+   "▁Versailles",
+   ",",
+   "▁ça",
+   "▁vaut",
+   "▁le",
+   "▁déplacement"
+  ]
+ },
+ {
+  "text": "ParrotFlow—the dictation app—works offline (mostly)",
+  "ids": [
+   141700,
+   15310,
+   235403,
+   1175,
+   226549,
+   1059,
+   235403,
+   7171,
+   36249,
+   591,
+   80711,
+   235275
+  ],
+  "tokens": [
+   "▁Parrot",
+   "Flow",
+   "—",
+   "the",
+   "▁dictation",
+   "▁app",
+   "—",
+   "works",
+   "▁offline",
+   "▁(",
+   "mostly",
+   ")"
+  ]
+ },
+ {
+  "text": "  double  spaces   here",
+  "ids": [
+   235248,
+   4199,
+   235248,
+   14130,
+   235248,
+   235248,
+   1517
+  ],
+  "tokens": [
+   "▁",
+   "▁double",
+   "▁",
+   "▁spaces",
+   "▁",
+   "▁",
+   "▁here"
+  ]
+ },
+ {
+  "text": "It cost $1,234.56 on 2026-08-30 at 07:15",
+  "ids": [
+   1165,
+   2458,
+   697,
+   235274,
+   235269,
+   235284,
+   235304,
+   235310,
+   235265,
+   235308,
+   235318,
+   611,
+   235248,
+   235284,
+   235276,
+   235284,
+   235318,
+   235290,
+   235276,
+   235321,
+   235290,
+   235304,
+   235276,
+   696,
+   235248,
+   235276,
+   235324,
+   235292,
+   235274,
+   235308
+  ],
+  "tokens": [
+   "▁It",
+   "▁cost",
+   "▁$",
+   "1",
+   ",",
+   "2",
+   "3",
+   "4",
+   ".",
+   "5",
+   "6",
+   "▁on",
+   "▁",
+   "2",
+   "0",
+   "2",
+   "6",
+   "-",
+   "0",
+   "8",
+   "-",
+   "3",
+   "0",
+   "▁at",
+   "▁",
+   "0",
+   "7",
+   ":",
+   "1",
+   "5"
+  ]
+ },
+ {
+  "text": "\"quoted\" 'single' `backtick` <angle> {brace}",
+  "ids": [
+   664,
+   94032,
+   235281,
+   777,
+   15539,
+   235303,
+   4103,
+   1811,
+   7186,
+   235376,
+   968,
+   4940,
+   235313,
+   612,
+   46900,
+   235270
+  ],
+  "tokens": [
+   "▁\"",
+   "quoted",
+   "\"",
+   "▁'",
+   "single",
+   "'",
+   "▁`",
+   "back",
+   "tick",
+   "`",
+   "▁<",
+   "angle",
+   ">",
+   "▁{",
+   "brace",
+   "}"
+  ]
+ },
+ {
+  "text": "CamelCaseIdentifier snake_case_name kebab-case",
+  "ids": [
+   96810,
+   6598,
+   16676,
+   26775,
+   235298,
+   1533,
+   235298,
+   1067,
+   107245,
+   235290,
+   1533
+  ],
+  "tokens": [
+   "▁Camel",
+   "Case",
+   "Identifier",
+   "▁snake",
+   "_",
+   "case",
+   "_",
+   "name",
+   "▁kebab",
+   "-",
+   "case"
+  ]
+ },
+ {
+  "text": "emoji 🚀 and ﬁ ligature",
+  "ids": [
+   52810,
+   167340,
+   578,
+   59561,
+   10608,
+   1527
+  ],
+  "tokens": [
+   "▁emoji",
+   "▁🚀",
+   "▁and",
+   "▁ﬁ",
+   "▁lig",
+   "ature"
+  ]
+ },
+ {
+  "text": "日本語のテキストです",
+  "ids": [
+   26867,
+   236333,
+   235372,
+   141972,
+   2297
+  ],
+  "tokens": [
+   "▁日本",
+   "語",
+   "の",
+   "テキスト",
+   "です"
+  ]
+ },
+ {
+  "text": "",
+  "ids": [],
+  "tokens": []
+ },
+ {
+  "text": " a",
+  "ids": [
+   476
+  ],
+  "tokens": [
+   "▁a"
+  ]
+ },
+ {
+  "text": "a ",
+  "ids": [
+   476,
+   235248
+  ],
+  "tokens": [
+   "▁a",
+   "▁"
+  ]
+ },
+ {
+  "text": ".",
+  "ids": [
+   954
+  ],
+  "tokens": [
+   "▁."
+  ]
+ },
+ {
+  "text": " .",
+  "ids": [
+   954
+  ],
+  "tokens": [
+   "▁."
+  ]
+ },
+ {
+  "text": "That",
+  "ids": [
+   2995
+  ],
+  "tokens": [
+   "▁That"
+  ]
+ },
+ {
+  "text": " That",
+  "ids": [
+   2995
+  ],
+  "tokens": [
+   "▁That"
+  ]
+ },
+ {
+  "text": "Praisy's suggestion",
+  "ids": [
+   6235,
+   11408,
+   235303,
+   235256,
+   22076
+  ],
+  "tokens": [
+   "▁Pra",
+   "isy",
+   "'",
+   "s",
+   "▁suggestion"
+  ]
+ },
+ {
+  "text": "antidisestablishmentarianism unwieldy paraphernalia antidisestablishmentarianism unwieldy paraphernalia antidisestablishmentarianism unwieldy paraphernalia antidisestablishmentarianism unwieldy paraphernalia antidisestablishmentarianism unwieldy paraphernalia antidisestablishmentarianism unwieldy paraphernalia antidisestablishmentarianism unwieldy paraphernalia antidisestablishmentarianism unwieldy paraphernalia antidisestablishmentarianism unwieldy paraphernalia antidisestablishmentarianism unwieldy paraphernalia antidisestablishmentarianism unwieldy paraphernalia antidisestablishmentarianism unwieldy paraphernalia",
+  "ids": [
+   3258,
+   1999,
+   140695,
+   7318,
+   2285,
+   35915,
+   1250,
+   235267,
+   203272,
+   3258,
+   1999,
+   140695,
+   7318,
+   2285,
+   35915,
+   1250,
+   235267,
+   203272,
+   3258,
+   1999,
+   140695,
+   7318,
+   2285,
+   35915,
+   1250,
+   235267,
+   203272,
+   3258,
+   1999,
+   140695,
+   7318,
+   2285,
+   35915,
+   1250,
+   235267,
+   203272,
+   3258,
+   1999,
+   140695,
+   7318,
+   2285,
+   35915,
+   1250,
+   235267,
+   203272,
+   3258,
+   1999,
+   140695,
+   7318,
+   2285,
+   35915,
+   1250,
+   235267,
+   203272,
+   3258,
+   1999,
+   140695,
+   7318,
+   2285,
+   35915,
+   1250,
+   235267,
+   203272,
+   3258,
+   1999,
+   140695,
+   7318,
+   2285,
+   35915,
+   1250,
+   235267,
+   203272,
+   3258,
+   1999,
+   140695,
+   7318,
+   2285,
+   35915,
+   1250,
+   235267,
+   203272,
+   3258,
+   1999,
+   140695,
+   7318,
+   2285,
+   35915,
+   1250,
+   235267,
+   203272,
+   3258,
+   1999,
+   140695,
+   7318,
+   2285,
+   35915,
+   1250,
+   235267,
+   203272,
+   3258,
+   1999,
+   140695,
+   7318,
+   2285,
+   35915,
+   1250,
+   235267,
+   203272
+  ],
+  "tokens": [
+   "▁anti",
+   "dis",
+   "establishment",
+   "arian",
+   "ism",
+   "▁unw",
+   "ield",
+   "y",
+   "▁paraphernalia",
+   "▁anti",
+   "dis",
+   "establishment",
+   "arian",
+   "ism",
+   "▁unw",
+   "ield",
+   "y",
+   "▁paraphernalia",
+   "▁anti",
+   "dis",
+   "establishment",
+   "arian",
+   "ism",
+   "▁unw",
+   "ield",
+   "y",
+   "▁paraphernalia",
+   "▁anti",
+   "dis",
+   "establishment",
+   "arian",
+   "ism",
+   "▁unw",
+   "ield",
+   "y",
+   "▁paraphernalia",
+   "▁anti",
+   "dis",
+   "establishment",
+   "arian",
+   "ism",
+   "▁unw",
+   "ield",
+   "y",
+   "▁paraphernalia",
+   "▁anti",
+   "dis",
+   "establishment",
+   "arian",
+   "ism",
+   "▁unw",
+   "ield",
+   "y",
+   "▁paraphernalia",
+   "▁anti",
+   "dis",
+   "establishment",
+   "arian",
+   "ism",
+   "▁unw",
+   "ield",
+   "y",
+   "▁paraphernalia",
+   "▁anti",
+   "dis",
+   "establishment",
+   "arian",
+   "ism",
+   "▁unw",
+   "ield",
+   "y",
+   "▁paraphernalia",
+   "▁anti",
+   "dis",
+   "establishment",
+   "arian",
+   "ism",
+   "▁unw",
+   "ield",
+   "y",
+   "▁paraphernalia",
+   "▁anti",
+   "dis",
+   "establishment",
+   "arian",
+   "ism",
+   "▁unw",
+   "ield",
+   "y",
+   "▁paraphernalia",
+   "▁anti",
+   "dis",
+   "establishment",
+   "arian",
+   "ism",
+   "▁unw",
+   "ield",
+   "y",
+   "▁paraphernalia",
+   "▁anti",
+   "dis",
+   "establishment",
+   "arian",
+   "ism",
+   "▁unw",
+   "ield",
+   "y",
+   "▁paraphernalia"
+  ]
+ },
+ {
+  "text": "We ship the C# and F# builds",
+  "ids": [
+   1448,
+   7509,
+   573,
+   585,
+   235345,
+   578,
+   633,
+   235345,
+   32336
+  ],
+  "tokens": [
+   "▁We",
+   "▁ship",
+   "▁the",
+   "▁C",
+   "#",
+   "▁and",
+   "▁F",
+   "#",
+   "▁builds"
+  ]
+ },
+ {
+  "text": "line one\rline two",
+  "ids": [
+   2017,
+   974,
+   235316,
+   703,
+   1378
+  ],
+  "tokens": [
+   "▁line",
+   "▁one",
+   "\r",
+   "line",
+   "▁two"
+  ]
+ },
+ {
+  "text": "first line\n\nsecond line",
+  "ids": [
+   1370,
+   2017,
+   109,
+   2257,
+   2017
+  ],
+  "tokens": [
+   "▁first",
+   "▁line",
+   "\n\n",
+   "▁second",
+   "▁line"
+  ]
+ },
+ {
+  "text": "a\tb\t\tc",
+  "ids": [
+   476,
+   226,
+   235268,
+   255969,
+   498
+  ],
+  "tokens": [
+   "▁a",
+   "\t",
+   "b",
+   "\t\t",
+   "▁c"
+  ]
+ },
+ {
+  "text": "Le café de la gare est fermé",
+  "ids": [
+   1709,
+   18772,
+   236703,
+   581,
+   683,
+   74323,
+   1455,
+   61077,
+   236703
+  ],
+  "tokens": [
+   "▁Le",
+   "▁cafe",
+   "́",
+   "▁de",
+   "▁la",
+   "▁gare",
+   "▁est",
+   "▁ferme",
+   "́"
+  ]
+ },
+ {
+  "text": "C#",
+  "ids": [
+   585,
+   235345
+  ],
+  "tokens": [
+   "▁C",
+   "#"
+  ]
+ },
+ {
+  "text": "#",
+  "ids": [
+   1700
+  ],
+  "tokens": [
+   "▁#"
+  ]
+ },
+ {
+  "text": "#1",
+  "ids": [
+   1700,
+   235274
+  ],
+  "tokens": [
+   "▁#",
+   "1"
+  ]
+ },
+ {
+  "text": "F#",
+  "ids": [
+   633,
+   235345
+  ],
+  "tokens": [
+   "▁F",
+   "#"
+  ]
+ },
+ {
+  "text": "a\r",
+  "ids": [
+   476,
+   235316
+  ],
+  "tokens": [
+   "▁a",
+   "\r"
+  ]
+ },
+ {
+  "text": "café",
+  "ids": [
+   18688
+  ],
+  "tokens": [
+   "▁café"
+  ]
+ },
+ {
+  "text": "café",
+  "ids": [
+   18772,
+   236703
+  ],
+  "tokens": [
+   "▁cafe",
+   "́"
+  ]
+ },
+ {
+  "text": "👨‍👩‍👧",
+  "ids": [
+   235248,
+   241568,
+   235879,
+   241355,
+   235879,
+   244355
+  ],
+  "tokens": [
+   "▁",
+   "👨",
+   "‍",
+   "👩",
+   "‍",
+   "👧"
+  ]
+ },
+ {
+  "text": "👍🏽",
+  "ids": [
+   38104,
+   239518
+  ],
+  "tokens": [
+   "▁👍",
+   "🏽"
+  ]
+ },
+ {
+  "text": "naïve",
+  "ids": [
+   155245
+  ],
+  "tokens": [
+   "▁naïve"
+  ]
+ },
+ {
+  "text": "naïve",
+  "ids": [
+   81981,
+   238784,
+   524
+  ],
+  "tokens": [
+   "▁nai",
+   "̈",
+   "ve"
+  ]
+ },
+ {
+  "text": "Ångström",
+  "ids": [
+   30517,
+   512,
+   50563
+  ],
+  "tokens": [
+   "▁Å",
+   "ng",
+   "ström"
+  ]
+ },
+ {
+  "text": "Ångström",
+  "ids": [
+   586,
+   241582,
+   512,
+   7360,
+   238784,
+   235262
+  ],
+  "tokens": [
+   "▁A",
+   "̊",
+   "ng",
+   "stro",
+   "̈",
+   "m"
+  ]
+ },
+ {
+  "text": "ﬁ",
+  "ids": [
+   59561
+  ],
+  "tokens": [
+   "▁ﬁ"
+  ]
+ },
+ {
+  "text": "한국어",
+  "ids": [
+   114490,
+   236770
+  ],
+  "tokens": [
+   "▁한국",
+   "어"
+  ]
+ },
+ {
+  "text": "한",
+  "ids": [
+   235248,
+   250105,
+   248191,
+   248847
+  ],
+  "tokens": [
+   "▁",
+   "ᄒ",
+   "ᅡ",
+   "ᆫ"
+  ]
+ },
+ {
+  "text": "é́",
+  "ids": [
+   526,
+   236703,
+   236703
+  ],
+  "tokens": [
+   "▁e",
+   "́",
+   "́"
+  ]
+ },
+ {
+  "text": "﻿//",
+  "ids": [
+   45835,
+   634
+  ],
+  "tokens": [
+   "▁﻿",
+   "//"
+  ]
+ },
+ {
+  "text": "x‍y",
+  "ids": [
+   1141,
+   235879,
+   235267
+  ],
+  "tokens": [
+   "▁x",
+   "‍",
+   "y"
+  ]
+ }
+]

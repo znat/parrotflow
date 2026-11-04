@@ -242,6 +242,30 @@ if arguments.contains("--slot-model") {
     exit(SlotModelCommand.run())
 }
 
+if let at = arguments.firstIndex(of: "--parse") {
+    guard #available(macOS 14, *) else {
+        print("✗ the parser needs macOS 14 or later")
+        exit(1)
+    }
+    func value(after flag: String) -> String? {
+        guard let index = arguments.firstIndex(of: flag), arguments.indices.contains(index + 1) else { return nil }
+        return arguments[index + 1]
+    }
+    if let path = value(after: "--batch") {
+        exit(ParserCommand.batch(path: path, withMask: arguments.contains("--with-mask")))
+    }
+    if let text = value(after: "--encode") {
+        exit(ParserCommand.encode(text))
+    }
+    guard arguments.indices.contains(at + 1), !arguments[at + 1].hasPrefix("--") else {
+        print("usage: ParrotFlow --parse \"<text>\" [--lang xx]")
+        print("       ParrotFlow --parse --batch <items.json> [--with-mask]")
+        print("       ParrotFlow --parse --encode \"<text>\"")
+        exit(2)
+    }
+    exit(ParserCommand.run(text: arguments[at + 1], language: languageList(arguments)?.first ?? "en"))
+}
+
 if let at = arguments.firstIndex(of: "--slot-probe") {
     guard #available(macOS 14, *) else {
         print("✗ the slot probe needs macOS 14 or later")

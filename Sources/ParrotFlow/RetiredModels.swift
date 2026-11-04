@@ -10,7 +10,8 @@ import Foundation
 ///
 /// `mmbert-small-64` is the slot model's own earlier cache. `SlotModel` prunes
 /// it once the parrotflow-syrinx package has loaded, so a machine is never
-/// left with neither.
+/// left with neither. `parrotflow-syrinx` and `parrot-syrinx` are the fp32
+/// parser caches dev builds fetched; `SyrinxParser` prunes them once it loads.
 ///
 /// Only the names listed here, and only inside `models/`. Everything else in
 /// that directory is a model the app still fetches, and re-downloading one by
@@ -29,6 +30,8 @@ enum RetiredModels {
 
         static let modernBERT = Cache(name: "modernbert-base-64", label: "ModernBERT", size: "about 300 MB")
         static let mmBERTSmall = Cache(name: "mmbert-small-64", label: "mmBERT-small", size: "about 282 MB")
+        static let syrinx = Cache(name: "parrotflow-syrinx", label: "fp32 parrotflow-syrinx", size: "about 509 MB")
+        static let parrotSyrinx = Cache(name: "parrot-syrinx", label: "parrot-syrinx", size: "about 509 MB")
     }
 
     /// Removes the cache once, quietly. A machine that never had it does

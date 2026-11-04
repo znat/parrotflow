@@ -717,6 +717,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configReloadNotice?.cancel()
         configReloadNotice = nil
         applyConfig()
+        // A reload that adds `parse: true`. At launch `warmModels` does it, after speech.
+        if announceErrors, config.readsParse, #available(macOS 14, *) {
+            let ownsRow = !config.readsSlots
+                Task.detached(priority: .background) { await SyrinxParser.shared.warm(ownsRow: ownsRow) }
+        }
         // After the load, not with the other watchers: a transform can be
         // renamed, removed or pointed at a different file, so which files are
         // worth watching is only known once the config has been read.
@@ -2450,7 +2455,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         downloads.expect(
             SlotModel.download,
-            off: config.readsSlots ? nil : ModelDownload.gateOff
+            // One package for both: the parser reads its `parse` and `ner`.
+            off: config.readsSlots || config.readsParse ? nil : ModelDownload.gateOff
         )
         downloads.expect(
             SentenceReadings.download,
@@ -2493,6 +2499,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // dictation: the stages that read them stand aside until they are
             // in memory.
             if config.readsSlots { await transcriber.warmSlotModel() }
+            if #available(macOS 14, *), config.readsParse {
+                let ownsRow = !config.readsSlots
+                Task.detached(priority: .background) { await SyrinxParser.shared.warm(ownsRow: ownsRow) }
+            }
             // The boundary readings. 320 MB and a 1.3s load, and a dictation
             // never waits for either: without this the first few dictations of
             // a launch keep the periods a pause put in. Not fetched at all when
@@ -2559,6 +2569,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // somebody saying try now.
         if #available(macOS 14, *), config.readsSentenceModel {
             Task { await SentenceReadings.shared.retryNow() }
+        }
+        if #available(macOS 14, *), config.readsParse {
+            let ownsRow = !config.readsSlots
+            Task { await SyrinxParser.shared.retryNow(ownsRow: ownsRow) }
         }
         warmModels()
     }
