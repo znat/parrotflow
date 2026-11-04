@@ -770,6 +770,35 @@ somebody.
 returns `Other` for everything without one. In a pipeline the language comes
 from the scope; here it falls back to the first configured language.
 
+## The syrinx parse of a sentence
+
+```sh
+$PF --parse "I want to, I mean, I need a ticket to Paris on Tuesday."
+$PF --parse "Je n'ai pas vu qu'il l'aimait." --lang fr
+$PF --parse --batch items.json [--with-mask]
+$PF --parse --encode "<text>"
+```
+
+Prints what a transform with `parse: true` is handed as `parse`, one line per
+word: index, word, head, relation, part of speech, features, NER type,
+offset-length and the four tag probabilities. `--lang` picks the splitter's
+table, `en` when left out. The model is the slot model's package; the first run
+fetches it.
+
+`--batch` reads `[{"id", "language", "text" | "words"}]`. A `text` item is split
+and windowed as the pipeline does it. A `words` item is one window of those
+words. Each item prints one JSON line: the word records with full-precision
+tags, the ids of each window, and `ms`, `parse_ms` and `ner_ms`; or
+`{"id", "abstain"}`. A summary line ends it: load seconds, first, median and
+slowest item, the memory footprint after each load and at the end, and the
+peak. `--with-mask` loads the slot model's `mask` first, to measure all three
+functions loaded together.
+
+`--encode` prints the parser tokenizer's ids for the whole string.
+`scripts/check-parser-tokenizer.sh` compares them with HuggingFace's, and
+`scripts/check-parser-parity.sh` compares `--batch` with the Python reference
+on `tests/parser-parity.json`.
+
 ## Where the input stage cuts a field
 
 ```sh
@@ -1152,6 +1181,8 @@ scripts/check-landing.sh           # when a press with nowhere to type pastes af
 scripts/check-span-rule.sh         # which range a rewrite is written as, before any app sees it
 scripts/check-bug-report.sh        # what a bug report carries, and that it carries no home path
 scripts/check-slot-tokenizer.sh    # the slot tokenizer against HuggingFace's own
+scripts/check-parser-tokenizer.sh  # the parser tokenizer against HuggingFace's own
+scripts/check-parser-parity.sh     # the parse against the Python reference (needs the model)
 scripts/check-sentence-probe.sh    # the three readings of a boundary (needs the model)
 scripts/check-sentence-window.sh   # the window a boundary is read over, against hand-written cases
 scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)

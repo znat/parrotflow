@@ -756,6 +756,25 @@ whatever came next would have needed something else. A command needs nothing
 added ever again — which is the point, and the reason it is worth the process
 start.
 
+#### `parse: true`
+
+A `returns: json` command can ask for the syrinx parse of its text:
+
+```yaml
+  - name: disfluency
+    description: delete hesitations, repeats and false starts
+    command: disfluency.py
+    returns: json
+    parse: true
+```
+
+Its envelope then carries a `parse` field: per word the tree, the part of
+speech, the features, the named entity and four tag probabilities. The fields
+are in [authoring.md](authoring.md#the-parse). The stage waits at most 2
+seconds for the parser and runs without it after that. On any other body the
+key is refused, and `--check-config` names the transform. With no transform
+asking, the parser is never loaded.
+
 ### `join`, which fits a clip to the box it lands in
 
 `built-in/transforms/join/join.py` reads `input.*` and decides two things: what
