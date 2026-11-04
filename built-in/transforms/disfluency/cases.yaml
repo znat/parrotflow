@@ -168,6 +168,7 @@ cases:
     input: "the code is two two three"
   - probe: meant
     input: "il en reste quatre-vingt six six"
+    lang: fr
 
   # --- fragment: a word begun, abandoned, then said in full ---
   - probe: fragment
@@ -178,6 +179,7 @@ cases:
     expect: "Of course vocabulary is important. Like teammates names Slack mentions."
   - probe: fragment
     input: "c c'est exactement ça"
+    lang: fr
     expect: "c'est exactement ça"
 
   # --- meant: the fragment rule's own traps ---
