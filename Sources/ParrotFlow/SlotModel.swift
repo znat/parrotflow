@@ -5,7 +5,7 @@ import Foundation
 ///
 /// It is the `mask` function of the parrotflow-syrinx fp16 package: the
 /// mmBERT-small-64 program added unchanged, bit-equal to it on 641 of 641
-/// probes. The package also holds `parse` and `ner`, unused here.
+/// probes. The package also holds `parse` and `ner`, which `SyrinxParser` reads.
 ///
 /// What it is for: the masked slot the vocabulary gate reads. `SlotReference`
 /// asks it for the ten words a position expects, and `SlotGate` asks it what
@@ -142,7 +142,7 @@ actor SlotModel {
         if let loading { return try await loading.value }
 
         let task = Task<MLModel, Error> {
-            try await Self.build(progress: progress)
+            try await self.compiled(progress: progress, open: Self.load)
         }
         loading = task
         defer { loading = nil }
@@ -161,24 +161,37 @@ actor SlotModel {
         }
     }
 
-    private static func build(
-        progress: (@Sendable (String) -> Void)?
-    ) async throws -> MLModel {
-        if isCached {
+    /// The fetch in flight in this process, so the mask and the parser share one.
+    private var fetching: Task<Void, Error>?
+
+    /// Makes sure the compiled package is on disk, then returns what `open`
+    /// builds from it. A cache that will not open is fetched again, once.
+    /// `SyrinxParser` comes in here too, for `parse` and `ner`.
+    func compiled<T>(
+        progress: (@Sendable (String) -> Void)?, open: () throws -> T
+    ) async throws -> T {
+        if Self.isCached {
             // Compiled and on disk, so this launch only has to open it.
-            ModelDownloads.report(download.id, .loading)
-            do { return try load() } catch {
+            ModelDownloads.report(Self.download.id, .loading)
+            do { return try open() } catch {
                 Log.write(
                     "slot model: the cached copy will not load"
                         + " (\(error.localizedDescription)); fetching it again"
                 )
             }
         }
-        try await underLock { try await fetch(progress: progress) }
+        if let fetching {
+            try await fetching.value
+        } else {
+            let task = Task { try await Self.underLock { try await Self.fetch(progress: progress) } }
+            fetching = task
+            defer { fetching = nil }
+            try await task.value
+        }
         // The compile is the long half of this one — the .mlpackage is built
-        // and then deleted — and it happens inside `load`.
-        ModelDownloads.report(download.id, .loading)
-        return try load()
+        // and then deleted — and it happens inside `fetch`.
+        ModelDownloads.report(Self.download.id, .loading)
+        return try open()
     }
 
     /// One process at a time inside `fetch`.
