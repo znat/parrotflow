@@ -107,13 +107,14 @@ def score(verbose):
     """The two failure kinds counted apart, because they cost differently."""
     cases = yaml.safe_load(CASES.read_text())["cases"]
     parses = json.loads(PARSES.read_text())
-    passed = missed = damaged = wrong = unparsed = known = 0
+    passed = missed = damaged = wrong = known = 0
+    unparsed = {"change": 0, "keep": 0}
 
     for case in cases:
         if says_marker(case["input"]) and case["input"] not in parses:
             # A failure, not a skip: a skipped case once printed "keep 44/44"
             # on a machine where eight of those keeps never ran.
-            unparsed += 1
+            unparsed["keep" if "expect" not in case else "change"] += 1
             print(f"  ✗ {case['input']}\n      (no parse recorded — run --record)")
             continue
         got, applied = collapsed(case["input"], parses.get(case["input"]))
@@ -151,12 +152,12 @@ def score(verbose):
     total = len(cases)
     keeps = sum(1 for c in cases if "expect" not in c)
     changes = total - keeps
-    print(f"\n  {passed}/{total}   collapse {changes - missed - wrong - known}/{changes}"
-          f"   keep {keeps - damaged}/{keeps}")
+    print(f"\n  {passed}/{total}   collapse {changes - missed - wrong - known - unparsed['change']}/{changes}"
+          f"   keep {keeps - damaged - unparsed['keep']}/{keeps}")
     if known:
         print(f"    {known} known miss(es), named in cases.yaml")
-    if unparsed:
-        print(f"    {unparsed} marker case(s) with no parse recorded")
+    if sum(unparsed.values()):
+        print(f"    {sum(unparsed.values())} marker case(s) with no parse recorded")
     if missed:
         print(f"    {missed} left the stutter in")
     if wrong:
