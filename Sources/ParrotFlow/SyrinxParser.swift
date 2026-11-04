@@ -243,12 +243,12 @@ actor SyrinxParser {
     }
 
     private static func build(progress: (@Sendable (String) -> Void)?) async throws -> Parser {
-        let heads = try Tensors(contentsOf: Parser.headsURL)
+        let weights = try Parser.Weights(contentsOf: Parser.headsURL)
         let parser = try await SlotModel.compiled(progress: progress) {
             try Parser(
                 parse: try model("parse"), ner: try model("ner"),
                 tokenizer: try ScalarBPE(contentsOf: SlotModel.tokenizerDirectory.appendingPathComponent("tokenizer.json")),
-                heads: heads
+                weights: weights
             )
         }
         // The first prediction after a load took 167 to 223 ms against 10 to 16 ms warm.

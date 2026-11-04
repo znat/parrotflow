@@ -52,17 +52,32 @@ final class Parser: @unchecked Sendable {
     private let bos: Int
     private let eos: Int
 
-    init(parse: MLModel, ner: MLModel, tokenizer: ScalarBPE, heads: Tensors) throws {
+    /// What `syrinx-heads.safetensors` holds, read before any model loads: a
+    /// file that will not read is the bundle's fault, and a fetch cannot fix it.
+    struct Weights {
+        fileprivate let heads: Heads
+        fileprivate let ner: NERHead
+        fileprivate let adapters: [String: MLMultiArray]
+
+        init(contentsOf url: URL) throws {
+            let tensors = try Tensors(contentsOf: url)
+            heads = try Heads(tensors)
+            ner = try NERHead(tensors)
+            adapters = try Parser.adapterInputs(tensors)
+        }
+    }
+
+    init(parse: MLModel, ner: MLModel, tokenizer: ScalarBPE, weights: Weights) throws {
         guard let bos = tokenizer.id(of: "<bos>"), let eos = tokenizer.id(of: "<eos>") else {
             throw Failure.malformed("the tokenizer has no <bos> or <eos>")
         }
         parseModel = parse
         nerModel = ner
         self.tokenizer = tokenizer
-        self.heads = try Heads(heads)
-        self.ner = try NERHead(heads)
-        tagNames = self.heads.tagNames
-        adapters = try Self.adapterInputs(heads)
+        heads = weights.heads
+        self.ner = weights.ner
+        tagNames = weights.heads.tagNames
+        adapters = weights.adapters
         self.bos = bos
         self.eos = eos
     }
