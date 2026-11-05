@@ -38,6 +38,8 @@ enum Tagger {
         /// The dictionary form. Absent for a word no dictionary knows, which is
         /// itself the signal for a term that may want a vocabulary entry.
         let lemma: String?
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case at, len, text, tag, lemma }
     }
 
     /// Every word in `text`, tagged. `language` comes from the pipeline scope
@@ -69,5 +71,16 @@ enum Tagger {
             return true
         }
         return out
+    }
+}
+
+extension Tagger.Token: EnvelopeDescribed {
+    static let schemaName = "Token"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .at, .len: return .required(.integer)
+        case .text, .tag: return .required(.string)
+        case .lemma: return .optional(.string)
+        }
     }
 }

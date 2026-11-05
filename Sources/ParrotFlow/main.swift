@@ -29,6 +29,10 @@ if arguments.contains("--schema") {
     exit(SchemaCommand.run())
 }
 
+if arguments.contains("--envelope-schema") {
+    exit(EnvelopeSchemaCommand.run())
+}
+
 // The first line of every run, app or command, and above the config for the
 // same reason: loading the config already logs — a transform it refused, a
 // vocabulary.yaml it wrote — and those lines need the stamp above them to say

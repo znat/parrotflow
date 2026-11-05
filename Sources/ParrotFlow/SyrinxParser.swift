@@ -17,7 +17,9 @@ struct ParseField: Encodable, Sendable {
         let tags: [Float]
         let vector: [Float16]?
 
-        enum CodingKeys: String, CodingKey { case at, len, text, upos, feats, head, deprel, ner, tags, vector }
+        enum CodingKeys: String, CodingKey, CaseIterable {
+            case at, len, text, upos, feats, head, deprel, ner, tags, vector
+        }
 
         /// Base64 of the little-endian float16 values.
         var packedVector: String? {
@@ -50,7 +52,7 @@ struct ParseField: Encodable, Sendable {
     /// Not encoded: what `--parse --batch` reports.
     let windows: [Parser.Window]
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case language, words
         case tagNames = "tag_names"
     }
@@ -345,5 +347,30 @@ final class ParseCache: @unchecked Sendable {
         let field = await SyrinxParser.field(for: text, language: language, stage: stage, vectors: vectors)
         if let field { parsed[key] = (field, vectors) }
         return field
+    }
+}
+
+extension ParseField: EnvelopeDescribed {
+    static let schemaName = "Parse"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .language: return .required(.string)
+        case .tagNames: return .required(.array(.string))
+        case .words: return .required(.array(.type(Word.self)))
+        }
+    }
+}
+
+extension ParseField.Word: EnvelopeDescribed {
+    static let schemaName = "Word"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .at, .len, .head: return .required(.integer)
+        case .text, .upos, .deprel: return .required(.string)
+        case .feats: return .required(.map(.string))
+        case .ner: return .required(.nullable(.string))
+        case .tags: return .required(.array(.number))
+        case .vector: return .optional(.base64)
+        }
     }
 }
