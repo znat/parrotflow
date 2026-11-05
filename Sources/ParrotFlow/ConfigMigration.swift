@@ -173,7 +173,7 @@ enum ConfigMigration {
             Log.write("config: upgraded from version \(written.plan.from) to \(written.plan.to);"
                 + " the old file is \(written.backup.path)")
             for step in written.plan.steps { Log.write("config: \(step.version) — \(step.summary)") }
-            for line in diff(lines(written.plan.before), lines(written.plan.after)) {
+            for line in diff(lines(written.plan.before), lines(written.plan.after), context: 0) {
                 Log.write("config:   \(line)")
             }
             return ("config.yaml upgraded to version \(written.plan.to): "
