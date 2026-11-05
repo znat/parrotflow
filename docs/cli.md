@@ -29,6 +29,7 @@ means it did what it says**, so these compose into scripts — which is what
 |---|---|
 | `--check-config` | Is the config valid, and what will actually run? |
 | `--schema` | Which keys can `config.yaml` hold, and what does each take? |
+| `--upgrade-config` | What would the upgrade at launch change in my config? |
 | `--pipeline <file.yaml> "<text>"` | What does this pipeline do to this sentence? |
 | `--replace "<text>"` | What do my replacement rules do to this sentence? |
 | `--route "<what you'd say>"` | Which transform does this instruction reach? |
@@ -50,6 +51,7 @@ what survives it.
 ```
 $ $PF --check-config
 config: /Users/you/.config/parrotflow/config.yaml
+  ✓ version           1
   ✓ hotkey            Right ⌥  (push-to-talk, polled)
   ✓ sample rate       16000 Hz mono
   ✓ output dir        /Users/you/.config/parrotflow/recordings
@@ -59,8 +61,24 @@ config: /Users/you/.config/parrotflow/config.yaml
   ✓ input device      MacBook Pro Microphone
 ```
 
+An older config, before the app has upgraded it:
+
+```
+  · version           0 — 1 upgrade(s) pending. The app makes them at launch; `<binary> --upgrade-config --write` rewrites the config, after a backup
+      1  sentence repair is the sentence_repair transform, the first pipeline step
+```
+
 It also names, every time and whether or not anything is wrong:
 
+- the config's `version:`. `✓ version 1` is current. An older file gets a `·`
+  line that counts the upgrades pending and gives the
+  `--upgrade-config --write` command, then one line per pending upgrade (shown
+  above). A file newer than the app says so and is read as it is. See
+  [`--upgrade-config`](#--upgrade-config)
+- a `transcription.sentence_repair:` or `transcription.interpret:` block, or a
+  `- sentence_repair` or `- interpret` step. Each is a `✗` that names
+  `--upgrade-config --write`: sentence repair is the `sentence_repair`
+  transform now
 - every `command:` transform, because that is config that executes code
 - **the resolved absolute path of every transform's body**, so a file present
   both in `transforms/<name>/` and beside `config.yaml` cannot leave you
@@ -69,7 +87,7 @@ It also names, every time and whether or not anything is wrong:
   a notice, not a fault: it runs, and nothing is moved for you
 - a pipeline step naming a transform that does not exist
 - a `pipelines:` key, which is retired: nothing under it is read, so it is
-  refused and the built-in default runs until you write `pipeline:`
+  refused and only the fixed passes run until you write `pipeline:`
 - an `app:` lookahead that is not anchored, which would run the stage
   everywhere it was written to exclude
 - a `fuzzy` stage with no `replacements` stage before it
@@ -101,6 +119,50 @@ each key on stderr: a key the parser reads with no entry, or an entry the parser
 does not read. `scripts/check-schema.sh` runs it on every pull request.
 
 To use it in VS Code, see [configuration.md](configuration.md#configuration-reference).
+
+### `--upgrade-config`
+
+Shows what the upgrade at launch would change in a config, and makes the change
+with `--write`. See [configuration.md](configuration.md#version-and-the-upgrade-at-launch)
+for what an upgrade is.
+
+```sh
+$PF --upgrade-config                      # the variant's config.yaml: show the change
+$PF --upgrade-config --write              # make it, after a backup
+$PF --upgrade-config <path> [--write]     # any other config file
+```
+
+With no path it reads the variant's `config.yaml`, and honours
+`PARROTFLOW_CONFIG_DIR`. It prints the version change, one line per upgrade
+and a unified diff:
+
+```
+/Users/you/.config/parrotflow/config.yaml: version 0 -> 1
+  1  sentence repair is the sentence_repair transform, the first pipeline step
+--- config.yaml
++++ config.yaml
+…
+· not written. Add --write to make the change
+```
+
+Without `--write` it writes nothing. With `--write` it does what the app does
+at launch: it copies the old file to `config.yaml.bak-v<old version>-<yyyy-MM-dd>`
+beside it (`-2`, `-3` when that name is taken), writes the new one, writes the
+same lines to the log and prints the launch notice after a `✓`:
+
+```
+✓ config.yaml upgraded to version 1: sentence repair is the sentence_repair transform, the first pipeline step. The old file is config.yaml.bak-v0-2026-11-05
+```
+
+A failure prints the notice after a `✗` and writes nothing.
+
+A second run is a no-op: `✓ <path> is version 1. Nothing to upgrade`. A file
+newer than the app is left as it is, with a `·` line.
+
+Exit 0 when it did what it says, including a no-op. Exit 1 when the file
+cannot be read, or when the upgraded file would not load; the file is then
+untouched. `scripts/check-upgrade-config.sh` runs it on every fixture in
+`tests/upgrade-config/`, in CI.
 
 ### `--bug-report`
 
@@ -601,7 +663,6 @@ reason for the swap.
 ```sh
 $PF --sentence-model                                       # fetch the model the readings need
 $PF --sentence-probe "<left half>" "<right half>"          # read one boundary
-$PF --sentence-probe --bare "<left half>" "<right half>"   # a capital with no mark
 $PF --sentence-probe --window "<left half>" "<right half>" # the window alone, no model
 $PF --sentence-probe --bench <cases.json> --out <out.json> # a whole file, one loaded process
 ```
@@ -615,20 +676,6 @@ threshold.
 
 End the left half with `?` to read a question boundary. With no mark there it
 is read as a period.
-
-`--bare` reads it as a capital the transcriber wrote with nothing in front of
-it. That shape gets a fourth reading, the text exactly as decoded, because
-there is no mark to take out and leaving it alone has to be a candidate of its
-own rather than what happens when a mark wins.
-
-```
-$PF --sentence-probe --bare "…the dot and the word app" "And decide which one is bigger"
-  reading   .           -4.9574  7
-  reading   as-decoded  -5.3883  6
-  reading   ,           -4.2416  7
-  reading   join        -4.3177  6
-  winner    ,
-```
 
 ```
 $PF --sentence-probe "…the first usage of the LLM with." "The vocabulary is slower"
@@ -646,14 +693,15 @@ sequences do this.
 
 `--bench` reads `[{"left": …, "right": …}]` and writes one row of scores per
 boundary, with the mark it read and the milliseconds each decision took. A row
-may carry `"mark": "?"` where the left half does not end with the mark itself,
-and `"mark": ""` for the bare-capital shape.
+may carry `"mark": "?"` where the left half does not end with the mark itself.
+An empty `"mark": ""` counts as no mark given: the mark is read off the left
+half.
 It loads the model once, so it is the only way to get a latency number;
 `--vectors` loads the word vectors as well, so the memory line describes the
 process the app runs.
 
 `--window` builds the prefix and the continuations and stops, as JSON. No model
-is loaded. `--bare` applies to it as well.
+is loaded.
 
 ```
 $PF --sentence-probe --window "did you see the parrot?" "At the top right"
@@ -688,41 +736,37 @@ tests/sentence-boundary-cases.json; it needs the model, so it is not in
 `--sentence-model` fetches the Qwen base model the readings are scored with.
 The vocabulary slot gate has its own model and its own command, `--slot-model`.
 
-## Which sentence marks a pause put there
+## What the word after a removed mark becomes
 
 ```sh
-$PF --sentence-join "<text>"            # read every boundary, and join what wins
-$PF --sentence-join --case "<text>"     # the lowercasing alone, no model
+$PF --sentence-case "<text>"     # no model
 ```
 
-`--sentence-join` is the pass the app runs, on the text you give it. One block
-per boundary, then the text it hands on. A boundary is a `.` or a `?` followed
-by a word — a capital after a period, a capital or a lowercase word after a
-question mark.
+The `sentence_repair` transform takes out a sentence mark a pause put there.
+See [pipelines.md](pipelines.md#sentence-marks-a-pause-put-there).
+`--sentence-case` answers one part of that: for each sentence mark in the
+text, how the next word is written once the mark is gone.
 
 ```
-$PF --sentence-join "…the first usage of the LLM with. The vocabulary is slower"
-  language   en
-  boundary   with. The -> with the
-  reading    .         -7.2669  5
-  reading    ,         -6.5327  5
-  reading    join      -4.5571  4
-  winner     join
-  text       …the first usage of the LLM with the vocabulary is slower
+$PF --sentence-case "I will ask him. Nathan knows."
+  next       Nathan -> Nathan
 ```
 
-The mark is removed where `join` wins, and left alone otherwise. Which marks are
-scanned, and which are read beside them, is `marks:` on the `interpret` step in
-`config.yaml` — the sentence enders in that list are scanned, the rest are
-readings. This command reads the built-in set unless a legacy `marks:` is set;
-`--pipeline` is what runs the step as the config spells it.
-`scripts/check-sentence-join.sh` scores the decisions against
-tests/sentence-boundary-cases.json, in both shapes; it needs the model, so it is
-run by hand.
+`NLTagger` and your vocabulary decide, so no model is loaded. A word with a
+lemma that is not a name is lowercased. A name, a word in capitals throughout,
+`I` and a term in `vocabulary.yaml` keep the capital. A mark the abbreviation
+list refuses prints nothing. The `vocabulary` pass uses the same rule to write
+a refused span in lowercase (`lowercase_refused`).
+`scripts/check-sentence-case.sh` scores it against
+tests/sentence-case-cases.json and runs in CI.
 
-`--case` answers only what the capitalised word becomes once the mark is
-gone. `NLTagger` and your vocabulary decide that, so no model is loaded and
-`scripts/check-sentence-case.sh` runs in CI. See `SentenceJoin`.
+The transform itself is scored by its own case set, with
+`built-in/transforms/sentence_repair/score.py`. Three scripts score it on
+larger sets and need the models, so they are run by hand:
+`scripts/check-sentence-join.sh` (the joins, against
+tests/sentence-boundary-cases.json), `scripts/check-bare-capital.sh` (the
+capitals rule, against tests/bare-capital-cases.json) and
+`scripts/check-french-boundary.sh` (the French readings).
 
 ## What ParrotFlow makes of an app
 
@@ -1188,9 +1232,11 @@ scripts/check-sentence-probe.sh    # the three readings of a boundary (needs the
 scripts/check-sentence-window.sh   # the window a boundary is read over, against hand-written cases
 scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
 scripts/check-slot-gap.sh          # what the slot says about a rewrite (needs both models)
-scripts/check-sentence-case.sh     # the capital after a mark the join removes
+scripts/check-sentence-case.sh     # the word after a removed sentence mark
 scripts/check-invented-tail.sh     # the endings the decoder wrote over silence
-scripts/check-sentence-join.sh     # which sentence marks the join removes (needs the model)
+scripts/check-sentence-join.sh     # which sentence marks sentence_repair removes (needs the models)
+scripts/check-bare-capital.sh      # which mid-sentence capitals sentence_repair lowercases (needs the parser)
+scripts/check-upgrade-config.sh    # what --upgrade-config writes, against tests/upgrade-config/
 scripts/check-selector.sh          # where an open place lands, and what an answer writes
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal

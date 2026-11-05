@@ -6,13 +6,14 @@ offered action for changes you want to choose each time.
 
 ## Understand the order
 
-The decoder finishes a transcript. Fixed sentence-repair and vocabulary passes
-run first, followed by your configurable pipeline. Those fixed passes have
-their own settings; they are not ordinary steps you can reorder.
+The decoder finishes a transcript. A fixed vocabulary pass runs first,
+followed by your configurable pipeline. The vocabulary pass has its own
+settings; it is not an ordinary step you can reorder.
 
-The default pipeline includes fillers, date formatting, number formatting,
-money formatting, and disfluency cleanup. Order has consequences:
+The default pipeline includes sentence repair, fillers, date formatting, number
+formatting, money formatting, and disfluency cleanup. Order has consequences:
 
+- Sentence repair runs first, so the steps below it read whole sentences.
 - Dates run before numbers so number formatting does not consume date phrases.
 - Money runs after numbers because it reads normalized amounts.
 - The PR-link script runs after numbers so it sees a numeric reference.
@@ -74,9 +75,9 @@ no available model must leave the sentence intact.
 ## Disable a behavior
 
 Remove its step from your existing pipeline, or change its condition. An empty
-`pipeline: []` disables configurable stages; omitting the setting selects the
-default instead. The fixed sentence-repair and vocabulary passes have their
-own `enabled` settings and are not disabled by an empty list.
+`pipeline: []`, or no `pipeline:` at all, runs no configurable stage. The fixed
+vocabulary and screen-spelling passes have their own `enabled` settings and are
+not disabled by an empty list.
 
 ## Next
 

@@ -18,6 +18,7 @@ run on an empty folder writes a fresh default config into it.
 | `"$PF" --version` | The build's commit hash. The release number is in `pf.sh`'s `app_version=`. |
 | `"$PF" --microphones` | Every microphone attached, the exact names `audio.microphones` matches, and which one wins now. |
 | `"$PF" --bug-report` | Version, macOS, permissions, the whole `--check-config` and the last 50 log lines. Read `diagnose.md` first. |
+| `"$PF" --upgrade-config` | What the app's upgrade at launch would change in the config, as a diff. Writes nothing. Needs an existing file. See `settings.md`. |
 
 `--check-config` cannot see Accessibility. macOS credits a check from a terminal
 to the terminal, so it always looks missing there. The app writes the real
@@ -136,6 +137,17 @@ model, do the same with whatever it calls.
 ```
 
 Back up `vocabulary.yaml` first. See `vocabulary.md`.
+
+## Upgrade the config
+
+```sh
+"$PF" --upgrade-config --write     # upgrade an older config.yaml now, after a backup
+```
+
+Writes `config.yaml` after copying the old one to
+`config.yaml.bak-v<old>-<yyyy-MM-dd>` beside it. Show the user the diff from
+`--upgrade-config` first, and run this only with their OK. Exit 1 when the
+upgraded file would not load; the file is then untouched.
 
 ## Only the user runs these
 

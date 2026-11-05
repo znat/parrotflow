@@ -18,8 +18,8 @@ live dictation: there is no microphone, no hotkey, no paste, no frontmost app.
   `scripts/pf.sh`, which sets `PARROTFLOW_CONFIG_DIR` to that dir.
 - The scratch config starts empty. The first call of the run fills it with the
   shipped defaults (`built-in/`, with `built-in/config.example.yaml`): every
-  flag except `--version`, `--seed-config`, `--panel-sheet`, `--tutorial-sheet`
-  and `--tour-film` loads the config at start (`Sources/ParrotFlow/main.swift`,
+  flag except `--version`, `--seed-config`, `--upgrade-config`, `--panel-sheet`,
+  `--tutorial-sheet` and `--tour-film` loads the config at start (`Sources/ParrotFlow/main.swift`,
   the `Trace.directory` line). `--pipeline` loads it too, though its fixture
   decides the stages.
 - Never drive the installed apps. Never run the binary without a flag.

@@ -1,0 +1,10 @@
+version: 1
+transcription:
+  pipeline:
+    - transform: fillers
+
+transforms:
+  - name: fillers
+    description: delete hesitation sounds
+    replace:
+      "": ['/[,]?\s*\b(?:um|uh)\b[,]?/']

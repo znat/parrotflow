@@ -613,10 +613,7 @@ actor Transcriber {
         }
         Trace.current?.recordASR(result, model: Repo.parakeetV3.rawValue)
 
-        // Nothing rewrites the transcript here any more. The last pass that
-        // did — the boundary readings — is the `interpret` step, and it is
-        // handed the token timings so it can still line the words up against
-        // the audio they came from.
+        // Nothing rewrites the transcript here. The pipeline does.
         let text = result.text
         var vocabularyCount = 0
         var vocabularyChanges = ""
@@ -642,19 +639,14 @@ actor Transcriber {
             Task { await WordVectors.shared.warm() }
         }
 
-        // The sound pass is English only — espeak's letter-to-sound answers for
-        // French words and the answer is noise. So is the boundary reading,
-        // which runs in the pipeline now as the `interpret` step and refuses
-        // every other language itself.
-        let english = Pipeline.language(of: text, config: config) == "en"
         // 320 MB and a 1.3s load, and a dictation never waits for either.
-        // Fetched only where a step will read it, so deleting the line stops
-        // the download — and so does the legacy switch. `context_spelling`
-        // reads it in every language.
-        if config.transcription.contextSpelling.enabled || (english && config.readsBoundaries) {
+        // Fetched only where something reads it.
+        if config.readsSentenceModel {
             Task { await SentenceReadings.shared.warm() }
         }
-        if english {
+        // The sound pass is English only — espeak's letter-to-sound answers for
+        // French words and the answer is noise.
+        if Pipeline.language(of: text, config: config) == "en" {
             // The set the sound pass actually reads, not the shorter one the
             // audio search needed. `vocabularyTerms` drops anything under five
             // letters or with a space in it, so a vocabulary of `Claude Code`
@@ -700,13 +692,8 @@ actor Transcriber {
         // Only when there is one. Absent says "no press", which is the honest
         // answer off the hotkey path and the one `input` declines on.
         if let press { seed.set("press.run", .int(press)) }
-        // The decoder's own words, for the `interpret` step's pause gate. This
-        // is the only caller that has them; every other way into the pipeline
-        // has no audio, and the gate stands down there.
         return await Self.applyReplacements(
-            to: text, config: config, app: app, seed: seed,
-            words: Trace.words(from: result.tokenTimings ?? []),
-            progress: progress
+            to: text, config: config, app: app, seed: seed, progress: progress
         )
     }
 
@@ -1470,12 +1457,11 @@ actor Transcriber {
     /// How names get fixed — see `Replacements`.
     nonisolated static func applyReplacements(
         to text: String, config: Config, app: Pipeline.App? = nil,
-        seed: Scope = Scope(), words: [Trace.Word] = [],
+        seed: Scope = Scope(),
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         await Replacements.apply(
-            to: text, config: config, app: app, seed: seed, words: words,
-            progress: progress
+            to: text, config: config, app: app, seed: seed, progress: progress
         )
     }
 }

@@ -110,6 +110,7 @@ and a chip everywhere.
 ```yaml
 transcription:
   pipeline:
+    - transform: sentence_repair
     - transform: fillers
     - transform: dates_en
     - transform: numbers_en
@@ -180,11 +181,13 @@ path matches.
 
 ## Order
 
-- `sentence_repair` and `vocabulary` are not steps. They always run first, in
-  that order. `transcription.sentence_repair.enabled: false` or
-  `transcription.vocabulary.enabled: false` is the only way to turn one off.
-  `sentence_repair` takes out a full stop or question mark a pause put in the
-  middle of a sentence. English only.
+- `vocabulary` is not a step. It always runs first, and
+  `transcription.vocabulary.enabled: false` is the only way to turn it off.
+  `context_spelling` is not a step either. It runs last.
+- `sentence_repair` is the first step. It takes out a full stop or question
+  mark a pause put in the middle of a sentence, and lowercases a capital a
+  pause left mid-sentence. English and French. Keep it first, so the steps
+  below read whole sentences. Delete the line to turn it off.
 - Fillers go above the number steps: "two uh two three" must not become "two uh 23".
 - Dates go above numbers in every language: a date is made of number words.
 - Money goes below numbers: `numbers_en` writes "20 dollars", then `money_en`

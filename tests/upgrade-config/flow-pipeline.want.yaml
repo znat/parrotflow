@@ -1,0 +1,20 @@
+# Invented. Flow style, the way the schema's error message writes it.
+version: 1
+
+transcription:
+  pipeline: [{transform: sentence_repair}, {transform: fillers}]
+
+transforms:
+  - name: fillers
+    description: delete hesitation sounds
+    replace:
+      "": ['/[,]?\s*\b(?:um|uh)\b[,]?/']
+
+  # Sentence marks a pause wrote, taken out again. Reads the parse and the
+  # readings and calls no model. See docs/pipelines.md.
+  - name: sentence_repair
+    description: repair sentence boundaries a pause cut
+    command: built-in/sentence_repair/sentence_repair.py
+    returns: json
+    parse: true
+    readings: true

@@ -49,7 +49,7 @@ defined = names(example)
 
 # The stage kinds this app understands without a name — everything else in a
 # pipeline step must be one of these, or a `transform:` naming a defined one.
-BUILTIN_STAGES = {"replacements", "fuzzy", "vocabulary", "interpret"}
+BUILTIN_STAGES = {"context", "input", "vocabulary", "context_spelling"}
 
 def steps(doc):
     found = []
@@ -71,6 +71,11 @@ for kind, step in steps(example):
         print(f"  ✗ pipeline runs `stage: {step}`, which is not a stage this app knows"
               f" ({', '.join(sorted(BUILTIN_STAGES))})")
         ok = False
+
+# Boundary repair is a transform now, and the shipped config runs it first.
+if steps(example)[:1] != [("transform", "sentence_repair")]:
+    print("  ✗ the shipped pipeline does not start with `transform: sentence_repair`")
+    ok = False
 
 # The regression this whole check exists to catch: defaultYAML growing back
 # into a second, hand-synced copy of the config's shape. It should be a few

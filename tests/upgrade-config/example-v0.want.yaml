@@ -1,0 +1,375 @@
+# ParrotFlow configuration
+# Edit and save — changes are picked up automatically. Delete any line to
+# get its default back. `--check-config` says what the file adds up to.
+#
+# Agents: the docs are in the repository, github.com/znat/parrotflow.
+# Start at AGENTS.md — it routes to the page for the job. Every key here is
+# in docs/configuration.md. Validate with the binary, not by reading:
+#   /Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --check-config
+
+version: 1
+
+hotkey:
+  # A bare modifier (right_option, right_command, right_control, fn, ...) or
+  # a character key (a-z, 0-9, f1-f20, space, arrows) plus `modifiers` below.
+  key: right_command
+
+  # Any of: command, control, option, shift.
+  modifiers: []
+
+  # push_to_talk records while held, toggle taps on/off. A bare modifier
+  # needs push_to_talk.
+  mode: push_to_talk
+
+audio:
+  # Which microphone to record through, best first. The first one that is
+  # plugged in wins, whatever System Settings has the default set to, and
+  # nothing else on the Mac is moved. Names come from `--microphones`; the
+  # menu bar writes this list for you.
+  # microphones:
+  #   - Studio Display Microphone
+  #   - MacBook Pro Microphone
+
+  # Skip clips with no speech, so a stray keypress does not decode room tone.
+  speech_gate: true
+
+  # Decode each clip again with silence padding, and keep that decode if it
+  # reaches further. About 2% of dictations silently lose words, and this is
+  # what gets them back. Every dictation pays ~100ms for it: set this to
+  # false to keep the 100ms. Needs speech_gate.
+  second_opinion: true
+
+feedback:
+  # Floating Context surfaces follow macOS by default. Use dark or light to
+  # force one literally.
+  theme: system
+
+  # Primary Context colour for the pill, startup screen and vocabulary editor,
+  # as #RRGGBB. Dark appearance lifts the hue when needed for contrast.
+  primary_color: "#5F46CA"
+
+logging:
+  # One timeline per dictation in spans.jsonl, beside the recordings: every
+  # step, every decode, what each cost. Rotates at 64 MB. `--trace-view` draws
+  # one, and `--bug-report` carries a wordless copy of the last. See docs/cli.md.
+  spans: true
+
+  # Saves each dictation's recording to ~/.config/parrotflow/recordings, for
+  # --transcribe, calibration, or hearing what the app heard.
+  audio: false
+
+transcription:
+  # Languages you dictate in, most spoken first. Supported: en, fr. One
+  # entry turns off language detection.
+  languages: [en, fr]
+
+  # Matches vocabulary.yaml renderings and settles each match against the
+  # sentence it stands in. No model.
+  #
+  # Not a pipeline step: it is handed spans measured on the transcript as the
+  # decoder wrote it, and any edit above it moves them. It runs first, before
+  # everything below.
+  vocabulary:
+    enabled: true
+    # sound_below: 0.85      # how close a run of words must sound to a term
+    # gate_sentence: true    # read the sentence before keeping a match
+    # asks: true             # ask before typing a name it could not settle
+    #
+    # The rest switch off one half of the pass so the other can be scored.
+    # See docs/pipelines.md before changing them.
+    # near_misses: true      # also match a rendering one edit away
+    # by_sound: true         # also match words that sound like a term
+    # gate: true             # the word lists and the slot's part of speech
+    # slot_gate: true        # the mmBERT slot — false downloads nothing
+    # portrait: true         # a term's own sentences and its counter-examples
+    # lowercase_refused: true
+
+  # Spells a dictated word the way the screen does. Reads the screen at press.
+  context_spelling:
+    enabled: true
+
+  # Reads the window you dictate into, in every app, to spell names and terms
+  # the way the screen does. Known password managers, the system's password
+  # prompts, Keychain Access and System Settings are never read, nor are
+  # password fields. What it reads stays on this Mac, unless a prompt or script
+  # you add sends it on. false reads only terminals and Slack.
+  context:
+    every_app: true
+
+  # What a transcript runs through, in order. Everything here rewrites text
+  # and may be moved. Remove a line to skip that stage. One list for every
+  # language, and a step can carry a condition of its own. See
+  # docs/pipelines.md.
+  pipeline:
+    - transform: sentence_repair
+    # Hesitation sounds, above the number stages and not below them: a filler
+    # inside a number splits it, and "two uh two three" comes out "two uh 23".
+    - transform: fillers
+    - transform: fillers_fr
+      when: language == "fr"
+    # Dates, times and numbers as digits: "March third" -> March 3, "at ten
+    # fifteen" -> at 10:15, "two hundred forty-three" -> 243. Dates first, or
+    # numbers eats its words. French ships too, see docs/pipelines.md.
+    - transform: dates_en
+    - transform: numbers_en
+    # Amounts of money with the symbol: "twenty dollars" -> $20. Below numbers,
+    # which is what wrote the digits it reads.
+    - transform: money_en
+    # Repeats, false starts and empty markers. Below the number stages, or
+    # "two two three" collapses to 23 before anything reads it as 223.
+    - transform: disfluency
+
+# Every model this config can reach, under a name you pick. `api:` is the
+# protocol (ollama, openai, anthropic); other providers work through an
+# `endpoint:`. `default: true` picks the one used when no model is named.
+# A non-ollama model sends dictation off this Mac — `--check-config` says
+# so. api_key: omit it for the keychain, or use `file:~/path`, `env:NAME`
+# (terminal only), or the key written in full.
+# Optional: uncomment this block to enable Ollama for prompts and commands.
+# Local dictation and the built-in code/replacement pipeline do not need it.
+# models:
+#   gemma:
+#     api: ollama
+#     model: gemma4:e4b-mlx
+#     endpoint: http://localhost:11434
+#     # Keeps the model in RAM — otherwise Ollama drops it after 5 minutes idle
+#     # and the next command waits 7-10s to reload. Ollama only.
+#     keep_loaded: true
+#     default: true
+
+  # No `api_key:` — keychain. reasoning: off | minimal | low | medium | high.
+  # gpt:
+  #   api: openai
+  #   model: gpt-5.6-luna
+  #   endpoint: https://api.openai.com/v1
+  #   reasoning: off
+  #   timeout_seconds: 30
+  # claude:
+  #   api: anthropic
+  #   model: claude-sonnet-5
+  #   reasoning: off
+
+# What "hey parrot, …" can reach, and which model runs each part. Each falls
+# back to the default model above.
+commands:
+  # Matches what you said to a capability. Runs on every "hey parrot" —
+  # keep it local and fast.
+  # router: gemma
+
+  # Reads a rule out of "Tasmin spells T A S M E E N". Worth a bigger model.
+  # spelling: gpt
+
+  # An instruction no capability covers. `false` refuses them.
+  # catch_all: gpt
+
+# Word lists, written once and named — `{{fillers_en}}` in a `replace:`, or
+# `ctx["vars"]["lists"]` in a script. Quote every entry: `on`/`no`/`off` are
+# booleans in YAML 1.1.
+lists:
+  # Words that end in a full stop without ending a sentence. `sentence_repair`
+  # reads a full stop in front of a lowercase word — "approx. ten euros" — and
+  # the readings do not know what an abbreviation is: of twelve tried by hand
+  # it joined five. Writing this replaces the built-in list, which is the one
+  # below. No dots, and case does not matter.
+  #
+  # abbreviations: ["etc", "vs", "approx", "cf", "no", "inc", "ltd", "fig",
+  #                 "st", "ave", "dr", "mr", "mrs", "ms", "prof", "sr", "jr",
+  #                 "vol", "pp", "env", "art", "réf", "ex", "mme", "p"]
+
+  # Hesitation sounds, for the `fillers` transforms. Add a word, not a regex —
+  # entries are escaped, so `u+m+` would look for those characters. A sound
+  # held for any length is a pattern in the transform instead.
+  #
+  # LONGEST FIRST. An alternation is first-match-wins, so `uh` before `uh-huh`
+  # leaves "he said uh-huh" as "he said-huh".
+  fillers_en: ["uh-huh", "mm-hmm", "erm", "mhm", "um", "uh", "hm"]
+  # `ben` and `bah` are deliberately absent. They are the two commonest French
+  # fillers and Ben is a name — a list that deletes it will one day delete
+  # somebody.
+  fillers_fr: ["euh", "heu", "hein"]
+
+# What the activation phrase can reach, and what a pipeline can name.
+#   name          the id a pipeline or `when:` names
+#   description   matched against what you say — write it as you would say it
+#   display       shown on the menu bar while the transform runs
+#   prompt:       asks a model, about a second on the local one
+#   model:        which model this runs on — a name from `models:`, or
+#                 `{ use: gpt, reasoning: low }`. Left out, uses the default.
+#   replace:      a substitution table, costs nothing
+#   command:      a program of yours — transcript in on stdin, rewrite out on stdout
+#   confirm       shows the result first; set to false to skip that
+#   done          what the pill says when this leaves the text alone on purpose
+#   failed        what the pill says when this could not run — markdown
+#   path          a body too long for here — transforms/X/, e.g. prompt: { path: slack.md }
+# More in docs/pipelines.md.
+transforms:
+  - name: grammar
+    description: fix grammar and punctuation mistakes, not formatting or numbers
+    display: Fixing grammar
+    # Puts this on the pill after a dictation. `key:` is the chip's letter.
+    offer: true
+    key: g
+    # What the pill says when this could not run.
+    failed: |
+      Requires a language model.
+
+      ```sh
+      brew install ollama
+      ollama run gemma4:e4b-mlx
+      ```
+    prompt: |
+      Correct grammar, spelling and punctuation. Make the smallest change
+      that makes the text correct — and make it. Every error is fixed.
+      Nothing else is touched.
+
+      Fix: subject-verb agreement, verb forms, confused homophones
+      (its/it's, their/they're, weather/whether), missing or wrong
+      punctuation, a missing capital at the start of a sentence, and a
+      missing full stop at the end.
+
+      Never reword, reorder, shorten, expand, or improve. Never add or
+      remove words except where grammar requires it. Never add quotation
+      marks, emphasis, or punctuation the sentence does not need. Keep the
+      speaker's own vocabulary, register and phrasing, including informal,
+      blunt or repetitive wording. A sentence that is already correct comes
+      back exactly as it was.
+
+      A phrase before the main clause takes a comma after it. A trailing
+      please or thanks does not.
+
+      Return only the text.
+
+  # "tell Marie the deadline moved" -> "tell @marie.dupont the deadline
+  # moved". The roster of names and handles is in the script, which is yours:
+  # transforms/slack_mentions/slack_mentions.py, written once on first launch.
+  # Until you fill it, the chip says so and changes nothing. Not in the
+  # pipeline: a message that names someone is not always one that pings them.
+  - name: slack_mentions
+    description: turn people's names into Slack mentions
+    display: Slack Mentions
+    offer: true
+    key: s
+    say: [slack mentions, mentions]
+    command: slack_mentions.py
+
+  # "PR 412", "PR twenty-six thirty-four", "PRs 26 and 74" -> links, in
+  # English and French. Defined, not in the pipeline: put your repository in
+  # place of OWNER/REPO and add `- transform: github_refs` after the number
+  # stages (`numbers_en`, and `numbers_fr` if you use it).
+  - name: github_refs
+    description: spoken PR and issue numbers as links
+    command: built-in/github_refs/github_refs.py https://github.com/OWNER/REPO
+    tests: { path: built-in/github_refs/cases.yaml }
+
+  # "at ten fifteen" -> at 10:15, "March third" -> March 3. One script per
+  # language. `tests:` is what sends --eval to the right case file.
+  - name: dates_en
+    description: dictated dates and clock times as digits
+    command: built-in/dates/en.py
+    returns: json
+    tests: built-in/dates/cases-en.yaml
+
+  # Spoken numbers as digits, one script per language. Runs after dates, on
+  # what dates left.
+  - name: numbers_en
+    description: spoken numbers as digits
+    command: built-in/numbers/en.py
+    returns: json
+    tests: { path: built-in/numbers/cases-en.yaml }
+
+  # Amounts of money with the currency symbol, one script per language. Runs
+  # below numbers, on the digits it wrote. `dollars` and `euros` are the same
+  # word in French, so each script declines a transcript the pipeline detected
+  # as another language — see transforms/built-in/money/engine.py.
+  - name: money_en
+    description: dictated amounts of money with the currency symbol
+    command: built-in/money/en.py
+    returns: json
+    tests: built-in/money/cases-en.yaml
+
+  # Hesitation sounds. A `replace:` rule, so it costs no process at all — the
+  # list above is the half you edit, and the pattern beside it catches a sound
+  # held for any length, "uhhhh", which a literal list cannot.
+  - name: fillers
+    description: delete hesitation sounds
+    replace:
+      "": ['/[,]?\s*\b(?:{{fillers_en}})\b[,]?/',
+           '/[,]?\s*\bu+[hm]+\b[,]?/']
+
+  # `euh` never matched the English rule: the word boundary sits before the
+  # `e`, so `u+h+` cannot reach it.
+  - name: fillers_fr
+    description: supprime les hésitations
+    replace:
+      "": ['/[,]?\s*\b(?:{{fillers_fr}})\b[,]?/',
+           '/[,]?\s*\be+u+h+\b[,]?/']
+
+  # Repeats, false starts, and a discourse marker that carries nothing.
+  # ~0.04s for the first four rules, mostly the python3 start.
+  #
+  # The fifth wants a dependency parse, because "you know" is a real verb with
+  # a real object half the time — "we'll let you know" has to survive. A
+  # marker the parse reads as part of a correction stays: "the rain, I mean
+  # the sun" never becomes "the rain the sun".
+  # `parse: true` hands it the syrinx parse, about 34 ms at 60 words. Without
+  # one the other four still run and `disfluency.declined` says what was lost.
+  #
+  # `parse: vectors` in its place also runs the tree cutter after the rules: a
+  # cut the parse proposes, kept when the cut filter scores it 0.75 or more.
+  # It costs 3 to 6 ms of Python at 20 to 120 words, and about 1 KB per word
+  # of envelope.
+  #
+  # `returns: json` is not optional. It is what sends `ctx.language` and the
+  # parse in, and the language picks the markers: English has three, French
+  # none yet.
+  # Sentence marks a pause wrote, taken out again. "word. lowercase" loses the
+  # period, a capital mid-sentence is lowercased unless the parse says it is a
+  # name, and "word. Capital" joins where Qwen reads one sentence. Reads the
+  # parse and the readings and calls no model. See docs/pipelines.md.
+  - name: sentence_repair
+    description: repair sentence boundaries a pause cut
+    command: built-in/sentence_repair/sentence_repair.py
+    returns: json
+    parse: true
+    readings: true
+
+  - name: disfluency
+    description: delete hesitations, repeats and false starts
+    # Nobody asks for "disfluency" out loud. `say:` is what the keyed path
+    # matches on, and without these "clean up the repetitions" reaches the
+    # catch-all instead of this — which the rename broke, 25/26.
+    say: [repetitions, hesitations, false starts]
+    command: built-in/disfluency/disfluency.py
+    returns: json
+    parse: true
+    tests: { path: built-in/disfluency/cases.yaml }
+
+  # Opens the last dictation's timeline in a text editor: every step, every
+  # decode, what each cost and what each stage changed. See docs/cli.md.
+  #
+  # Asked for out loud, not offered on a chip. Uncomment `offer:` and `key:`
+  # for the chip — `t` collides with "the", "this" and "that", so a dictation
+  # starting with one of those inside the offer window opens a trace. That is
+  # the whole cost: this command only reads, and what it opens is a text file.
+  #
+  # A full path, because `ParrotFlow` is not on `PATH`, and picked at run time
+  # because the dev build lives at `/Applications/ParrotFlowDev.app` and reads
+  # its own `spans.jsonl`. A literal path here is also a `--check-config` error
+  # on any machine that has only the other build.
+  #
+  # `printf %s "$said"` hands the sentence back: whatever a `command:` prints
+  # becomes the new transcript, and this one must leave it alone.
+  #
+  # `done:` is what the pill says afterwards. Without it a transform that
+  # leaves the sentence alone on purpose reports "nothing to change", which is
+  # true and reads as a failure.
+  - name: trace
+    description: open this dictation's trace
+    display: Opening the trace
+    say: [timeline, timings, why that was slow]
+    # offer: true
+    # key: t
+    done: Trace opened
+    command: sh -c 'said=$(cat); app=/Applications/ParrotFlow.app;
+      [ -x "$app/Contents/MacOS/ParrotFlow" ] || app=/Applications/ParrotFlowDev.app;
+      "$app/Contents/MacOS/ParrotFlow" --trace-view >/dev/null; printf %s "$said"'

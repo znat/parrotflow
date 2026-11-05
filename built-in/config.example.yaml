@@ -7,6 +7,10 @@
 # in docs/configuration.md. Validate with the binary, not by reading:
 #   /Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --check-config
 
+# Which upgrade this file was written for. The app upgrades an older file at
+# launch and keeps the old one beside it; `--upgrade-config` shows the change.
+version: 1
+
 hotkey:
   # A bare modifier (right_option, right_command, right_control, fn, ...) or
   # a character key (a-z, 0-9, f1-f20, space, arrows) plus `modifiers` below.
@@ -61,25 +65,12 @@ transcription:
   # entry turns off language detection.
   languages: [en, fr]
 
-  # What you meant, where the decoder wrote what it heard. A pause makes it
-  # write a period or a question mark mid-sentence and capitalise the next
-  # word; this reads each boundary and takes the mark out again. English only,
-  # and only where the model is already on disk.
-  #
-  # Not a pipeline step: it reads the decoder's own word timings, so anything
-  # that rewrote a word above it would break the alignment. It runs first.
-  sentence_repair:
-    enabled: true
-    # capitals: true         # read a capital with no mark in front as a boundary
-    # pause: 0.35            # seconds of silence a bare capital needs first
-    # marks: [".", ",", "?"] # what a boundary may be written with
-
   # Matches vocabulary.yaml renderings and settles each match against the
   # sentence it stands in. No model.
   #
-  # Not a pipeline step either: it is handed spans measured on the transcript
-  # as the decoder wrote it, and any edit above it moves them. It runs second,
-  # after `sentence_repair` and before everything below.
+  # Not a pipeline step: it is handed spans measured on the transcript as the
+  # decoder wrote it, and any edit above it moves them. It runs first, before
+  # everything below.
   vocabulary:
     enabled: true
     # sound_below: 0.85      # how close a run of words must sound to a term
@@ -112,10 +103,10 @@ transcription:
   # language, and a step can carry a condition of its own. See
   # docs/pipelines.md.
   pipeline:
-    # The sentence_repair block above, as a step after `vocabulary`: see the
-    # transform below. To try it, set `sentence_repair: {enabled: false}` and
-    # uncomment this line.
-    # - transform: sentence_repair
+    # Sentence marks a pause wrote, taken out again: "a parrot. At the top"
+    # -> "a parrot at the top". First, so the stages below read whole
+    # sentences.
+    - transform: sentence_repair
     # Hesitation sounds, above the number stages and not below them: a filler
     # inside a number splits it, and "two uh two three" comes out "two uh 23".
     - transform: fillers
@@ -339,8 +330,7 @@ transforms:
   # Sentence marks a pause wrote, taken out again. "word. lowercase" loses the
   # period, a capital mid-sentence is lowercased unless the parse says it is a
   # name, and "word. Capital" joins where Qwen reads one sentence. Reads the
-  # parse and the readings and calls no model. It steps aside while the
-  # `sentence_repair` block is on. See docs/pipelines.md.
+  # parse and the readings and calls no model. See docs/pipelines.md.
   - name: sentence_repair
     description: repair sentence boundaries a pause cut
     command: built-in/sentence_repair/sentence_repair.py

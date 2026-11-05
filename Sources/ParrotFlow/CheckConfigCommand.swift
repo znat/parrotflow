@@ -33,6 +33,18 @@ enum CheckConfigCommand {
 
         var ok = true
 
+        let pending = ConfigMigration.steps.filter { $0.version > config.version }
+        if config.version > ConfigMigration.current {
+            emit("  · version           \(config.version), newer than this app"
+                + " (\(ConfigMigration.current)) — read as it is")
+        } else if pending.isEmpty {
+            emit("  ✓ version           \(config.version)")
+        } else {
+            emit("  · version           \(config.version) — \(pending.count) upgrade(s) pending."
+                + " The app makes them at launch; \(ConfigMigration.runIt)")
+            for step in pending { emit("      \(step.version)  \(step.summary)") }
+        }
+
         // Hotkey
         let mode = config.hotkey.mode == .toggle ? "toggle" : "push-to-talk"
         if let modifierKey = ModifierKey(name: config.hotkey.key) {
@@ -113,9 +125,7 @@ enum CheckConfigCommand {
             let pipeline = Pipeline.resolved(config: config)
             let vocabularySteps = pipeline.steps.filter { $0.stage == .vocabulary }
             // The floor is not the same in two languages, so it is printed per
-            // language rather than once. The marks are not: they belong to the
-            // `interpret` step, which is English only, and they are printed
-            // with it below.
+            // language rather than once.
             emit("  · languages         \(transcription.languages.joined(separator: ", "))")
             // One line per `vocabulary` step, whether there is one or five. A
             // pipeline may hold several — one per app is the reason these
@@ -139,13 +149,6 @@ enum CheckConfigCommand {
                 emit("      the sentence tests are off —"
                     + " `transcription.vocabulary.gate_sentence: false`")
             }
-            // The set the step runs with. Silent when the pipeline holds no
-            // step at all, which is also what says nothing is downloaded for it.
-            if let step = pipeline.steps.first(where: { $0.stage == .sentenceRepair }) {
-                let marks = step.repair.marks ?? transcription.marks(for: "en")
-                emit("  · sentence marks    \(marks.joined(separator: " "))"
-                    + (step.repair.isOn(\.capitals) ? "" : "  (bare capitals off)"))
-            }
             // An empty pipeline is a choice, not a blank: printing nothing
             // there reads as a display fault rather than as the answer to "why
             // did none of this run".
@@ -156,7 +159,7 @@ enum CheckConfigCommand {
                 ? "nothing — the list is empty"
                 : pipeline.steps.map(described).joined(separator: " → ")
             let source = transcription.pipeline == nil
-                ? "  (nothing configured, so every stage)" : ""
+                ? "  (no pipeline: written, so no transforms)" : ""
             emit("  · pipeline          \(stages)\(source)")
         }
 
@@ -172,11 +175,6 @@ enum CheckConfigCommand {
         // doing exactly what it was written to do.
         for notice in config.notices() {
             emit("  · \(notice)")
-        }
-        if config.repairsSentencesTwice {
-            emit("  ⚠ pipeline: sentence_repair.py is a step and the sentence_repair stage is"
-                + " on, so the script repairs nothing. Set"
-                + " `transcription.sentence_repair: {enabled: false}`")
         }
         unknownKeys().forEach(emit)
         if !transcription.retired.isEmpty {
@@ -504,8 +502,8 @@ enum CheckConfigCommand {
     private static func gates(of step: Pipeline.Step, config: Config) -> String {
         let slot = step.vocabulary.isOn(\.slotGate)
         let portrait = step.vocabulary.isOn(\.portrait) && config.gatesSentence
-        // Named only when it is off, as `(bare capitals off)` is on the
-        // `interpret` line. On is the default and the line is long already.
+        // Named only when it is off. On is the default and the line is long
+        // already.
         let lowercase = step.vocabulary.isOn(\.lowercaseRefused) ? "" : "  (lowercase refused off)"
         return "slot \(slot ? "on" : "off"), portrait \(portrait ? "on" : "off")\(lowercase)"
     }

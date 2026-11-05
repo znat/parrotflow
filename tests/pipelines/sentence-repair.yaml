@@ -1,7 +1,12 @@
-# The sentence repair on its own. The stage needs a 320 MB model to read a
-# boundary and fails open without it, so the only thing a case here can score
-# is what the step does before the model is asked: the decoder's doubled full
-# stop, collapsed to one.
+# The sentence_repair transform with no parse and no readings, so no model is
+# asked: what is left is the decoder's doubled full stop, collapsed to one.
+# The rules that read the parse and the readings are scored by
+# built-in/transforms/sentence_repair/score.py.
 languages: [en]
+transforms:
+  - name: sentence_repair
+    description: repair sentence boundaries a pause cut
+    command: sentence_repair.py
+    returns: json
 pipeline:
-  - sentence_repair
+  - transform: sentence_repair

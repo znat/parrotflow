@@ -60,6 +60,49 @@ cases:
     input: "the agent writes Notes for each step"
     expect: "the agent writes notes for each step"
 
+  # From tests/sentence-case-cases.json: the capitals with no mark in front,
+  # which the Swift stage read with a part-of-speech filter.
+  - probe: capital
+    input: "imports name definitions And all the things we said"
+    expect: "imports name definitions and all the things we said"
+  - probe: capital
+    input: "we should think about it So the next step is clear"
+    expect: "we should think about it so the next step is clear"
+  - probe: capital
+    input: "I asked whether the caret moves However the field was empty"
+    expect: "I asked whether the caret moves however the field was empty"
+  - probe: capital
+    input: "the sound pass reads it in Slack for the moment"
+  - probe: capital
+    input: "we are writing it in English for the other reviewers"
+  - probe: capital
+    input: "I want to paste it into WhatsApp and the other apps"
+  - probe: capital
+    input: "we can format the functions in TypeScript for that case"
+  - probe: capital
+    input: "boundaries for portrait examples containing Several versions of the same"
+    expect: "boundaries for portrait examples containing several versions of the same"
+  - probe: capital
+    input: "we looked at the logs and saw Many errors in a row"
+    expect: "we looked at the logs and saw many errors in a row"
+  - probe: capital
+    input: "the migration finished and Most tables came over clean"
+    expect: "the migration finished and most tables came over clean"
+  - probe: capital
+    input: "we ran the suite again and Few tests failed"
+    expect: "we ran the suite again and few tests failed"
+  - probe: capital
+    input: "we shipped the first one and Other changes followed"
+    expect: "we shipped the first one and other changes followed"
+  - probe: capital
+    input: "we translated the page into French and it worked"
+  - probe: capital
+    input: "the docs are only in English at the moment"
+  - probe: capital
+    input: "we agreed to ship it Friday before the standup"
+  - probe: capital
+    input: "the outage report came from Google before lunch"
+
   # --- joins: "word. Capital", read by Qwen ---
   - probe: join
     input: "you should see a parrot. At the top right of your screen."
@@ -82,3 +125,11 @@ cases:
     input: "on a regardé la page. Avec le tableau des résultats en bas"
     lang: fr
     expect: "on a regardé la page avec le tableau des résultats en bas"
+  # From scripts/check-french-boundary.sh: what a won French join writes.
+  - probe: join
+    input: "Je me demande si on ne devrait pas ? Attendre la prochaine version."
+    lang: fr
+    expect: "Je me demande si on ne devrait pas attendre la prochaine version."
+  - probe: join
+    input: "On ne peut pas continuer comme ça. Parce que le budget est déjà dépassé."
+    lang: fr

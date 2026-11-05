@@ -601,98 +601,44 @@ said     "you should see a parrot at the top right of your screen"
 written  "You should see a parrot. At the top right of your screen."
 ```
 
-The `sentence_repair` pass reads every such boundary in an English or French
-transcript three ways and scores each with a small causal language model
-(`mlx-community/Qwen3-0.6B-Base-4bit`, 320 MB):
+The `sentence_repair` transform takes the mark out again. It is the first step
+of the shipped pipeline and runs after the `vocabulary` pass. It reads the
+syrinx parse and the sentence readings from its envelope and calls no model
+itself. See [pipelines.md](pipelines.md#sentence-marks-a-pause-put-there) for
+the config. It has three rules, one per shape:
+
+- **`word. lowercase`**: the period goes, unless the word before it is an
+  abbreviation. In 9,399 clips this shape was never a sentence end, so no model
+  is asked.
+- **`word Capital`**: a capital mid-sentence is lowercased, unless the parse
+  says it is a name. No pause is read.
+- **`word. Capital` and `word? Capital`**: the readings decide. When the
+  joined reading wins, the mark goes and the next word is re-cased by the
+  capitals rule.
+
+### The readings
+
+Every `word. Capital` or `word? Capital` boundary in an English or French
+transcript is read three ways, and each reading is scored with a small causal
+language model (`mlx-community/Qwen3-0.6B-Base-4bit`, 320 MB):
 
 ```
-". The vocabulary is slower"     the period is real
-" the vocabulary is slower"      a pause cut one sentence in two
-", the vocabulary is slower"     it is really a comma
+". At the top right"     the period is real
+" at the top right"      a pause cut one sentence in two
+", at the top right"     it is really a comma
 ```
 
 Each reading is the log-probability of its continuation divided by its token
 count, and the highest wins. Nothing is compared to a threshold, so there is
-nothing to calibrate. The marks are `marks:` on the step, default
-`[".", ",", "?"]`; `;` and `:` were measured and never changed a decision in
-English.
+nothing to calibrate. The marks are built in per language: `.`, `,` and `?`
+in English; French adds `:`, where English writes a full stop. `;` and `:` were
+measured in English and never changed a decision.
 
-This is not a pipeline step. It reads the decoder's own word timings, so there
-is no second place it could run — see [The two fixed
-passes](pipelines.md#the-two-fixed-passes). `transcription.sentence_repair:` is its
-settings block, and `enabled: false` is what turns it off; with it off nothing
-is downloaded for boundaries at all.
-
-The list does two jobs. `.` and `?` are where a boundary is looked for; the
-comma is a reading tried at one. The first reading is always the mark the
+The sentence enders, `.` and `?`, are where a boundary is looked for. The comma
+is a reading tried at one. The first reading is always the mark the
 transcriber wrote, so a `word? Capital` boundary is read `"? Word"`, `", word"`
 and `" word"`. Reading every ender at every boundary was measured too and is
 worse: 259 of 325 question cuts repaired against 265, for a fourth forward pass.
-
-A question mark counts even when the next word is lowercase. Of 19 such lines
-in one speaker's dictation, 7 hold a mark that should go and 12 a real
-question, so the reading has to decide. A period followed by a lowercase word is
-left alone: the transcriber did not start a sentence there and the shape has
-never been measured.
-
-### A capital with no mark in front of it
-
-A pause does not always make the transcriber write the mark. It writes
-`imports name definitions And all the things`, and that shape is about a third
-as common as `word. Capital`. It is scanned too, and the comma is dropped for
-a different reading: the text exactly as it was decoded.
-
-```
-". A before section B"     the sentence really ended
-" A before section B"      as decoded, a capital that belongs
-" a before section B"      a pause cut one sentence in two
-```
-
-The as-decoded reading exists because there is no mark to take out. Everywhere
-else "leave it alone" is what happens when a mark wins; here it is a candidate
-of its own, and it is the one that saves `paste it into Outlook and the other
-apps`. Only the third writes anything.
-
-**The comma is not read here.** Since only the join writes, a comma win was
-never a decision — it was a veto on a join that had already beaten both readings
-that keep the capital. Over 616 bare capitals mined from 3,336 English
-dictations, 225 of which get past the part-of-speech filter, dropping it
-lowercases 129 against 87. Of the 42 it changes, 40 are right and 2 destroy a
-correct capital, and no margin threshold buys those back — 13 of the 40 repairs
-sit below theirs. The marked path keeps its comma, where 26% of real sentence
-endings pick it.
-
-This half is English only: its refusal rules were tuned on English
-capitalisation and French capitalises far less. The period is never inserted — where a mark
-wins, the text is left as it was decoded and the decision is logged.
-
-Half of these capitals are correct and must not be touched: `Slack`, `English`,
-`Friday`, `TypeScript`, `Google Cloud`. Four rules refuse a candidate before any
-reading, on top of the ones that decide the word after a joined period:
-
-- a **run of two or more** capitals is never a candidate. Over 621 candidates
-  from one speaker it is 53% names — `Better Stack`, `Hugging Face` — and 13%
-  boundaries, so it is a different question and is left for one.
-- a **capital inside the word**: `WhatsApp`, `TypeScript`, `OpenAI`.
-- the **part of speech**, from the tag the lowercasing rule already asks for.
-  Only a conjunction, determiner, pronoun, adverb, preposition, particle,
-  interjection or verb goes on. A noun or an adjective here is a name, a
-  product or a title.
-- a **pause shorter than a second** in front of the capital, when the decoder's
-  word timings are there. This one is for latency, not safety: it removes 13%
-  of the candidates that reach the model. `--sentence-join` has no audio and
-  applies no gate.
-
-Measured over 7659 English dictations from one speaker. 2433 bare capitals,
-1645 refused by the lowercasing rules, and 236 of the rest reach the readings —
-**3.1 per 100 dictations, 2.7 after the pause gate**. On 110 hand-labelled
-candidates: **64% of the spurious capitals lowercased, no correct capital
-touched, and none of 15 real sentence starts joined.** The fourth reading is
-what makes the second number hold; without it four correct capitals are
-lowercased and not one repair is gained.
-
-#256 measured this shape at AUC 0.750 and dropped it. That was the threshold
-probe on ModernBERT, which has since been replaced.
 
 Three things are load-bearing. Per token, not summed: on summed
 log-probability the joined reading wins by being shortest, which repairs 97% of
@@ -704,51 +650,52 @@ slower still.
 
 Measured over one speaker's dictation. Periods: 81% of 140 cuts repaired, none
 of 172 real periods joined. Question marks: 82% of 325 cuts repaired, and **one
-wrong join in 111 real questions**. The two thresholds this stage used to carry
-repaired 26% of the period cuts, and the higher one could not be raised — it was
-set by the single lowest-scoring real ending.
+wrong join in 111 real questions**. The two thresholds an earlier version
+carried repaired 26% of the period cuts, and the higher one could not be
+raised: it was set by the single lowest-scoring real ending.
 
 The question shape is not silent-safe the way the period shape is. One wrong
 join in 111 bounds the true rate at 4.9 per 100 with 95% confidence, against 1.7
-for the period shape. The wrong join is a real question ending, and it loses to
-the join by 0.045 of a log-probability:
+for the period shape. The wrong join was a real question ending that lost to
+the join by 0.045 of a log-probability.
 
-```
-said     ... what's the best grammatical model we can use? For now part flow
-         is open source so doesn't make a big issue.
-written  ... what's the best grammatical model we can use for now part flow
-         is open source so doesn't make a big issue.
-```
+French sets a space before `?`. It is stepped over when a boundary is looked
+for, and without that every French question would be skipped with nothing to
+say so. When a join wins, the space goes with the mark, so one separator is
+left and not two. Over 234 French boundaries the readings score AUC 0.968
+against 0.984 in English and repair 91% of cuts, for about 2 false joins per
+100 real periods.
 
-Joining removes the mark and lowercases the word after it. Not every capital
-there is because of the period: "I will ask him. Nathan knows the answer" must
-not become "ask him nathan knows". So the rule asks for a reason to lowercase.
-A word that was already lowercase is left as it is.
-`I` and its contractions keep the capital, so does a word in capitals
-throughout, so does a `PersonalName`, `PlaceName` or `OrganizationName` from
-`NLTagger`, and so does a word `NLTagger` gives no lemma for — the lexicon has
-never seen it, which is what a name it has not been told about looks like. A
-term in your `vocabulary.yaml` is asked first, because a name that is also an
-English word is the one case the lemma rule cannot see.
+Nothing waits for the model. It is fetched in the background when a transform
+asks for the readings. With no cached model, a load that threw or a boundary
+it cannot read, the joins are skipped and the text arrives as it was. The
+`declined` field of the transform's output says which rule was skipped and why.
 
-English and French, and the stage refuses the rest itself, so a `when:` on the
-step is not needed. French adds `:` to its mark set, where English writes a full
-stop, and the space French sets before `?` is stepped over when the boundary is
-looked for — without that every French question is skipped and nothing says so.
-When a join wins, that space goes with the mark, so one separator is left and
-not two. `NLTagger` is asked in the language of the dictation: in English it
-gives no lemma for most French words, and "no lemma" is what the lowercasing
-rule reads as a name, so a joined French boundary used to keep its capital. Over 234 French boundaries the readings score AUC 0.968 against
-0.984 in English and repair 91% of cuts, for about 2 false joins per 100 real
-periods. Nothing is waited for:
-with no cached model, a load that threw or a boundary it cannot read, the text
-arrives as it was. A dictation that arrives before the weights are in memory
-keeps its boundaries and starts the load.
+### Which capitals stay
 
-`scripts/check-sentence-join.sh` scores the decisions and needs the model.
-`scripts/check-sentence-case.sh` scores the lowercasing and
-`scripts/check-sentence-window.sh` the window a boundary is read over; neither
-needs a model, so both run in CI. See `SentenceJoin` and `SentenceReadings`.
+Not every capital is there because of a pause: "I will ask him. Nathan knows
+the answer" must not become "ask him nathan knows". So the capitals rule, and
+the re-casing after a join, keep a capital when the parse tags it `PROPN`, when
+it is in a named entity, when it hangs off a capitalised `PROPN` nearby, when
+it has a capital after its first letter, when it is `I`, when it is a
+nationality word in the dictated language, or when the `vocabulary` pass wrote
+it. The full list is in [pipelines.md](pipelines.md#sentence-marks-a-pause-put-there).
+
+The capitals rule reads no pause, so it has a known cost: a real sentence start
+the transcriber wrote with no mark in front of it is lowercased.
+`scripts/check-bare-capital.sh` counts these.
+
+**Spoken commands get no repair.** "hey parrot, …" skips every transform.
+
+### Scoring it
+
+`built-in/transforms/sentence_repair/score.py` scores the transform's own
+cases. `scripts/check-sentence-join.sh` scores the joins and
+`scripts/check-bare-capital.sh` the capitals rule on larger sets; both need the
+models and are run by hand. `scripts/check-sentence-window.sh` scores the
+window a boundary is read over, and `scripts/check-sentence-case.sh` the
+lowercasing rule the `vocabulary` pass shares (`--sentence-case`). Neither
+needs a model, so both run in CI. See `SentenceReadings`.
 
 ## Measured and rejected
 
@@ -865,8 +812,7 @@ The benches are not committed. They live under
 One earlier rejection is recorded in code rather than here: the rank rule that
 wrote a name at the weakest-reading span, in `SlotGate`'s header. A second, the
 French ModernBERTs that score near chance on the probe, left the app with
-ModernBERT itself. The boundary reads Qwen now, and is English-only for the
-reason `SentenceJoin`'s header gives.
+ModernBERT itself. The boundary reads Qwen now, in English and French.
 
 ## Voice corrections
 

@@ -53,7 +53,7 @@ def language(case):
     return case.get("lang") or case.get("language") or "en"
 
 
-def envelopes(binary, inputs):
+def envelopes(binary, inputs, strict=True):
     """What the app hands the transform for each (text, language), by text."""
     with tempfile.TemporaryDirectory() as work:
         work = Path(work)
@@ -86,10 +86,26 @@ def envelopes(binary, inputs):
             "readings": envelope.get("readings"),
         }
     missing = [text for text, _ in inputs if text not in found]
-    if missing:
+    if missing and strict:
         sys.exit(f"{binary} --eval handed nothing over for {len(missing)} of {len(inputs)}:\n"
                  + run.stdout[-2000:] + run.stderr[-2000:])
     return found
+
+
+def through(binary, inputs):
+    """Each (text, language) through the transform, with the envelope the
+    binary hands it: text -> (repaired, edits, recorded envelope). A text the
+    app hands no transform, a spoken command, is left out."""
+    found = envelopes(binary, inputs, strict=False)
+    if inputs and not found:
+        sys.exit(f"{binary} --eval handed the transform nothing for {len(inputs)} text(s)")
+    out = {}
+    for text, _ in inputs:
+        if text not in found:
+            continue
+        got, edits, _ = sentence_repair.repair(text, envelope_of(text, found[text]))
+        out[text] = (got, edits, found[text])
+    return out
 
 
 def record(binary):

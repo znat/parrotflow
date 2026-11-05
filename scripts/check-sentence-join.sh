@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Scores the sentence join against tests/sentence-boundary-cases.json.
+# Scores the `sentence_repair` transform's joins against
+# tests/sentence-boundary-cases.json.
 #
 #   scripts/check-sentence-join.sh
 #
@@ -12,15 +13,15 @@
 # joined real ending is a sentence nobody wrote, with nothing on screen to say
 # so, so one of those fails the run.
 #
-# Each case also carries the readings measured when the set was built. This
-# compares the binary's against them. That is what says the app reads a boundary
-# the same way the measurement did; without it the counts describe some other
-# pipeline.
+# Each case goes through the transform with the parse and the readings the
+# binary hands it. Each case also carries the readings measured when the set was
+# built, and this compares the binary's against them. That is what says the app
+# reads a boundary the same way the measurement did; without it the counts
+# describe some other pipeline.
 #
 # Not in `make test` and not in CI: it needs the 320 MB model, which CI has no
-# business downloading. Run it by hand after touching `SentenceJoin`. Nothing is
-# downloaded here either — with no cached model every case comes back untouched
-# and the run says so.
+# business downloading. Run it by hand after touching `ReadingsField` or the
+# transform. Nothing is downloaded here either.
 #
 # Runs against a scratch PARROTFLOW_CONFIG_DIR, so the marks are the shipped
 # defaults rather than whatever this machine is tuned to.
@@ -34,12 +35,16 @@ trap 'rm -rf "$WORK"' EXIT
 export PARROTFLOW_CONFIG_DIR="$WORK"
 
 exec python3 - "$ROOT" <<'PY'
-import json, subprocess, sys
+import importlib.util, json, sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
-binary = root / ".build/release/ParrotFlow"
+binary = str(root / ".build/release/ParrotFlow")
 cases = json.load(open(root / "tests/sentence-boundary-cases.json"))
+spec = importlib.util.spec_from_file_location(
+    "score", root / "built-in/transforms/sentence_repair/score.py")
+score = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(score)
 
 # The set stores the two halves already windowed to twelve words each, which is
 # the window the app builds. Glued back into one text with the case's own mark,
@@ -52,31 +57,11 @@ def text_of(case):
     return case["left"].rstrip(".?!") + mark_of(case) + " " + case["right"]
 
 
-# The boundary this case is about, not the first one printed. Several of the
-# left halves carry a period of their own, so the app finds two or three
-# boundaries in the glued text and only one of them is the measured one. It is
-# named by the word each side of it.
-def block_of(out, case):
-    wanted = "%s%s %s ->" % (
-        case["left"].rstrip(".?!").split()[-1], mark_of(case), case["right"].split()[0])
-    block, mine = None, None
-    for line in out.splitlines():
-        parts = line.split(None, 1)
-        if len(parts) != 2:
-            continue
-        if parts[0] == "boundary":
-            block = {"boundary": parts[1].strip(), "mean": {}}
-            mine = block if parts[1].strip().startswith(wanted) else None
-        elif block is None:
-            continue
-        elif parts[0] == "reading":
-            key, mean, _ = parts[1].split()
-            block["mean"][key] = float(mean)
-        elif parts[0] == "winner":
-            block["winner"] = parts[1].strip()
-            if mine is not None:
-                return mine
-    return None
+def language_of(case):
+    return "fr" if case["set"].startswith("fr_") else "en"
+
+
+ran = score.through(binary, [(text_of(c), language_of(c)) for c in cases])
 
 DRIFT = 0.05
 tally = {name: {} for name in
@@ -85,25 +70,27 @@ tally = {name: {} for name in
 drifted = []
 
 for case in cases:
-    out = subprocess.run(
-        [binary, "--sentence-join", text_of(case)],
-        capture_output=True, text=True,
-    ).stdout
-    block = block_of(out, case)
-    if not block:
-        print("  ✗ the measured boundary was not found in: " + text_of(case))
+    text = text_of(case)
+    if text not in ran:
+        print("  ✗ the app ran no transform on: " + text)
         sys.exit(1)
-    winner = block["winner"]
+    _, edits, recorded = ran[text]
+    at = len(case["left"].rstrip(".?!"))
+    removed = any(e.start <= at < e.end and e.rule in ("join", "period") for e in edits)
+    lowered = any(e.start == at + len(mark_of(case)) + 1 and e.rule == "capital" for e in edits)
+    decision = "join" if removed or lowered else "leave"
     counts = tally.setdefault(case["set"], {})
-    counts[winner] = counts.get(winner, 0) + 1
-    gap = max(abs(block["mean"].get(k, 0) - v) for k, v in case["mean"].items())
-    mark = " "
-    if gap > DRIFT:
-        drifted.append((text_of(case), case["winner"], winner, gap))
-        mark = "✗"
-    print("  %s  %-10s %-5s stored %-5s  gap %.4f  %s" % (
+    counts[decision] = counts.get(decision, 0) + 1
+    read = next((b for b in (recorded["readings"] or {}).get("boundaries", []) if b["at"] == at), None)
+    gap, mark = 0.0, " "
+    if read:
+        gap = max(abs(read["means"].get(k, 0) - v) for k, v in case["mean"].items())
+        if gap > DRIFT:
+            drifted.append((text, case["winner"], read["winner"], gap))
+            mark = "✗"
+    print("  %s  %-10s %-5s stored %-5s  %s  %s" % (
         mark, case["set"].removeprefix("en").removeprefix("_").removesuffix(".json"),
-        winner, case["winner"], gap, case["left"][:44]))
+        decision, case["winner"], "gap %.4f" % gap if read else "no reading", case["left"][:44]))
 
 def row(name, key):
     counts = tally[key]
@@ -131,22 +118,16 @@ for shape, cut_key, real_key in shapes:
         100 * wrong / real_total))
     print()
 
-bare, bare_total = row("bare capitals", "bare-capitals")
-if bare_total:
-    print("  %d read as the join, %d left as decoded" % (
-        bare.get("join", 0), bare_total - bare.get("join", 0)))
-    print()
-
-# The third shape, and the one with no real/cut pair either: every full stop
-# in front of a lowercase word this speaker has dictated. None of them is a
-# sentence ending — an ending carries a capital — so there is no false join to
-# count, and drift is what this scores.
-for name, key in (("lowercase en", "en_lowercase.json"),
+# A capital with no mark has no reading: the transform's capitals rule decides,
+# and tests/bare-capital-cases.json scores it. A full stop in front of a
+# lowercase word has no reading either: the period goes by rule, unless the
+# word before it is an abbreviation.
+for name, key in (("bare capitals", "bare-capitals"),
+                  ("lowercase en", "en_lowercase.json"),
                   ("lowercase fr", "fr_lowercase.json")):
     counts, total = row(name, key)
     if total:
-        print("  %d read as the join, %d left as decoded" % (
-            counts.get("join", 0), total - counts.get("join", 0)))
+        print("  %d joined, %d left" % (counts.get("join", 0), total - counts.get("join", 0)))
         print()
 
 if drifted:

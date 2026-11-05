@@ -1,0 +1,35 @@
+# Invented config, written before version 1.
+version: 1
+
+hotkey:
+  key: right_option
+
+transcription:
+  languages: [en]
+  vocabulary:
+    enabled: true
+  pipeline:
+    - transform: sentence_repair
+    # Hesitation sounds first.
+    - transform: fillers
+    - transform: disfluency
+
+transforms:
+  - name: fillers
+    description: hesitation sounds
+    replace:
+      "": ['/[,]?\s*\b(?:um|uh)\b[,]?/']
+  - name: disfluency
+    description: delete hesitations, repeats and false starts
+    command: built-in/disfluency/disfluency.py
+    returns: json
+    parse: true
+
+  # Sentence marks a pause wrote, taken out again. Reads the parse and the
+  # readings and calls no model. See docs/pipelines.md.
+  - name: sentence_repair
+    description: repair sentence boundaries a pause cut
+    command: built-in/sentence_repair/sentence_repair.py
+    returns: json
+    parse: true
+    readings: true

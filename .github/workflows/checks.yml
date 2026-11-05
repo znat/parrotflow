@@ -190,6 +190,11 @@ jobs:
       - name: The config schema
         run: scripts/check-schema.sh
 
+      # An older config.yaml, upgraded line by line: the file after, the backup,
+      # a second run that changes nothing, and --check-config on the result.
+      - name: Upgrading an old config
+        run: scripts/check-upgrade-config.sh
+
       # The public `parrotflow` agent skill runs on Macs without this repo. Every
       # key, flag and file it names is checked against this build.
       - name: The parrotflow skill
@@ -378,11 +383,11 @@ jobs:
       - name: The slot tokenizer against HuggingFace's own
         run: scripts/check-slot-tokenizer.sh
 
-      # Joining two sentences lowercases the word after the period. Getting
-      # that wrong writes "ask him nathan knows". NLTagger and the vocabulary
-      # answer it, so no model is needed — the scored half of the join,
-      # scripts/check-sentence-join.sh, is run by hand.
-      - name: The capital after a period the join removes
+      # The word after a removed period is lowercased only without a reason to
+      # keep it. Getting that wrong writes "ask him nathan knows". NLTagger and
+      # the vocabulary answer it, so no model is needed. The vocabulary pass
+      # asks the same rule before writing a refused span in lowercase.
+      - name: The capital after a removed period
         run: scripts/check-sentence-case.sh
 
       # The window a boundary is read over: the mark off the left half, twelve

@@ -34,10 +34,8 @@ cases:
     expect: unchanged
 
   # The decoder writes two full stops now and then, and both of them are
-  # invisible to `SentenceJoin.boundaries`. The collapse runs in front of the
-  # stage, so it happens with or without the model — which is what these two
-  # cases score. Neither text holds a boundary, so neither depends on a 320 MB
-  # download being present or absent.
+  # invisible to `SentenceJoin.boundaries`. The transform collapses them with
+  # or without the parse and the readings, which is what these two cases score.
   - name: a doubled full stop is collapsed
     pipeline: sentence-repair
     input: "And they are priced.."

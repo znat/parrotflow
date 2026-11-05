@@ -13,6 +13,6 @@ transforms:
     command: counter.py --count 1
     returns: json
 pipeline:
-  - stage: interpret
+  - stage: context
     when: later.count == 0
   - transform: later

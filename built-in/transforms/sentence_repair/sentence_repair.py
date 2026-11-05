@@ -164,7 +164,7 @@ def lowered(word, rule):
 def periods(text, abbreviations):
     """`word. lowercase`: the period, or a doubled one, goes.
 
-    The guards are the stage's: a mark in a run of three or more, a mark after
+    The guards are `SentenceJoin.boundaries`'s: a mark in a run of three or more, a mark after
     a single letter or digit (J. smith, e.g. the) or after anything but a
     letter or a digit, and an abbreviation keep their period. So does a
     period before a line break.
@@ -245,8 +245,6 @@ def repair(text, envelope):
     """The repaired text, the edits made, and why a rule was skipped."""
     ctx = envelope.get("ctx") or {}
     variables = ctx.get("vars") or {}
-    if (variables.get("sentence_repair") or {}).get("ran") is True:
-        return text, [], "the sentence_repair stage already ran"
     declined, edits = [], []
     lists = variables.get("lists") or {}
     if isinstance(lists.get("abbreviations"), str):

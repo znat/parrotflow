@@ -11,6 +11,7 @@ The default pipeline includes these transforms:
 
 | Transform | Example | How it works |
 | --- | --- | --- |
+| Sentence repair | “a parrot. At the top” → “a parrot at the top” | A script that reads the parse and sentence scores |
 | Fillers | Remove hesitation sounds such as “um” | Replacement tables |
 | Dates and times | “nine fifteen AM” → “9:15 AM” | A script |
 | Numbers | “two hundred forty-three” → “243” | A script |

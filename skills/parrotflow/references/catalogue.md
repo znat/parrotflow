@@ -22,7 +22,7 @@ in the last column.
 
 | Area | What it does | Key | Cost | Default | A user might ask | More |
 |---|---|---|---|---|---|---|
-| Sentence repair | Removes a full stop a pause put mid-sentence. English | `transcription.sentence_repair` | none on the path | on | "It breaks my sentences in two" | rewrites |
+| Sentence repair | Removes a full stop a pause put mid-sentence, and the capital after it. English and French | `sentence_repair` | a script run, plus the parse and the readings | in the pipeline, first | "It breaks my sentences in two" | rewrites |
 | Vocabulary | Writes names it was taught, checked against the sentence | `vocabulary.yaml`, `transcription.vocabulary` | none | on | "It never spells Tasmeen right" | vocabulary |
 | Screen spelling | Spells a word the way the screen shows it | `transcription.context_spelling` | none on the path | on | "Write the variable name as it is in my code" | context |
 | Fillers | Deletes um, uh, euh | `transforms` `fillers`, `fillers_fr`; `lists` | none | in the pipeline | "Keep my ums" | rewrites |
@@ -72,4 +72,5 @@ in the last column.
 | Timeline | Where each dictation spent its time | `logging.spans` | none | on | "Why was that slow?" | diagnose |
 | Recordings | Keep each clip on disk | `logging.audio` | disk | off | "Keep my recordings" | settings |
 | Updates | Offers a new release, and how long to wait first | `updates.after_days` | a request to GitHub | 0 days | "Wait a week before updating" | settings |
+| Config upgrade | Upgrades an older `config.yaml` at launch, after a backup. `--upgrade-config` previews it | `version` | none | on | "What did the update change in my config?" | settings |
 | Appearance | Theme and accent colour of the pill | `feedback.theme`, `feedback.primary_color` | none | follows macOS | "Make it green" | settings |
