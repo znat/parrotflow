@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json}
 """English dates and clock times, written the way they were said.
 
 "at ten fifteen" -> "at 10:15". "March third twenty twenty-six" -> "March 3,
@@ -8,7 +9,6 @@ rewrote, and `applied`, the rules that fired.
     - name: dates_en
       description: dictated dates and clock times as digits
       command: built-in/dates/en.py
-      returns: json
       tests: built-in/dates/cases-en.yaml
 
     pipeline:

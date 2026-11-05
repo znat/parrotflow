@@ -1,5 +1,5 @@
 # Invented. Flow style, the way the schema's error message writes it.
-version: 1
+version: 2
 
 transcription:
   pipeline: [{transform: sentence_repair}, {transform: fillers}]
@@ -15,6 +15,3 @@ transforms:
   - name: sentence_repair
     description: repair sentence boundaries a pause cut
     command: built-in/sentence_repair/sentence_repair.py
-    returns: json
-    parse: true
-    readings: true

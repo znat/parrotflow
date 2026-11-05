@@ -230,9 +230,9 @@ variables. See [pipelines.md](pipelines.md#variables) for what a condition can
 then do with them.
 
 ```yaml
-  - name: disfluency
+  - name: tidy
     description: delete hesitations, repeats and false starts
-    command: disfluency.py
+    command: tidy.py
     returns: json
     parse: true
 ```
@@ -320,6 +320,39 @@ so will you the first time a stage misbehaves.
 > first, then the config. `--pipeline <fixture> "<text>" --vars` is how you
 > check, before it matters. `transforms/built-in/` is different: it is
 > refreshed on every launch, so the shipped scripts there are always current.
+
+### Declare it in the script
+
+The keys can live in the script instead, which is where the built-in scripts
+keep them. One comment line in the first ten lines names them, with the keys
+and values a config entry takes:
+
+```python
+#!/usr/bin/env python3
+# parrotflow: {returns: json, parse: vectors}
+```
+
+The config entry then needs only `name:`, `description:` and `command:`.
+
+- **Any comment marker works:** `#`, `//`, `--`, `;`. A script in any language
+  can carry the line. Each script carries its own, so `dates/en.py` and
+  `dates/fr.py` in one folder each declare theirs.
+- **A key in the config entry wins.** `parse: true` there gives one transform
+  the parse without the vectors, whatever the script says. With neither, the
+  defaults apply: plain text, no parse, no readings.
+- **`--check-config` says what each command is handed** and where each value
+  came from, as `returns json (script), parse true (config)`. It also says when
+  the config asks for less than the script declares.
+- **The app reads the line when it loads the config,** at launch and on every
+  reload, never per dictation. An edit to the line takes effect at the next
+  reload.
+- **The line is read from the file the command names first.** Write the command
+  as the script's path, `command: tidy.py`, not `python3 tidy.py`. A compiled
+  program or a shell one-liner has no such line, so it writes its keys in the
+  config.
+- **A line the app cannot read refuses the transform,** like a bad config key,
+  and `--check-config` names it. So does a line that asks for `parse:` or
+  `readings:` without `returns: json`.
 
 ### The parse
 

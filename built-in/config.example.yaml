@@ -9,7 +9,7 @@
 
 # Which upgrade this file was written for. The app upgrades an older file at
 # launch and keeps the old one beside it; `--upgrade-config` shows the change.
-version: 1
+version: 2
 
 hotkey:
   # A bare modifier (right_option, right_command, right_control, fn, ...) or
@@ -202,6 +202,9 @@ lists:
 #                 `{ use: gpt, reasoning: low }`. Left out, uses the default.
 #   replace:      a substitution table, costs nothing
 #   command:      a program of yours — transcript in on stdin, rewrite out on stdout
+#   returns, parse, readings
+#                 what a command is handed. Its script's `parrotflow:` line
+#                 says; a key written here wins
 #   confirm       shows the result first; set to false to skip that
 #   done          what the pill says when this leaves the text alone on purpose
 #   failed        what the pill says when this could not run — markdown
@@ -271,7 +274,6 @@ transforms:
   - name: dates_en
     description: dictated dates and clock times as digits
     command: built-in/dates/en.py
-    returns: json
     tests: built-in/dates/cases-en.yaml
 
   # Spoken numbers as digits, one script per language. Runs after dates, on
@@ -279,7 +281,6 @@ transforms:
   - name: numbers_en
     description: spoken numbers as digits
     command: built-in/numbers/en.py
-    returns: json
     tests: { path: built-in/numbers/cases-en.yaml }
 
   # Amounts of money with the currency symbol, one script per language. Runs
@@ -289,7 +290,6 @@ transforms:
   - name: money_en
     description: dictated amounts of money with the currency symbol
     command: built-in/money/en.py
-    returns: json
     tests: built-in/money/cases-en.yaml
 
   # Hesitation sounds. A `replace:` rule, so it costs no process at all — the
@@ -309,24 +309,6 @@ transforms:
       "": ['/[,]?\s*\b(?:{{fillers_fr}})\b[,]?/',
            '/[,]?\s*\be+u+h+\b[,]?/']
 
-  # Repeats, false starts, and a discourse marker that carries nothing.
-  # ~0.04s for the first four rules, mostly the python3 start.
-  #
-  # The fifth wants a dependency parse, because "you know" is a real verb with
-  # a real object half the time — "we'll let you know" has to survive. A
-  # marker the parse reads as part of a correction stays: "the rain, I mean
-  # the sun" never becomes "the rain the sun".
-  # `parse: true` hands it the syrinx parse, about 34 ms at 60 words. Without
-  # one the other four still run and `disfluency.declined` says what was lost.
-  #
-  # `parse: vectors` in its place also runs the tree cutter after the rules: a
-  # cut the parse proposes, kept when the cut filter scores it 0.75 or more.
-  # It costs 3 to 6 ms of Python at 20 to 120 words, and about 1 KB per word
-  # of envelope.
-  #
-  # `returns: json` is not optional. It is what sends `ctx.language` and the
-  # parse in, and the language picks the markers: English has three, French
-  # none yet.
   # Sentence marks a pause wrote, taken out again. "word. lowercase" loses the
   # period, a capital mid-sentence is lowercased unless the parse says it is a
   # name, and "word. Capital" joins where Qwen reads one sentence. Reads the
@@ -334,10 +316,21 @@ transforms:
   - name: sentence_repair
     description: repair sentence boundaries a pause cut
     command: built-in/sentence_repair/sentence_repair.py
-    returns: json
-    parse: true
-    readings: true
 
+  # Repeats, false starts, a discourse marker that carries nothing, and the
+  # cuts the parse proposes. ~0.04s for the string rules, mostly the
+  # python3 start.
+  #
+  # The marker rule wants a dependency parse, because "you know" is a real verb
+  # with a real object half the time — "we'll let you know" has to survive. A
+  # marker the parse reads as part of a correction stays: "the rain, I mean
+  # the sun" never becomes "the rain the sun". The tree cutter runs after the
+  # rules: a cut the parse proposes, kept when the cut filter scores it 0.75
+  # or more.
+  #
+  # The script's first lines declare `returns: json` and `parse: vectors`, so
+  # nothing here asks for them. `parse: true` here keeps the marker rule and
+  # turns the tree cutter off.
   - name: disfluency
     description: delete hesitations, repeats and false starts
     # Nobody asks for "disfluency" out loud. `say:` is what the keyed path
@@ -345,8 +338,6 @@ transforms:
     # catch-all instead of this — which the rename broke, 25/26.
     say: [repetitions, hesitations, false starts]
     command: built-in/disfluency/disfluency.py
-    returns: json
-    parse: true
     tests: { path: built-in/disfluency/cases.yaml }
 
   # Opens the last dictation's timeline in a text editor: every step, every

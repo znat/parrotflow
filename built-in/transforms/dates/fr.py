@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json}
 """Dates et heures dictées, écrites comme elles ont été dites.
 
 "dix heures quinze" -> "10h15". "le trois décembre" -> "le 3 décembre".
@@ -8,7 +9,6 @@ Transcript in, rewrite out. Publishes `count`, the spans it rewrote, and
     - name: dates_fr
       description: dictated dates and clock times as digits
       command: built-in/dates/fr.py
-      returns: json
       tests: built-in/dates/cases-fr.yaml
 
     pipeline:

@@ -877,9 +877,8 @@ struct Config: Decodable, Equatable {
         var description = ""
         var display = ""
         var confirm = true
-        var returnsJSON = false
-        var parse: Transform.ParseRequest?
-        var readings = false
+        var written = Transform.Needs()
+        var declared = Transform.Needs()
         var body: Transform.Body?
         var folder: TransformFolder?
         var timeout: Double?
@@ -955,19 +954,10 @@ struct Config: Decodable, Equatable {
             }
             confirm = try c.decodeIfPresent(Bool.self, forKey: .confirm) ?? true
             timeout = try c.decodeIfPresent(Double.self, forKey: .timeout)
-            // `returns: json`, spelled as a word rather than as `returns_json:
-            // true`, because the thing being named is a protocol and there may
-            // one day be a second one. Anything else is refused rather than
-            // read as false: `returns: JSON` and `returns: text` both look like
-            // they say something, and a key that quietly means nothing is how a
-            // script ends up talking past the app that runs it.
-            if let declared = try c.decodeIfPresent(String.self, forKey: .returns) {
-                let written = declared.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .lowercased()
-                returnsJSON = written == "json"
-                if !returnsJSON, written != "text" {
-                    unreadable = "returns: \(declared) — write `returns: json`, or leave it out"
-                }
+            do {
+                written = try Transform.Needs(from: decoder)
+            } catch let refused as Transform.Needs.Refused {
+                unreadable = refused.why
             }
             // Written either way — `tests: heldout.yaml` and
             // `tests: { path: heldout.yaml }` mean the same thing — and
@@ -1061,28 +1051,20 @@ struct Config: Decodable, Equatable {
             }
             unreadable = unreadable ?? bodyProblem
 
-            if c.contains(.parse), !((try? c.decodeNil(forKey: .parse)) ?? false) {
-                let written = (try? c.decode(String.self, forKey: .parse)) ?? ""
-                switch (try? c.decode(Bool.self, forKey: .parse), written.lowercased()) {
-                case (true?, _), (nil, "true"): parse = .tree
-                case (false?, _), (nil, "false"): parse = nil
-                case (nil, "vectors"): parse = .vectors
-                default: unreadable = unreadable ?? "has `parse: \(written)`, which is not true, false or vectors"
-                }
+            if !command.isEmpty, let folder,
+               let script = CommandRunner.parts(of: command, in: folder).resolved {
+                do {
+                    declared = try Transform.Needs.declared(in: script.url)
+                } catch let refused as Transform.Needs.Refused {
+                    unreadable = unreadable ?? "has a script whose `parrotflow:` line \(refused.why)"
+                } catch {}
             }
-            if let parse, !(returnsJSON && !command.isEmpty) {
+            let json = !command.isEmpty && (written.returnsJSON ?? declared.returnsJSON ?? false)
+            if let parse = written.parse, parse != .off, !json {
                 unreadable = unreadable
-                    ?? "has `parse: \(parse == .vectors ? "vectors" : "true")`, which only a `command:` with `returns: json` can read"
+                    ?? "has `parse: \(parse.spelled)`, which only a `command:` with `returns: json` can read"
             }
-            if c.contains(.readings), !((try? c.decodeNil(forKey: .readings)) ?? false) {
-                if let value = try? c.decode(Bool.self, forKey: .readings) {
-                    readings = value
-                } else {
-                    let written = (try? c.decode(String.self, forKey: .readings)) ?? ""
-                    unreadable = unreadable ?? "has `readings: \(written)`, which is not true or false"
-                }
-            }
-            if readings, !(returnsJSON && !command.isEmpty) {
+            if written.readings == true, !json {
                 unreadable = unreadable
                     ?? "has `readings: true`, which only a `command:` with `returns: json` can read"
             }
@@ -1216,8 +1198,7 @@ struct Config: Decodable, Equatable {
                 name: entry.name, description: entry.description,
                 display: entry.display,
                 folder: entry.folder, timeout: entry.timeout,
-                confirm: entry.confirm, returnsJSON: entry.returnsJSON, parse: entry.parse,
-                readings: entry.readings,
+                confirm: entry.confirm, written: entry.written, declared: entry.declared,
                 offer: entry.offer, offerKey: entry.offerKey, done: entry.done,
                 failed: entry.failed,
                 say: entry.say,
@@ -1279,6 +1260,11 @@ struct Config: Decodable, Equatable {
         /// when a transform is run over your selection — a pipeline stage runs
         /// on a transcript nobody has seen yet, so there is nothing to confirm.
         var confirm: Bool = true
+        /// `returns:`, `parse:` and `readings:` as the config entry wrote
+        /// them. A key written here wins over the script's line.
+        var written = Needs()
+        /// The same keys from the script's `parrotflow:` line, read at load.
+        var declared = Needs()
         /// Whether a `command:` speaks the structured protocol — `{text, ctx}`
         /// in, `{text?, vars?}` out — rather than plain text on stdin and stdout.
         ///
@@ -1292,19 +1278,17 @@ struct Config: Decodable, Equatable {
         /// Off by default, and off is the whole of the old contract: stdout is
         /// the transcript, `sed` is still a transform, and nothing anybody has
         /// already written has to change.
-        var returnsJSON: Bool = false
-        /// `parse: true` or `parse: vectors`: the envelope also carries the
-        /// syrinx parse of the text. Only on a `returns: json` command;
-        /// anything else is refused.
-        var parse: ParseRequest?
-
-        enum ParseRequest: Equatable {
-            case tree
-            case vectors
+        var returnsJSON: Bool { written.returnsJSON ?? declared.returnsJSON ?? false }
+        /// The syrinx parse of the text in the envelope. Only on a
+        /// `returns: json` command; anything else is refused.
+        /// What the script declares beyond the protocol is dropped when the
+        /// config turns the protocol off.
+        var parse: Needs.Parse {
+            written.parse ?? (returnsJSON ? declared.parse : nil) ?? .off
         }
-        /// `readings: true`: the envelope also carries Qwen's readings of
-        /// each sentence boundary. Only on a `returns: json` command.
-        var readings = false
+        /// Qwen's readings of each sentence boundary in the envelope. Only on
+        /// a `returns: json` command.
+        var readings: Bool { written.readings ?? (returnsJSON ? declared.readings : nil) ?? false }
         /// Whether this gets a chip on the pill after a dictation, next to
         /// Correct.
         ///
@@ -3189,6 +3173,13 @@ struct Config: Decodable, Equatable {
             guard case .command(let command) = transform.body else { return nil }
             return "transforms: \"\(transform.name)\" runs a program — \(command)"
         }
+        for transform in transforms {
+            for short in transform.written.shortfalls(against: transform.declared) {
+                said.append("transforms: \"\(transform.name)\" writes `\(short.written)` and its"
+                    + " script declares `\(short.declared)`. The config wins; delete the line"
+                    + " to give the script what it asks for")
+            }
+        }
 
         // A model that is not on this Mac means your dictation is sent to
         // somebody else's server. Announced on every load for the same reason
@@ -3375,7 +3366,7 @@ struct Config: Decodable, Equatable {
     /// Whether some transform asks for the syrinx parse, and so whether the
     /// parser is loaded at all.
     var readsParse: Bool {
-        transforms.contains { $0.parse != nil }
+        transforms.contains { $0.parse != .off }
     }
 
     /// Whether anything will read the 400 MB word vectors. Both tests that

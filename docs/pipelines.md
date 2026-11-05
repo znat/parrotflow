@@ -147,19 +147,16 @@ transforms:
   - name: dates_fr
     description: dictated dates and clock times as digits
     command: built-in/dates/fr.py
-    returns: json
     tests: built-in/dates/cases-fr.yaml
 
   - name: numbers_fr
     description: spoken numbers as digits
     command: built-in/numbers/fr.py
-    returns: json
     tests: { path: built-in/numbers/cases-fr.yaml }
 
   - name: money_fr
     description: dictated amounts of money with the currency symbol
     command: built-in/money/fr.py
-    returns: json
     tests: built-in/money/cases-fr.yaml
 
 transcription:
@@ -235,9 +232,6 @@ transforms:
   - name: sentence_repair
     description: repair sentence boundaries a pause cut
     command: built-in/sentence_repair/sentence_repair.py
-    returns: json
-    parse: true
-    readings: true
 ```
 
 It runs after `vocabulary`, so it sees the names that pass wrote. Keep it
@@ -753,14 +747,29 @@ whatever came next would have needed something else. A command needs nothing
 added ever again — which is the point, and the reason it is worth the process
 start.
 
+#### What a script declares
+
+`returns:`, `parse:` and `readings:` say what a command is handed. A script
+can declare them itself, on a comment line in its first ten lines:
+
+```python
+#!/usr/bin/env python3
+# parrotflow: {returns: json, parse: vectors}
+```
+
+Every built-in script does, so the shipped config writes none of the three. A
+key written in the config entry wins over the script's line, and with neither
+the defaults apply. `--check-config` prints each value and where it came from.
+See [authoring.md](authoring.md#declare-it-in-the-script).
+
 #### `parse: true` and `parse: vectors`
 
 A `returns: json` command can ask for the syrinx parse of its text:
 
 ```yaml
-  - name: disfluency
+  - name: tidy
     description: delete hesitations, repeats and false starts
-    command: disfluency.py
+    command: tidy.py
     returns: json
     parse: true
 ```
@@ -769,8 +778,9 @@ Its envelope then carries a `parse` field: per word the tree, the part of
 speech, the features, the named entity and four tag probabilities. The fields
 are in [authoring.md](authoring.md#the-parse). `parse: vectors` sends the same
 parse, plus the parser's hidden state per word
-([the word vectors](authoring.md#the-word-vectors)); `disfluency` then also
-runs the tree cutter after its rules. The stage waits at most 2
+([the word vectors](authoring.md#the-word-vectors)). `disfluency.py` declares
+`parse: vectors`, so it runs the tree cutter after its rules; `parse: true` in
+its config entry turns the tree cutter off. The stage waits at most 2
 seconds for the parser and runs without it after that. On any other body the
 key is refused, and so is a value that is not a boolean or `vectors`;
 `--check-config` names the transform. With no transform asking, the parser is
@@ -779,14 +789,10 @@ never loaded.
 #### `readings: true`
 
 A `returns: json` command can ask for the scores a sentence boundary is
-decided by. The `sentence_repair` transform does:
+decided by. `sentence_repair.py` does, on its own line:
 
-```yaml
-  - name: sentence_repair
-    command: built-in/sentence_repair/sentence_repair.py
-    returns: json
-    parse: true
-    readings: true
+```python
+# parrotflow: {returns: json, parse: true, readings: true}
 ```
 
 Its envelope then carries a `readings` field: per `word. Capital` or
@@ -809,7 +815,6 @@ transforms:
   - name: join
     description: space and case the transcript to fit where the caret is
     command: join.py
-    returns: json
 
 pipeline:
   - input

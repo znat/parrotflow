@@ -257,12 +257,13 @@ cat >> "$CFG/config.yaml" <<'YAML'
   - name: starter
     description: spoken arrow keys as arrow symbols
     command: starter.py
-    returns: json
 YAML
 PARROTFLOW_CONFIG_DIR="$CFG" "$BIN" --check-config > "$WORK/starter-check.txt" 2> /dev/null
 check "a config with the starter loads" "$?" "0"
 check "and names it as a program" \
   "$(grep -c '"starter" runs a program' "$WORK/starter-check.txt")" "1"
+check "and its own line makes it speak json" \
+  "$(grep -A1 '^      starter ' "$WORK/starter-check.txt" | grep -cx ' *returns json (script)')" "1"
 PARROTFLOW_CONFIG_DIR="$CFG" "$BIN" --eval starter > "$WORK/starter-eval.txt" 2> /dev/null
 check "the starter scores 100% on its own cases" \
   "$(grep -E '^  overall' "$WORK/starter-eval.txt" | grep -oE '[0-9]+%')" "100%"

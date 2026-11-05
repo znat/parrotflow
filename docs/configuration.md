@@ -77,7 +77,7 @@ existing file or
 [built-in/config.example.yaml](../built-in/config.example.yaml).
 
 ```yaml
-version: 1              # which upgrade the file was written for; see below
+version: 2              # which upgrade the file was written for; see below
 
 hotkey:
   key: right_command    # a bare modifier, or a character key + modifiers
@@ -137,11 +137,11 @@ logging:
 ## `version` and the upgrade at launch
 
 ```yaml
-version: 1
+version: 2
 ```
 
 `version:` says which upgrade the file was written for. A file without it is
-version 0. This build writes version 1, and `built-in/config.example.yaml`
+version 0. This build writes version 2, and `built-in/config.example.yaml`
 starts with it.
 
 **At launch, before it reads the config,** the app applies every upgrade above
@@ -154,7 +154,7 @@ stay. Then it:
    `-2`, then `-3`;
 3. writes the new file, with the new `version:` line;
 4. writes the diff to the log and shows one notice: `config.yaml upgraded to
-   version 1: … The old file is config.yaml.bak-v0-2026-11-05`.
+   version 2: … The old file is config.yaml.bak-v1-2026-11-05`.
 
 An empty `config.yaml` is upgraded too.
 
@@ -165,7 +165,7 @@ still pending.
 
 **A newer file is left alone.** A `version:` higher than the app knows is read
 as it is and never rewritten. The notice then reads `config.yaml was not
-upgraded — config.yaml is version 2, and this app knows up to 1. Read as it
+upgraded — config.yaml is version 3, and this app knows up to 2. Read as it
 is`.
 
 **See the change first.** `--upgrade-config` prints the version change, what
@@ -180,6 +180,7 @@ after the same backup. See [cli.md](cli.md#--upgrade-config).
 | Version | What the upgrade changes |
 |---|---|
 | 1 | Sentence repair becomes the `sentence_repair` transform. The `transcription.sentence_repair:` block goes, or `transcription.interpret:`, with its comment paragraph and its commented option lines. So does every step that names either, written `- sentence_repair`, `- stage: sentence_repair` or `- {stage: sentence_repair, …}`. The transform is added to `transforms:` if it is missing, and `- transform: sentence_repair` becomes the first step of `pipeline:`, unless the list already has it. A config with no `pipeline:` gets one with this one step. A block that said `enabled: false` still gets the step: delete the line to turn it off. Two comments the shipped config carried about the old order are reworded, where they still read as shipped. See [pipelines.md](pipelines.md#sentence-marks-a-pause-put-there). |
+| 2 | A built-in script declares what its envelope needs on its own `parrotflow:` line. In each transform whose `command:` is a built-in script, a `returns:`, `parse:` or `readings:` line that holds the value an older example wrote for that script goes, and the script's line applies. So `disfluency` moves from `parse: true` to `parse: vectors`, which also runs the tree cutter. Any other value stays, since you chose it. A trailing comment on a removed line stays on its own line. See [pipelines.md](pipelines.md#what-a-script-declares). |
 
 ## Where things live
 

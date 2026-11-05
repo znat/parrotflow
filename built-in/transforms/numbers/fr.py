@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json}
 """French spoken numbers as digits: "deux cents euros" -> 200 euros.
 
 Transcript in, rewrite out — plain text, or the JSON envelope when the app sets
@@ -7,7 +8,6 @@ Transcript in, rewrite out — plain text, or the JSON envelope when the app set
     - name: numbers_fr
       description: spoken numbers as digits
       command: built-in/numbers/fr.py
-      returns: json
       tests: { path: built-in/numbers/cases-fr.yaml }
 
     pipeline:

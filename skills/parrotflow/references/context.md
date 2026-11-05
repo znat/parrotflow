@@ -43,7 +43,7 @@ transcription:
   `input.text` instead, and the other four are absent. Guard with `input.ok`.
 - The shipped `join` script reads it: it fixes the capital and the full stop
   at the start and end of a clip dropped into the middle of a sentence.
-  Define it with `command: built-in/join/join.py` and `returns: json`.
+  Define it with `command: built-in/join/join.py`.
 
 ## Using them in a prompt
 

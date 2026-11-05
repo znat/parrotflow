@@ -1,0 +1,26 @@
+# Invented. A built-in script under a name of the person's, under the old
+# `examples/` spelling, and a program of their own. The shipped values go from
+# the first two, a trailing comment stays on its own line, and the program
+# keeps its keys.
+version: 2
+transcription:
+  pipeline:
+    - transform: sentence_repair
+    - transform: tidy
+    - transform: mine
+
+transforms:
+  - name: sentence_repair
+    description: repair sentence boundaries a pause cut
+    command: "built-in/sentence_repair/sentence_repair.py"
+
+  - name: tidy
+    description: delete hesitations, repeats and false starts
+    command: examples/disfluency/disfluency.py
+    # as the example had it
+
+  - name: mine
+    description: a program of my own
+    command: cat
+    returns: json
+    parse: true

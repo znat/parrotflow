@@ -1318,11 +1318,11 @@ struct Pipeline: Equatable, Codable {
             // transcript. Logged either way: a stage you wrote yourself is
             // exactly the one whose before and after you want on the record.
             var parse: ParseField?
-            if let request = transform.parse, transform.returnsJSON, #available(macOS 14, *) {
+            if transform.parse != .off, transform.returnsJSON, #available(macOS 14, *) {
                 var language = ""
                 if case .string(let value)? = scope["language"] { language = value }
                 parse = await SyrinxParser.field(for: text, language: language, stage: name,
-                                                 vectors: request == .vectors)
+                                                 vectors: transform.parse == .vectors)
             }
             var readings: ReadingsField?
             if transform.readings, transform.returnsJSON, #available(macOS 14, *) {

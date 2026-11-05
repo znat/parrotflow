@@ -6,13 +6,15 @@
 # `<name>.yaml` is the file before. `<name>.want.yaml` is the file after, byte
 # for byte; without one the file must not change. Each upgraded file must pass
 # `--check-config`, keep the old file as a backup, and come out of a second run
-# unchanged. `example-v0.yaml` is built-in/config.example.yaml before version 1:
-# upgraded, it must run the pipeline the shipped example runs.
+# unchanged. `example-v0.yaml` and `example-v1.yaml` are
+# built-in/config.example.yaml at those versions: upgraded, each must run the
+# pipeline the shipped example runs.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="${PARROTFLOW_BIN:-$ROOT/.build/release/ParrotFlow}"
 [ -x "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
 CASES="$ROOT/tests/upgrade-config"
+CURRENT="$(sed -n 's/^version: *\([0-9]*\).*/\1/p' "$ROOT/built-in/config.example.yaml")"
 
 WORK="$(mktemp -d -t parrotflow-upgrade)"
 trap 'rm -rf "$WORK"' EXIT
@@ -69,8 +71,9 @@ for before in "$CASES"/*.yaml; do
     continue
   fi
   backup="${backups[0]##*/}"
+  from="$(sed -n 's/^version: *\([0-9]*\).*/\1/p' "$before" | head -1)"
   check "$name: the backup is the old file" \
-    "$(cmp -s "$before" "${backups[0]}" && echo "${backup%-????-??-??}")" "config.yaml.bak-v0"
+    "$(cmp -s "$before" "${backups[0]}" && echo "${backup%-????-??-??}")" "config.yaml.bak-v${from:-0}"
 
   cp "$dir/config.yaml" "$WORK/$name.after"
   pf "$dir" --upgrade-config --write >/dev/null
@@ -79,7 +82,7 @@ for before in "$CASES"/*.yaml; do
 
   out="$(pf "$dir" --check-config)"
   check "$name: --check-config passes" "$?" "0"
-  check "$name: version 1" "$(printf '%s\n' "$out" | grep -c '✓ version *1$')" "1"
+  check "$name: version $CURRENT" "$(printf '%s\n' "$out" | grep -c "✓ version *$CURRENT\$")" "1"
   check "$name: sentence_repair runs" \
     "$(printf '%s\n' "$out" | grep -c '^  · pipeline .*transform sentence_repair')" "1"
 done
@@ -90,7 +93,7 @@ mkdir -p "$dir"
 cp "$CASES/block-enabled.yaml" "$dir/config.yaml"
 out="$(pf "$dir" --check-config)"
 check "an old config fails --check-config" "$?" "1"
-check "it says an upgrade is pending" "$(printf '%s\n' "$out" | grep -c 'version *0 — 1 upgrade(s) pending.*--upgrade-config --write')" "1"
+check "it says an upgrade is pending" "$(printf '%s\n' "$out" | grep -c 'version *0 — 2 upgrade(s) pending.*--upgrade-config --write')" "1"
 check "the retired block names the command" \
   "$(printf '%s\n' "$out" | grep -c '✗ transcription.sentence_repair no longer does anything — it is the `sentence_repair` transform now.*--upgrade-config --write')" "1"
 
@@ -120,8 +123,35 @@ check "and no temporary file is left" "$([ -e "${left[0]}" ] && echo "${left[0]#
 
 mkdir -p "$WORK/example"
 cp "$ROOT/built-in/config.example.yaml" "$WORK/example/config.yaml"
-check "the upgraded old example runs the shipped example's pipeline" \
-  "$(pipeline_line "$WORK/example-v0")" "$(pipeline_line "$WORK/example")"
+for old in example-v0 example-v1; do
+  check "the upgraded $old runs the shipped example's pipeline" \
+    "$(pipeline_line "$WORK/$old")" "$(pipeline_line "$WORK/example")"
+done
+
+# What each upgraded built-in definition is handed, and from where.
+needs() {
+  pf "$1" --check-config | grep -A1 "^      $2 " | sed -n '2s/^ *//p'
+}
+for old in example example-v0 example-v1; do
+  check "$old: disfluency gets the vectors its script declares" \
+    "$(needs "$WORK/$old" disfluency)" "returns json (script), parse vectors (script)"
+  check "$old: sentence_repair gets what its script declares" \
+    "$(needs "$WORK/$old" sentence_repair)" \
+    "returns json (script), parse true (script), readings true (script)"
+done
+check "a written parse: vectors stays" \
+  "$(needs "$WORK/vectors-v1" disfluency)" "returns json (script), parse vectors (config)"
+check "a value the example never shipped stays" \
+  "$(needs "$WORK/vectors-v1" sentence_repair)" \
+  "returns json (script), parse true (script), readings false (config)"
+check "a built-in script under another name loses the shipped values" \
+  "$(needs "$WORK/user-v1" tidy)" "returns json (script), parse vectors (script)"
+check "a one-line flow mapping loses the shipped values" \
+  "$(needs "$WORK/flow-v1" disfluency)" "returns json (script), parse vectors (script)"
+check "and so does a prompts: entry" \
+  "$(needs "$WORK/flow-v1" dates)" "returns json (script)"
+check "a program of the user's keeps its keys" \
+  "$(needs "$WORK/user-v1" mine)" "returns json (config), parse true (config)"
 
 echo
 printf '  %d/%d\n' "$pass" "$total"

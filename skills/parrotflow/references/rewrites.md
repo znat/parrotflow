@@ -70,6 +70,11 @@ The text comes in on stdin and goes out on stdout. That is the contract.
   on stdin and sets `PARROTFLOW_PROTOCOL=json`. Reply `{"text": "…", "vars": {"count": 1}}`.
   Both keys are optional. `vars` become `<name>.count` for later conditions.
   Values are flat strings, numbers or booleans.
+- A script declares `returns:`, `parse:` and `readings:` on a comment line in
+  its first ten lines: `# parrotflow: {returns: json}`. The config entry then
+  needs none of them. A key written in the config wins. Every built-in script
+  declares its own, so never write these keys for a `built-in/…` command.
+  `--check-config` prints each value and where it came from.
 - **Tell the user it runs a program.** `--check-config` lists every one.
 
 `assets/transform/` is a starter: a script that reads plain text or JSON, and a
@@ -205,17 +210,14 @@ transforms:
   - name: dates_fr
     description: dates et heures dictées en chiffres
     command: built-in/dates/fr.py
-    returns: json
     tests: built-in/dates/cases-fr.yaml
   - name: numbers_fr
     description: nombres dictés en chiffres
     command: built-in/numbers/fr.py
-    returns: json
     tests: built-in/numbers/cases-fr.yaml
   - name: money_fr
     description: montants dictés avec le symbole de la devise
     command: built-in/money/fr.py
-    returns: json
     tests: built-in/money/cases-fr.yaml
 ```
 
@@ -253,7 +255,7 @@ defined but not in the pipeline.
   naming someone is not always a request to ping them. See below.
 - `disfluency`: four rules for repeats and false starts, and a fifth for "you
   know" that needs a parser. The app installs the parser itself.
-- `join` (a script in `built-in/join/join.py`, with `returns: json`): fits the
+- `join` (a script in `built-in/join/join.py`): fits the
   start and end of a clip to the text around the cursor. Needs the `input`
   stage above it. See `context.md`.
 

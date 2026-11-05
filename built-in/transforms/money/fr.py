@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json}
 """Sommes d'argent dictées, écrites avec le symbole.
 
 "cinq euros" -> "5 €". "25 euros 50" -> "25,50 €". Transcript
@@ -8,7 +9,6 @@ rules that fired.
     - name: money_fr
       description: dictated amounts of money with the currency symbol
       command: built-in/money/fr.py
-      returns: json
       tests: built-in/money/cases-fr.yaml
 
     pipeline:

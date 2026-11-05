@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json}
 """Fit a dictated sentence to the text it is landing in. Envelope on stdin.
 
     - name: join
       description: space and case the transcript to fit where the caret is
       command: join.py
-      returns: json
       when: input.ok
 
 Needs the `input` stage above it, which publishes what is either side of the

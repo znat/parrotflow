@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json}
 """English spoken numbers as digits: "two hundred forty-three" -> 243.
 
 Transcript in, rewrite out — plain text, or the JSON envelope when the app sets
@@ -7,7 +8,6 @@ Transcript in, rewrite out — plain text, or the JSON envelope when the app set
     - name: numbers_en
       description: spoken numbers as digits
       command: built-in/numbers/en.py
-      returns: json
       tests: { path: built-in/numbers/cases-en.yaml }
 
     pipeline:

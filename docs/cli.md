@@ -64,13 +64,14 @@ config: /Users/you/.config/parrotflow/config.yaml
 An older config, before the app has upgraded it:
 
 ```
-  · version           0 — 1 upgrade(s) pending. The app makes them at launch; `<binary> --upgrade-config --write` rewrites the config, after a backup
+  · version           0 — 2 upgrade(s) pending. The app makes them at launch; `<binary> --upgrade-config --write` rewrites the config, after a backup
       1  sentence repair is the sentence_repair transform, the first pipeline step
+      2  built-in scripts declare returns:, parse: and readings:, so the values the example wrote for them are gone; disfluency gets parse: vectors
 ```
 
 It also names, every time and whether or not anything is wrong:
 
-- the config's `version:`. `✓ version 1` is current. An older file gets a `·`
+- the config's `version:`. `✓ version 2` is current. An older file gets a `·`
   line that counts the upgrades pending and gives the
   `--upgrade-config --write` command, then one line per pending upgrade (shown
   above). A file newer than the app says so and is read as it is. See
@@ -137,8 +138,8 @@ With no path it reads the variant's `config.yaml`, and honours
 and a unified diff:
 
 ```
-/Users/you/.config/parrotflow/config.yaml: version 0 -> 1
-  1  sentence repair is the sentence_repair transform, the first pipeline step
+/Users/you/.config/parrotflow/config.yaml: version 1 -> 2
+  2  built-in scripts declare returns:, parse: and readings:, so the values the example wrote for them are gone; disfluency gets parse: vectors
 --- config.yaml
 +++ config.yaml
 …
@@ -151,12 +152,12 @@ beside it (`-2`, `-3` when that name is taken), writes the new one, writes the
 same lines to the log and prints the launch notice after a `✓`:
 
 ```
-✓ config.yaml upgraded to version 1: sentence repair is the sentence_repair transform, the first pipeline step. The old file is config.yaml.bak-v0-2026-11-05
+✓ config.yaml upgraded to version 2: built-in scripts declare returns:, parse: and readings:, so the values the example wrote for them are gone; disfluency gets parse: vectors. The old file is config.yaml.bak-v1-2026-11-05
 ```
 
 A failure prints the notice after a `✗` and writes nothing.
 
-A second run is a no-op: `✓ <path> is version 1. Nothing to upgrade`. A file
+A second run is a no-op: `✓ <path> is version 2. Nothing to upgrade`. A file
 newer than the app is left as it is, with a `·` line.
 
 Exit 0 when it did what it says, including a no-op. Exit 1 when the file

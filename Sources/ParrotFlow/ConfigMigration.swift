@@ -26,7 +26,7 @@ enum ConfigMigration {
         let holds: (Config) -> Bool
     }
 
-    static let steps: [Step] = [sentenceRepairTransform]
+    static let steps: [Step] = [sentenceRepairTransform, scriptsDeclareNeeds]
 
     static var current: Int { steps.last?.version ?? 0 }
 
@@ -483,6 +483,131 @@ enum ConfigMigration {
             ?? indent(lines[at]) + 2
         out.insert(String(repeating: " ", count: depth) + "- transform: sentence_repair", at: at + 1)
         return out
+    }
+
+    // MARK: - 2: a script declares what its envelope needs
+
+    /// The `returns:`, `parse:` and `readings:` values an older example wrote
+    /// for each built-in script. The script's `parrotflow:` line says the
+    /// same now, except `disfluency.py`, which declares `parse: vectors`.
+    static let shippedNeeds: [String: [String: Set<String>]] = [
+        "built-in/dates/en.py": ["returns": ["json"]],
+        "built-in/numbers/en.py": ["returns": ["json"]],
+        "built-in/money/en.py": ["returns": ["json"]],
+        "built-in/disfluency/disfluency.py": ["returns": ["json"], "parse": ["true"]],
+        "built-in/sentence_repair/sentence_repair.py":
+            ["returns": ["json"], "parse": ["true"], "readings": ["true"]],
+    ]
+
+    /// In each definition whose `command:` is a built-in script, a
+    /// `returns:`, `parse:` or `readings:` line that holds the value an older
+    /// example wrote goes. Any other value is the person's and stays.
+    static let scriptsDeclareNeeds = Step(
+        version: 2,
+        summary: "built-in scripts declare returns:, parse: and readings:, so the"
+            + " values the example wrote for them are gone; disfluency gets parse: vectors",
+        apply: { lines in
+            ["prompts", "transforms"].reduce(lines) { lines, section in
+                guard let at = keyLine(section, depth: 0, in: lines, within: lines.indices) else {
+                    return lines
+                }
+                return withoutShippedNeeds(definitions(under: at, in: lines), in: lines)
+            }
+        },
+        holds: { config in
+            config.transforms.allSatisfy { transform in
+                guard case .command(let command) = transform.body,
+                      let shipped = shippedNeeds[script(of: command)] else { return true }
+                return !transform.written.spelled.contains { shipped[$0.key]?.contains($0.value) == true }
+            }
+        }
+    )
+
+    static func withoutShippedNeeds(_ items: [Range<Int>], in lines: [String]) -> [String] {
+        var out = lines
+        for item in items.reversed() {
+            if lines[item.lowerBound].wholeMatch(of: #/^\s*-\s*\{.*\}\s*(#.*)?$/#) != nil {
+                out[item.lowerBound] = withoutShippedNeeds(inFlow: lines[item.lowerBound])
+                continue
+            }
+            guard let command = keyValue("command", in: item, of: lines),
+                  let shipped = shippedNeeds[script(of: command.value)] else { continue }
+            let stale = Config.Transform.Needs.keys.compactMap { key in
+                keyValue(key, in: item, of: lines).flatMap { found in
+                    found.line != item.lowerBound && shipped[key]?.contains(found.value.lowercased()) == true
+                        ? found : nil
+                }
+            }
+            for found in stale.sorted(by: { $0.line > $1.line }) {
+                if let comment = found.comment {
+                    out[found.line] = String(repeating: " ", count: indent(lines[found.line])) + comment
+                } else {
+                    out.remove(at: found.line)
+                }
+            }
+        }
+        return out
+    }
+
+    /// `- {name: x, command: built-in/…, returns: json}` on one line.
+    static func withoutShippedNeeds(inFlow line: String) -> String {
+        func first(_ pattern: String, in text: String) -> (range: Range<String.Index>, value: String)? {
+            guard let expression = try? NSRegularExpression(pattern: pattern),
+                  let match = expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                  let whole = Range(match.range, in: text), let value = Range(match.range(at: 1), in: text)
+            else { return nil }
+            return (whole, String(text[value]).trimmingCharacters(in: CharacterSet(charactersIn: "\"' ")))
+        }
+        guard let command = first(#"[{,]\s*command:\s*([^,}]+)"#, in: line),
+              let shipped = shippedNeeds[script(of: command.value)] else { return line }
+        var out = line
+        for key in Config.Transform.Needs.keys {
+            for pattern in [#",\s*"# + key + #":\s*([^,}]*?)\s*(?=[,}])"#,
+                            #"(?<=\{)\s*"# + key + #":\s*([^,}]*?)\s*,\s*"#] {
+                guard let found = first(pattern, in: out),
+                      shipped[key]?.contains(found.value.lowercased()) == true else { continue }
+                out.removeSubrange(found.range)
+                break
+            }
+        }
+        return out
+    }
+
+    /// The script a `command:` names: its first word, `examples/` read as
+    /// `built-in/`.
+    static func script(of command: String) -> String {
+        let value = command.trimmingCharacters(in: CharacterSet(charactersIn: "\"' "))
+        return TransformFolder.currentSpelling(String(value.split(separator: " ").first ?? ""))
+    }
+
+    /// Each `- ` item under the key at `at`, up to the next one.
+    static func definitions(under at: Int, in lines: [String]) -> [Range<Int>] {
+        let span = body(of: at, in: lines)
+        guard let depth = span.first(where: { isContent(lines[$0]) }).map({ indent(lines[$0]) })
+        else { return [] }
+        let starts = span.filter { indent(lines[$0]) == depth && lines[$0].dropFirst(depth).hasPrefix("-") }
+        return starts.indices.map { n in
+            starts[n]..<(n + 1 < starts.count ? starts[n + 1] : span.upperBound)
+        }
+    }
+
+    /// The `key: value` line of an item, at the depth of the item's own keys,
+    /// with the value unquoted and its trailing comment apart.
+    static func keyValue(_ key: String, in item: Range<Int>, of lines: [String])
+        -> (line: Int, value: String, comment: String?)? {
+        let first = lines[item.lowerBound]
+        let dash = indent(first)
+        let depth = dash + 1 + first.dropFirst(dash + 1).prefix { $0 == " " }.count
+        let pattern = #/^(?<key>[A-Za-z_]+):(?:\s+(?<value>[^#]*?))?\s*(?<comment>#.*)?$/#
+        for i in item {
+            let line = i == item.lowerBound
+                ? String(first.dropFirst(depth))
+                : (indent(lines[i]) == depth ? String(lines[i].dropFirst(depth)) : "")
+            guard let match = line.wholeMatch(of: pattern), match.key == key else { continue }
+            let value = String(match.value ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            return (i, value, match.comment.map(String.init))
+        }
+        return nil
     }
 
     // MARK: - Diff

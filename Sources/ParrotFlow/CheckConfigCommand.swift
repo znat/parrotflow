@@ -251,6 +251,9 @@ enum CheckConfigCommand {
                     toLength: max(width, 1), withPad: " ", startingAt: 0
                 )
                 emit("      \(name)  \(kind(of: transform))  \(bodyPath(transform))")
+                if let needs = envelope(of: transform) {
+                    emit("      \(String(repeating: " ", count: max(width, 1)))  \(needs)")
+                }
             }
         }
 
@@ -457,6 +460,29 @@ enum CheckConfigCommand {
         case .replace: return "replace"
         case .command: return "command"
         }
+    }
+
+    /// What a `command:` is handed besides the text, each key with where it
+    /// came from: `returns json (script), parse vectors (config)`. Keys
+    /// neither place wrote are left out.
+    private static func envelope(of transform: Config.Transform) -> String? {
+        guard case .command = transform.body else { return nil }
+        let written = transform.written
+        let declared = transform.declared
+        func from(_ inConfig: Bool) -> String { inConfig ? "config" : "script" }
+        var keys: [String] = []
+        if written.returnsJSON != nil || declared.returnsJSON != nil {
+            keys.append("returns \(transform.returnsJSON ? "json" : "text")"
+                + " (\(from(written.returnsJSON != nil)))")
+        }
+        let json = transform.returnsJSON
+        if written.parse != nil || (json && declared.parse != nil) {
+            keys.append("parse \(transform.parse.spelled) (\(from(written.parse != nil)))")
+        }
+        if written.readings != nil || (json && declared.readings != nil) {
+            keys.append("readings \(transform.readings) (\(from(written.readings != nil)))")
+        }
+        return keys.isEmpty ? nil : keys.joined(separator: ", ")
     }
 
     /// The resolved absolute path of a body, or what it is instead of a file.

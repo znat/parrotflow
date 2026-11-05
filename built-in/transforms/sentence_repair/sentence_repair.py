@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json, parse: true, readings: true}
 """Sentence marks a pause wrote, taken out again.
 
     - name: sentence_repair
       description: repair sentence boundaries a pause cut
       command: built-in/sentence_repair/sentence_repair.py
-      returns: json
-      parse: true
-      readings: true
 
 A pause makes the decoder write a sentence mark and a capital where the
 speaker did not end a sentence. Three shapes, three rules:

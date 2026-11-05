@@ -231,6 +231,15 @@ cases:
     input: we should we should ship it
     expect: we should ship it
 
+  # The script's `parrotflow:` line sets the protocol, and a key in the config
+  # wins over it.
+  - name: a script declares its protocol, and the config overrides it
+    pipeline: command-declared
+    input: ship it
+    expect: ship it (text)
+    expect_vars:
+      declared.protocol: json
+
   # The shebang picks the interpreter, and it does nothing without an execute
   # bit. Committed without one, so this stays true.
   - name: a command that cannot be executed leaves the transcript alone
