@@ -62,6 +62,13 @@ struct ParseField: Encodable, Sendable {
         try c.encode(words, forKey: .words)
     }
 
+    var withoutVectors: ParseField {
+        ParseField(language: language, tagNames: tagNames, words: words.map {
+            Word(at: $0.at, len: $0.len, text: $0.text, upos: $0.upos, feats: $0.feats, head: $0.head,
+                 deprel: $0.deprel, ner: $0.ner, tags: $0.tags, vector: nil)
+        }, windows: windows)
+    }
+
     /// The text split into words and windows, each window parsed on its own.
     /// Throws `Abstained` when a window does not fit or has no single root.
     static func of(_ text: String, language: String, parser: Parser, vectors: Bool = false) throws -> ParseField {
@@ -318,5 +325,23 @@ actor SyrinxParser {
             Log.write("pipeline: \(stage) runs without the parse — \(error.localizedDescription)")
             return nil
         }
+    }
+}
+
+/// The parse of each exact text for one pipeline run, so two steps on the
+/// same text parse it once. The vectors come out of the same forward pass as
+/// the tree, so a step that asks for the tree alone gets the vectors parse
+/// without them, and its envelope is what a fresh parse would have given.
+final class ParseCache: @unchecked Sendable {
+    private var parsed: [String: (field: ParseField, vectors: Bool)] = [:]
+
+    func field(for text: String, language: String, stage: String, vectors: Bool) async -> ParseField? {
+        let key = language + "\u{1F}" + text
+        if let hit = parsed[key], hit.vectors || !vectors {
+            return vectors || !hit.vectors ? hit.field : hit.field.withoutVectors
+        }
+        let field = await SyrinxParser.field(for: text, language: language, stage: stage, vectors: vectors)
+        if let field { parsed[key] = (field, vectors) }
+        return field
     }
 }
