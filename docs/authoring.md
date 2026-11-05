@@ -365,13 +365,17 @@ print, and keeps `main()` so it still runs by hand:
 ```python
 #!/usr/bin/env python3
 # parrotflow: {returns: json, runner: python}
-import json, sys
+import json, os, sys
 
 def run(envelope):
     return {"text": envelope["text"].upper()}
 
 def main():
-    print(json.dumps(run(json.loads(sys.stdin.read()))))
+    raw = sys.stdin.read()
+    if os.environ.get("PARROTFLOW_PROTOCOL") == "json":
+        print(json.dumps(run(json.loads(raw))))
+    else:
+        sys.stdout.write(run({"text": raw})["text"])
 
 if __name__ == "__main__":
     main()

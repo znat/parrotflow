@@ -14,6 +14,7 @@ request per line on stdin, one answer per line on stdout, in order:
 The first line out is `{"ready": true, ...}`, after the imports. Anything a
 script prints goes to stderr, which the app writes to its log.
 """
+import importlib.machinery
 import importlib.util
 import json
 import os
@@ -67,11 +68,11 @@ class Script:
         self.loaded = []
         self.problem = None
         with self.installed(), self.watching():
-            spec = importlib.util.spec_from_file_location(self.name, path)
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[self.name] = module
             try:
-                spec.loader.exec_module(module)
+                loader = importlib.machinery.SourceFileLoader(self.name, path)
+                module = importlib.util.module_from_spec(importlib.util.spec_from_loader(self.name, loader))
+                sys.modules[self.name] = module
+                loader.exec_module(module)
             except BaseException as error:  # noqa: B036 - SystemExit at import is a refusal too
                 sys.modules.pop(self.name, None)
                 self.problem = "could not be imported: " + described(error)

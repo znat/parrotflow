@@ -49,7 +49,7 @@ final class PythonRunner: @unchecked Sendable {
     func start(preloading scripts: [String]) {
         lock.lock(); defer { lock.unlock() }
         preload = scripts
-        if worker == nil, refused == nil { worker = launch() }
+        if !scripts.isEmpty, worker == nil, refused == nil { worker = launch() }
     }
 
     /// The scripts a restart imports. A running worker imports a new one at
