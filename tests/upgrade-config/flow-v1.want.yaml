@@ -1,0 +1,15 @@
+# Invented. Two transforms written as one-line flow mappings, the key to drop
+# first in one of them, and one under the old `prompts:` key. All three lose
+# the values the example wrote.
+version: 2
+transcription:
+  pipeline: [{transform: sentence_repair}, {transform: disfluency}, {transform: dates}]
+
+transforms:
+  - {name: sentence_repair, description: repair sentence boundaries a pause cut, command: built-in/sentence_repair/sentence_repair.py}
+  - {name: disfluency, description: delete hesitations, command: built-in/disfluency/disfluency.py}
+
+prompts:
+  - name: dates
+    description: dictated dates as digits
+    command: built-in/dates/en.py

@@ -507,28 +507,12 @@ enum ConfigMigration {
         summary: "built-in scripts declare returns:, parse: and readings:, so the"
             + " values the example wrote for them are gone; disfluency gets parse: vectors",
         apply: { lines in
-            guard let at = keyLine("transforms", depth: 0, in: lines, within: lines.indices) else {
-                return lines
-            }
-            var out = lines
-            for item in definitions(under: at, in: lines).reversed() {
-                guard let command = keyValue("command", in: item, of: lines),
-                      let shipped = shippedNeeds[script(of: command.value)] else { continue }
-                let stale = Config.Transform.Needs.keys.compactMap { key in
-                    keyValue(key, in: item, of: lines).flatMap { found in
-                        found.line != item.lowerBound && shipped[key]?.contains(found.value.lowercased()) == true
-                            ? found : nil
-                    }
+            ["prompts", "transforms"].reduce(lines) { lines, section in
+                guard let at = keyLine(section, depth: 0, in: lines, within: lines.indices) else {
+                    return lines
                 }
-                for found in stale.sorted(by: { $0.line > $1.line }) {
-                    if let comment = found.comment {
-                        out[found.line] = String(repeating: " ", count: indent(lines[found.line])) + comment
-                    } else {
-                        out.remove(at: found.line)
-                    }
-                }
+                return withoutShippedNeeds(definitions(under: at, in: lines), in: lines)
             }
-            return out
         },
         holds: { config in
             config.transforms.allSatisfy { transform in
@@ -538,6 +522,56 @@ enum ConfigMigration {
             }
         }
     )
+
+    static func withoutShippedNeeds(_ items: [Range<Int>], in lines: [String]) -> [String] {
+        var out = lines
+        for item in items.reversed() {
+            if lines[item.lowerBound].wholeMatch(of: #/^\s*-\s*\{.*\}\s*(#.*)?$/#) != nil {
+                out[item.lowerBound] = withoutShippedNeeds(inFlow: lines[item.lowerBound])
+                continue
+            }
+            guard let command = keyValue("command", in: item, of: lines),
+                  let shipped = shippedNeeds[script(of: command.value)] else { continue }
+            let stale = Config.Transform.Needs.keys.compactMap { key in
+                keyValue(key, in: item, of: lines).flatMap { found in
+                    found.line != item.lowerBound && shipped[key]?.contains(found.value.lowercased()) == true
+                        ? found : nil
+                }
+            }
+            for found in stale.sorted(by: { $0.line > $1.line }) {
+                if let comment = found.comment {
+                    out[found.line] = String(repeating: " ", count: indent(lines[found.line])) + comment
+                } else {
+                    out.remove(at: found.line)
+                }
+            }
+        }
+        return out
+    }
+
+    /// `- {name: x, command: built-in/…, returns: json}` on one line.
+    static func withoutShippedNeeds(inFlow line: String) -> String {
+        func first(_ pattern: String, in text: String) -> (range: Range<String.Index>, value: String)? {
+            guard let expression = try? NSRegularExpression(pattern: pattern),
+                  let match = expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                  let whole = Range(match.range, in: text), let value = Range(match.range(at: 1), in: text)
+            else { return nil }
+            return (whole, String(text[value]).trimmingCharacters(in: CharacterSet(charactersIn: "\"' ")))
+        }
+        guard let command = first(#"[{,]\s*command:\s*([^,}]+)"#, in: line),
+              let shipped = shippedNeeds[script(of: command.value)] else { return line }
+        var out = line
+        for key in Config.Transform.Needs.keys {
+            for pattern in [#",\s*"# + key + #":\s*([^,}]*?)\s*(?=[,}])"#,
+                            #"(?<=\{)\s*"# + key + #":\s*([^,}]*?)\s*,\s*"#] {
+                guard let found = first(pattern, in: out),
+                      shipped[key]?.contains(found.value.lowercased()) == true else { continue }
+                out.removeSubrange(found.range)
+                break
+            }
+        }
+        return out
+    }
 
     /// The script a `command:` names: its first word, `examples/` read as
     /// `built-in/`.

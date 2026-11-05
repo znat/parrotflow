@@ -3366,7 +3366,7 @@ struct Config: Decodable, Equatable {
     /// Whether some transform asks for the syrinx parse, and so whether the
     /// parser is loaded at all.
     var readsParse: Bool {
-        transforms.contains { $0.parse != nil }
+        transforms.contains { $0.parse != .off }
     }
 
     /// Whether anything will read the 400 MB word vectors. Both tests that

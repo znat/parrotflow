@@ -132,7 +132,7 @@ done
 needs() {
   pf "$1" --check-config | grep -A1 "^      $2 " | sed -n '2s/^ *//p'
 }
-for old in example-v0 example-v1; do
+for old in example example-v0 example-v1; do
   check "$old: disfluency gets the vectors its script declares" \
     "$(needs "$WORK/$old" disfluency)" "returns json (script), parse vectors (script)"
   check "$old: sentence_repair gets what its script declares" \
@@ -146,6 +146,10 @@ check "a value the example never shipped stays" \
   "returns json (script), parse true (script), readings false (config)"
 check "a built-in script under another name loses the shipped values" \
   "$(needs "$WORK/user-v1" tidy)" "returns json (script), parse vectors (script)"
+check "a one-line flow mapping loses the shipped values" \
+  "$(needs "$WORK/flow-v1" disfluency)" "returns json (script), parse vectors (script)"
+check "and so does a prompts: entry" \
+  "$(needs "$WORK/flow-v1" dates)" "returns json (script)"
 check "a program of the user's keeps its keys" \
   "$(needs "$WORK/user-v1" mine)" "returns json (config), parse true (config)"
 
