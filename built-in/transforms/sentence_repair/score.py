@@ -96,7 +96,8 @@ def record(binary):
     cases = yaml.safe_load(CASES.read_text())["cases"]
     inputs = sorted({(case["input"], language(case)) for case in cases})
     found = envelopes(binary, inputs)
-    unread = [t for t, e in found.items() if not e["parse"] or (e["readings"] or {}).get("missing")]
+    unread = [t for t, e in found.items()
+              if not e["parse"] or not e["readings"] or e["readings"].get("missing")]
     if unread:
         sys.exit(f"  ✗ {len(unread)} case(s) recorded without a parse or readings;"
                  " is each model on disk?")
