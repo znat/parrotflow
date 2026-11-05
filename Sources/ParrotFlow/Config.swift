@@ -169,10 +169,14 @@ struct Config: Decodable, Equatable {
 
     /// The lists as scope values, for a transform that is a program rather than
     /// a table. Joined on `; ` because a `Scope.Value` is a scalar.
+    ///
+    /// `abbreviations` is always there, the built-in list when none is written,
+    /// so `sentence_repair.py` reads the list `SentenceJoin` reads.
     var listVariables: [String: Scope.Value] {
-        lists.reduce(into: [:]) { out, entry in
-            out[entry.key] = .string(entry.value.joined(separator: "; "))
-        }
+        lists.merging(["abbreviations": Self.defaultAbbreviations]) { written, _ in written }
+            .reduce(into: [:]) { out, entry in
+                out[entry.key] = .string(entry.value.joined(separator: "; "))
+            }
     }
 
     /// The words you dictate that the recogniser gets wrong, and what the app
@@ -3448,6 +3452,17 @@ struct Config: Decodable, Equatable {
     /// warm that disagrees with the pipeline fetches weights nothing will read.
     var readsBoundaries: Bool {
         Pipeline.resolved(config: self).stages.contains(.sentenceRepair)
+    }
+
+    /// Whether `sentence_repair.py` is a step while the stage of that name is
+    /// on. The script steps aside on a text the stage has read, so it repairs
+    /// nothing until the stage is turned off.
+    var repairsSentencesTwice: Bool {
+        readsBoundaries && Pipeline.resolved(config: self).steps.contains { step in
+            guard step.stage == .transform, let name = step.transform,
+                  case .command(let command)? = transform(named: name)?.body else { return false }
+            return command.contains("sentence_repair.py")
+        }
     }
 
     /// Whether anything will read the sentence model: `sentence_repair`,

@@ -173,6 +173,11 @@ enum CheckConfigCommand {
         for notice in config.notices() {
             emit("  · \(notice)")
         }
+        if config.repairsSentencesTwice {
+            emit("  ⚠ pipeline: sentence_repair.py is a step and the sentence_repair stage is"
+                + " on, so the script repairs nothing. Set"
+                + " `transcription.sentence_repair: {enabled: false}`")
+        }
         unknownKeys().forEach(emit)
         if !transcription.retired.isEmpty {
             emit("      pipeline: []")
