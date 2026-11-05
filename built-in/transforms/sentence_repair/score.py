@@ -97,6 +97,8 @@ def through(binary, inputs):
     binary hands it: text -> (repaired, edits, recorded envelope). A text the
     app hands no transform, a spoken command, is left out."""
     found = envelopes(binary, inputs, strict=False)
+    if inputs and not found:
+        sys.exit(f"{binary} --eval handed the transform nothing for {len(inputs)} text(s)")
     out = {}
     for text, _ in inputs:
         if text not in found:
