@@ -34,6 +34,10 @@ pf() {
   PARROTFLOW_CONFIG_DIR="$dir" "$BIN" "$@" </dev/null 2>/dev/null
 }
 
+same_or_diff() {
+  if cmp -s "$1" "$2"; then echo same; else diff "$1" "$2" | head -5; fi
+}
+
 pipeline_line() {
   pf "$1" --check-config | sed -n 's/^  · pipeline *//p'
 }
@@ -57,16 +61,16 @@ for before in "$CASES"/*.yaml; do
   else
     check "$name: exit" "$code" "0"
   fi
-  check "$name: the file" "$(cmp -s "$want" "$dir/config.yaml" && echo same || diff "$want" "$dir/config.yaml" | head -5)" "same"
+  check "$name: the file" "$(same_or_diff "$want" "$dir/config.yaml")" "same"
 
   backups=("$dir"/config.yaml.bak-*)
   if [ "$want" = "$before" ]; then
     check "$name: no backup" "$([ -e "${backups[0]}" ] && echo "${backups[0]##*/}")" ""
     continue
   fi
+  backup="${backups[0]##*/}"
   check "$name: the backup is the old file" \
-    "$(cmp -s "$before" "${backups[0]}" && echo "${backups[0]##*/}" | sed 's/-[0-9-]*$//')" \
-    "config.yaml.bak-v0"
+    "$(cmp -s "$before" "${backups[0]}" && echo "${backup%-????-??-??}")" "config.yaml.bak-v0"
 
   cp "$dir/config.yaml" "$WORK/$name.after"
   pf "$dir" --upgrade-config --write >/dev/null
@@ -111,7 +115,8 @@ pf "$WORK/private" --upgrade-config --write >/dev/null
 backups=("$WORK/private"/config.yaml.bak-*)
 check "a 0600 config stays 0600, and so is its backup" \
   "$(stat -f '%Lp' "$WORK/private/config.yaml") $(stat -f '%Lp' "${backups[0]}")" "600 600"
-check "and no temporary file is left" "$(ls -A "$WORK/private" | grep -c upgrade)" "0"
+left=("$WORK/private"/.*upgrade*)
+check "and no temporary file is left" "$([ -e "${left[0]}" ] && echo "${left[0]##*/}")" ""
 
 mkdir -p "$WORK/example"
 cp "$ROOT/built-in/config.example.yaml" "$WORK/example/config.yaml"
