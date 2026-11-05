@@ -19,12 +19,18 @@ No cue, no rewrite: `heures`, `midi`, `minuit`, `et demie`, `et quart`,
 next time it comes round — "à 4h" said at noon is 16h — unless a qualifier says
 so or `--no-wall-clock` is on the `command:` line. `engine.py` holds the rest.
 """
+from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import engine  # noqa: E402 — the path above is what makes it importable
+
+if TYPE_CHECKING:
+    from envelope import Envelope, Reply
 
 # --- les mots ----------------------------------------------------------------
 
@@ -98,7 +104,7 @@ PERIOD = rf"(?:\s+(?:de\s+l['\u2019]\s*|du\s+)(?P<period>{AFTERNOON}|{MORNING}))
 
 # --- ce que les règles écrivent ----------------------------------------------
 
-def period_before(text):
+def period_before(text: str) -> str | None:
     """The half of the day named in the last few words, or None.
 
     "demain matin à 4h" and "ce soir à 4h" say which 4h they mean without
@@ -110,7 +116,7 @@ def period_before(text):
     return None
 
 
-def stated_hour(hour, period, text, start):
+def stated_hour(hour: int, period: str | None, text: str, start: int) -> int:
     """The hour the speaker meant, from the qualifier or from the clock.
 
     A qualifier decides on its own. Without one an hour under 12 is the next
@@ -128,7 +134,7 @@ def stated_hour(hour, period, text, start):
     return hour if (hour - current) % 24 <= (hour + 12 - current) % 24 else hour + 12
 
 
-def heure(m, text):
+def heure(m: re.Match[str], text: str) -> str | None:
     """"dix heures quinze" -> "10h15"; "à 4h" -> "16h" when it is noon."""
     hour = read_number(m.group("hw") or m.group("hd"))
     if hour is None or not 0 <= hour <= 23:
@@ -168,7 +174,7 @@ def heure(m, text):
     return f"{hour}h"
 
 
-def midi(m, _text):
+def midi(m: re.Match[str], _text: str) -> str | None:
     """"midi et demi" -> "12h30". Bare "midi" stays a word."""
     hour = 12 if m.group("w").lower() == "midi" else 0
     if m.group("half"):
@@ -183,12 +189,12 @@ def midi(m, _text):
     return f"{hour - 1 if hour else 23}h{60 - minute:02d}"
 
 
-def with_century(short):
+def with_century(short: int) -> int:
     """A two-digit year, pivoted on the clock. 25 is 2025 and 99 is 1999."""
     return 2000 + short if short <= engine.now().year % 100 + 10 else 1900 + short
 
 
-def short_year(m, text):
+def short_year(m: re.Match[str], text: str) -> int | None:
     """The two-digit year after the match, or None when it is not one."""
     if engine.word_after(text, m.end()) in NOT_A_YEAR_AFTER:
         return None
@@ -196,9 +202,10 @@ def short_year(m, text):
     return value if value is not None and 0 <= value <= 99 else None
 
 
-def jour_mois(m, text):
+def jour_mois(m: re.Match[str], text: str) -> str | None:
     """"le trois décembre" -> "le 3 décembre"; "le 12 mai 25" -> "le 12 mai 2025"."""
     raw = m.group("d").lower()
+    day: int | None
     if raw in FIRST:
         day, written = 1, "1er"
     else:
@@ -220,7 +227,7 @@ def jour_mois(m, text):
     return f"{written} {m.group('mon')}" + (f" {year}" if year else "")
 
 
-def jour_du_mois(m, text):
+def jour_du_mois(m: re.Match[str], text: str) -> str | None:
     """"le dix du douze" -> "le 10/12"; "du 3 du 12 2025" -> "du 3/12/2025"."""
     day, month = read_number(m.group("d")), read_number(m.group("m"))
     if day is None or month is None:
@@ -240,7 +247,7 @@ def jour_du_mois(m, text):
     return written
 
 
-def annee_apres_slash(m, text):
+def annee_apres_slash(m: re.Match[str], text: str) -> str | None:
     """"Le 3/12 25" -> "Le 3/12/25". The date is written, the year is not."""
     short = short_year(m, text)
     if short is None:
@@ -250,7 +257,7 @@ def annee_apres_slash(m, text):
 
 # Order is the whole of rule precedence: dates before times, and the longest
 # form of a time before its shorter ones.
-RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler in [
+RULES: list[engine.Rule] = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler in [
     ("préposition N du N",
      rf"\b(?P<lead>{BEFORE_DATE})\s+(?P<d>{NUM})\s+du\s+(?P<m>{NUM})\b"
      rf"(?:\s+(?:(?P<y>{YEAR})|(?P<y2>{NUM})))?",
@@ -271,7 +278,7 @@ RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler i
 ]]
 
 
-def run(envelope):
+def run(envelope: Envelope) -> Reply:
     return engine.run(sys.modules[__name__], envelope)
 
 

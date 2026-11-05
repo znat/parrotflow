@@ -25,11 +25,14 @@ wants zero changes.
 through the real command runner. This scores the copy in the repo. No model
 call in this file.
 """
+from __future__ import annotations
+
 import argparse
 import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 try:
     import yaml
@@ -41,17 +44,32 @@ TRACE = Path.home() / "Recordings/ParrotFlow/trace.jsonl"
 sys.path.insert(0, str(HERE))
 import engine  # noqa: E402 — the path above is what makes it importable
 
+if TYPE_CHECKING:
+    from importlib.abc import Loader
+    from importlib.machinery import ModuleSpec
+    from types import ModuleType
+    from typing import Any, TypedDict
 
-def load(name, path):
-    spec = importlib.util.spec_from_file_location(name, path)
+    from typing_extensions import NotRequired
+
+    from engine import Language
+
+    class Case(TypedDict):
+        input: str
+        expect: NotRequired[str]
+        lang: NotRequired[str]
+
+
+def load(name: str, path: Path) -> ModuleType:
+    spec = cast("ModuleSpec", importlib.util.spec_from_file_location(name, path))
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    cast("Loader", spec.loader).exec_module(module)
     return module
 
 
-def languages():
+def languages() -> dict[str, Language]:
     """Every `<lang>.py` beside this file, by its two-letter code."""
-    found = {}
+    found: dict[str, Language] = {}
     for path in sorted(HERE.glob("*.py")):
         if path.stem in ("engine", "score") or len(path.stem) != 2:
             continue
@@ -59,23 +77,24 @@ def languages():
     return found
 
 
-def written(module, text, language=None):
+def written(module: Language, text: str, language: str | None = None) -> tuple[str, list[str]]:
     """The rewrite, and the rules the module named itself into.
 
     `language` is `ctx.language`, and the guard it feeds is part of what is
     being scored, so this is the same path `engine.main` takes.
     """
-    applied = []
+    applied: list[str] = []
     if engine.declines(module.CODE, language, text):
         return text, applied
     return engine.rewrite(text, module.RULES, applied), applied
 
 
-def cases_for(lang):
-    return yaml.safe_load((HERE / f"cases-{lang}.yaml").read_text())["cases"]
+def cases_for(lang: str) -> list[Case]:
+    cases: list[Case] = yaml.safe_load((HERE / f"cases-{lang}.yaml").read_text())["cases"]
+    return cases
 
 
-def score_language(lang, module, verbose):
+def score_language(lang: str, module: Language, verbose: bool) -> bool:
     """The two failure kinds counted apart, because they cost differently."""
     cases = cases_for(lang)
     passed = missed = damaged = wrong = 0
@@ -121,7 +140,7 @@ def score_language(lang, module, verbose):
     return passed == total
 
 
-def cross(modules):
+def cross(modules: dict[str, Language]) -> bool:
     """Each script over every other language's inputs. Zero changes is a pass.
 
     The guard is on, which is the point: this is what stops `money_en` from
@@ -144,7 +163,7 @@ def cross(modules):
     return bad == 0
 
 
-def corpus(modules):
+def corpus(modules: dict[str, Language]) -> None:
     """Every edit these stages would make to the archive, for reading by eye.
 
     Each clip is run at the language the app detected for it, which the trace
@@ -156,11 +175,12 @@ def corpus(modules):
     if not TRACE.exists():
         sys.exit(f"no trace at {TRACE}")
 
+    seen: dict[str, tuple[str, str | None]]
     seen, unknown = {}, 0
     for line in TRACE.read_text().splitlines():
         if not line.strip():
             continue
-        record = json.loads(line)
+        record: dict[str, Any] = json.loads(line)
         if (record.get("asr") or {}).get("text"):
             seen[record["wav"]] = (record["asr"]["text"], record.get("lang"))
 
@@ -169,6 +189,7 @@ def corpus(modules):
         if not lang:
             unknown += 1
             continue
+        applied: list[str]
         out, applied = text, []
         for code, module in modules.items():
             out, fired = written(module, out, lang)
@@ -185,7 +206,7 @@ def corpus(modules):
           + (f", {unknown} skipped with no language" if unknown else ""))
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lang", help="one language; every one by default")
     parser.add_argument("--text", help="run one language on one string")

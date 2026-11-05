@@ -30,6 +30,8 @@ changing a case or the parser.
 
 **No model call anywhere in this file**, except the binary `--record` runs.
 """
+from __future__ import annotations
+
 import argparse
 import json
 import math
@@ -39,6 +41,34 @@ import sys
 import tempfile
 from pathlib import Path
 import importlib.util
+from typing import TYPE_CHECKING, Any, Dict
+
+if TYPE_CHECKING:
+    from typing import TypedDict
+
+    from typing_extensions import NotRequired
+
+    class Case(TypedDict):
+        input: str
+        expect: NotRequired[str]
+        lang: NotRequired[str]
+        language: NotRequired[str]
+        misses: NotRequired[str]
+        got: NotRequired[str]
+
+    class RecordedWord(TypedDict):
+        text: str
+        upos: str
+        head: int
+        deprel: str
+        tags: list[float]
+        vector: str
+
+    class RecordedParse(TypedDict):
+        """A parse as `record` writes it: the envelope's, cut to `FIELDS`."""
+        language: str
+        tag_names: list[str]
+        words: list[RecordedWord]
 
 try:
     import yaml
@@ -55,15 +85,22 @@ PARSES = HERE / "parses.json"
 FIELDS = ("text", "upos", "head", "deprel", "tags", "vector")
 TRACE = Path.home() / "Recordings/ParrotFlow/trace.jsonl"
 
-_spec = importlib.util.spec_from_file_location("disfluency", TRANSFORM)
-disfluency = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(disfluency)
+# A trace line, as json.loads gives it.
+TraceLine = Dict[str, Any]
 
-def language(case):
+if TYPE_CHECKING:
+    import disfluency
+else:
+    _spec = importlib.util.spec_from_file_location("disfluency", TRANSFORM)
+    disfluency = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(disfluency)
+
+def language(case: Case) -> str:
     return case.get("lang") or case.get("language") or "en"
 
 
-def collapsed(text, lang="en", parse=None):
+def collapsed(text: str, lang: str = "en",
+              parse: RecordedParse | None = None) -> tuple[str, list[str]]:
     """The transform's own entry point, and the passes it named itself into.
 
     `applied` is how a case can be checked for the right reason rather than
@@ -74,9 +111,10 @@ def collapsed(text, lang="en", parse=None):
     return out, applied
 
 
-def record(binary):
+def record(binary: str) -> None:
     """The parse of every case, as the envelope carries it."""
-    langs = {c["input"]: language(c) for c in yaml.safe_load(CASES.read_text())["cases"]}
+    cases: list[Case] = yaml.safe_load(CASES.read_text())["cases"]
+    langs = {c["input"]: language(c) for c in cases}
     inputs = sorted(langs)
     items = [{"id": str(i), "language": langs[t], "text": t} for i, t in enumerate(inputs)]
     # A scratch config: the binary loads one, and prunes its transforms/built-in.
@@ -87,7 +125,7 @@ def record(binary):
         run = subprocess.run([binary, "--parse", "--batch", batch.name, "--vectors"],
                              capture_output=True, text=True, check=False,
                              env={**os.environ, "PARROTFLOW_CONFIG_DIR": config})
-    rows = {}
+    rows: dict[str, dict[str, object]] = {}
     for line in run.stdout.splitlines():
         row = json.loads(line) if line.startswith("{") else {}
         if "words" in row:
@@ -107,10 +145,10 @@ def record(binary):
     print(f"  {len(rows)} parses written to {PARSES.name}")
 
 
-def score(verbose):
+def score(verbose: bool) -> bool:
     """The two failure kinds counted apart, because they cost differently."""
-    cases = yaml.safe_load(CASES.read_text())["cases"]
-    parses = json.loads(PARSES.read_text())
+    cases: list[Case] = yaml.safe_load(CASES.read_text())["cases"]
+    parses: dict[str, RecordedParse] = json.loads(PARSES.read_text())
     passed = missed = damaged = wrong = known = 0
     unparsed = {"change": 0, "keep": 0}
 
@@ -171,7 +209,7 @@ def score(verbose):
     return passed + known == total
 
 
-def corpus():
+def corpus() -> None:
     """Every edit this pass would make to the archive, for reading by eye.
 
     The case set says it is right on the cases someone thought of. This says
@@ -181,11 +219,11 @@ def corpus():
     if not TRACE.exists():
         sys.exit(f"no trace at {TRACE}")
 
-    by_wav = {}
+    by_wav: dict[str, str] = {}
     for line in TRACE.read_text().splitlines():
         if not line.strip():
             continue
-        record = json.loads(line)
+        record: TraceLine = json.loads(line)
         if (record.get("asr") or {}).get("text"):
             by_wav[record["wav"]] = record["asr"]["text"]
 
@@ -203,7 +241,7 @@ def corpus():
     print(f"\n  {changed} of {len(by_wav)} clips changed")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--text", help="run the pass on one string")
     parser.add_argument("--corpus", action="store_true", help="every edit to the archive")
@@ -215,9 +253,10 @@ def main():
     if args.record:
         record(args.record)
     elif args.text:
-        parse = json.loads(PARSES.read_text()).get(args.text)
+        parse: RecordedParse | None = json.loads(PARSES.read_text()).get(args.text)
         out, applied, declined = disfluency.clean(
-            args.text, (parse or {}).get("language", "en"), parse)
+            # mypy types the `{}` fallback as dict[Never, Never].
+            args.text, (parse or {}).get("language", "en"), parse)  # type: ignore[call-overload]
         print(out)
         if applied:
             print("  " + ", ".join(dict.fromkeys(applied)), file=sys.stderr)

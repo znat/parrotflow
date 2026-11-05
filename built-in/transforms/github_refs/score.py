@@ -8,10 +8,13 @@ Runs the script as the app does: a process per case, the repository URL as
 its argument. `ParrotFlow --eval github_refs` scores the copy the app resolves
 from the config. No model call in this file.
 """
+from __future__ import annotations
+
 import argparse
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 try:
     import yaml
@@ -22,19 +25,28 @@ HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / "github_refs.py"
 REPO = "https://github.com/OWNER/REPO"
 
+if TYPE_CHECKING:
+    from typing import TypedDict
 
-def run(text):
+    from typing_extensions import NotRequired
+
+    class Case(TypedDict):
+        input: str
+        expect: NotRequired[str]
+
+
+def run(text: str) -> str:
     done = subprocess.run([sys.executable, str(SCRIPT), REPO], input=text,
                           capture_output=True, text=True, check=True)
     return done.stdout
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--verbose", action="store_true", help="show passing cases")
     args = parser.parse_args()
 
-    cases = yaml.safe_load((HERE / "cases.yaml").read_text())["cases"]
+    cases: list[Case] = yaml.safe_load((HERE / "cases.yaml").read_text())["cases"]
     changes = keeps = changed = kept = 0
     for case in cases:
         keep = "expect" not in case

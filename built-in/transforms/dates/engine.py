@@ -18,6 +18,8 @@ Adding a language: write `numbers/<code>.py` first, copy `fr.py`, edit its
 words, patterns, handlers and `RULES`, write `cases-<code>.yaml` beside it, and
 add a `transforms:` entry and a step above the numbers step.
 """
+from __future__ import annotations
+
 import importlib.util
 import json
 import os
@@ -25,18 +27,31 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from types import ModuleType
+    from typing import Any, Callable, Iterable, Protocol
+
+    from envelope import Envelope, Reply
+
+    Handler = Callable[[re.Match[str], str], "str | None"]
+    Rule = tuple[str, re.Pattern[str], Handler]
+
+    class Language(Protocol):
+        RULES: list[Rule]
 
 # Off with `--no-wall-clock` on the `command:` line. A language file that
 # resolves a spoken hour against the clock has to consult it.
 WALL_CLOCK = True
 
 
-def alt(words):
+def alt(words: Iterable[str]) -> str:
     """An alternation, longest first — "quatorze" must beat "quatre"."""
     return "|".join(re.escape(w) for w in sorted(words, key=lambda w: (-len(w), w)))
 
 
-def split(text):
+def split(text: str | None) -> list[str]:
     """The words of a fragment, lowercased, hyphen and space treated alike."""
     return re.sub(r"[-\u2011\s]+", " ", (text or "").strip().lower()).split()
 
@@ -44,19 +59,19 @@ def split(text):
 WORD_BEFORE = re.compile(r"([\w'\u2019-]+)\s*$")
 
 
-def word_after(text, at):
+def word_after(text: str, at: int) -> str:
     """The next word after offset `at`, lowercased, or "" at the end."""
     found = re.match(r"\s*([\w'\u2019-]+)", text[at:])
     return found.group(1).lower() if found else ""
 
 
-def word_before(text, at):
+def word_before(text: str, at: int) -> str:
     """The word ending at offset `at`, lowercased, or ""."""
     found = WORD_BEFORE.search(text[:at])
     return found.group(1).lower() if found else ""
 
 
-def now():
+def now() -> datetime:
     """The clock the wall-clock rule reads.
 
     `PARROTFLOW_NOW` is an ISO local time and overrides it, which is how the
@@ -71,14 +86,14 @@ def now():
     return datetime.now()
 
 
-def load(name, path):
+def load(name: str, path: Path) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]  # a .py path always has a spec
+    spec.loader.exec_module(module)  # type: ignore[union-attr]  # and a source loader
     return module
 
 
-def numbers_grammar(code):
+def numbers_grammar(code: str) -> Any:
     """The `Grammar` the numbers transform reads `code` with."""
     folder = Path(__file__).resolve().parents[1] / "numbers"
     script = folder / f"{code}.py"
@@ -105,26 +120,27 @@ class Words:
     `zeros` adds a spelling of nought that is not a number word on its own.
     """
 
-    def __init__(self, code, ordinals=None, zeros=()):
+    def __init__(self, code: str, ordinals: dict[str, int] | None = None,
+                 zeros: Iterable[str] = ()) -> None:
         g = numbers_grammar(code)
         self.code = code
-        self.units = {word: value for word, value in g.units.items() if value}
-        self.ones = {**g.units, **g.teens}
+        self.units: dict[str, int] = {word: value for word, value in g.units.items() if value}
+        self.ones: dict[str, int] = {**g.units, **g.teens}
         self.ones.update({word: 0 for word, role in g.connectors.items()
                           if role == "oh"})
-        self.tens = dict(g.tens)
-        self.ordinals = {**g.ordinal_units, **g.ordinal_teens,
-                         **(ordinals or {})}
-        self.ordinal_tens = dict(g.ordinal_tens)
-        self.joiners = {word for word, role in g.connectors.items()
-                        if role == "and"}
-        self.zeros = {word for word, value in self.ones.items()
-                      if value == 0} | set(zeros)
-        self.thousands = {word for word, value in g.scales.items()
-                          if value == 1000}
-        self.suffixes = {g.ordinal_suffix(value) for value in range(1, 32)}
+        self.tens: dict[str, int] = dict(g.tens)
+        self.ordinals: dict[str, int] = {**g.ordinal_units, **g.ordinal_teens,
+                                         **(ordinals or {})}
+        self.ordinal_tens: dict[str, int] = dict(g.ordinal_tens)
+        self.joiners: set[str] = {word for word, role in g.connectors.items()
+                                  if role == "and"}
+        self.zeros: set[str] = {word for word, value in self.ones.items()
+                                if value == 0} | set(zeros)
+        self.thousands: set[str] = {word for word, value in g.scales.items()
+                                    if value == 1000}
+        self.suffixes: set[str] = {g.ordinal_suffix(value) for value in range(1, 32)}
 
-    def number(self, text):
+    def number(self, text: str | None) -> int | None:
         """0-99 from words or digits, or None."""
         parts = split(text)
         if len(parts) == 1:
@@ -152,7 +168,7 @@ class Words:
             return 10 + unit
         return None
 
-    def ordinal(self, text):
+    def ordinal(self, text: str | None) -> int | None:
         """1-99 from an ordinal, word or "3rd", or None."""
         parts = split(text)
         digits = re.fullmatch(rf"(\d{{1,2}})(?:{alt(self.suffixes)})",
@@ -167,8 +183,9 @@ class Words:
             return self.tens[parts[0]] + unit if unit and unit <= 9 else None
         return None
 
-    def year(self, text):
+    def year(self, text: str | None) -> int | None:
         """1000-2999 from a spoken year, or None."""
+        value: int | None
         parts = split(text)
         if len(parts) == 1 and parts[0].isdigit():
             value = int(parts[0])
@@ -195,8 +212,10 @@ class Words:
         return century * 100 + value if value is not None else None
 
 
-def apply_rule(text, name, pattern, handler, applied):
+def apply_rule(text: str, name: str, pattern: re.Pattern[str],
+               handler: Handler, applied: list[str]) -> str:
     """Every non-overlapping match the handler accepts, left to right."""
+    out: list[str]
     out, at = [], 0
     for m in pattern.finditer(text):
         if m.start() < at:
@@ -212,7 +231,8 @@ def apply_rule(text, name, pattern, handler, applied):
     return "".join(out)
 
 
-def rewrite(text, rules, applied=None):
+def rewrite(text: str, rules: list[Rule],
+            applied: list[str] | None = None) -> str:
     """The dates and times in `text`, written as they were spoken."""
     applied = [] if applied is None else applied
     for name, pattern, handler in rules:
@@ -220,12 +240,12 @@ def rewrite(text, rules, applied=None):
     return text
 
 
-def run(module, envelope):
+def run(module: Language, envelope: Envelope) -> Reply:
     global WALL_CLOCK
     WALL_CLOCK = "--no-wall-clock" not in sys.argv[1:]
     text = envelope["text"]
 
-    applied = []
+    applied: list[str] = []
     try:
         out = rewrite(text, module.RULES, applied)
     except Exception:
@@ -238,11 +258,12 @@ def run(module, envelope):
         # Deduplicated: two times in one sentence name the rule once.
         "vars": {"count": len(applied),
                  "applied": ", ".join(dict.fromkeys(applied)),
-                 "language": (envelope.get("ctx") or {}).get("language") or ""},
+                 "language": (envelope.get("ctx") or cast("dict[str, str]", {})
+                              ).get("language") or ""},
     }
 
 
-def main(module):
+def main(module: Language) -> None:
     """The entry point every language file ends with."""
     # ParrotFlow sets PARROTFLOW_PROTOCOL=json when the transform declares
     # `returns: json`, and then stdin is the envelope. Unset is the plain path,
@@ -250,6 +271,8 @@ def main(module):
     structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
     raw = sys.stdin.read()
     if not structured:
-        sys.stdout.write(run(module, {"text": raw})["text"])
+        sys.stdout.write(cast(str, run(module, {
+            "text": raw, "ctx": {"vars": {}}, "tokens": [], "aligned": False,
+        })["text"]))
         return
     print(json.dumps(run(module, json.loads(raw))))

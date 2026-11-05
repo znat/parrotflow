@@ -18,10 +18,20 @@ Swift between tries is the slow part.
 The order of the steps and the cross-language guard are facts about a whole
 pipeline; `scripts/check-pipeline.sh` scores those. No model call in this file.
 """
+from __future__ import annotations
+
 import argparse
 import importlib.util
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from importlib.abc import Loader
+    from importlib.machinery import ModuleSpec
+    from types import ModuleType
+
+    from engine import Grammar
 
 try:
     import yaml
@@ -33,19 +43,19 @@ HERE = Path(__file__).resolve().parent
 NOT_A_LANGUAGE = {"engine.py", "score.py"}
 
 
-def load(path, name):
-    spec = importlib.util.spec_from_file_location(name, path)
+def load(path: Path, name: str) -> ModuleType:
+    spec = cast("ModuleSpec", importlib.util.spec_from_file_location(name, path))
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    cast("Loader", spec.loader).exec_module(module)
     return module
 
 
 engine = load(HERE / "engine.py", "engine")
 
 
-def languages():
+def languages() -> list[tuple[str, Grammar, Path]]:
     """`[(code, grammar, cases path)]`, one per language file in the folder."""
-    found = []
+    found: list[tuple[str, Grammar, Path]] = []
     for path in sorted(HERE.glob("*.py")):
         if path.name in NOT_A_LANGUAGE or path.name.startswith("_"):
             continue
@@ -57,14 +67,15 @@ def languages():
     return found
 
 
-def score_one(code, grammar, cases_path, verbose):
+def score_one(code: str, grammar: Grammar, cases_path: Path,
+              verbose: bool) -> tuple[int, int]:
     """The two failure kinds counted apart, because they cost differently."""
     if not cases_path.exists():
         print(f"  ✗ {code}: no {cases_path.name} beside {code}.py")
         return 0, 1
     cases = yaml.safe_load(cases_path.read_text())["cases"]
     passed = missed = damaged = wrong = 0
-    by_probe = {}
+    by_probe: dict[str, tuple[int, int]] = {}
 
     for case in cases:
         # `lang:` pins the language, so the cross-language guard is off.
@@ -113,7 +124,7 @@ def score_one(code, grammar, cases_path, verbose):
     return passed, total - passed
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lang", help="one language code; default is all of them")
     parser.add_argument("--text", help="run the pass on one string")

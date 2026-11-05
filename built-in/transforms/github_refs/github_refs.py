@@ -24,10 +24,18 @@ number is not a reference ("2 issues 3 days ago").
 when you say "P R one two three". Measured, and it is the most common
 spelling of the lot.
 """
+from __future__ import annotations
+
 import json
 import os
 import re
 import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
+    from envelope import Envelope, Reply
 
 # What may sit between "PR" and its number.
 REF_WORDS = ["number", "nr", "no", "num", "hash", "numéro"]
@@ -63,7 +71,7 @@ TENS = {
 ZEROS = ["oh", "zero", "zéro"]
 
 
-def alternatives(table):
+def alternatives(table: Mapping[str, int]) -> str:
     keys = sorted(table, key=len, reverse=True)
     return "|".join(k.replace("-", r"[\s-]") for k in keys)
 
@@ -82,7 +90,7 @@ SPOKEN = re.compile(
 ITEM = re.compile(r"(?P<sep>" + SEP + r")?#?(?P<num>\d+)")
 
 
-def half(match):
+def half(match: re.Match[str]) -> str:
     text = re.sub(r"[\s-]+", "-", match.group(0).lower())
     head, _, rest = text.partition("-")
     if head in ZEROS:
@@ -94,21 +102,21 @@ def half(match):
     return str(TEENS[text])
 
 
-def spell(match):
+def spell(match: re.Match[str]) -> str:
     run = match.group("run")
     return match.group(0)[: match.start("run") - match.start()] + re.sub(HALF, half, run)
 
 
-def rewriter(repo):
-    def link(kind, number):
+def rewriter(repo: str) -> Callable[[re.Match[str]], str]:
+    def link(kind: str, number: str) -> str:
         return f"[#{number}]({repo}/{kind}/{number})"
 
-    def rewrite(match):
+    def rewrite(match: re.Match[str]) -> str:
         kind = "pull" if match.group("pull") else "issues"
         plural = bool(match.group("pulls") or match.group("issues") or match.group("article"))
         run = match.group("run")
 
-        parts = []
+        parts: list[list[re.Match[str]]] = []
         for item in ITEM.finditer(run):
             sep = item.group("sep") or ""
             if not parts or re.search(r"[a-z&]", sep):
@@ -141,10 +149,10 @@ def rewriter(repo):
     return rewrite
 
 
-def linker(repo):
+def linker(repo: str) -> Callable[[re.Match[str]], str]:
     rewrite = rewriter(repo)
 
-    def replace(match):
+    def replace(match: re.Match[str]) -> str:
         spelled = spell(match)
         linked = PATTERN.sub(rewrite, spelled)
         return linked if linked != spelled else match.group(0)
@@ -152,21 +160,22 @@ def linker(repo):
     return replace
 
 
-def repository():
+def repository() -> str:
     if len(sys.argv) < 2 or not sys.argv[1].strip():
         sys.exit("github_refs: pass the repository URL, e.g. "
                  "github_refs.py https://github.com/OWNER/REPO")
     return sys.argv[1].strip().rstrip("/")
 
 
-def run(envelope):
+def run(envelope: Envelope) -> Reply:
     return {"text": SPOKEN.sub(linker(repository()), envelope["text"])}
 
 
-def main():
+def main() -> None:
     repo = repository()
     if os.environ.get("PARROTFLOW_PROTOCOL") == "json":
-        print(json.dumps(run(json.loads(sys.stdin.read()))))
+        envelope: Envelope = json.loads(sys.stdin.read())
+        print(json.dumps(run(envelope)))
         return
     sys.stdout.write(SPOKEN.sub(linker(repo), sys.stdin.read()))
 

@@ -18,10 +18,18 @@ that. Steps carry no language gate: every grammar reads every transcript.
     ParrotFlow --eval numbers_en                # the installed copy
     scripts/check-pipeline.sh                   # the order and the guard
 """
+from __future__ import annotations
+
 import json
 import os
 import re
 import sys
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from typing import Callable
+
+    from envelope import Ctx, Envelope, Reply
 
 # Below this a lone number word stays a word: "chapter three", and the pronoun
 # "one". A compound converts whatever its size, so "one hundred" is 100.
@@ -60,11 +68,15 @@ class Grammar:
     word is never a number.
     """
 
-    def __init__(self, code, units, teens, tens, scales, hundred,
-                 ordinal_units, ordinal_teens, ordinal_tens, ordinal_scales,
-                 ordinal_hundred, connectors, two_digit, bare_scale_is_one,
-                 article_one, bare_scale_blockers, percent, decimal_separator,
-                 ordinal_suffix):
+    def __init__(self, code: str, units: dict[str, int], teens: dict[str, int],
+                 tens: dict[str, int], scales: dict[str, int], hundred: set[str],
+                 ordinal_units: dict[str, int], ordinal_teens: dict[str, int],
+                 ordinal_tens: dict[str, int], ordinal_scales: dict[str, int],
+                 ordinal_hundred: set[str], connectors: dict[str, str],
+                 two_digit: str, bare_scale_is_one: bool, article_one: str | None,
+                 bare_scale_blockers: set[str],
+                 percent: tuple[tuple[str, ...], ...], decimal_separator: str,
+                 ordinal_suffix: Callable[[int], str]) -> None:
         self.code = code
         self.units, self.teens, self.tens = units, teens, tens
         self.scales, self.hundred = scales, hundred
@@ -80,7 +92,7 @@ class Grammar:
         self.decimal_separator = decimal_separator
         self.ordinal_suffix = ordinal_suffix
 
-    def classify(self, word):
+    def classify(self, word: str) -> tuple[tuple[str, int], bool] | None:
         """`(kind, value), ordinal` — or None for a word that is not a number.
 
         A kind is one of unit, teen, tens, hundred, scale, and, point, oh.
@@ -107,7 +119,7 @@ class Grammar:
             return ("scale", self.ordinal_scales[word]), True
         return None
 
-    def connector(self, word):
+    def connector(self, word: str) -> tuple[str, int] | None:
         """Words that join two numbers only when a number stands on both sides
         — "two hundred **and** forty", "vingt **et** un". Never a number by
         themselves, which is what keeps them out of ordinary prose.
@@ -127,7 +139,8 @@ class Token:
 
     __slots__ = ("text", "start", "end", "joined_to_next", "hyphen_to_next")
 
-    def __init__(self, text, start, end, joined_to_next, hyphen_to_next):
+    def __init__(self, text: str, start: int, end: int, joined_to_next: bool,
+                 hyphen_to_next: bool) -> None:
         self.text, self.start, self.end = text, start, end
         self.joined_to_next, self.hyphen_to_next = joined_to_next, hyphen_to_next
 
@@ -138,7 +151,7 @@ class Item:
 
     __slots__ = ("word", "ordinal", "index")
 
-    def __init__(self, word, ordinal, index):
+    def __init__(self, word: tuple[str, int], ordinal: bool, index: int) -> None:
         self.word, self.ordinal, self.index = word, ordinal, index
 
 
@@ -156,19 +169,21 @@ class Number:
     __slots__ = ("value", "literal", "fraction", "ordinal", "simple",
                  "forced", "held", "begin", "end")
 
-    def __init__(self, value=0, literal=None, fraction=None, ordinal=False,
-                 simple=False, forced=False, held=False, begin=0, end=0):
+    def __init__(self, value: int = 0, literal: str | None = None,
+                 fraction: str | None = None, ordinal: bool = False,
+                 simple: bool = False, forced: bool = False, held: bool = False,
+                 begin: int = 0, end: int = 0) -> None:
         self.value, self.literal, self.fraction = value, literal, fraction
         self.ordinal, self.simple = ordinal, simple
         self.forced, self.held = forced, held
         self.begin, self.end = begin, end
 
     @property
-    def words(self):
+    def words(self) -> int:
         return self.end - self.begin
 
 
-def tokenize(text):
+def tokenize(text: str) -> list[Token]:
     matches = list(WORD.finditer(text))
     tokens = []
     for position, match in enumerate(matches):
@@ -182,12 +197,12 @@ def tokenize(text):
     return tokens
 
 
-def runs(tokens, g):
+def runs(tokens: list[Token], g: Grammar) -> list[list[Item]]:
     """Maximal stretches of adjacent number words. Every item in a run is a
     consecutive token, which is what later lets adjacency be tested on run
     positions alone."""
-    found = []
-    current = []
+    found: list[list[Item]] = []
+    current: list[Item] = []
     for index, token in enumerate(tokens):
         continues = bool(current) and index > 0 and tokens[index - 1].joined_to_next
 
@@ -200,7 +215,7 @@ def runs(tokens, g):
                 and (token.text in g.hundred or token.text in g.scales)):
             continue
 
-        item = None
+        item: Item | None = None
         classified = g.classify(token.text)
         following = tokens[index + 1] if index + 1 < len(tokens) else None
         if classified:
@@ -214,7 +229,7 @@ def runs(tokens, g):
                 and following is not None and g.classify(following.text)):
             # Number words on both sides, or it is just prose: "one and two
             # came back", "the point five people missed".
-            item = Item(g.connector(token.text), False, index)
+            item = Item(cast("tuple[str, int]", g.connector(token.text)), False, index)
 
         if item is None:
             if current:
@@ -230,7 +245,8 @@ def runs(tokens, g):
     return found
 
 
-def parse_two_digit(run, start, g):
+def parse_two_digit(run: list[Item], start: int,
+                    g: Grammar) -> tuple[int, int, bool] | None:
     """Below 100: a unit, a teen, or a tens word taking one unit."""
     if start >= len(run):
         return None
@@ -249,7 +265,8 @@ def parse_two_digit(run, start, g):
     return None
 
 
-def parse_vigesimal(run, start, g):
+def parse_vigesimal(run: list[Item], start: int,
+                    g: Grammar) -> tuple[int, int, bool] | None:
     """Below 100 in a language that counts in twenties.
 
     Three shapes the additive rule does not have, and they compose:
@@ -315,12 +332,14 @@ def parse_vigesimal(run, start, g):
     return base, index, ordinal
 
 
-def parse_hundreds(run, start, g):
+def parse_hundreds(run: list[Item], start: int,
+                   g: Grammar) -> tuple[int, int, bool, bool] | None:
     """Below 1000, with the British "and": "two hundred and forty-three"."""
     if start >= len(run):
         return None
     # "cent cinquante" is 150 with nothing in front of the hundred, where
     # English wants "a hundred": "hundreds of people" is not a number.
+    head: tuple[int, int, bool] | None
     if (g.bare_scale_is_one and run[start].word[0] == "hundred"
             and not run[start].ordinal):
         head = (1, start, False)
@@ -347,11 +366,11 @@ def parse_hundreds(run, start, g):
     return hundreds + tail[0], tail[1], tail[2], True
 
 
-def parse_number(run, start, g):
+def parse_number(run: list[Item], start: int, g: Grammar) -> Number | None:
     """One number, ending the moment the words stop describing one."""
     index = start
     total = 0
-    last_scale = None            # None means "no scale yet"
+    last_scale: int | None = None            # None means "no scale yet"
     ordinal = False
     scaled = False
     seen = False
@@ -445,7 +464,7 @@ def parse_number(run, start, g):
     return number
 
 
-def digit_run(run, start, tokens):
+def digit_run(run: list[Item], start: int, tokens: list[Token]) -> Number | None:
     """Spoken digits, concatenated rather than added.
 
     The guards are the whole reason a two-digit floor is safe. A scale word on
@@ -481,7 +500,7 @@ def digit_run(run, start, tokens):
     return Number(literal=digits, forced=True, begin=start, end=end)
 
 
-def pair_groups(numbers):
+def pair_groups(numbers: list[Number]) -> list[Number]:
     """Settles what numbers standing side by side were meant to be.
 
     "nineteen eighty-four" parses as 19 then 84 — correctly, since that is all
@@ -497,7 +516,7 @@ def pair_groups(numbers):
     Refusing to guess is the one option that cannot make a transcript that was
     already right worse.
     """
-    result = []
+    result: list[Number] = []
     index = 0
     while index < len(numbers):
         current = numbers[index]
@@ -533,7 +552,7 @@ def pair_groups(numbers):
     return result
 
 
-def percent_marker(tokens, at, g):
+def percent_marker(tokens: list[Token], at: int, g: Grammar) -> int | None:
     """The token index the percent marker ends at, or None.
 
     `at` is the number's last token. The marker has to be attached to it with
@@ -554,7 +573,7 @@ def percent_marker(tokens, at, g):
     return None
 
 
-def written(number, g):
+def written(number: Number, g: Grammar) -> str:
     """No thousands separators anywhere: a comma reads well in prose and badly
     in the terminals and code fields this app pastes into."""
     if number.literal is not None:
@@ -566,7 +585,7 @@ def written(number, g):
     return str(number.value)
 
 
-def has_plain_word(run, number):
+def has_plain_word(run: list[Item], number: Number) -> bool:
     """Whether the number's own words include a unit, a teen or a tens word.
 
     The cross-language guard. A bare scale word is not enough evidence that
@@ -579,9 +598,10 @@ def has_plain_word(run, number):
                for position in range(number.begin, number.end))
 
 
-def convert(run, tokens, g, guarded):
+def convert(run: list[Item], tokens: list[Token], g: Grammar,
+            guarded: bool) -> list[tuple[int, int, str]]:
     """The replacements one run asks for: (start, end, text) in `tokens`' string."""
-    numbers = []
+    numbers: list[Number] = []
     index = 0
     while index < len(run):
         digits = digit_run(run, index, tokens)
@@ -596,7 +616,7 @@ def convert(run, tokens, g, guarded):
         else:
             index += 1
 
-    replacements = []
+    replacements: list[tuple[int, int, str]] = []
     for number in pair_groups(numbers):
         if guarded and not has_plain_word(run, number):
             continue
@@ -618,13 +638,13 @@ def convert(run, tokens, g, guarded):
     return replacements
 
 
-def apply_grammar(text, g, guarded=False):
+def apply_grammar(text: str, g: Grammar, guarded: bool = False) -> tuple[str, int]:
     """`(text, count)` — the rewrite and how many numbers it wrote."""
     tokens = tokenize(text)
     if not tokens:
         return text, 0
 
-    replacements = []
+    replacements: list[tuple[int, int, str]] = []
     for run in runs(tokens, g):
         replacements += convert(run, tokens, g, guarded)
     if not replacements:
@@ -636,7 +656,7 @@ def apply_grammar(text, g, guarded=False):
     return out, len(replacements)
 
 
-def read(text, g, language=None):
+def read(text: str, g: Grammar, language: str | None = None) -> tuple[str, int]:
     """`(text, count)`, with the cross-language guard applied when it applies.
 
     `language` is `ctx.language`, the language the pipeline detected. Below
@@ -647,9 +667,9 @@ def read(text, g, language=None):
     return apply_grammar(text, g, guarded=guarded)
 
 
-def run(g, envelope):
+def run(g: Grammar, envelope: Envelope) -> Reply:
     text = envelope["text"]
-    ctx = envelope.get("ctx") or {}
+    ctx: Ctx | dict[str, str] = envelope.get("ctx") or {}
 
     try:
         out, count = read(text, g, ctx.get("language"))
@@ -660,7 +680,7 @@ def run(g, envelope):
     return {"text": out, "vars": {"count": count}}
 
 
-def main(g):
+def main(g: Grammar) -> None:
     """The whole entry point. A language file is a `Grammar` and this call."""
     # ParrotFlow sets PARROTFLOW_PROTOCOL=json when the transform declares
     # `returns: json`, and then stdin is the envelope. Unset is the plain path,
@@ -668,6 +688,7 @@ def main(g):
     structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
     raw = sys.stdin.read()
     if not structured:
-        sys.stdout.write(run(g, {"text": raw})["text"])
+        sys.stdout.write(cast("str", run(g, {"text": raw, "ctx": {"vars": {}}, "tokens": [],
+                                             "aligned": False})["text"]))
         return
     print(json.dumps(run(g, json.loads(raw))))

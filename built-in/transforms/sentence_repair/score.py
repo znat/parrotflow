@@ -17,6 +17,8 @@ this one ran. `--eval` has no vocabulary stage, so only this file reads it.
 
 No model call anywhere in this file, except the binary `--record` runs.
 """
+from __future__ import annotations
+
 import argparse
 import importlib.util
 import json
@@ -25,6 +27,55 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from importlib.abc import Loader
+    from importlib.machinery import ModuleSpec
+    from typing import Literal, TypedDict
+
+    from envelope import Envelope, Readings, Scalar
+    from sentence_repair import Edit
+    from typing_extensions import NotRequired
+
+    class Case(TypedDict):
+        input: str
+        expect: NotRequired[str]
+        lang: NotRequired[str]
+        language: NotRequired[str]
+        written: NotRequired[list[str]]
+
+    Field = Literal["text", "upos", "head", "deprel", "ner"]
+
+    class RecordedWord(TypedDict):
+        text: str
+        upos: str
+        head: int
+        deprel: str
+        ner: str | None
+
+    class RecordedParse(TypedDict):
+        language: str
+        words: list[RecordedWord]
+
+    class Recorded(TypedDict):
+        """What envelopes.json keeps of an envelope."""
+        language: str | None
+        abbreviations: Scalar | None
+        parse: RecordedParse | None
+        readings: Readings | None
+
+    class ReplayedCtx(TypedDict):
+        language: str | None
+        vars: dict[str, dict[str, Scalar | None]]
+
+    class Replayed(TypedDict):
+        """An envelope rebuilt from a `Recorded`: no tokens, no `aligned`."""
+        text: str
+        ctx: ReplayedCtx
+        parse: RecordedParse | None
+        readings: Readings | None
 
 try:
     import yaml
@@ -34,11 +85,11 @@ except ImportError:
 HERE = Path(__file__).resolve().parent
 CASES = HERE / "cases.yaml"
 ENVELOPES = HERE / "envelopes.json"
-PARSE_FIELDS = ("text", "upos", "head", "deprel", "ner")
+PARSE_FIELDS: tuple[Field, ...] = ("text", "upos", "head", "deprel", "ner")
 
-_spec = importlib.util.spec_from_file_location("sentence_repair", HERE / "sentence_repair.py")
+_spec = cast("ModuleSpec", importlib.util.spec_from_file_location("sentence_repair", HERE / "sentence_repair.py"))
 sentence_repair = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(sentence_repair)
+cast("Loader", _spec.loader).exec_module(sentence_repair)
 
 SAVE = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -49,12 +100,13 @@ print("{}")
 '''
 
 
-def language(case):
+def language(case: Case) -> str:
     return case.get("lang") or case.get("language") or "en"
 
 
-def envelopes(binary, inputs, strict=True):
+def envelopes(binary: str, inputs: list[tuple[str, str]], strict: bool = True) -> dict[str, Recorded]:
     """What the app hands the transform for each (text, language), by text."""
+    work: str | Path
     with tempfile.TemporaryDirectory() as work:
         work = Path(work)
         (work / "save.py").write_text(SAVE)
@@ -73,16 +125,16 @@ def envelopes(binary, inputs, strict=True):
             stdin=subprocess.DEVNULL, timeout=540,
             env={**os.environ, "PARROTFLOW_CONFIG_DIR": str(work / "config"),
                  "SENTENCE_REPAIR_RECORD": str(record)})
-        saved = [json.loads(line) for line in record.read_text().splitlines()] \
+        saved: list[Envelope] = [json.loads(line) for line in record.read_text().splitlines()] \
             if record.exists() else []
-    found = {}
+    found: dict[str, Recorded] = {}
     for envelope in saved:
         parse = envelope.get("parse")
         found[envelope["text"]] = {
             "language": envelope["ctx"].get("language"),
             "abbreviations": envelope["ctx"]["vars"].get("lists", {}).get("abbreviations"),
-            "parse": parse and {"language": parse["language"], "words": [
-                {k: w[k] for k in PARSE_FIELDS} for w in parse["words"]]},
+            "parse": parse and cast("RecordedParse", {"language": parse["language"], "words": [
+                {k: w[k] for k in PARSE_FIELDS} for w in parse["words"]]}),
             "readings": envelope.get("readings"),
         }
     missing = [text for text, _ in inputs if text not in found]
@@ -92,14 +144,14 @@ def envelopes(binary, inputs, strict=True):
     return found
 
 
-def through(binary, inputs):
+def through(binary: str, inputs: list[tuple[str, str]]) -> dict[str, tuple[str, list[Edit], Recorded]]:
     """Each (text, language) through the transform, with the envelope the
     binary hands it: text -> (repaired, edits, recorded envelope). A text the
     app hands no transform, a spoken command, is left out."""
     found = envelopes(binary, inputs, strict=False)
     if inputs and not found:
         sys.exit(f"{binary} --eval handed the transform nothing for {len(inputs)} text(s)")
-    out = {}
+    out: dict[str, tuple[str, list[Edit], Recorded]] = {}
     for text, _ in inputs:
         if text not in found:
             continue
@@ -108,8 +160,8 @@ def through(binary, inputs):
     return out
 
 
-def record(binary):
-    cases = yaml.safe_load(CASES.read_text())["cases"]
+def record(binary: str) -> None:
+    cases: list[Case] = yaml.safe_load(CASES.read_text())["cases"]
     inputs = sorted({(case["input"], language(case)) for case in cases})
     found = envelopes(binary, inputs)
     unread = [t for t, e in found.items()
@@ -123,7 +175,7 @@ def record(binary):
     print(f"  {len(found)} envelopes written to {ENVELOPES.name}")
 
 
-def envelope_of(text, recorded, written=()):
+def envelope_of(text: str, recorded: Recorded, written: Iterable[str] = ()) -> Replayed:
     """The envelope the app would hand over, from what was recorded."""
     return {
         "text": text,
@@ -136,9 +188,9 @@ def envelope_of(text, recorded, written=()):
     }
 
 
-def score(verbose):
-    cases = yaml.safe_load(CASES.read_text())["cases"]
-    recorded = json.loads(ENVELOPES.read_text())
+def score(verbose: bool) -> bool:
+    cases: list[Case] = yaml.safe_load(CASES.read_text())["cases"]
+    recorded: dict[str, Recorded] = json.loads(ENVELOPES.read_text())
     failed = 0
     for case in cases:
         want = case.get("expect", case["input"])
@@ -162,7 +214,7 @@ def score(verbose):
     return failed == 0
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--record", metavar="BINARY")

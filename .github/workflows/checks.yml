@@ -252,6 +252,18 @@ jobs:
       - name: The transform envelope
         run: scripts/check-envelope.sh
 
+      # A dev tool only, pinned so CI and a laptop give the same answer. The
+      # built-ins import no package at run time.
+      - name: Install mypy
+        run: |
+          python3 -m pip install --quiet mypy==1.16.0 types-PyYAML==6.0.12.20250516 \
+            || python3 -m pip install --quiet --break-system-packages mypy==1.16.0 types-PyYAML==6.0.12.20250516
+
+      # mypy --strict over built-in/transforms and built-in/runner, one folder
+      # at a time, against the TypedDicts in built-in/runner/envelope.py.
+      - name: Types in the built-in Python
+        run: scripts/check-python-types.sh
+
       # The scoring harness itself, against sets built for the purpose. No
       # model anywhere in it: the numbers have to be the same on a runner and
       # on a laptop with Ollama up.

@@ -33,30 +33,46 @@ Adding a language: copy `fr.py`, edit its words, symbols and RULES, write
 `cases-<code>.yaml` beside it, and add a `transforms:` entry and a step below
 the numbers step.
 """
+from __future__ import annotations
+
 import json
 import os
 import re
 import sys
+from typing import TYPE_CHECKING, cast
 
-def alt(words):
+if TYPE_CHECKING:
+    from collections.abc import Callable, Container, Iterable, Mapping, Sequence
+    from typing import Optional, Protocol
+
+    from envelope import Envelope, Reply
+
+    Handler = Callable[[re.Match[str], str], Optional[str]]
+    Rule = tuple[str, re.Pattern[str], Handler]
+
+    class Language(Protocol):
+        CODE: str
+        RULES: list[Rule]
+
+def alt(words: Iterable[str]) -> str:
     """An alternation, longest first — "dollars" must beat "dollar"."""
     return "|".join(re.escape(w) for w in sorted(words, key=lambda w: (-len(w), w)))
 
 
-def word_after(text, at):
+def word_after(text: str, at: int) -> str:
     """The next word after offset `at`, lowercased, or "" at the end."""
     found = re.match(r"\s*([\w'’-]+)", text[at:])
     return found.group(1).lower() if found else ""
 
 
-def value(raw, units):
+def value(raw: str, units: Mapping[str, int]) -> str:
     """The amount as digits: a digit run as it is, or a unit word's value."""
     if raw[0].isdigit():
         return raw
     return str(units[raw.lower()])
 
 
-def half_of_a_number(m, text, tens):
+def half_of_a_number(m: re.Match[str], text: str, tens: Container[str]) -> bool:
     """Whether a unit word is the end of a bigger number nothing converted.
 
     "ninety nine euros" and "quatre-vingt-dix neuf euros" end in a unit word,
@@ -72,8 +88,10 @@ def half_of_a_number(m, text, tens):
     return bool(before) and before[-1] in tens
 
 
-def apply_rule(text, name, pattern, handler, applied):
+def apply_rule(text: str, name: str, pattern: re.Pattern[str], handler: Handler,
+               applied: list[str]) -> str:
     """Every non-overlapping match the handler accepts, left to right."""
+    out: list[str]
     out, at = [], 0
     for m in pattern.finditer(text):
         if m.start() < at:
@@ -89,7 +107,7 @@ def apply_rule(text, name, pattern, handler, applied):
     return "".join(out)
 
 
-def rewrite(text, rules, applied=None):
+def rewrite(text: str, rules: Sequence[Rule], applied: list[str] | None = None) -> str:
     """The amounts in `text`, written with their symbol."""
     applied = [] if applied is None else applied
     for name, pattern, handler in rules:
@@ -97,7 +115,7 @@ def rewrite(text, rules, applied=None):
     return text
 
 
-def declines(code, language, _text):
+def declines(code: str, language: str | None, _text: str) -> bool:
     """Whether another language's script should keep its hands off this text.
 
     `dollars` and `euros` are the same word in both languages, so the guard
@@ -107,11 +125,11 @@ def declines(code, language, _text):
     return bool(language) and language != code
 
 
-def run(module, envelope):
+def run(module: Language, envelope: Envelope) -> Reply:
     text = envelope["text"]
-    language = (envelope.get("ctx") or {}).get("language") or ""
+    language = (envelope.get("ctx") or cast("dict[str, str]", {})).get("language") or ""
 
-    applied = []
+    applied: list[str] = []
     try:
         if declines(module.CODE, language, text):
             out = text
@@ -131,7 +149,7 @@ def run(module, envelope):
     }
 
 
-def main(module):
+def main(module: Language) -> None:
     """The entry point every language file ends with."""
     # ParrotFlow sets PARROTFLOW_PROTOCOL=json when the transform declares
     # `returns: json`, and then stdin is the envelope. Unset is the plain path,
@@ -139,6 +157,8 @@ def main(module):
     structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
     raw = sys.stdin.read()
     if not structured:
-        sys.stdout.write(run(module, {"text": raw})["text"])
+        sys.stdout.write(cast("str", run(
+            module, {"text": raw, "ctx": {"vars": {}}, "tokens": [], "aligned": False})["text"]))
         return
-    print(json.dumps(run(module, json.loads(raw))))
+    envelope: Envelope = json.loads(raw)
+    print(json.dumps(run(module, envelope)))

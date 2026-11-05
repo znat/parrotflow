@@ -24,12 +24,18 @@ no singular-versus-plural question the way English has one. `engine.py` holds th
 protocol and the cross-language guard, which matters here: `euros` and
 `dollars` are the same word in English.
 """
+from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import engine  # noqa: E402 — the path above is what makes it importable
+
+if TYPE_CHECKING:
+    from envelope import Envelope, Reply
 
 CODE = "fr"
 
@@ -76,13 +82,13 @@ CUR = engine.alt(CURRENCIES)
 OF = r"(?:d['’]\s*)?"
 
 
-def symbol(word):
+def symbol(word: str) -> str:
     return CURRENCIES[word.lower()]
 
 
 # --- ce que les règles écrivent ----------------------------------------------
 
-def avec_centimes(m, text):
+def avec_centimes(m: re.Match[str], text: str) -> str | None:
     """"vingt euros et cinquante centimes" -> "20,50 €"."""
     word = m.group("cur")
     if engine.half_of_a_number(m, text, TENS):
@@ -94,7 +100,7 @@ def avec_centimes(m, text):
     return f"{written},{cents:02d} {symbol(word)}"
 
 
-def centimes_sans_le_mot(m, text):
+def centimes_sans_le_mot(m: re.Match[str], text: str) -> str | None:
     """"vingt-cinq euros cinquante" -> "25,50 €". Le mot n'a pas été dit.
 
     Only a tail of ten and over. "20 euros 3" is a count that ran on, and a
@@ -114,7 +120,7 @@ def centimes_sans_le_mot(m, text):
     return f"{written},{cents:02d} {symbol(word)}"
 
 
-def somme(m, text):
+def somme(m: re.Match[str], text: str) -> str | None:
     """"vingt euros" -> "20 €"."""
     if engine.half_of_a_number(m, text, TENS):
         return None
@@ -123,7 +129,7 @@ def somme(m, text):
 
 # L'ordre fait toute la précédence : la forme la plus longue d'abord, pour que
 # les centimes ne restent pas derrière en nombre isolé.
-RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler in [
+RULES: list[engine.Rule] = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler in [
     ("somme et centimes",
      rf"\b(?P<n>{AMOUNT})\s+{OF}(?P<cur>{CUR})\s+(?:et\s+)?(?P<c>\d{{1,2}}|{UNIT})"
      rf"\s+(?:{engine.alt(CENTIMES)})\b",
@@ -137,7 +143,7 @@ RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler i
 ]]
 
 
-def run(envelope):
+def run(envelope: Envelope) -> Reply:
     return engine.run(sys.modules[__name__], envelope)
 
 

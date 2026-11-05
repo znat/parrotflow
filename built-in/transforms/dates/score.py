@@ -18,12 +18,15 @@ against the real clock, and `cases-<lang>.yaml` is clock-free for that reason.
 through the real command runner. This scores the copy in the repo, and it is
 the only one that can do `--corpus`. No model call in this file.
 """
+from __future__ import annotations
+
 import argparse
 import importlib.util
 import json
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 try:
     import yaml
@@ -35,21 +38,32 @@ TRACE = Path.home() / "Recordings/ParrotFlow/trace.jsonl"
 sys.path.insert(0, str(HERE))
 import engine  # noqa: E402 — the path above is what makes it importable
 
+if TYPE_CHECKING:
+    from types import ModuleType
+    from typing import Any, TypedDict
 
-def load(name, path):
+    from typing_extensions import NotRequired
+
+    class Case(TypedDict):
+        input: str
+        expect: NotRequired[str]
+        now: NotRequired[str]
+
+
+def load(name: str, path: Path) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]  # a .py path always has a spec
+    spec.loader.exec_module(module)  # type: ignore[union-attr]  # and a source loader
     return module
 
 
-def languages():
+def languages() -> dict[str, ModuleType]:
     """Every `<lang>.py` beside this file, by its two-letter code.
 
     A language is a file, so this is a directory listing. `engine.py` and this
     script are the two that are not languages.
     """
-    found = {}
+    found: dict[str, ModuleType] = {}
     for path in sorted(HERE.glob("*.py")):
         if path.stem in ("engine", "score") or len(path.stem) != 2:
             continue
@@ -57,22 +71,22 @@ def languages():
     return found
 
 
-def written(module, text):
+def written(module: engine.Language, text: str) -> tuple[str, list[str]]:
     """The rewrite, and the rules the module named itself into."""
-    applied = []
+    applied: list[str] = []
     return engine.rewrite(text, module.RULES, applied), applied
 
 
-def cases_for(lang):
+def cases_for(lang: str) -> list[Case]:
     """Every case of `lang`, the clock set after the clock-free one."""
-    found = yaml.safe_load((HERE / f"cases-{lang}.yaml").read_text())["cases"]
+    found: list[Case] = yaml.safe_load((HERE / f"cases-{lang}.yaml").read_text())["cases"]
     clock = HERE / f"cases-{lang}-clock.yaml"
     if clock.exists():
         found += yaml.safe_load(clock.read_text())["cases"]
     return found
 
 
-def score_language(lang, module, verbose):
+def score_language(lang: str, module: engine.Language, verbose: bool) -> bool:
     """The two failure kinds counted apart, because they cost differently."""
     cases = cases_for(lang)
     passed = missed = damaged = wrong = 0
@@ -122,7 +136,7 @@ def score_language(lang, module, verbose):
     return passed == total
 
 
-def corpus(modules):
+def corpus(modules: dict[str, ModuleType]) -> None:
     """Every edit these stages would make to the archive, for reading by eye.
 
     The case sets say they are right on the cases someone thought of. This says
@@ -132,16 +146,17 @@ def corpus(modules):
     if not TRACE.exists():
         sys.exit(f"no trace at {TRACE}")
 
-    seen = {}
+    seen: dict[str, str] = {}
     for line in TRACE.read_text().splitlines():
         if not line.strip():
             continue
-        record = json.loads(line)
+        record: dict[str, Any] = json.loads(line)
         if (record.get("asr") or {}).get("text"):
             seen[record["wav"]] = record["asr"]["text"]
 
     changed = 0
     for wav, text in sorted(seen.items()):
+        applied: list[str]
         out, applied = text, []
         for lang, module in modules.items():
             out, fired = written(module, out)
@@ -157,7 +172,7 @@ def corpus(modules):
     print(f"\n  {len(seen)} clips, {changed} changed")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lang", help="one language; every one by default")
     parser.add_argument("--text", help="run one language on one string")

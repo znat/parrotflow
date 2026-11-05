@@ -34,13 +34,26 @@ No model is called here. The parse and the readings come in the envelope,
 and every rule that needs one is skipped, and `declined` says so, when it is
 missing. Score the cases with `score.py` beside this file.
 """
+from __future__ import annotations
+
 import difflib
 import json
 import os
 import re
 import sys
 import unicodedata
-from collections import namedtuple
+from typing import TYPE_CHECKING, NamedTuple, Optional, cast
+
+if TYPE_CHECKING:
+    from typing import Callable, TypedDict
+
+    from envelope import Ctx, Envelope, Parse, Readings, Reply, Scalar
+    from typing_extensions import NotRequired
+
+    class Facts(TypedDict):
+        nationalities: frozenset[str]
+        written: set[str]
+        joined: NotRequired[bool]
 
 # English capitalises these, French does not. A language with no row keeps no
 # capital on this ground.
@@ -61,11 +74,25 @@ FUNCTION_WORDS = frozenset({"DET", "ADP", "PRON", "CCONJ", "SCONJ", "AUX", "PART
 # A capital after one of these, or after a line break, starts something.
 OPENERS = re.compile(r"[.?!:;\"“”\n]")
 
-Word = namedtuple("Word", "start end text upos head deprel ner")
-Edit = namedtuple("Edit", "start end new rule")
+
+class Word(NamedTuple):
+    start: int
+    end: int
+    text: str
+    upos: str
+    head: Optional[int]
+    deprel: str
+    ner: Optional[str]
 
 
-def characters(text):
+class Edit(NamedTuple):
+    start: int
+    end: int
+    new: str
+    rule: str
+
+
+def characters(text: str) -> list[int]:
     """The code point each Swift Character of `text` starts at, and len(text).
 
     `at` in the envelope counts Characters, Python counts code points. A
@@ -92,7 +119,7 @@ def characters(text):
     return starts + [len(text)]
 
 
-def words_of(text, parse):
+def words_of(text: str, parse: Parse) -> list[Word] | None:
     """The parse's words, placed in `text` by their spelling, or None when the
     parse is of another text."""
     words, cursor = [], 0
@@ -107,11 +134,12 @@ def words_of(text, parse):
     return words
 
 
-def written_by_vocabulary(vocabulary):
+def written_by_vocabulary(vocabulary: dict[str, Scalar]) -> set[str]:
     """The words the `vocabulary` stage put in the text, lowercased."""
     tokens = re.compile(r"[\w'’-]+")
-    found = set()
-    for term in (vocabulary.get("protected") or "").split("; "):
+    found: set[str] = set()
+    # A number here raises, and run() returns the text unrepaired.
+    for term in (vocabulary.get("protected") or "").split("; "):  # type: ignore[union-attr]
         found.update(token.lower() for token in tokens.findall(term))
     before, judged = vocabulary.get("before"), vocabulary.get("judged")
     if isinstance(before, str) and isinstance(judged, str):
@@ -123,10 +151,10 @@ def written_by_vocabulary(vocabulary):
     return found
 
 
-def in_a_name(i, words):
+def in_a_name(i: int, words: list[Word]) -> bool:
     """Joined to a capitalised PROPN at most two words away by a name part,
     whichever of the two is the head: `flat` hangs Face off Hugging."""
-    def joined(dependent, head):
+    def joined(dependent: int, head: int) -> bool:
         return (words[dependent].head == head
                 and words[dependent].deprel.split(":")[0] in NAME_PARTS
                 and abs(dependent - head) <= 2)
@@ -137,7 +165,7 @@ def in_a_name(i, words):
 
 
 # Why a capital stays, in the order the reason is reported.
-GUARDS = (
+GUARDS: tuple[tuple[str, Callable[[int, list[Word], Facts], bool]], ...] = (
     ("name", lambda i, words, facts: words[i].upos == "PROPN"),
     ("entity", lambda i, words, facts: bool(words[i].ner)),
     ("in a name", lambda i, words, facts: in_a_name(i, words)),
@@ -150,16 +178,16 @@ GUARDS = (
 )
 
 
-def kept(i, words, facts):
+def kept(i: int, words: list[Word], facts: Facts) -> str | None:
     """Why the capital of word `i` stays, or None if it goes."""
     return next((name for name, holds in GUARDS if holds(i, words, facts)), None)
 
 
-def lowered(word, rule):
+def lowered(word: Word, rule: str) -> Edit:
     return Edit(word.start, word.start + 1, word.text[0].lower(), rule)
 
 
-def periods(text, abbreviations):
+def periods(text: str, abbreviations: set[str]) -> list[Edit]:
     """`word. lowercase`: the period, or a doubled one, goes.
 
     The guards are `SentenceJoin.boundaries`'s: a mark in a run of three or more, a mark after
@@ -177,7 +205,7 @@ def periods(text, abbreviations):
     return edits
 
 
-def joins(text, readings, words, facts):
+def joins(text: str, readings: Readings, words: list[Word], facts: Facts) -> list[Edit] | None:
     """Each boundary Qwen reads best with no mark: the mark goes, and with it
     the space French sets before `?`. The next word is re-cased by the
     capitals rule. A line break keeps its mark. None when the readings are not
@@ -207,7 +235,7 @@ def joins(text, readings, words, facts):
     return edits
 
 
-def capitals(text, words, facts):
+def capitals(text: str, words: list[Word], facts: Facts) -> list[Edit]:
     """A capital that follows no mark, lowercased unless a guard keeps it."""
     edits = []
     for i, word in enumerate(words):
@@ -221,16 +249,16 @@ def capitals(text, words, facts):
     return edits
 
 
-def doubled(text):
+def doubled(text: str) -> list[Edit]:
     """`..` written as `.`. Three or more is an ellipsis."""
     return [Edit(m.start() + 1, m.end(), "", "doubled")
             for m in re.finditer(r"(?<!\.)\.\.(?!\.)", text)]
 
 
-def applied(text, edits):
+def applied(text: str, edits: list[Edit]) -> tuple[str, list[Edit]]:
     """`text` with each edit made. An edit that overlaps an earlier one in the
     list is dropped."""
-    taken = []
+    taken: list[Edit] = []
     for edit in edits:
         if all(edit.end <= other.start or edit.start >= other.end for other in taken):
             taken.append(edit)
@@ -239,14 +267,14 @@ def applied(text, edits):
     return text, taken
 
 
-def repair(text, envelope):
+def repair(text: str, envelope: Envelope) -> tuple[str, list[Edit], str]:
     """The repaired text, the edits made, and why a rule was skipped."""
-    ctx = envelope.get("ctx") or {}
+    ctx = cast("Ctx", envelope.get("ctx") or {})
     variables = ctx.get("vars") or {}
     declined, edits = [], []
     lists = variables.get("lists") or {}
     if isinstance(lists.get("abbreviations"), str):
-        abbreviations = {w.strip().lower() for w in lists["abbreviations"].split(";")}
+        abbreviations = {w.strip().lower() for w in cast("str", lists["abbreviations"]).split(";")}
         edits += periods(text, abbreviations)
     else:
         declined.append("periods: no abbreviation list")
@@ -257,8 +285,8 @@ def repair(text, envelope):
         declined.append("capitals and joins: no parse" if not parse else
                         "capitals and joins: the parse is of another text")
         return (*applied(text, edits + doubled(text)), "; ".join(declined))
-    language = ctx.get("language") or parse.get("language") or "en"
-    facts = {
+    language = ctx.get("language") or cast("Parse", parse).get("language") or "en"
+    facts: Facts = {
         "nationalities": NATIONALITIES.get(language, frozenset()),
         "written": written_by_vocabulary(variables.get("vocabulary") or {}),
     }
@@ -277,7 +305,7 @@ def repair(text, envelope):
     return (*applied(text, edits), "; ".join(declined))
 
 
-def run(envelope):
+def run(envelope: Envelope) -> Reply:
     text = envelope["text"]
     try:
         out, edits, declined = repair(text, envelope)
@@ -292,16 +320,16 @@ def run(envelope):
     }
 
 
-def main():
+def main() -> int:
     structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
     raw = sys.stdin.read()
     if structured:
         print(json.dumps(run(json.loads(raw))))
         return 0
-    result = run({"text": raw})
-    sys.stdout.write(result["text"])
+    result = run({"text": raw, "ctx": {"vars": {}}, "tokens": [], "aligned": False})
+    sys.stdout.write(cast("str", result["text"]))
     if result["vars"]["declined"]:
-        sys.stderr.write(result["vars"]["declined"] + "\n")
+        sys.stderr.write(cast("str", result["vars"]["declined"]) + "\n")
     return 0
 
 
