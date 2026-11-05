@@ -3,8 +3,9 @@ import Foundation
 /// `--upgrade-config [path] [--write]` — what `ConfigMigration` would change in
 /// a config, as a diff. `--write` makes the change, after a backup.
 ///
-/// The app runs the same upgrade at launch. This is the way to see it first,
-/// or to run it on a file the app does not read.
+/// `--write` is what the app runs at launch, with the same log lines and the
+/// same notice. This is the way to see it first, or to run it on a file the
+/// app does not read.
 enum UpgradeConfigCommand {
 
     static func run(path: String?, write: Bool) -> Int32 {
@@ -39,13 +40,8 @@ enum UpgradeConfigCommand {
             print("· not written. Add --write to make the change")
             return 0
         }
-        do {
-            guard let written = try ConfigMigration.upgrade(at: url) else { return 0 }
-            print("✓ written. The old file is \(written.backup.path)")
-            return 0
-        } catch {
-            print("✗ not written — \(error.localizedDescription)")
-            return 1
-        }
+        guard let said = ConfigMigration.atLaunch(at: url) else { return 0 }
+        print((said.failed ? "✗ " : "✓ ") + said.message)
+        return said.failed ? 1 : 0
     }
 }

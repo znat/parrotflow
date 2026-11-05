@@ -8,6 +8,7 @@ transcription:
     - interpret
     - stage: interpret
       capitals: false
+    - {stage: sentence_repair, pause: 0}
     - transform: grammar
       when: language == "en"
 

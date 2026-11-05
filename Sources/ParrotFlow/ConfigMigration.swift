@@ -133,10 +133,10 @@ enum ConfigMigration {
         return candidate
     }
 
-    /// At launch, before the config is read. Says what happened, or nil when
-    /// the file needed nothing. A failure leaves the file as it was.
-    static func atLaunch() -> (message: String, failed: Bool)? {
-        let url = ConfigStore.fileURL
+    /// At launch, before the config is read, and for `--upgrade-config
+    /// --write`. Says what happened, or nil when the file needed nothing. A
+    /// failure leaves the file as it was.
+    static func atLaunch(at url: URL = ConfigStore.fileURL) -> (message: String, failed: Bool)? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         do {
             guard let written = try upgrade(at: url) else { return nil }
@@ -264,7 +264,7 @@ enum ConfigMigration {
     /// the default.
     static let sentenceRepairTransform = Step(
         version: 1,
-        summary: "sentence repair is the sentence_repair transform, first in pipeline:",
+        summary: "sentence repair is the sentence_repair transform, the first pipeline step",
         apply: { lines in
             var out = lines
             for key in ["sentence_repair", "interpret"] { out = removingBlock(key, from: out) }
@@ -339,9 +339,10 @@ enum ConfigMigration {
             return out
         }
         let named = #/^\s*(-\s*)?(stage:\s*)?(sentence_repair|interpret)\s*(#.*)?$/#
+        let mapped = #/^\s*-\s*\{\s*stage:\s*(sentence_repair|interpret)\s*[,}].*$/#
         var out = lines
         for item in items(under: at, in: lines).reversed()
-        where lines[item].contains(where: { $0.wholeMatch(of: named) != nil }) {
+        where lines[item].contains(where: { $0.wholeMatch(of: named) != nil || $0.wholeMatch(of: mapped) != nil }) {
             out.removeSubrange(item)
         }
         return out
