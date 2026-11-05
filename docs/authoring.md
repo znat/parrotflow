@@ -397,10 +397,13 @@ if __name__ == "__main__":
   again when its file changes, or a module it imported from its own folder, or
   a file it loaded by path. A data file it read at import is read once: read it
   in `run`, or edit the script too.
-- **Everything that goes wrong falls back to a process.** A script the worker
-  cannot import, one without `run`, a call past the timeout, or a worker that
-  died: that step runs as a process, as it would without the key. After a
-  timeout or a death the worker is killed and started again.
+- **A raise or `sys.exit()` in `run` fails the step,** as a crash would as a
+  process: the text is kept and `ok` is false. It is not run again.
+- **The rest falls back to a process.** A script the worker cannot import, one
+  without `run`, a call past the timeout, or a worker that died: that step runs
+  as a process, as it would without the key. After a timeout or a death the
+  worker is killed and started again. A script that hangs either way so costs
+  two timeouts, 4 s by default, before the text goes on.
 - **`runner: process` in the config entry turns it off** for one transform.
   `PARROTFLOW_PYTHON_WORKER=off` in the environment turns it off for all.
 

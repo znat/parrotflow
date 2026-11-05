@@ -64,7 +64,7 @@ class Script:
         self.name = "parrotflow_%x" % (hash(path) & 0xFFFFFFFFFFFF)
         self.own = {}
         self.module = None
-        self.files = {}
+        self.files = {path: stamp(path)}
         self.loaded = []
         self.problem = None
         with self.installed(), self.watching():
@@ -100,7 +100,8 @@ class Script:
 
             def __exit__(self, *_):
                 importlib.util.spec_from_file_location = original
-                script.files.update({path: stamp(path) for path in script.loaded})
+                for path in script.loaded:
+                    script.files.setdefault(path, stamp(path))
                 return False
 
         return Watching()
@@ -133,8 +134,8 @@ class _Installed:
             sys.modules.pop(name, None)
         sys.modules.update(self.shadowed)
         sys.path[:] = self.path
-        s.files.update({path: stamp(path) for path in
-                        [s.path] + [m.__file__ for m in s.own.values()]})
+        for module in s.own.values():
+            s.files.setdefault(module.__file__, stamp(module.__file__))
         return False
 
 

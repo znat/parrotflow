@@ -35,6 +35,8 @@ final class PythonRunner: @unchecked Sendable {
     private var logged: Set<String> = []
     private var lastID = 0
 
+    private static var off: Bool { ProcessInfo.processInfo.environment["PARROTFLOW_PYTHON_WORKER"] == "off" }
+
     /// The scripts the app imports at launch.
     static func scripts(in config: Config) -> [String] {
         config.transforms.compactMap { transform in
@@ -49,7 +51,7 @@ final class PythonRunner: @unchecked Sendable {
     func start(preloading scripts: [String]) {
         lock.lock(); defer { lock.unlock() }
         preload = scripts
-        if !scripts.isEmpty, worker == nil, refused == nil { worker = launch() }
+        if !Self.off, !scripts.isEmpty, worker == nil, refused == nil { worker = launch() }
     }
 
     /// The scripts a restart imports. A running worker imports a new one at
@@ -69,9 +71,7 @@ final class PythonRunner: @unchecked Sendable {
         _ command: String, in folder: TransformFolder, envelope: Data,
         environment: [String: String], seconds: TimeInterval
     ) -> Answer {
-        guard ProcessInfo.processInfo.environment["PARROTFLOW_PYTHON_WORKER"] != "off" else {
-            return .notTaken
-        }
+        guard !Self.off else { return .notTaken }
         let (program, arguments, resolved) = CommandRunner.parts(of: command, in: folder)
         guard resolved != nil, envelope.first == UInt8(ascii: "{") else { return .notTaken }
         if let why = Self.unfit(program: program, arguments: arguments) {

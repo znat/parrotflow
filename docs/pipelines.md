@@ -768,13 +768,13 @@ The built-in Python scripts also declare `runner: python`. They then run in one
 Python process the app starts at launch and stops at quit,
 `built-in/runner/worker.py`, instead of a process per step. Each step sends the
 same envelope over a pipe and gets the same answer back. A step the worker
-cannot answer runs as a process, so a broken or hung script costs what it cost
-before. See [authoring.md](authoring.md#run-it-warm) for how a script of your
+cannot answer runs as a process. A script that hangs in both costs two
+timeouts, 4 s by default, where it cost one before. See [authoring.md](authoring.md#run-it-warm) for how a script of your
 own opts in, and the rule on module-level state.
 
-Two steps on the same text within one dictation share one parse. A step that
-asks for `parse: true` after one that asked for `parse: vectors` gets the same
-parse without the vectors.
+Two steps on the same text and language within one dictation share one parse.
+A `parse: true` step after a `parse: vectors` step gets that parse without the
+vectors. The other order parses twice, since the first parse has no vectors.
 
 #### `parse: true` and `parse: vectors`
 

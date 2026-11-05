@@ -333,10 +333,12 @@ actor SyrinxParser {
 /// the tree, so a step that asks for the tree alone gets the vectors parse
 /// without them, and its envelope is what a fresh parse would have given.
 final class ParseCache: @unchecked Sendable {
-    private var parsed: [String: (field: ParseField, vectors: Bool)] = [:]
+    /// Keyed by bytes: `String` equality would match "café" composed and
+    /// decomposed, and hand a script word offsets into the other spelling.
+    private var parsed: [Data: (field: ParseField, vectors: Bool)] = [:]
 
     func field(for text: String, language: String, stage: String, vectors: Bool) async -> ParseField? {
-        let key = language + "\u{1F}" + text
+        let key = Data((language + "\u{1F}" + text).utf8)
         if let hit = parsed[key], hit.vectors || !vectors {
             return vectors || !hit.vectors ? hit.field : hit.field.withoutVectors
         }
