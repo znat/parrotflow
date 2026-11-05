@@ -26,6 +26,8 @@ cases:
   - probe: period
     input: "the deadline is on the second... and nobody is ready"
   - probe: period
+    input: "we tested the build.\nthen we shipped it"
+  - probe: period
     input: "that is the whole list.."
     expect: "that is the whole list."
 

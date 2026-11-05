@@ -648,7 +648,8 @@ treatment an entry with no body gets. `text`, `app`, `bundle_id`, `language`,
 A transform that is a program reads the same words from
 `ctx["vars"]["lists"]["determiners"]`, joined by `; `. So one list serves a
 table and a script, and adding a language is adding words here.
-`lists.abbreviations` is always there: the built-in list when you write none.
+A script always finds `lists.abbreviations`: the built-in list when you write
+none. A `replace:` pattern does not; `{{abbreviations}}` needs the list written.
 
 **Quote every entry.** `on`, `no` and `off` are booleans in YAML 1.1, which is
 what the check scripts in `scripts/` parse with. An unquoted `on` reaches them

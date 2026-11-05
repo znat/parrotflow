@@ -166,10 +166,11 @@ def periods(text, abbreviations):
 
     The guards are the stage's: a mark in a run of three or more, a mark after
     a single letter or digit (J. smith, e.g. the) or after anything but a
-    letter or a digit, and an abbreviation keep their period.
+    letter or a digit, and an abbreviation keep their period. So does a
+    period before a line break.
     """
     edits = []
-    for found in re.finditer(r"(?<![.\w])(\w+)(\.{1,2})(?!\.)(\s+)(?=\w)", text):
+    for found in re.finditer(r"(?<![.\w])(\w+)(\.{1,2})(?!\.)([ \t]+)(?=\w)", text):
         word, after = found.group(1), text[found.end()]
         if len(word) < 2 or not word.isalnum() or word.lower() in abbreviations:
             continue
