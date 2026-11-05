@@ -241,6 +241,11 @@ jobs:
       - name: A folder per transform
         run: scripts/check-transform-folders.sh
 
+      # The warm Python worker: a script that raises, exits, hangs, kills it or
+      # is edited between two calls, and env, argv and cwd per call.
+      - name: The Python worker
+        run: scripts/check-python-runner.sh
+
       # The scoring harness itself, against sets built for the purpose. No
       # model anywhere in it: the numbers have to be the same on a runner and
       # on a laptop with Ollama up.

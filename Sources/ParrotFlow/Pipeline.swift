@@ -1336,7 +1336,7 @@ struct Pipeline: Equatable, Codable {
                 command, on: text, in: transform.folder, seconds: transform.timeout,
                 structured: transform.returnsJSON,
                 context: transform.returnsJSON ? CommandRunner.Context(scope: scope) : nil,
-                parse: parse, readings: readings
+                parse: parse, readings: readings, runner: transform.runner
             )
             guard let result = outcome else {
                 return StageResult(text: text, vars: ["ok": .bool(false)])
