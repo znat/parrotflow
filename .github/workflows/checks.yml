@@ -246,6 +246,12 @@ jobs:
       - name: The Python worker
         run: scripts/check-python-runner.sh
 
+      # What a `returns: json` command is handed, recorded from this build and
+      # from tests/envelopes/, against `--envelope-schema`; and the TypedDicts in
+      # built-in/runner/envelope.py against the schema, key by key.
+      - name: The transform envelope
+        run: scripts/check-envelope.sh
+
       # The scoring harness itself, against sets built for the purpose. No
       # model anywhere in it: the numbers have to be the same on a runner and
       # on a laptop with Ollama up.
