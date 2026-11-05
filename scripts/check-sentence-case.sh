@@ -3,11 +3,12 @@
 #
 #   scripts/check-sentence-case.sh
 #
-# Joining two sentences means taking the period out and lowercasing the word
-# after it. Not every capital after a period is there because of the period:
-# "I will ask him. Nathan knows the answer" must not become "ask him nathan
-# knows". This is the half of `SentenceJoin` that decides, and it is the half
-# that writes nonsense when it is wrong.
+# Taking a period out means lowercasing the word after it. Not every capital
+# after a period is there because of the period: "I will ask him. Nathan knows
+# the answer" must not become "ask him nathan knows". `SentenceJoin.written`
+# decides, and `VocabularyPass` asks it before writing a refused span in
+# lowercase. A capital with no mark in front of it is the `sentence_repair`
+# transform's, scored by its own cases.yaml.
 #
 # No model. `NLTagger` and the vocabulary answer this, so it runs in CI and on
 # a machine that has never dictated.
@@ -44,7 +45,7 @@ while IFS= read -r text && IFS= read -r want && IFS= read -r why; do
   # The line for this case's own boundary, not the first one printed. A text
   # can hold several — "what I meant. Which one" has a bare "I" before the
   # period — and only one of them is what the case is about.
-  got="$("$BIN" --sentence-join --case "$text" 2>/dev/null | awk -v w="$want" '
+  got="$("$BIN" --sentence-case "$text" 2>/dev/null | awk -v w="$want" '
     $1 == "next" {
       a = tolower(substr($2, 1, 1)) substr($2, 2)
       b = tolower(substr(w, 1, 1)) substr(w, 2)
@@ -84,7 +85,7 @@ fi
 
 while IFS= read -r text && IFS= read -r word && IFS= read -r why; do
   total=$((total + 1))
-  got="$("$BIN" --sentence-join --case "$text" 2>/dev/null | awk -v w="$word" '
+  got="$("$BIN" --sentence-case "$text" 2>/dev/null | awk -v w="$word" '
     $1 == "next" && $2 == w { print $2; exit }')"
   if [ -z "$got" ]; then
     pass=$((pass + 1))

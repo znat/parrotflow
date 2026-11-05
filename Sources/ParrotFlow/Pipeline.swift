@@ -28,20 +28,6 @@ struct Pipeline: Equatable, Codable {
     /// drift apart — a stage that cannot be spelled is a stage nobody can ask
     /// for.
     enum Stage: String, Equatable, Codable, CaseIterable {
-        /// What the speaker meant, where the decoder wrote what it heard.
-        ///
-        /// Today that is the marks a pause put in: a period or a question mark
-        /// mid-sentence, and the capital after it — see `SentenceJoin`.
-        /// `marks:`, `capitals:` and `pause:` on the step say how far it
-        /// reaches. English only, and it refuses every other language itself.
-        ///
-        /// First in the list, because it reads the decoder's own words: the
-        /// pause gate lines the text up against the token timings, and a stage
-        /// above it that rewrites a word breaks that alignment.
-        ///
-        /// Called `interpret` until it was named for what it does. That
-        /// spelling is still read — see `Pipeline.stage(named:)`.
-        case sentenceRepair = "sentence_repair"
         /// What is on screen around the field, published as `context.*` and
         /// never written into the transcript. Terminals and Slack, and every
         /// app with `transcription.context.every_app` — see `Context`.
@@ -188,47 +174,6 @@ struct Pipeline: Equatable, Codable {
         }
     }
 
-    /// The sentence repair's options. The `transcription.sentence_repair:`
-    /// block, a `- stage: sentence_repair` line and the step each hold one.
-    ///
-    /// Nil is "not written", as in `VocabularyOptions`.
-    struct RepairOptions: Equatable, Codable {
-        /// Written `marks:`. What a boundary can be written with. Absent takes
-        /// the built-in set for the language.
-        ///
-        /// One list, two jobs. The sentence enders in it — `.` and `?` — are
-        /// where a boundary is looked for. Everything else in it — the comma —
-        /// is a reading tried at every boundary. So a boundary is read three
-        /// ways: the mark it carries, the comma, and no mark at all. Drop `?`
-        /// from the list and question marks stop being scanned.
-        ///
-        /// There is no threshold; the reading the model scores highest is the
-        /// one that is written. `;` and `:` were measured and never changed a
-        /// decision in English, so they are not in the default.
-        var marks: [String]?
-        /// Written `capitals:`. Whether a capital with no mark in front of it
-        /// is read as a boundary too.
-        var capitals: Bool?
-        /// Written `pause:`. Seconds of silence a bare capital needs in front
-        /// of it before it is read. Zero or less reads every one. Absent means
-        /// `SentenceJoin.paused`.
-        var pause: Double?
-
-        /// Every switch is on until it is written false.
-        func isOn(_ option: KeyPath<RepairOptions, Bool?>) -> Bool {
-            self[keyPath: option] ?? true
-        }
-
-        /// These options, with `base` filling each one not written here.
-        func over(_ base: RepairOptions) -> RepairOptions {
-            RepairOptions(
-                marks: marks ?? base.marks,
-                capitals: capitals ?? base.capitals,
-                pause: pause ?? base.pause
-            )
-        }
-    }
-
     /// A stage plus when it runs. The condition is the whole reason a pipeline
     /// beats a list: a stage that costs a second is affordable exactly when it
     /// can be skipped on the transcripts that do not need it.
@@ -246,8 +191,6 @@ struct Pipeline: Equatable, Codable {
         var prompt: String?
         /// Read on a `vocabulary` step only.
         var vocabulary = VocabularyOptions()
-        /// Read on a `sentence_repair` step only.
-        var repair = RepairOptions()
         /// Run only when this matches the text as it stands *at this point* —
         /// after the stages before it, not on the original. That ordering is
         /// what lets a cheap deterministic stage make an expensive one
@@ -350,14 +293,14 @@ struct Pipeline: Equatable, Codable {
 
     var stages: [Stage] { steps.map(\.stage) }
 
-    /// What actually runs: the two fixed passes, then the list.
+    /// What actually runs: `vocabulary`, then the list, then
+    /// `context_spelling`.
     ///
-    /// `interpret` reads the decoder's own word timings and `vocabulary` is
-    /// handed spans measured before any of this started. Both are wrong
-    /// anywhere but the front, so neither is a line in `pipeline:` — each has a
-    /// settings block, and `enabled: false` is the only way off.
+    /// `vocabulary` is handed spans measured before any of this started, so it
+    /// is wrong anywhere but the front. It is not a line in `pipeline:` — it
+    /// has a settings block, and `enabled: false` is the only way off.
     ///
-    /// A `pipeline:` that still names one is honoured as an on switch and
+    /// A `pipeline:` that still names it is honoured as an on switch and
     /// nothing else: the step is dropped here and rebuilt at the head from the
     /// block, so an old config keeps working and cannot reintroduce the order
     /// bug it used to be warned about. `Transcription.retiredStages` is the
@@ -372,29 +315,18 @@ struct Pipeline: Equatable, Codable {
         func line(_ stage: Stage) -> Step? { carried.first { $0.stage == stage } }
         let blocks = config.transcription
         var steps: [Step] = []
-        if blocks.sentenceRepair.enabled {
-            steps.append(Step(stage: .sentenceRepair, repair: repairOptions(config: config)))
-        }
         if blocks.vocabulary.enabled {
             let written = line(.vocabulary)?.vocabulary ?? VocabularyOptions()
             steps.append(Step(
                 stage: .vocabulary, vocabulary: written.over(blocks.vocabulary.options)))
         }
         steps += carried.filter {
-            $0.stage != .sentenceRepair && $0.stage != .vocabulary && $0.stage != .contextSpelling
+            $0.stage != .vocabulary && $0.stage != .contextSpelling
         }
         if blocks.contextSpelling.enabled {
             steps.append(Step(stage: .contextSpelling))
         }
         return Pipeline(steps: steps)
-    }
-
-    /// The options the `sentence_repair` step runs with, whether or not it is
-    /// on: the first `pipeline:` line's, over the block's.
-    static func repairOptions(config: Config) -> RepairOptions {
-        let written = config.transcription.pipeline?.steps
-            .first { $0.stage == .sentenceRepair }?.repair ?? RepairOptions()
-        return written.over(config.transcription.sentenceRepair.options)
     }
 
     /// The language this text was judged to be in.
@@ -417,9 +349,6 @@ struct Pipeline: Equatable, Codable {
     static func stage(named name: String) -> Stage? {
         let key = name.trimmingCharacters(in: .whitespaces).lowercased()
         if key == "prompt" { return .transform }
-        // `interpret` is what `sentence_repair` was called. A config carrying
-        // the old spelling still loads; `notices()` says the line can go.
-        if key == "interpret" { return .sentenceRepair }
         return Stage(rawValue: key)
     }
 
@@ -687,12 +616,12 @@ struct Pipeline: Equatable, Codable {
     ///   the way to a transcript would say less than one that never moved.
     func run(
         _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil,
-        seed: Scope = Scope(), words: [Trace.Word] = [],
+        seed: Scope = Scope(),
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         await runCollectingScope(
             text, config: config, allowPrompts: allowPrompts, app: app,
-            seed: seed, words: words, progress: progress
+            seed: seed, progress: progress
         ).text
     }
 
@@ -703,12 +632,9 @@ struct Pipeline: Equatable, Codable {
     /// have to say `.text` to get it. `--pipeline` and the case sets want both,
     /// and they are the reason the scope is reachable at all: a variable nothing
     /// can print is a variable nobody can debug.
-    /// `words` are the decoder's own, for the `interpret` step's pause gate.
-    /// Every other way in has no audio and hands over none, and the gate then
-    /// stands down rather than guessing.
     func runCollectingScope(
         _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil,
-        seed: Scope = Scope(), words: [Trace.Word] = [],
+        seed: Scope = Scope(),
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> (text: String, scope: Scope) {
         var output = text
@@ -782,7 +708,7 @@ struct Pipeline: Equatable, Codable {
             // `nests`, so the sub-steps a stage opens are filed under it.
             let span = Trace.current?.open(named, kind: .stage, nests: true)
             let result = await apply(
-                step, to: output, config: config, app: app, scope: scope, words: words
+                step, to: output, config: config, app: app, scope: scope
             )
             let seconds = CFAbsoluteTimeGetCurrent() - started
             span?.close(Trace.changeSummary(from: before, to: result.text))
@@ -830,12 +756,9 @@ struct Pipeline: Equatable, Codable {
     }
 
     private func apply(
-        _ step: Step, to text: String, config: Config, app: App?, scope: Scope,
-        words: [Trace.Word]
+        _ step: Step, to text: String, config: Config, app: App?, scope: Scope
     ) async -> StageResult {
         switch step.stage {
-        case .sentenceRepair:
-            return await repairSentence(step, on: text, config: config, words: words)
         case .context:
             return await readContext(on: text, scope: scope)
         case .input:
@@ -1007,36 +930,6 @@ struct Pipeline: Equatable, Codable {
         }
     }
 
-    /// The marks a pause put in, taken out again — see `SentenceJoin`.
-    ///
-    /// Fails open. No model on disk, a model not in memory yet, a language
-    /// that is not English: the transcript arrives as it was, and the step
-    /// still publishes `ran: true` with `count: 0`. A boundary left as decoded
-    /// is a worse transcript; an error here would cost the sentence.
-    private func repairSentence(
-        _ step: Step, on text: String, config: Config, words: [Trace.Word]
-    ) async -> StageResult {
-        let text = Pipeline.collapsingDoubledStop(text)
-        let words = words.map {
-            Trace.Word(
-                word: Pipeline.collapsingDoubledStop($0.word),
-                start: $0.start, end: $0.end, confidence: $0.confidence
-            )
-        }
-        guard #available(macOS 14, *) else {
-            return StageResult(text: text, vars: ["count": .int(0)])
-        }
-        let language = Pipeline.language(of: text, config: config)
-        let outcome = await SentenceJoin.shared.apply(
-            to: text, config: config,
-            marks: step.repair.marks ?? config.transcription.marks(for: language),
-            capitals: step.repair.isOn(\.capitals),
-            pause: step.repair.pause ?? SentenceJoin.paused,
-            words: words
-        )
-        return StageResult(text: outcome.text, vars: ["count": .int(outcome.count(.join))])
-    }
-
     /// `priced.. The` -> `priced. The`.
     ///
     /// The decoder writes two full stops now and then, and the second one
@@ -1048,15 +941,8 @@ struct Pipeline: Equatable, Codable {
     /// clips of the archive, mostly French — and only the full stop was ever
     /// seen doubled: 7 clips against 0 for `??`, `!!` and `,,` over 24837.
     ///
-    /// Applied to the decoder's words as well, so they still rebuild the text
-    /// and the pause gate keeps working.
-    static func collapsingDoubledStop(_ text: String) -> String {
-        guard text.contains("..") else { return text }
-        return collapsingDoubledStopMapped(text).text
-    }
-
-    /// The same, and for each Character of the result the offset of the one
-    /// it came from. A collapsed `..` maps to its first stop.
+    /// For each Character of the result, the offset of the one it came from.
+    /// A collapsed `..` maps to its first stop.
     static func collapsingDoubledStopMapped(_ text: String) -> (text: String, from: [Int]) {
         var out = ""
         var from: [Int] = []
@@ -1532,7 +1418,7 @@ extension Pipeline.Step {
     init(stage: Pipeline.Stage, entry: Config.Transcription.PipelineEntry) {
         self.init(
             stage: stage, transform: entry.transform, prompt: entry.prompt,
-            vocabulary: entry.vocabulary, repair: entry.repair,
+            vocabulary: entry.vocabulary,
             when: entry.when, unless: entry.unless, app: entry.app
         )
     }

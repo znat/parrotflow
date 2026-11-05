@@ -123,8 +123,6 @@ mkdir -p "$WORK/nested"
 cat > "$WORK/nested/config.yaml" <<'YAML'
 transcription:
   languages: [en]
-  interpret:
-    enabld: true
   pipeline:
     - transform: fillers
       wen: language == "fr"
@@ -154,11 +152,9 @@ check "a typo in a transform is named by the transform" \
   "$(printf '%s\n' "$out" | grep -cxF '  ⚠ transforms[fillers].promt: not a setting. Did you mean "prompt"?')" "1"
 check "a typo in catch_all's mapping is named" \
   "$(printf '%s\n' "$out" | grep -cxF '  ⚠ commands.catch_all.temprature: not a setting. Did you mean "temperature"?')" "1"
-check "a typo under a deprecated block that is still read is named" \
-  "$(printf '%s\n' "$out" | grep -cxF '  ⚠ transcription.interpret.enabld: not a setting. Did you mean "enabled"?')" "1"
 check "a key beside a replace: file reference is named" \
   "$(printf '%s\n' "$out" | grep -cx '  ⚠ transforms\[table\]\.replace\.typo: not a setting\.')" "1"
-check "model names, lists, params and a replace table take any key" "$(warnings)" "5"
+check "model names, lists, params and a replace table take any key" "$(warnings)" "4"
 
 # --- a config that does not load still names its typos -------------------------
 
@@ -278,10 +274,11 @@ check "readings: true on a text command, and readings: scores, fail the check" "
 check "and each is named" \
   "$(printf '%s\n' "$out" | grep -c '"plain" has `readings: true`'),$(printf '%s\n' "$out" | grep -c '"typo" has `readings: scores`, which is not true or false')" "1,1"
 
-# --- sentence_repair.py and the sentence_repair stage, both on ------------------
+# --- sentence_repair.py, and the stage it replaced -----------------------------
 
 mkdir -p "$WORK/repair"
 cat > "$WORK/repair/config.yaml" <<'YAML'
+version: 1
 transforms:
   - name: sentence_repair
     description: repair sentence boundaries a pause cut
@@ -294,15 +291,15 @@ transcription:
     - transform: sentence_repair
 YAML
 run_config repair
-check "sentence_repair.py as a step with the stage on passes, with one warning" \
-  "$code,$(warnings),$(printf '%s\n' "$out" | grep -c 'sentence_repair: {enabled: false}')" "0,1,1"
+check "sentence_repair.py as a step passes, with no warning" "$code,$(warnings)" "0,0"
 
 cat >> "$WORK/repair/config.yaml" <<'YAML'
   sentence_repair:
     enabled: false
 YAML
 run_config repair
-check "with the stage off, no warning" "$code,$(warnings)" "0,0"
+check "the retired block beside it fails and names the upgrade, with no warning" \
+  "$code,$(warnings),$(printf '%s\n' "$out" | grep -c 'transcription.sentence_repair no longer does anything.*--upgrade-config')" "1,0,1"
 
 echo
 echo "  $pass/$total$failed"

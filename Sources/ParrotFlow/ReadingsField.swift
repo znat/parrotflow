@@ -20,11 +20,10 @@ struct ReadingsField: Encodable, Sendable {
     /// Why there are no readings when there should be some.
     let missing: String?
 
-    /// The boundaries `sentence_repair` reads where a sentence mark is followed
-    /// by a capital, read the way it reads them: the same text after the
-    /// doubled-stop collapse, the same marks, one padded batch per boundary.
+    /// Every boundary where a sentence mark is followed by a capital, read
+    /// after the doubled-stop collapse, one padded batch per boundary.
     ///
-    /// Never loads the model, as the stage does not.
+    /// Never loads the model.
     @available(macOS 14, *)
     static func of(_ text: String, language: String, config: Config, stage: String) async -> ReadingsField {
         func missing(_ reason: String) -> ReadingsField {
@@ -35,8 +34,7 @@ struct ReadingsField: Encodable, Sendable {
             return missing("they are read in English and French only")
         }
         let (collapsed, from) = Pipeline.collapsingDoubledStopMapped(text)
-        let marks = Pipeline.repairOptions(config: config).marks
-            ?? config.transcription.marks(for: language)
+        let marks = config.transcription.marks(for: language)
         let found = SentenceJoin.boundaries(
             in: collapsed, scanning: SentenceJoin.scanned(marks), refusing: config.abbreviations
         ).filter { collapsed[$0.next.lowerBound].isUppercase }
@@ -48,7 +46,7 @@ struct ReadingsField: Encodable, Sendable {
         }
         var out: [Boundary] = []
         for boundary in found {
-            let mark = boundary.mark.map(String.init) ?? ""
+            let mark = String(boundary.mark)
             let scores: [SentenceReadings.Score]
             do {
                 scores = try await SentenceReadings.shared.read(

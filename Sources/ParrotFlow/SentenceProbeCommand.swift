@@ -16,10 +16,6 @@ import MLX
 ///       reading   join      -4.5571  4
 ///       winner    join
 ///
-/// `--bare` reads the boundary as a capital the transcriber wrote with nothing
-/// in front of it: four readings instead of three, the extra one being the text
-/// exactly as decoded. A `"mark": ""` row in a bench file is the same thing.
-///
 /// `--window` builds the prefix and the continuations and stops, as JSON, with
 /// no model. `scripts/check-sentence-window.sh` compares that against
 /// expectations written by hand, so it runs in CI.
@@ -44,17 +40,12 @@ enum SentenceProbeCommand {
         return marks.first { SentenceReadings.enders.contains($0) } ?? "."
     }
 
-    static func run(left: String, right: String, bare: Bool = false) -> Int32 {
+    static func run(left: String, right: String) -> Int32 {
         var exitCode: Int32 = 0
         let done = DispatchSemaphore(value: 0)
-        // English: this is the English boundary probe, and the stage it stands
-        // in runs in no other language.
+        // English: this is the English boundary probe.
         let marks = ((try? ConfigStore.load()) ?? Config()).transcription.marks(for: "en")
-        // `--bare`: the transcriber wrote the capital with no mark at all, so
-        // the text as decoded is a reading of its own. A left half with no mark
-        // is otherwise read as a period, which is what it writes most of the
-        // time.
-        let mark = bare ? "" : found(in: left, marks: marks)
+        let mark = found(in: left, marks: marks)
 
         Task {
             do {
@@ -97,9 +88,9 @@ enum SentenceProbeCommand {
     ///
     /// JSON rather than columns, because a continuation starts with a space or
     /// a mark and a column would lose it.
-    static func window(left: String, right: String, bare: Bool) -> Int32 {
+    static func window(left: String, right: String) -> Int32 {
         let marks = ((try? ConfigStore.load()) ?? Config()).transcription.marks(for: "en")
-        let mark = bare ? "" : found(in: left, marks: marks)
+        let mark = found(in: left, marks: marks)
         guard let built = SentenceReadings.build(
             left: left, right: right, found: mark, marks: marks
         ) else {
@@ -152,7 +143,8 @@ enum SentenceProbeCommand {
                 for (i, row) in rows.enumerated() {
                     let start = DispatchTime.now().uptimeNanoseconds
                     let marks = transcription.marks(for: row.language ?? "en")
-                    let mark = row.mark ?? found(in: row.left, marks: marks)
+                    let mark = row.mark.flatMap { $0.isEmpty ? nil : $0 }
+                        ?? found(in: row.left, marks: marks)
                     guard let scores = try? await SentenceReadings.shared.read(
                         left: row.left, right: row.right, found: mark, marks: marks
                     ) else { continue }

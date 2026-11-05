@@ -3,47 +3,49 @@
 #
 #   scripts/check-bare-capital.sh
 #
-# The readings the boundary gets here are the period, the text as decoded, and
-# the join. The comma is not among them: nothing is written unless `join` wins,
-# so a comma win is a veto rather than a decision. The cases below are the ones
-# that veto used to swallow — mined from real dictation and labelled by hand.
+# Scores the `sentence_repair` transform's capitals rule against
+# tests/bare-capital-cases.json, mined from real dictation and labelled by hand.
+# Each case goes through the transform with the parse the binary hands it.
+# `cost: true` marks a case the rule is known to get wrong; it is printed and
+# does not fail the run. Three are the transform's: it reads no pause, so two
+# real sentence starts the decoder wrote with no mark are lowercased, and the
+# parse keeps one capital that a pause put there.
 #
-# Not in `make test`: it needs the 320 MB sentence model. Run it after touching
-# SentenceReadings or the bare half of SentenceJoin.
+# Not in `make test` and not in CI: it needs the syrinx parser on disk.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN=""
-for candidate in "$ROOT/.build/release/ParrotFlow" "$ROOT/.build/debug/ParrotFlow"; do
-  [ -x "$candidate" ] || continue
-  if [ -z "$BIN" ] || [ "$candidate" -nt "$BIN" ]; then BIN="$candidate"; fi
-done
-[ -n "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
+BIN="$ROOT/.build/release/ParrotFlow"
+[ -x "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
 
-CASES="$ROOT/tests/bare-capital-cases.json"
-WORK="$(mktemp -d -t parrotflow-bare-capital)"
-trap 'rm -rf "$WORK"' EXIT
+exec python3 - "$ROOT" "$BIN" <<'PY'
+import importlib.util, json, sys
+from pathlib import Path
 
-# The bench reads left, right and mark and ignores the rest, so the labels
-# travel in the same file as the cases they label.
-"$BIN" --sentence-probe --bench "$CASES" --out "$WORK/out.json" >/dev/null 2>&1 \
-  || { echo "  ✗ the bench did not run"; exit 1; }
+root, binary = Path(sys.argv[1]), sys.argv[2]
+spec = importlib.util.spec_from_file_location(
+    "score", root / "built-in/transforms/sentence_repair/score.py")
+score = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(score)
 
-python3 - "$CASES" "$WORK/out.json" <<'PY'
-import json, sys
-cases = json.load(open(sys.argv[1]))
-out = json.load(open(sys.argv[2]))
-rows = out if isinstance(out, list) else out.get("results", [])
-if len(rows) != len(cases):
-    print(f"  ✗ {len(rows)} results for {len(cases)} cases"); sys.exit(1)
+cases = json.load(open(root / "tests/bare-capital-cases.json"))
+def text_of(case):
+    return case["left"].rstrip() + " " + case["right"]
+
+ran = score.through(binary, [(text_of(c), "en") for c in cases])
+print()
 ok = bad = cost = 0
-for case, row in zip(cases, rows):
-    joined = row["winner"] == "join"
-    right = joined == (case["want"] == "lower")
-    got = "lower" if joined else "keep"
+for case in cases:
+    text = text_of(case)
+    if text not in ran:
+        cost += 1
+        print(f"  ·  {case['word']:12} reads as a spoken command, so no transform runs")
+        continue
+    at = len(case["left"].rstrip()) + 1
+    _, edits, _ = ran[text]
+    lowered = any(e.start == at and e.rule == "capital" for e in edits)
+    got = "lower" if lowered else "keep"
+    right = got == case["want"]
     if case.get("cost"):
-        # The measured price of dropping the comma, not a regression. Printed
-        # so it stays visible, and it fails the run only if it stops being a
-        # price — a case that starts passing is a better rule, not a broken one.
         cost += 1
         print(f"  ·  {case['word']:12} want {case['want']:5} got {got:5} — {case['why']}")
         continue

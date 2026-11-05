@@ -105,6 +105,12 @@ if let index = arguments.firstIndex(of: "--tour-film") {
     )
 }
 
+// Before anything loads the config: a load creates the file when it is missing.
+if let at = arguments.firstIndex(of: "--upgrade-config") {
+    let path = arguments[(at + 1)...].first { !$0.hasPrefix("--") }
+    exit(UpgradeConfigCommand.run(path: path, write: arguments.contains("--write")))
+}
+
 // Where `trace.jsonl` goes, for every command below that writes one. The app
 // sets this again from `applyConfig`, which is the copy that follows a live
 // edit of `output_dir`; this is only so a terminal command has somewhere to
@@ -290,17 +296,13 @@ if let at = arguments.firstIndex(of: "--sentence-probe") {
             cases: arguments[bench + 1], out: out, vectors: arguments.contains("--vectors")
         ))
     }
-    // Only `--bare` and `--window` are taken as options, and only the first of
-    // each. Everything else is transcript, including a half that starts with a
-    // dash.
-    var bare = false
+    // Only `--window` is taken as an option, and only the first one.
+    // Everything else is transcript, including a half that starts with a dash.
     var window = false
     var halves: [String] = []
     var index = at + 1
     while index < arguments.count, halves.count < 2 {
-        if arguments[index] == "--bare", !bare {
-            bare = true
-        } else if arguments[index] == "--window", !window {
+        if arguments[index] == "--window", !window {
             window = true
         } else {
             halves.append(arguments[index])
@@ -308,29 +310,27 @@ if let at = arguments.firstIndex(of: "--sentence-probe") {
         index += 1
     }
     guard halves.count == 2 else {
-        print("usage: ParrotFlow --sentence-probe [--bare] [--window] \"<left half>\" \"<right half>\"")
+        print("usage: ParrotFlow --sentence-probe [--window] \"<left half>\" \"<right half>\"")
         print("       ParrotFlow --sentence-probe --bench <cases.json>"
               + " [--out <scores.json>] [--vectors]")
         exit(2)
     }
     if window {
-        exit(SentenceProbeCommand.window(left: halves[0], right: halves[1], bare: bare))
+        exit(SentenceProbeCommand.window(left: halves[0], right: halves[1]))
     }
-    exit(SentenceProbeCommand.run(left: halves[0], right: halves[1], bare: bare))
+    exit(SentenceProbeCommand.run(left: halves[0], right: halves[1]))
 }
 
-if let at = arguments.firstIndex(of: "--sentence-join") {
+if let at = arguments.firstIndex(of: "--sentence-case") {
     guard #available(macOS 14, *) else {
-        print("✗ the sentence probe needs macOS 14 or later")
+        print("✗ --sentence-case needs macOS 14 or later")
         exit(1)
     }
-    let caseOnly = arguments.contains("--case")
-    let text = arguments[(at + 1)...].first { !$0.hasPrefix("--") }
-    guard let text else {
-        print("usage: ParrotFlow --sentence-join [--case] \"<text>\"")
+    guard let text = arguments[(at + 1)...].first(where: { !$0.hasPrefix("--") }) else {
+        print("usage: ParrotFlow --sentence-case \"<text>\"")
         exit(2)
     }
-    exit(SentenceJoinCommand.run(text, caseOnly: caseOnly))
+    exit(SentenceCaseCommand.run(text))
 }
 
 if let at = arguments.firstIndex(of: "--context-spelling-test") {

@@ -190,6 +190,11 @@ jobs:
       - name: The config schema
         run: scripts/check-schema.sh
 
+      # An older config.yaml, upgraded line by line: the file after, the backup,
+      # a second run that changes nothing, and --check-config on the result.
+      - name: Upgrading an old config
+        run: scripts/check-upgrade-config.sh
+
       # The public `parrotflow` agent skill runs on Macs without this repo. Every
       # key, flag and file it names is checked against this build.
       - name: The parrotflow skill

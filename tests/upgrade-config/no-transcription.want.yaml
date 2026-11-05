@@ -1,0 +1,18 @@
+version: 1
+
+hotkey:
+  key: right_option
+
+transforms:
+  # Sentence marks a pause wrote, taken out again. Reads the parse and the
+  # readings and calls no model. See docs/pipelines.md.
+  - name: sentence_repair
+    description: repair sentence boundaries a pause cut
+    command: built-in/sentence_repair/sentence_repair.py
+    returns: json
+    parse: true
+    readings: true
+
+transcription:
+  pipeline:
+    - transform: sentence_repair

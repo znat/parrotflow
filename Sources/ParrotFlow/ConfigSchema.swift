@@ -25,8 +25,6 @@ enum ConfigSchema {
         case pattern(String)
         /// Read case-insensitively, as every decoder that checks a word does.
         case choice([String])
-        /// Sentence marks, as `Language.checked(marks:)` refuses them.
-        case marks
         case list(Kind)
         case object(Section)
         /// Any key, each value of this kind: names the user chooses.
@@ -69,6 +67,10 @@ enum ConfigSchema {
 
     static var root: Section {
         Section(source: "Config", keys: Config.CodingKeys.allCases.map(\.stringValue), fields: [
+            key("version", .integer,
+                "Which upgrade the file was written for. The app upgrades an older file at"
+                    + " launch, after a backup.",
+                default: 0),
             key("hotkey", .object(hotkey), "The key you hold to dictate."),
             key("audio", .object(audio), "Recording: microphone, speech gate, where clips go."),
             key("feedback", .object(feedback), "Sounds, the pill, and its colours."),
@@ -202,11 +204,9 @@ enum ConfigSchema {
                 "Languages you dictate in, most spoken first. One entry turns off"
                     + " language detection.",
                 default: ["en"]),
-            key("sentence_repair", .object(sentenceRepair),
-                "Takes out the marks a pause put mid-sentence. Runs first, always."),
             key("vocabulary", .object(vocabulary),
                 "Matches vocabulary.yaml terms and settles each against its sentence."
-                    + " Runs second, always."),
+                    + " Runs first, always."),
             key("context_spelling", .object(contextSpelling),
                 "Spells a dictated word the way the screen writes it. Runs last."),
             key("context", .object(contextRead),
@@ -228,26 +228,10 @@ enum ConfigSchema {
                 deprecated: "is retired and nothing under it is read. Write one `pipeline:`"
                     + " list, with `when: language == \"fr\"` on a step that belongs to"
                     + " one language"),
-            key("interpret", .object(sentenceRepair), "The older name for sentence_repair.",
-                deprecated: "`interpret:` is called `sentence_repair:` now — same keys,"
-                    + " still read under the old name"),
-        ])
-    }
-
-    static var sentenceRepair: Section {
-        Section(source: "Config.Transcription.SentenceRepair",
-                keys: Config.Transcription.SentenceRepair.CodingKeys.allCases
-                    .map(\.stringValue),
-                fields: [
-            key("enabled", .bool, "false is the only way off.", default: true),
-            key("marks", .marks,
-                "What a boundary may be written with, one punctuation character each,"
-                    + " at least one of . ? !. Left out, the set for the language."),
-            key("capitals", .bool,
-                "Read a capital with no mark in front of it as a boundary too.",
-                default: true),
-            key("pause", .number,
-                "Seconds of silence a bare capital needs first. 0 reads every one."),
+            key("sentence_repair", .anything, "Retired.",
+                deprecated: "no longer does anything — it " + Config.sentenceRepairAdvice),
+            key("interpret", .anything, "Retired.",
+                deprecated: "no longer does anything — it " + Config.sentenceRepairAdvice),
         ])
     }
 
@@ -348,7 +332,7 @@ enum ConfigSchema {
 
     /// A bare stage name, or a mapping that names a stage or a transform.
     static var step: Kind {
-        let stages = Kind.choice(Pipeline.stageNames + ["interpret"])
+        let stages = Kind.choice(Pipeline.stageNames)
         let entry = Config.Transcription.PipelineEntry.self
         return .either([stages, .object(Section(
             source: "Config.Transcription.PipelineEntry", keys: entry.schemaKeys, fields: [
@@ -360,9 +344,6 @@ enum ConfigSchema {
                 key("unless", .text, "Skip when this holds. Same forms as when."),
                 key("app", .text,
                     "Run only in apps this regex matches, on name and bundle id."),
-                key("marks", .marks, "sentence_repair: what a boundary may be written with."),
-                key("capitals", .bool, "sentence_repair: read a bare capital as a boundary."),
-                key("pause", .number, "sentence_repair: silence a bare capital needs first."),
                 key("near_misses", .bool, "vocabulary: also match a rendering one edit away."),
                 key("by_sound", .bool, "vocabulary: also match words that sound like a term."),
                 key("gate", .bool, "vocabulary: the word lists and the slot's part of speech."),
@@ -601,12 +582,6 @@ enum ConfigSchema {
         case .choice(let values):
             // The enum is what an editor offers; the pattern accepts any casing.
             return ["type": "string", "anyOf": [["enum": values], ["pattern": anyCase(values)]]]
-        case .marks:
-            return [
-                "type": "array", "minItems": 1,
-                "items": ["type": "string", "minLength": 1, "maxLength": 1],
-                "contains": ["enum": SentenceReadings.enders.sorted()],
-            ]
         case .list(let inner): return ["type": "array", "items": json(inner)]
         case .object(let section):
             var properties: [String: Any] = [:]

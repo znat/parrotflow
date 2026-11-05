@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Does the boundary read French? Same three readings, plus the colon.
+# What a won French join writes is scored by the `sentence_repair` transform's
+# cases.yaml.
 #
 #   scripts/check-french-boundary.sh
 #
-# The reason this stage was English alone went when ModernBERT left: the model
+# The reason the readings were English alone went when ModernBERT left: the model
 # is Qwen3 and it is multilingual. Measured over 234 French boundaries — 103
 # real periods mined from real dictation and 131 cuts made by inserting one —
 # AUC 0.968 against 0.984 in English and 91% of cuts repaired. These 28 are a
@@ -54,31 +56,4 @@ print()
 print(f"  {ok}/{len(cases) - cost}  and {cost} known costs  (tests/french-boundary-cases.json)")
 sys.exit(0 if bad == 0 else 1)
 PY
-bench=$?
-
-# The bench above scores which reading wins. It never applies one, so it cannot
-# see what is written. These three do.
-echo
-echo "  what a won join writes"
-echo
-fail=$bench
-check () {   # $1 said, $2 wanted, $3 why
-  got="$("$BIN" --sentence-join "$1" 2>/dev/null | sed -n 's/^  text       //p')"
-  if [ "$got" = "$2" ]; then
-    printf '  ✓  %s\n' "$3"
-  else
-    printf '  ✗  %s\n     got  %s\n     want %s\n' "$3" "$got" "$2"
-    fail=1
-  fi
-}
-check "Je me demande si on ne devrait pas ? Attendre la prochaine version." \
-      "Je me demande si on ne devrait pas attendre la prochaine version." \
-      "the space French sets before ? goes with the mark, and one is left"
-check "On ne peut pas continuer comme ça. Parce que le budget est déjà dépassé." \
-      "On ne peut pas continuer comme ça. Parce que le budget est déjà dépassé." \
-      "a real French period is left alone"
-check "You should see a parrot. At the top right of your screen." \
-      "You should see a parrot at the top right of your screen." \
-      "English is unchanged"
-exit $fail
-
+exit $?

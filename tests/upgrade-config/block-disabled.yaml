@@ -1,0 +1,24 @@
+# Invented config, written before version 1.
+hotkey:
+  key: right_option
+
+transcription:
+  languages: [en]
+  sentence_repair: {enabled: false}
+  vocabulary:
+    enabled: true
+  pipeline:
+    # Hesitation sounds first.
+    - transform: fillers
+    - transform: disfluency
+
+transforms:
+  - name: fillers
+    description: hesitation sounds
+    replace:
+      "": ['/[,]?\s*\b(?:um|uh)\b[,]?/']
+  - name: disfluency
+    description: delete hesitations, repeats and false starts
+    command: built-in/disfluency/disfluency.py
+    returns: json
+    parse: true

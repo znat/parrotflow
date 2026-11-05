@@ -1,0 +1,19 @@
+# Invented. Somebody tried the transform by hand and left the block in.
+transcription:
+  sentence_repair:
+    enabled: false
+  pipeline:
+    - transform: fillers
+    - transform: sentence_repair
+
+transforms:
+  - name: sentence_repair
+    description: repair sentence boundaries a pause cut
+    command: built-in/sentence_repair/sentence_repair.py
+    returns: json
+    parse: true
+    readings: true
+  - name: fillers
+    description: delete hesitation sounds
+    replace:
+      "": ['/[,]?\s*\b(?:um|uh)\b[,]?/']

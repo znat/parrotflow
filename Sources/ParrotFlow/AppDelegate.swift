@@ -563,7 +563,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Before anything asks for a model, and whatever the config says: a
         // cache nothing reads is 300 MB whether transcription is on or not.
         RetiredModels.prune(.modernBERT, in: AppVariant.supportDirectory)
+        // Before the first read and before the file is watched, so the write
+        // is not taken for an edit.
+        let upgraded = ConfigMigration.atLaunch()
         loadConfig(announceErrors: false)
+        if let upgraded { flash(upgraded.message, tone: upgraded.failed ? .caution : .plain) }
         watchConfig()
 
         watchActivation()

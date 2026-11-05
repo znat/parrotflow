@@ -32,10 +32,7 @@ cases = json.load(open(root / "tests/sentence-window-cases.json"))
 
 passed = 0
 for case in cases:
-    command = [binary, "--sentence-probe", "--window"]
-    if case.get("bare"):
-        command.append("--bare")
-    command += [case["left"], case["right"]]
+    command = [binary, "--sentence-probe", "--window", case["left"], case["right"]]
     run = subprocess.run(command, capture_output=True, text=True)
     want = case["want"]
     if want is None:

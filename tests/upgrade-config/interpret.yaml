@@ -1,0 +1,18 @@
+# Invented config from the `interpret:` days.
+transcription:
+  languages: [en, fr]
+  interpret:
+    enabled: true
+    marks: [".", ",", "?"]
+  pipeline:
+    - interpret
+    - stage: interpret
+      capitals: false
+    - transform: grammar
+      when: language == "en"
+
+transforms:
+  - name: grammar
+    description: fix grammar
+    replace:
+      "the": ['teh']

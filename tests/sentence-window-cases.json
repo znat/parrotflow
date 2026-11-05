@@ -112,21 +112,6 @@
   }
  },
  {
-  "why": "a bare capital has three readings: the comma is a marked-boundary reading",
-  "left": "imports name definitions ",
-  "right": "And all the things",
-  "bare": true,
-  "want": {
-   "mark": "",
-   "prefix": "imports name definitions",
-   "readings": [
-    {"key": ".", "continuation": ". And all the things"},
-    {"key": "as-decoded", "continuation": " And all the things"},
-    {"key": "join", "continuation": " and all the things"}
-   ]
-  }
- },
- {
   "why": "nothing on the right is no window",
   "left": "hello there.",
   "right": "   ",

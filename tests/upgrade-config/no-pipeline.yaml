@@ -1,0 +1,5 @@
+# Invented. No pipeline: the old stage ran on its own default.
+transcription:
+  languages: [en]
+  vocabulary:
+    enabled: true

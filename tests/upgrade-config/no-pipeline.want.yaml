@@ -1,0 +1,19 @@
+# Invented. No pipeline: the old stage ran on its own default.
+version: 1
+
+transcription:
+  languages: [en]
+  vocabulary:
+    enabled: true
+  pipeline:
+    - transform: sentence_repair
+
+transforms:
+  # Sentence marks a pause wrote, taken out again. Reads the parse and the
+  # readings and calls no model. See docs/pipelines.md.
+  - name: sentence_repair
+    description: repair sentence boundaries a pause cut
+    command: built-in/sentence_repair/sentence_repair.py
+    returns: json
+    parse: true
+    readings: true

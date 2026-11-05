@@ -200,10 +200,9 @@ enum PipelineCommand {
                         found.append("parser — \(error.localizedDescription)")
                     }
                 }
-                // Only for a pipeline that holds the step. It is 320 MB, and a
-                // fixture without the step has nothing to read them.
-                if pipeline.stages.contains(.sentenceRepair)
-                    || pipeline.stages.contains(.contextSpelling) || config.readsReadings {
+                // Only for a pipeline that reads them. It is 320 MB, and a
+                // fixture that does not has nothing to read them with.
+                if pipeline.stages.contains(.contextSpelling) || config.readsReadings {
                     do { try await SentenceReadings.shared.prepare() } catch {
                         found.append("sentence readings — \(error.localizedDescription)")
                     }

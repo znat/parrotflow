@@ -94,7 +94,8 @@
   "mark": "",
   "word": "Everything",
   "want": "lower",
-  "why": "\"Everything\" after a pause, mid-sentence"
+  "why": "\"Everything\" after a pause, mid-sentence",
+  "cost": true
  },
  {
   "left": "Sorry, yes, we had a one on one yesterday, Henny told me",
@@ -351,7 +352,8 @@
   "mark": "",
   "word": "We",
   "want": "keep",
-  "why": "a real sentence start; join must still lose"
+  "why": "a real sentence start; join must still lose",
+  "cost": true
  },
  {
   "left": "Iterating through the keys of each result before printing them",
@@ -359,6 +361,7 @@
   "mark": "",
   "word": "So",
   "want": "keep",
-  "why": "a real question; join must still lose"
+  "why": "a real question; join must still lose",
+  "cost": true
  }
 ]
