@@ -120,7 +120,7 @@ enum ContextSpellingCommand {
         let language = item.language ?? "en"
         let finding = CFAbsoluteTimeGetCurrent()
         let found = ContextSpelling.capped(ContextSpelling.candidates(
-            in: item.text, screen: screen, voice: Phonemes.voice(for: language),
+            in: item.text, screen: screen, language: language,
             tokens: Tagger.tokens(in: item.text, language: language)))
         let findMs = ((CFAbsoluteTimeGetCurrent() - finding) * 10000).rounded() / 10
         var result = Row(case: index, text: item.text, candidates: found, chosen: [],
