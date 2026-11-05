@@ -1544,7 +1544,9 @@ never waits for the model:
 until it is in memory, the text goes through as dictated. Each rewrite costs one
 model pass, so at most 8 are scored, exact matches first, and scoring stops at 5
 seconds with what it finished. `--context-spelling-test <cases.json>` runs it
-over a case file.
+over a case file, and `scripts/check-context-spelling.sh` scores the invented
+cases in `tests/context-spelling-cases.json`. Both need the sentence model
+already cached.
 
 ## Input: what is already in the field
 
