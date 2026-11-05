@@ -134,22 +134,22 @@ needs() {
 }
 for old in example example-v0 example-v1; do
   check "$old: disfluency gets the vectors its script declares" \
-    "$(needs "$WORK/$old" disfluency)" "returns json (script), parse vectors (script)"
+    "$(needs "$WORK/$old" disfluency)" "returns json (script), parse vectors (script), runner python (script)"
   check "$old: sentence_repair gets what its script declares" \
     "$(needs "$WORK/$old" sentence_repair)" \
-    "returns json (script), parse true (script), readings true (script)"
+    "returns json (script), parse true (script), readings true (script), runner python (script)"
 done
 check "a written parse: vectors stays" \
-  "$(needs "$WORK/vectors-v1" disfluency)" "returns json (script), parse vectors (config)"
+  "$(needs "$WORK/vectors-v1" disfluency)" "returns json (script), parse vectors (config), runner python (script)"
 check "a value the example never shipped stays" \
   "$(needs "$WORK/vectors-v1" sentence_repair)" \
-  "returns json (script), parse true (script), readings false (config)"
+  "returns json (script), parse true (script), readings false (config), runner python (script)"
 check "a built-in script under another name loses the shipped values" \
-  "$(needs "$WORK/user-v1" tidy)" "returns json (script), parse vectors (script)"
+  "$(needs "$WORK/user-v1" tidy)" "returns json (script), parse vectors (script), runner python (script)"
 check "a one-line flow mapping loses the shipped values" \
-  "$(needs "$WORK/flow-v1" disfluency)" "returns json (script), parse vectors (script)"
+  "$(needs "$WORK/flow-v1" disfluency)" "returns json (script), parse vectors (script), runner python (script)"
 check "and so does a prompts: entry" \
-  "$(needs "$WORK/flow-v1" dates)" "returns json (script)"
+  "$(needs "$WORK/flow-v1" dates)" "returns json (script), runner python (script)"
 check "a program of the user's keeps its keys" \
   "$(needs "$WORK/user-v1" mine)" "returns json (config), parse true (config)"
 
