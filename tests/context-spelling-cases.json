@@ -1,0 +1,75 @@
+[
+  {
+    "note": "a term with a digit, said with the digit as a word",
+    "text": "serve one is down again",
+    "context": "deploy status\nserve1 is healthy\nlast check 10:42",
+    "want": "serve1 is down again"
+  },
+  {
+    "note": "the same term, inside a hyphenated host name only",
+    "text": "is serve one up yet",
+    "context": "hosts\nmy-serve1-host\nmy-db-host",
+    "want": "is serve1 up yet"
+  },
+  {
+    "note": "the whole identifier, said with its separators as spaces",
+    "text": "the logs from redcrawl serve one prod look fine",
+    "context": "#deploys\nredcrawl-serve1-prod rolled out at 10:02",
+    "want": "the logs from redcrawl-serve1-prod look fine"
+  },
+  {
+    "note": "a dotted name said with dot",
+    "text": "send the invite to parrotflow dot io",
+    "context": "Docs and downloads are on parrotflow.io now",
+    "want": "send the invite to parrotflow.io"
+  },
+  {
+    "note": "a dotted name said without the dot",
+    "text": "send the invite to parrotflow io",
+    "context": "Docs and downloads are on parrotflow.io now",
+    "want": "send the invite to parrotflow.io"
+  },
+  {
+    "note": "a snake_case identifier said as words",
+    "text": "set max retry count to five",
+    "context": "the job reads max_retry_count from the env",
+    "want": "set max_retry_count to five"
+  },
+  {
+    "note": "French: the digit is said as a French number word",
+    "text": "redémarre serve un ce soir",
+    "context": "état\nserve1 répond\ndernier contrôle 10:42",
+    "language": "fr",
+    "want": "redémarre serve1 ce soir"
+  },
+  {
+    "note": "negative: a two-letter term is never a term",
+    "text": "pick one of them",
+    "context": "release v1 notes are out",
+    "want": "pick one of them"
+  },
+  {
+    "note": "negative: a term with a digit does not take a plain one",
+    "text": "restart one of them",
+    "context": "host1 is down\nhost2 is up",
+    "want": "restart one of them"
+  },
+  {
+    "note": "negative: an ordinary phrase next to a hyphenated name",
+    "text": "check the prod server",
+    "context": "prod-db failover done",
+    "want": "check the prod server"
+  },
+  {
+    "note": "negative: one next to a term with no digit stays a word",
+    "text": "open the redcrawl one",
+    "context": "the redcrawl dashboard is slow",
+    "want": "open the redcrawl one"
+  },
+  {
+    "note": "negative: to is not two here",
+    "text": "we need to serve to more users",
+    "context": "serve2 is up",
+    "want": "we need to serve to more users"
+  }
+]

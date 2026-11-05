@@ -10,7 +10,8 @@ import MLX
 /// the gains and the output agree.
 ///
 /// Each case is scored twice with the model loaded. `score_ms` is the second
-/// call, `first_ms` the first.
+/// call, `first_ms` the first. `candidates_ms` is finding the candidates,
+/// espeak included.
 enum ContextSpellingCommand {
 
     struct Case: Decodable {
@@ -45,11 +46,13 @@ enum ContextSpellingCommand {
         let output: String
         var firstMs: Double?
         var scoreMs: Double?
+        var candidatesMs: Double?
 
         enum CodingKeys: String, CodingKey {
             case `case`, text, candidates, chosen, output
             case firstMs = "first_ms"
             case scoreMs = "score_ms"
+            case candidatesMs = "candidates_ms"
         }
     }
 
@@ -115,11 +118,13 @@ enum ContextSpellingCommand {
                 .compactMap { $0 }.first { !$0.isEmpty } ?? ""
         }
         let language = item.language ?? "en"
+        let finding = CFAbsoluteTimeGetCurrent()
         let found = ContextSpelling.capped(ContextSpelling.candidates(
-            in: item.text, screen: screen, voice: Phonemes.voice(for: language),
+            in: item.text, screen: screen, language: language,
             tokens: Tagger.tokens(in: item.text, language: language)))
+        let findMs = ((CFAbsoluteTimeGetCurrent() - finding) * 10000).rounded() / 10
         var result = Row(case: index, text: item.text, candidates: found, chosen: [],
-                         output: item.text)
+                         output: item.text, candidatesMs: findMs)
         guard !found.isEmpty else { return result }
 
         let prefix = ContextSpelling.prefix(of: ContextSpelling.clean(screen.text))
@@ -146,7 +151,7 @@ enum ContextSpellingCommand {
                 Chosen(span: $0.span, term: $0.term, start: $0.start, end: $0.end, delta: $0.delta)
             },
             output: ContextSpelling.rewrite(item.text, with: chosen),
-            firstMs: times.first, scoreMs: times.last)
+            firstMs: times.first, scoreMs: times.last, candidatesMs: findMs)
         return result
     }
 

@@ -1535,7 +1535,12 @@ know, and Slack's place, people, roster and code — and matches each run of one
 to four dictated words against them, by letters or by sound. The sentence model
 the readings come from then scores the sentence as dictated against each
 rewrite, and a rewrite is kept when it wins by enough: "rewrite line" becomes
-`rewrite_line` when the screen shows it. It reads the screen and the field at
+`rewrite_line` when the screen shows it. A name is said the way people say it:
+a separator as a space, a digit as its number word in the dictation's language,
+and a dot as "dot" ("point" in French) or as nothing. So "serve one" becomes
+`serve1` and "parrotflow dot io" `parrotflow.io`. A name made of parts is also
+matched part by part when a part cannot be English: `redcrawl-serve1-prod`
+offers `serve1` as well as the whole name. It reads the screen and the field at
 every press, whether or not the pipeline names `context` or `input`, and uses
 the text above the caret when there is no screen. Neither read happens in a
 denied app, so there it has nothing to match against and leaves the sentence
@@ -1544,7 +1549,9 @@ never waits for the model:
 until it is in memory, the text goes through as dictated. Each rewrite costs one
 model pass, so at most 8 are scored, exact matches first, and scoring stops at 5
 seconds with what it finished. `--context-spelling-test <cases.json>` runs it
-over a case file.
+over a case file, and `scripts/check-context-spelling.sh` scores the invented
+cases in `tests/context-spelling-cases.json`. Both need the sentence model
+already cached.
 
 ## Input: what is already in the field
 

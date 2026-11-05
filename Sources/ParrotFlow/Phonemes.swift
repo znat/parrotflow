@@ -93,7 +93,7 @@ enum Phonemes {
         var ask: [String] = []
         cacheLock.lock()
         for word in words {
-            let clean = cleaned(word)
+            let clean = cleaned(word, language: voice)
             guard !clean.isEmpty else { continue }
             if let known = cache["\(voice)\u{0}\(clean)"] {
                 answer[word] = known
@@ -112,7 +112,7 @@ enum Phonemes {
             cacheLock.unlock()
             let map = Dictionary(uniqueKeysWithValues: zip(wanted, said))
             for word in words where answer[word] == nil {
-                if let ipa = map[cleaned(word)] { answer[word] = ipa }
+                if let ipa = map[cleaned(word, language: voice)] { answer[word] = ipa }
             }
         }
         return answer
@@ -199,13 +199,45 @@ enum Phonemes {
     }
 
     /// A word espeak can be asked about: letters, apostrophes and single
-    /// spaces. Everything else splits its output — see `run`.
-    static func cleaned(_ word: String) -> String {
-        let kept = word.map { character -> Character in
+    /// spaces. Everything else splits its output — see `run`. Digits are said
+    /// as words first, so `serve1` is asked as "serve one".
+    static func cleaned(_ word: String, language: String) -> String {
+        let kept = digitsSaid(word, language: language).map { character -> Character in
             character.isLetter || character == "'" || character == "\u{2019}"
                 ? character : " "
         }
         return String(kept).split(separator: " ").joined(separator: " ")
+    }
+
+    private static let digitRun = try? NSRegularExpression(pattern: #"\d+"#)
+
+    /// `text` with each run of digits said as words in `language`, as espeak
+    /// reads it: leading zeros one by one, then the whole number. `serve1` is
+    /// "serve one", `v007` "v zero zero seven", `serve1` in French "serve un".
+    /// `language` is any locale identifier: `en`, `en-us`, `fra`.
+    static func digitsSaid(_ text: String, language: String) -> String {
+        guard text.contains(where: \.isNumber), let digitRun else { return text }
+        let speller = NumberFormatter()
+        speller.numberStyle = .spellOut
+        speller.locale = Locale(identifier: language)
+        func said(_ number: Int) -> String {
+            (speller.string(from: NSNumber(value: number)) ?? String(number))
+                .replacingOccurrences(of: "\u{00AD}", with: "")
+                .replacingOccurrences(of: "-", with: " ")
+        }
+        let out = NSMutableString(string: text)
+        let runs = digitRun.matches(in: text, range: NSRange(location: 0, length: out.length))
+        for run in runs.reversed() {
+            let digits = out.substring(with: run.range)
+            let rest = digits.drop { $0 == "0" }
+            var words = Array(repeating: said(0), count: digits.count - rest.count)
+            if !rest.isEmpty {
+                words += Int(rest).map { [said($0)] } ?? rest.compactMap(\.wholeNumberValue).map(said)
+            }
+            out.replaceCharacters(in: run.range, with: " " + words.joined(separator: " ") + " ")
+        }
+        return (out as String).replacingOccurrences(of: " {2,}", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
     }
 
     // MARK: - Comparing

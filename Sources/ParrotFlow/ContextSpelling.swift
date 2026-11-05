@@ -97,7 +97,7 @@ enum ContextSpelling {
             return unchanged
         }
         let found = capped(candidates(
-            in: text, screen: screen, voice: Phonemes.voice(for: language),
+            in: text, screen: screen, language: language,
             tokens: Tagger.tokens(in: text, language: language)
         ))
         guard !found.isEmpty else {
@@ -284,11 +284,13 @@ enum ContextSpelling {
 
     private static let url = try? NSRegularExpression(pattern: #"https?://([^\s<>"'`)]+)"#)
 
-    /// A path is said one segment at a time: `conversationHEALTH` out of
-    /// `github.com/conversationHEALTH/Redcrawl/issues/2507`. Only segments
-    /// that cannot be English on their own.
+    /// A path or a name is said one segment at a time: `conversationHEALTH`
+    /// out of `github.com/conversationHEALTH/Redcrawl/issues/2507`, `serve1`
+    /// out of `redcrawl-serve1-prod`, and a file both whole and in parts. Only
+    /// segments that cannot be English on their own.
     private static func addSegments(of path: String, to found: inout Terms) {
-        for segment in path.split(separator: "/").map(String.init)
+        let parts = path.split(separator: "/") + path.split(whereSeparator: { "/-_.".contains($0) })
+        for segment in parts.map(String.init)
         where norm(segment).count >= 4 && segment.contains(where: \.isLetter)
             && shaped(segment, strippingSigil: false) {
             found.add(segment, .ident)
@@ -319,7 +321,7 @@ enum ContextSpelling {
                norm(stem).count >= 4 {
                 found.add(stem, .ident)
             }
-            if group <= 2, term.contains("/") { addSegments(of: term, to: &found) }
+            if group <= 2 { addSegments(of: term.replacingOccurrences(of: "()", with: ""), to: &found) }
         }
         // The identifier pattern cannot start after `//`, so a URL with a scheme
         // gives no term of its own.
@@ -336,6 +338,7 @@ enum ContextSpelling {
 
     static let edgeTags: Set<String> = [
         "Determiner", "Pronoun", "Preposition", "Conjunction", "Particle", "Interjection", "Adverb",
+        "Number",
     ]
     static let edgeWords: Set<String> = [
         "the", "a", "an", "to", "of", "and", "or", "in", "on", "at", "for", "is", "it", "that",
@@ -351,7 +354,7 @@ enum ContextSpelling {
     private static let leading = Set("\"'(".utf16)
 
     static func candidates(
-        in text: String, screen: Screen, voice: String, tokens: [Tagger.Token]
+        in text: String, screen: Screen, language: String, tokens: [Tagger.Token]
     ) -> [Candidate] {
         let context = clean(screen.text)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !context.isEmpty
@@ -396,6 +399,7 @@ enum ContextSpelling {
         }
 
         var forms: [String: [String]] = [:]
+        var written: [String: [String]] = [:]
         var heard: [String: String] = [:]
         var phrases: [String] = []
         for span in spans where heard[span.text] == nil {
@@ -403,10 +407,14 @@ enum ContextSpelling {
             phrases.append(spokenHeard(span.text))
         }
         for term in terms.order {
-            forms[term] = spoken(term)
-            phrases += spoken(term)
+            let all = spoken(term, language: language)
+            forms[term] = all
+            // Number words stay out of the misheard-word test: "serve to"
+            // took `serve2` there at +2.1, over its -1 floor.
+            written[term] = all.filter { $0.contains(where: \.isNumber) == term.contains(where: \.isNumber) }
+            phrases += all
         }
-        let ipa = sounds(of: phrases, voice: voice)
+        let ipa = sounds(of: phrases, voice: Phonemes.voice(for: language))
 
         func soundsLike(_ span: String, _ term: String) -> Double {
             guard let a = heard[span].flatMap({ ipa[$0] }), !a.isEmpty else { return 0 }
@@ -431,7 +439,7 @@ enum ContextSpelling {
                 let exact = ns == nt
                 let ratio = abs(nt.count - ns.count) <= 3 ? matchRatio(ns, nt) : 0
                 let byLetters = exact || (nt.first != nil && nt.first == ns.first && ratio >= minRatio)
-                let byWord = kind.isCode && oneWordMisheard(span.text, term)
+                let byWord = kind.isCode && oneWordMisheard(span.text, forms: written[term] ?? [])
                 let similar = exact || byWord ? 1 : soundsLike(span.text, term)
                 guard byLetters || byWord || similar >= soundFloor else { continue }
                 if !(exact || byWord), span.n > 1 {
@@ -480,9 +488,9 @@ enum ContextSpelling {
     }
 
     /// All words the same except one small word the recogniser swaps.
-    static func oneWordMisheard(_ span: String, _ term: String) -> Bool {
+    static func oneWordMisheard(_ span: String, forms: [String]) -> Bool {
         let said = runs(of: span.lowercased())
-        for form in spoken(term) {
+        for form in forms {
             let want = runs(of: form.lowercased())
             guard said.count == want.count, said.count >= 2 else { continue }
             let diff = zip(said, want).filter { $0 != $1 }
@@ -563,9 +571,14 @@ enum ContextSpelling {
 
     // MARK: - Sound
 
+    /// The word for `.` in a name, English for a language not listed, as
+    /// `Phonemes.voice` does. A dot is also said as nothing: espeak reads
+    /// `parrotflow.io` with "dot" in English and with nothing in French.
+    static let dotWords = ["en": "dot", "fr": "point"]
+
     /// How an identifier is said: `context_of()` as "context of", a dot said
-    /// as "dot" or not at all.
-    static func spoken(_ term: String) -> [String] {
+    /// as its word or not at all, digits as digits or as number words.
+    static func spoken(_ term: String, language: String) -> [String] {
         var said = term.replacingOccurrences(of: #"\(\)$"#, with: "", options: .regularExpression)
         said = said.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
         said = said.replacingOccurrences(
@@ -575,10 +588,10 @@ enum ContextSpelling {
             text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return Set([
-            squeezed(said.replacingOccurrences(of: ".", with: " dot ")),
-            squeezed(said.replacingOccurrences(of: ".", with: " ")),
-        ]).sorted()
+        let dots = [dotWords[language] ?? "dot", ""].map {
+            squeezed(said.replacingOccurrences(of: ".", with: " \($0) "))
+        }
+        return Set(dots + dots.map { Phonemes.digitsSaid($0, language: language) }).sorted()
     }
 
     static func spokenHeard(_ span: String) -> String {

@@ -332,7 +332,7 @@ enum NeuralPhonemes {
         var answer: [String: String] = [:]
         var added = false
         for word in words {
-            let clean = Phonemes.cleaned(word)
+            let clean = Phonemes.cleaned(word, language: language.rawValue)
             guard !clean.isEmpty else { continue }
             cacheLock.lock()
             let known = cache[table]?[clean]
