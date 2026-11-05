@@ -647,14 +647,7 @@ def read(text, g, language=None):
     return apply_grammar(text, g, guarded=guarded)
 
 
-def main(g):
-    """The whole entry point. A language file is a `Grammar` and this call."""
-    # ParrotFlow sets PARROTFLOW_PROTOCOL=json when the transform declares
-    # `returns: json`, and then stdin is the envelope. Unset is the plain path,
-    # which is what a bare `echo … | en.py` gets.
-    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
-    raw = sys.stdin.read()
-    envelope = json.loads(raw) if structured else {"text": raw}
+def run(g, envelope):
     text = envelope["text"]
     ctx = envelope.get("ctx") or {}
 
@@ -664,7 +657,17 @@ def main(g):
         # Fail open — never drop the whole transcript because a guard threw.
         out, count = text, 0
 
+    return {"text": out, "vars": {"count": count}}
+
+
+def main(g):
+    """The whole entry point. A language file is a `Grammar` and this call."""
+    # ParrotFlow sets PARROTFLOW_PROTOCOL=json when the transform declares
+    # `returns: json`, and then stdin is the envelope. Unset is the plain path,
+    # which is what a bare `echo … | en.py` gets.
+    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
+    raw = sys.stdin.read()
     if not structured:
-        sys.stdout.write(out)
+        sys.stdout.write(run(g, {"text": raw})["text"])
         return
-    print(json.dumps({"text": out, "vars": {"count": count}}))
+    print(json.dumps(run(g, json.loads(raw))))

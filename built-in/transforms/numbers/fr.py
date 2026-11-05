@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# parrotflow: {returns: json}
+# parrotflow: {returns: json, runner: python}
 """French spoken numbers as digits: "deux cents euros" -> 200 euros.
 
 Transcript in, rewrite out — plain text, or the JSON envelope when the app sets
@@ -101,6 +101,10 @@ GRAMMAR = engine.Grammar(
     # the masculine is the form that reads acceptably either way.
     ordinal_suffix=lambda value: "er" if value == 1 else "e",
 )
+
+
+def run(envelope):
+    return engine.run(GRAMMAR, envelope)
 
 
 if __name__ == "__main__":

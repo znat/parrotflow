@@ -47,7 +47,7 @@ def stamp(path):
 
 def inside(module, folder):
     where = getattr(module, "__file__", None)
-    return bool(where) and os.path.dirname(os.path.realpath(where)) == folder
+    return bool(where) and os.path.realpath(where).startswith(folder + os.sep)
 
 
 class Script:
@@ -64,8 +64,9 @@ class Script:
         self.own = {}
         self.module = None
         self.files = {}
+        self.loaded = []
         self.problem = None
-        with self.installed():
+        with self.installed(), self.watching():
             spec = importlib.util.spec_from_file_location(self.name, path)
             module = importlib.util.module_from_spec(spec)
             sys.modules[self.name] = module
@@ -82,6 +83,26 @@ class Script:
 
     def installed(self):
         return _Installed(self)
+
+    def watching(self):
+        """Records the files a script loads by path, as `dates/engine.py` loads
+        `numbers/en.py`, so an edit to one of them imports the script again."""
+        script, original = self, importlib.util.spec_from_file_location
+
+        class Watching:
+            def __enter__(self):
+                def recorded(name, location=None, *args, **kwargs):
+                    if location is not None:
+                        script.loaded.append(os.fspath(location))
+                    return original(name, location, *args, **kwargs)
+                importlib.util.spec_from_file_location = recorded
+
+            def __exit__(self, *_):
+                importlib.util.spec_from_file_location = original
+                script.files.update({path: stamp(path) for path in script.loaded})
+                return False
+
+        return Watching()
 
     def changed(self):
         return any(stamp(path) != seen for path, seen in self.files.items())
@@ -111,8 +132,8 @@ class _Installed:
             sys.modules.pop(name, None)
         sys.modules.update(self.shadowed)
         sys.path[:] = self.path
-        s.files = {path: stamp(path) for path in
-                   [s.path] + [m.__file__ for m in s.own.values()]}
+        s.files.update({path: stamp(path) for path in
+                        [s.path] + [m.__file__ for m in s.own.values()]})
         return False
 
 
@@ -135,17 +156,22 @@ def script(path):
 
 
 def call(request):
-    found = script(request["script"])
-    if found.problem:
-        return {"fallback": found.problem}
     os.environ.clear()
     os.environ.update(request["env"])
     sys.argv = [request["script"]] + list(request["argv"])
-    os.chdir(request["cwd"])
+    try:
+        os.chdir(request["cwd"])
+    except OSError as error:
+        return {"error": described(error)}
+    found = script(request["script"])
+    if found.problem:
+        return {"fallback": found.problem}
     with found.installed():
         try:
             result = found.module.run(request["envelope"])
         except SystemExit as stop:
+            if isinstance(stop.code, str):
+                return {"error": stop.code}
             return {"error": "exited %s" % (stop.code if stop.code is not None else 0)}
         except Exception as error:
             return {"error": described(error)}

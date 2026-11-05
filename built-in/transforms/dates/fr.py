@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# parrotflow: {returns: json}
+# parrotflow: {returns: json, runner: python}
 """Dates et heures dictées, écrites comme elles ont été dites.
 
 "dix heures quinze" -> "10h15". "le trois décembre" -> "le 3 décembre".
@@ -269,6 +269,10 @@ RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler i
      rf"(?<![\dh]){HOUR}(?:\s+{TAIL})?{PERIOD}?",
      heure),
 ]]
+
+
+def run(envelope):
+    return engine.run(sys.modules[__name__], envelope)
 
 
 if __name__ == "__main__":

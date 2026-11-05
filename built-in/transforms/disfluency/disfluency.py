@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# parrotflow: {returns: json, parse: vectors}
+# parrotflow: {returns: json, parse: vectors, runner: python}
 """What the speaker did not mean to say, taken out. Transcript on stdin,
 rewrite on stdout.
 
@@ -1030,28 +1030,30 @@ def clean(text, language="en", parse=None, tally=None):
     return out, applied, declined
 
 
-def main():
-    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
-    raw = sys.stdin.read()
-    payload = json.loads(raw) if structured else {"text": raw}
-
+def run(payload):
     tally = {}
     out, applied, declined = clean(
         payload["text"], (payload.get("ctx") or {}).get("language", "en"),
         payload.get("parse"), tally)
-
-    if not structured:
-        sys.stdout.write(out)
-        if declined:
-            sys.stderr.write(declined + "\n")
-        return 0
-    print(json.dumps({
+    return {
         "text": out,
         # Deduplicated: three of the same fault name it once.
         "vars": {"applied": ", ".join(dict.fromkeys(applied)),
                  "edits": len(applied),
                  "declined": declined, **tally},
-    }))
+    }
+
+
+def main():
+    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
+    raw = sys.stdin.read()
+    if structured:
+        print(json.dumps(run(json.loads(raw))))
+        return 0
+    result = run({"text": raw})
+    sys.stdout.write(result["text"])
+    if result["vars"]["declined"]:
+        sys.stderr.write(result["vars"]["declined"] + "\n")
     return 0
 
 

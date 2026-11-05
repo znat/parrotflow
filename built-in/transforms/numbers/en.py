@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# parrotflow: {returns: json}
+# parrotflow: {returns: json, runner: python}
 """English spoken numbers as digits: "two hundred forty-three" -> 243.
 
 Transcript in, rewrite out — plain text, or the JSON envelope when the app sets
@@ -82,6 +82,10 @@ GRAMMAR = engine.Grammar(
     decimal_separator=".",
     ordinal_suffix=suffix,
 )
+
+
+def run(envelope):
+    return engine.run(GRAMMAR, envelope)
 
 
 if __name__ == "__main__":

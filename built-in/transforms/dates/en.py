@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# parrotflow: {returns: json}
+# parrotflow: {returns: json, runner: python}
 """English dates and clock times, written the way they were said.
 
 "at ten fifteen" -> "at 10:15". "March third twenty twenty-six" -> "March 3,
@@ -276,6 +276,10 @@ RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler i
      rf"(?P<mer>{MERIDIEM})",
      hour_meridiem),
 ]]
+
+
+def run(envelope):
+    return engine.run(sys.modules[__name__], envelope)
 
 
 if __name__ == "__main__":

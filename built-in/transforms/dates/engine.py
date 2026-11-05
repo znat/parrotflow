@@ -220,18 +220,9 @@ def rewrite(text, rules, applied=None):
     return text
 
 
-def main(module):
-    """The entry point every language file ends with."""
+def run(module, envelope):
     global WALL_CLOCK
-    if "--no-wall-clock" in sys.argv[1:]:
-        WALL_CLOCK = False
-
-    # ParrotFlow sets PARROTFLOW_PROTOCOL=json when the transform declares
-    # `returns: json`, and then stdin is the envelope. Unset is the plain path,
-    # which is what a bare `echo … | en.py` gets.
-    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
-    raw = sys.stdin.read()
-    envelope = json.loads(raw) if structured else {"text": raw}
+    WALL_CLOCK = "--no-wall-clock" not in sys.argv[1:]
     text = envelope["text"]
 
     applied = []
@@ -242,13 +233,23 @@ def main(module):
         out = text
         applied.clear()
 
-    if not structured:
-        sys.stdout.write(out)
-        return
-    print(json.dumps({
+    return {
         "text": out,
         # Deduplicated: two times in one sentence name the rule once.
         "vars": {"count": len(applied),
                  "applied": ", ".join(dict.fromkeys(applied)),
                  "language": (envelope.get("ctx") or {}).get("language") or ""},
-    }))
+    }
+
+
+def main(module):
+    """The entry point every language file ends with."""
+    # ParrotFlow sets PARROTFLOW_PROTOCOL=json when the transform declares
+    # `returns: json`, and then stdin is the envelope. Unset is the plain path,
+    # which is what a bare `echo … | en.py` gets.
+    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
+    raw = sys.stdin.read()
+    if not structured:
+        sys.stdout.write(run(module, {"text": raw})["text"])
+        return
+    print(json.dumps(run(module, json.loads(raw))))
