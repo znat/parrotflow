@@ -6,8 +6,6 @@ rewrite on stdout.
     - name: disfluency
       description: delete hesitations, repeats and false starts
       command: disfluency.py
-      returns: json
-      parse: true
 
 Four rules, in this order:
 

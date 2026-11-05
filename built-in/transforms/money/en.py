@@ -9,7 +9,6 @@ the rules that fired.
     - name: money_en
       description: dictated amounts of money with the currency symbol
       command: built-in/money/en.py
-      returns: json
       tests: built-in/money/cases-en.yaml
 
     pipeline:

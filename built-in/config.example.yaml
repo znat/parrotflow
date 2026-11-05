@@ -318,7 +318,7 @@ transforms:
     command: built-in/sentence_repair/sentence_repair.py
 
   # Repeats, false starts, a discourse marker that carries nothing, and the
-  # cuts the parse proposes. ~0.04s for the first four rules, mostly the
+  # cuts the parse proposes. ~0.04s for the string rules, mostly the
   # python3 start.
   #
   # The marker rule wants a dependency parse, because "you know" is a real verb

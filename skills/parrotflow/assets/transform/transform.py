@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json}
 """A ParrotFlow transform: the text comes in on stdin, the rewrite goes out on stdout.
 
 Copy this folder to <config dir>/transforms/<name>/, rename this file to
@@ -7,7 +8,6 @@ Copy this folder to <config dir>/transforms/<name>/, rename this file to
   - name: <name>
     description: <what someone would ask for>
     command: <name>.py
-    returns: json
 
 Then score it with: ParrotFlow --eval <name>
 

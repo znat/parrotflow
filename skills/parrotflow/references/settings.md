@@ -148,7 +148,7 @@ given `--greedy`; the menu's "Check for Updates" is the usual way.
 ## Config version
 
 ```yaml
-version: 1
+version: 2
 ```
 
 The first key says which upgrade the file was written for. A file without it
@@ -163,7 +163,7 @@ read as it is.
 Preview with `"$PF" --upgrade-config`: it prints a diff and writes nothing.
 `"$PF" --upgrade-config --write` makes the change, after the same backup. A
 second run says "Nothing to upgrade". When `--check-config` prints
-`· version 0 — 1 upgrade(s) pending`, tell the user the app does this at its
+`· version 1 — 1 upgrade(s) pending`, tell the user the app does this at its
 next launch, or run `--upgrade-config --write` with their OK.
 
 ## Retired keys
