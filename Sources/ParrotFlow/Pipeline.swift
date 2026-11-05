@@ -672,6 +672,7 @@ struct Pipeline: Equatable, Codable {
             scope.set("lists.\(name)", value)
         }
 
+        let parses = ParseCache()
         for step in steps {
             let named = step.transform.map { "\(step.stage.name) \($0)" } ?? step.stage.name
             let namespace = Pipeline.namespace(of: step)
@@ -708,7 +709,7 @@ struct Pipeline: Equatable, Codable {
             // `nests`, so the sub-steps a stage opens are filed under it.
             let span = Trace.current?.open(named, kind: .stage, nests: true)
             let result = await apply(
-                step, to: output, config: config, app: app, scope: scope
+                step, to: output, config: config, app: app, scope: scope, parses: parses
             )
             let seconds = CFAbsoluteTimeGetCurrent() - started
             span?.close(Trace.changeSummary(from: before, to: result.text))
@@ -756,7 +757,7 @@ struct Pipeline: Equatable, Codable {
     }
 
     private func apply(
-        _ step: Step, to text: String, config: Config, app: App?, scope: Scope
+        _ step: Step, to text: String, config: Config, app: App?, scope: Scope, parses: ParseCache
     ) async -> StageResult {
         switch step.stage {
         case .context:
@@ -769,7 +770,7 @@ struct Pipeline: Equatable, Codable {
         case .contextSpelling:
             return await ContextSpelling.apply(to: text, scope: scope)
         case .transform:
-            return await runTransform(step, on: text, config: config, scope: scope)
+            return await runTransform(step, on: text, config: config, scope: scope, parses: parses)
         }
     }
 
@@ -1283,7 +1284,7 @@ struct Pipeline: Equatable, Codable {
     /// every other way this stage declines — the name may be a typo, and
     /// `--check-config` is where that gets said.
     private func runTransform(
-        _ step: Step, on text: String, config: Config, scope: Scope
+        _ step: Step, on text: String, config: Config, scope: Scope, parses: ParseCache
     ) async -> StageResult {
         guard let name = step.transform else {
             Log.write("pipeline: a transform stage names no transform; skipped")
@@ -1321,8 +1322,8 @@ struct Pipeline: Equatable, Codable {
             if transform.parse != .off, transform.returnsJSON, #available(macOS 14, *) {
                 var language = ""
                 if case .string(let value)? = scope["language"] { language = value }
-                parse = await SyrinxParser.field(for: text, language: language, stage: name,
-                                                 vectors: transform.parse == .vectors)
+                parse = await parses.field(for: text, language: language, stage: name,
+                                           vectors: transform.parse == .vectors)
             }
             var readings: ReadingsField?
             if transform.readings, transform.returnsJSON, #available(macOS 14, *) {
@@ -1336,7 +1337,7 @@ struct Pipeline: Equatable, Codable {
                 command, on: text, in: transform.folder, seconds: transform.timeout,
                 structured: transform.returnsJSON,
                 context: transform.returnsJSON ? CommandRunner.Context(scope: scope) : nil,
-                parse: parse, readings: readings
+                parse: parse, readings: readings, runner: transform.runner
             )
             guard let result = outcome else {
                 return StageResult(text: text, vars: ["ok": .bool(false)])

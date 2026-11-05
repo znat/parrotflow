@@ -354,6 +354,59 @@ The config entry then needs only `name:`, `description:` and `command:`.
   and `--check-config` names it. So does a line that asks for `parse:` or
   `readings:` without `returns: json`.
 
+### Run it warm
+
+A Python script started per step pays for the interpreter and its imports on
+every dictation: 35 to 70 ms per step, and several hundred ms right after
+launch. `runner: python` runs it in one Python process the app keeps warm
+instead. The script exposes `run(envelope)`, which returns the dict it would
+print, and keeps `main()` so it still runs by hand:
+
+```python
+#!/usr/bin/env python3
+# parrotflow: {returns: json, runner: python}
+import json, os, sys
+
+def run(envelope):
+    return {"text": envelope["text"].upper()}
+
+def main():
+    raw = sys.stdin.read()
+    if os.environ.get("PARROTFLOW_PROTOCOL") == "json":
+        print(json.dumps(run(json.loads(raw))))
+    else:
+        sys.stdout.write(run({"text": raw})["text"])
+
+if __name__ == "__main__":
+    main()
+```
+
+- **It needs `returns: json`** and a first line of `#!/usr/bin/env python3`.
+  The worker is the interpreter that line finds. A script with another
+  interpreter, or whose arguments need the shell (quotes, `$`, `|`, globs),
+  runs as a process, and the log says why once.
+- **Module-level state now lives across dictations.** The script is imported
+  once. A constant, a compiled pattern or a table read at import is fine. A
+  global that one call changes and the next reads is not. Read anything that
+  changes per call, such as `sys.argv`, `os.environ` or a file the user edits,
+  inside `run`.
+- **Each call gets its own environment, `sys.argv` and working directory,**
+  the ones a process would get. `sys.exit()` fails the step and leaves the
+  worker running. A `print()` goes to the app's log, not into the answer.
+- **An edit takes effect at the next call.** The worker imports the script
+  again when its file changes, or a module it imported from its own folder, or
+  a file it loaded by path. A data file it read at import is read once: read it
+  in `run`, or edit the script too.
+- **A raise or `sys.exit()` in `run` fails the step,** as a crash would as a
+  process: the text is kept and `ok` is false. It is not run again.
+- **The rest falls back to a process.** A script the worker cannot import, one
+  without `run`, a call past the timeout, or a worker that died: that step runs
+  as a process, as it would without the key. After a timeout or a death the
+  worker is killed and started again. A script that hangs either way so costs
+  two timeouts, 4 s by default, before the text goes on.
+- **`runner: process` in the config entry turns it off** for one transform.
+  `PARROTFLOW_PYTHON_WORKER=off` in the environment turns it off for all.
+
 ### The parse
 
 `parse: true` beside `returns: json` adds the syrinx parse of `text` to the

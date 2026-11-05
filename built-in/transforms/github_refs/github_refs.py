@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json, runner: python}
 """Spoken PR and issue numbers as links, in English and French.
 
     PR 412                        -> [#412](.../pull/412)
@@ -23,6 +24,8 @@ number is not a reference ("2 issues 3 days ago").
 when you say "P R one two three". Measured, and it is the most common
 spelling of the lot.
 """
+import json
+import os
 import re
 import sys
 
@@ -149,11 +152,22 @@ def linker(repo):
     return replace
 
 
-def main():
+def repository():
     if len(sys.argv) < 2 or not sys.argv[1].strip():
         sys.exit("github_refs: pass the repository URL, e.g. "
                  "github_refs.py https://github.com/OWNER/REPO")
-    repo = sys.argv[1].strip().rstrip("/")
+    return sys.argv[1].strip().rstrip("/")
+
+
+def run(envelope):
+    return {"text": SPOKEN.sub(linker(repository()), envelope["text"])}
+
+
+def main():
+    repo = repository()
+    if os.environ.get("PARROTFLOW_PROTOCOL") == "json":
+        print(json.dumps(run(json.loads(sys.stdin.read()))))
+        return
     sys.stdout.write(SPOKEN.sub(linker(repo), sys.stdin.read()))
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# parrotflow: {returns: json}
+# parrotflow: {returns: json, runner: python}
 """Fit a dictated sentence to the text it is landing in. Envelope on stdin.
 
     - name: join
@@ -389,14 +389,17 @@ def join(text, before, after, tag=None, protected=None):
 def main():
     raw = sys.stdin.read()
     try:
-        envelope = json.loads(raw)
-        text = envelope["text"]
+        result = run(json.loads(raw))
     except (json.JSONDecodeError, KeyError, TypeError):
         # A bare command protocol, or something unreadable. Fail open: the
         # transcript is worth more than the formatting.
         sys.stdout.write(raw)
         return
+    print(json.dumps(result))
 
+
+def run(envelope):
+    text = envelope["text"]
     # One guard over the whole decision, not one over half of it. Every branch
     # below is formatting, and none of it is worth a lost transcript.
     try:
@@ -414,7 +417,7 @@ def main():
             out, applied = join(text, before, after, tag, protected)
     except Exception:
         out, applied = text, []
-    print(json.dumps({"text": out, "vars": reported(applied)}))
+    return {"text": out, "vars": reported(applied)}
 
 
 def reported(applied):

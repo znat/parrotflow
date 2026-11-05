@@ -95,6 +95,7 @@ enum PipelineCommand {
         path: String, text: String?, quiet: Bool = false, app: String? = nil,
         allowPrompts: Bool = true, showVars: Bool = false, warm: Bool = false
     ) -> Int32 {
+        WordVectors.warmsInBackground = false
         let named = (app ?? "").trimmingCharacters(in: .whitespaces)
         let front = named.isEmpty ? nil : Pipeline.App(name: named, bundleID: "")
         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)

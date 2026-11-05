@@ -482,6 +482,9 @@ enum CheckConfigCommand {
         if written.readings != nil || (json && declared.readings != nil) {
             keys.append("readings \(transform.readings) (\(from(written.readings != nil)))")
         }
+        if written.runner != nil || (json && declared.runner != nil) {
+            keys.append("runner \(transform.runner.rawValue) (\(from(written.runner != nil)))")
+        }
         return keys.isEmpty ? nil : keys.joined(separator: ", ")
     }
 

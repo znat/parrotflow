@@ -912,7 +912,7 @@ struct Config: Decodable, Equatable {
 
         enum CodingKeys: String, CodingKey, CaseIterable {
             case name, description, display, confirm, prompt, content, replace, command
-            case tests, returns, offer, model, say, done, failed, parse, readings
+            case tests, returns, offer, model, say, done, failed, parse, readings, runner
             case offerKey = "key"
             case timeout = "timeout_seconds"
         }
@@ -1067,6 +1067,10 @@ struct Config: Decodable, Equatable {
             if written.readings == true, !json {
                 unreadable = unreadable
                     ?? "has `readings: true`, which only a `command:` with `returns: json` can read"
+            }
+            if written.runner == .python, !json {
+                unreadable = unreadable
+                    ?? "has `runner: python`, which only a `command:` with `returns: json` can use"
             }
         }
 
@@ -1260,7 +1264,7 @@ struct Config: Decodable, Equatable {
         /// when a transform is run over your selection — a pipeline stage runs
         /// on a transcript nobody has seen yet, so there is nothing to confirm.
         var confirm: Bool = true
-        /// `returns:`, `parse:` and `readings:` as the config entry wrote
+        /// `returns:`, `parse:`, `readings:` and `runner:` as the config entry wrote
         /// them. A key written here wins over the script's line.
         var written = Needs()
         /// The same keys from the script's `parrotflow:` line, read at load.
@@ -1289,6 +1293,11 @@ struct Config: Decodable, Equatable {
         /// Qwen's readings of each sentence boundary in the envelope. Only on
         /// a `returns: json` command.
         var readings: Bool { written.readings ?? (returnsJSON ? declared.readings : nil) ?? false }
+        /// `python`: the warm worker runs the script's `run(envelope)`. See
+        /// `PythonRunner`. Only on a `returns: json` command.
+        var runner: Needs.Runner {
+            returnsJSON ? written.runner ?? declared.runner ?? .process : .process
+        }
         /// Whether this gets a chip on the pill after a dictation, next to
         /// Correct.
         ///

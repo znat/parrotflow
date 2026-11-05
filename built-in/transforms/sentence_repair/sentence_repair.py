@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# parrotflow: {returns: json, parse: true, readings: true}
+# parrotflow: {returns: json, parse: true, readings: true, runner: python}
 """Sentence marks a pause wrote, taken out again.
 
     - name: sentence_repair
@@ -277,27 +277,31 @@ def repair(text, envelope):
     return (*applied(text, edits), "; ".join(declined))
 
 
-def main():
-    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
-    raw = sys.stdin.read()
-    envelope = json.loads(raw) if structured else {"text": raw}
+def run(envelope):
     text = envelope["text"]
     try:
         out, edits, declined = repair(text, envelope)
     except Exception as error:
         out, edits, declined = text, [], "failed: %s" % (str(error) or type(error).__name__)
-    if not structured:
-        sys.stdout.write(out)
-        if declined:
-            sys.stderr.write(declined + "\n")
-        return 0
     rules = [edit.rule for edit in edits]
-    print(json.dumps({
+    return {
         "text": out,
         "vars": {"count": rules.count("join"), "periods": rules.count("period"),
                  "capitals": rules.count("capital"),
                  "declined": declined},
-    }))
+    }
+
+
+def main():
+    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
+    raw = sys.stdin.read()
+    if structured:
+        print(json.dumps(run(json.loads(raw))))
+        return 0
+    result = run({"text": raw})
+    sys.stdout.write(result["text"])
+    if result["vars"]["declined"]:
+        sys.stderr.write(result["vars"]["declined"] + "\n")
     return 0
 
 

@@ -107,14 +107,7 @@ def declines(code, language, _text):
     return bool(language) and language != code
 
 
-def main(module):
-    """The entry point every language file ends with."""
-    # ParrotFlow sets PARROTFLOW_PROTOCOL=json when the transform declares
-    # `returns: json`, and then stdin is the envelope. Unset is the plain path,
-    # which is what a bare `echo … | en.py` gets.
-    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
-    raw = sys.stdin.read()
-    envelope = json.loads(raw) if structured else {"text": raw}
+def run(module, envelope):
     text = envelope["text"]
     language = (envelope.get("ctx") or {}).get("language") or ""
 
@@ -129,13 +122,23 @@ def main(module):
         out = text
         applied.clear()
 
-    if not structured:
-        sys.stdout.write(out)
-        return
-    print(json.dumps({
+    return {
         "text": out,
         # Deduplicated: two amounts in one sentence name the rule once.
         "vars": {"count": len(applied),
                  "applied": ", ".join(dict.fromkeys(applied)),
                  "language": language},
-    }))
+    }
+
+
+def main(module):
+    """The entry point every language file ends with."""
+    # ParrotFlow sets PARROTFLOW_PROTOCOL=json when the transform declares
+    # `returns: json`, and then stdin is the envelope. Unset is the plain path,
+    # which is what a bare `echo … | en.py` gets.
+    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
+    raw = sys.stdin.read()
+    if not structured:
+        sys.stdout.write(run(module, {"text": raw})["text"])
+        return
+    print(json.dumps(run(module, json.loads(raw))))

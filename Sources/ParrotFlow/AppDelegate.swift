@@ -567,6 +567,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // is not taken for an edit.
         let upgraded = ConfigMigration.atLaunch()
         loadConfig(announceErrors: false)
+        PythonRunner.shared.start(preloading: PythonRunner.scripts(in: config))
         if let upgraded { flash(upgraded.message, tone: upgraded.failed ? .caution : .plain) }
         watchConfig()
 
@@ -696,6 +697,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if recorder.isRecording { _ = recorder.stop(config: config) }
         keepWarmTimer?.invalidate()
         hotKeys.unregister()
+        PythonRunner.shared.stop()
     }
 
     // MARK: - Config
@@ -942,6 +944,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyConfig() {
+        PythonRunner.shared.update(preloading: PythonRunner.scripts(in: config))
         // A press waiting on the microphone dialog belongs to the gesture that
         // started it, and a reload can change what that gesture means: a hold
         // becomes a toggle, or the other way round. Neither answer is right

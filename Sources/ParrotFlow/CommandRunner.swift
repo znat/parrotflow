@@ -138,7 +138,7 @@ enum CommandRunner {
     /// contributes variables and a script that only rewrites text are both
     /// ordinary — and `text: null` is how the first one says so without echoing
     /// a string it never looked at.
-    private struct Reply: Decodable {
+    struct Reply: Decodable {
         var text: String?
         var vars: [String: Scope.Value] = [:]
 
@@ -182,11 +182,11 @@ enum CommandRunner {
     static func run(
         _ command: String, on text: String, in folder: TransformFolder?,
         seconds: TimeInterval?, structured: Bool, context: Context?, parse: ParseField? = nil,
-        readings: ReadingsField? = nil
+        readings: ReadingsField? = nil, runner: Config.Transform.Needs.Runner = .process
     ) -> Output? {
         try? attempt(
             command, on: text, in: folder, seconds: seconds, structured: structured,
-            context: context, parse: parse, readings: readings
+            context: context, parse: parse, readings: readings, runner: runner
         ).get()
     }
 
@@ -202,13 +202,22 @@ enum CommandRunner {
     static func attempt(
         _ command: String, on text: String, in folder: TransformFolder?,
         seconds: TimeInterval?, structured: Bool, context: Context?, parse: ParseField? = nil,
-        readings: ReadingsField? = nil
+        readings: ReadingsField? = nil, runner: Config.Transform.Needs.Runner = .process
     ) -> Result<Output, Failure> {
         let timeout = seconds ?? Self.timeout
         let folder = folder ?? TransformFolder(configDirectory: ConfigStore.directory, name: "")
         if let complaint = complaint(about: command, in: folder) {
             Log.write("command: \(complaint); kept the transcript")
             return .failure(Failure(complaint: ""))
+        }
+        let payload = payload(
+            for: command, text: text, structured: structured, context: context, parse: parse,
+            readings: readings)
+        let environment = environment(structured: structured)
+        if runner == .python, structured,
+           case .answered(let answer) = PythonRunner.shared.run(
+               command, in: folder, envelope: payload, environment: environment, seconds: timeout) {
+            return answer
         }
 
         let process = Process()
@@ -222,21 +231,7 @@ enum CommandRunner {
         // The folder, so a script opens `roster.json` as a bare relative path
         // and the whole transform is one directory you can copy.
         process.currentDirectoryURL = folder.workingDirectory
-        if structured {
-            // So `returns: json` stays the only place the protocol is declared.
-            // The script has to know too — it is reading stdin — and the
-            // alternative was a flag in the `command:` line that means the same
-            // thing as the key above it and can disagree with it.
-            //
-            // It also keeps a script runnable by hand. `echo "text" | ./x.py`
-            // has no variable set, so the script takes the old path, which is
-            // what every harness in scripts/ does and what anybody debugging one
-            // will type.
-            var environment = ProcessInfo.processInfo.environment
-            environment["PARROTFLOW_PROTOCOL"] = "json"
-            process.environment = environment
-        }
-        applyInterpreterPath(to: process)
+        process.environment = environment
 
         let input = Pipe()
         let output = Pipe()
@@ -275,33 +270,6 @@ enum CommandRunner {
             return .failure(Failure(complaint: ""))
         }
 
-        // The transcript on its own, or the transcript wrapped in what the
-        // pipeline knows about it. An encoding failure falls back to the bare
-        // text rather than to nothing: a script that then cannot parse its input
-        // fails in its own way and the transcript survives, which is a better
-        // outcome than this returning nil for a reason nobody can see.
-        var payload = Data(text.utf8)
-        if structured, let context {
-            let encoder = JSONEncoder()
-            // The language the pipeline settled on, not one detected again
-            // here. Two sources for one field is how they disagree.
-            let language: String? = {
-                if case .string(let value)? = context.scope["language"] { return value }
-                return nil
-            }()
-            let snapshot = Trace.current?.snapshot()
-            let envelope = Envelope(
-                text: text, ctx: context,
-                tokens: Tagger.tokens(in: text, language: language),
-                trace: snapshot,
-                aligned: snapshot?.decodedText == text,
-                parse: parse, readings: readings)
-            if let encoded = try? encoder.encode(envelope) {
-                payload = encoded
-            } else {
-                Log.write("command: \"\(command)\" could not be given its context; sent bare text")
-            }
-        }
         // Off this thread, for the reason the stdout handler above is. The
         // envelope now carries the trace, which holds every word the decoder
         // produced with its timings, so a long dictation puts it past the 64 KB
@@ -350,8 +318,12 @@ enum CommandRunner {
         guard !result.isEmpty else { return .failure(Failure(complaint: "")) }
 
         guard structured else { return .success(Output(text: result)) }
+        return reply(Data(result.utf8), from: command)
+    }
 
-        guard let reply = try? JSONDecoder().decode(Reply.self, from: Data(result.utf8)) else {
+    /// A `returns: json` answer on stdout.
+    private static func reply(_ printed: Data, from command: String) -> Result<Output, Failure> {
+        guard let reply = try? JSONDecoder().decode(Reply.self, from: printed) else {
             // Loud, and then harmless. A transform that declared `returns: json`
             // and printed something else is a script bug rather than a config
             // one, so it cannot be caught by `--check-config` and has to be
@@ -360,11 +332,60 @@ enum CommandRunner {
             // `print()` somebody left in.
             Log.write(
                 "command: \"\(command)\" declares returns: json but printed"
-                + " \(result.prefix(120)); kept the transcript"
+                + " \(String(decoding: printed.prefix(120), as: UTF8.self)); kept the transcript"
             )
             return .failure(Failure(complaint: ""))
         }
         return .success(Output(text: reply.text, vars: reply.vars))
+    }
+
+    /// The transcript on its own, or the transcript wrapped in what the
+    /// pipeline knows about it. An encoding failure falls back to the bare
+    /// text rather than to nothing: a script that then cannot parse its input
+    /// fails in its own way and the transcript survives, which is a better
+    /// outcome than this returning nil for a reason nobody can see.
+    private static func payload(
+        for command: String, text: String, structured: Bool, context: Context?,
+        parse: ParseField?, readings: ReadingsField?
+    ) -> Data {
+        guard structured, let context else { return Data(text.utf8) }
+        // The language the pipeline settled on, not one detected again
+        // here. Two sources for one field is how they disagree.
+        let language: String? = {
+            if case .string(let value)? = context.scope["language"] { return value }
+            return nil
+        }()
+        let snapshot = Trace.current?.snapshot()
+        let envelope = Envelope(
+            text: text, ctx: context,
+            tokens: Tagger.tokens(in: text, language: language),
+            trace: snapshot,
+            aligned: snapshot?.decodedText == text,
+            parse: parse, readings: readings)
+        guard let encoded = try? JSONEncoder().encode(envelope) else {
+            Log.write("command: \"\(command)\" could not be given its context; sent bare text")
+            return Data(text.utf8)
+        }
+        return encoded
+    }
+
+    /// What a command's process is given, and what the worker sets per call.
+    ///
+    /// `PARROTFLOW_PROTOCOL=json` so `returns: json` stays the only place the
+    /// protocol is declared. It also keeps a script runnable by hand: `echo
+    /// "text" | ./x.py` has no variable set, so the script takes the old path.
+    /// The real interpreter goes first on PATH, so `#!/usr/bin/env python3`
+    /// finds it rather than a version manager's shim.
+    static func environment(structured: Bool) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        if structured { environment["PARROTFLOW_PROTOCOL"] = "json" }
+        if let directory = realInterpreterDirectory() {
+            let existing = environment["PATH"] ?? ""
+            if !existing.hasPrefix(directory + ":"), existing != directory {
+                environment["PATH"] = existing.isEmpty ? directory : directory + ":" + existing
+            }
+        }
+        return environment
     }
 
     /// SIGTERM, then SIGKILL if that was not enough.
@@ -480,7 +501,7 @@ enum CommandRunner {
     nonisolated(unsafe) private static var interpreterPath: String??
 
     /// The `python3` a `command:` transform actually runs under.
-    private static func transformInterpreter() -> String? {
+    static func transformInterpreter() -> String? {
         // Held across the probe on purpose. A second caller waits for the
         // answer instead of starting a second probe, and the wait is bounded
         // by the deadline in it. It happens once per run of the app.
@@ -556,21 +577,6 @@ enum CommandRunner {
         guard !path.isEmpty, FileManager.default.isExecutableFile(atPath: path) else { return nil }
         Log.write("command: python3 resolves to \(path)")
         return path
-    }
-
-    /// Put the real interpreter ahead of the shim for one subprocess.
-    ///
-    /// PATH rather than rewriting the command: the scripts say
-    /// `#!/usr/bin/env python3`, which is what makes them runnable by hand and
-    /// portable to a machine with a different layout. Changing what `env` finds
-    /// keeps both.
-    private static func applyInterpreterPath(to process: Process) {
-        guard let directory = realInterpreterDirectory() else { return }
-        var environment = process.environment ?? ProcessInfo.processInfo.environment
-        let existing = environment["PATH"] ?? ""
-        guard !existing.hasPrefix(directory + ":"), existing != directory else { return }
-        environment["PATH"] = existing.isEmpty ? directory : directory + ":" + existing
-        process.environment = environment
     }
 
     /// A path the shell will read as one word, whatever is in it.

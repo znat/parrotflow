@@ -284,6 +284,12 @@ so a case file states the setup it assumes instead of inheriting this machine's.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
 
+A `runner: python` step runs in the warm Python worker here too, as in the
+app. `--pipeline` and `--eval` start it at the first such step, and it ends
+with the command, so the output is the same as the app's. `PARROTFLOW_PYTHON_WORKER=off`
+runs every step as a process, which is how to compare the two. See
+[authoring.md](authoring.md#run-it-warm).
+
 ```
 $ $PF --pipeline tests/pipelines/vars-shipped.yaml \
       "a python function called max retries" --vars
@@ -1238,6 +1244,7 @@ scripts/check-invented-tail.sh     # the endings the decoder wrote over silence
 scripts/check-sentence-join.sh     # which sentence marks sentence_repair removes (needs the models)
 scripts/check-bare-capital.sh      # which mid-sentence capitals sentence_repair lowercases (needs the parser)
 scripts/check-upgrade-config.sh    # what --upgrade-config writes, against tests/upgrade-config/
+scripts/check-python-runner.sh     # the warm Python worker: a raise, a hang, a kill, an edit
 scripts/check-selector.sh          # where an open place lands, and what an answer writes
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal

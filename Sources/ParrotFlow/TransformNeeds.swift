@@ -2,12 +2,14 @@ import Foundation
 import Yams
 
 extension Config.Transform {
-    /// `returns:`, `parse:` and `readings:` as one place wrote them: a config
-    /// entry, or a script's `parrotflow:` line. Nil is a key not written there.
+    /// `returns:`, `parse:`, `readings:` and `runner:` as one place wrote
+    /// them: a config entry, or a script's `parrotflow:` line. Nil is a key
+    /// not written there.
     struct Needs: Equatable {
         var returnsJSON: Bool?
         var parse: Parse?
         var readings: Bool?
+        var runner: Runner?
 
         enum Parse: Int, Comparable {
             case off, tree, vectors
@@ -17,11 +19,15 @@ extension Config.Transform {
             var spelled: String { ["false", "true", "vectors"][rawValue] }
         }
 
+        enum Runner: String {
+            case process, python
+        }
+
         struct Refused: Error {
             let why: String
         }
 
-        static let keys = ["returns", "parse", "readings"]
+        static let keys = ["returns", "parse", "readings", "runner"]
 
         /// Each key written here, as the config spells its value.
         var spelled: [String: String] {
@@ -29,6 +35,7 @@ extension Config.Transform {
             if let returnsJSON { out["returns"] = returnsJSON ? "json" : "text" }
             if let parse { out["parse"] = parse.spelled }
             if let readings { out["readings"] = String(readings) }
+            if let runner { out["runner"] = runner.rawValue }
             return out
         }
 
@@ -69,11 +76,14 @@ extension Config.Transform {
                 throw Refused(why: "is not a mapping like `{returns: json, parse: true}`")
             }
             if let unknown = mapping.keys.compactMap(\.string).first(where: { !keys.contains($0) }) {
-                throw Refused(why: "names `\(unknown)`, which is not returns, parse or readings")
+                throw Refused(why: "names `\(unknown)`, which is not returns, parse, readings or runner")
             }
             let needs = try YAMLDecoder().decode(Needs.self, from: node)
             if needs.returnsJSON != true, (needs.parse ?? .off) != .off || needs.readings == true {
                 throw Refused(why: "asks for the parse or the readings without `returns: json`")
+            }
+            if needs.returnsJSON != true, needs.runner == .python {
+                throw Refused(why: "asks for `runner: python` without `returns: json`")
             }
             return needs
         }
@@ -82,7 +92,7 @@ extension Config.Transform {
 
 extension Config.Transform.Needs: Decodable {
     private enum CodingKeys: String, CodingKey {
-        case returns, parse, readings
+        case returns, parse, readings, runner
     }
 
     init(from decoder: Decoder) throws {
@@ -112,6 +122,12 @@ extension Config.Transform.Needs: Decodable {
                 throw Refused(why: "has `readings: \(raw)`, which is not true or false")
             }
             readings = word == "true"
+        }
+        if let (raw, word) = written(.runner) {
+            guard let value = Runner(rawValue: word) else {
+                throw Refused(why: "has `runner: \(raw)`, which is not python or process")
+            }
+            runner = value
         }
     }
 }

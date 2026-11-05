@@ -89,9 +89,13 @@ actor WordVectors {
     /// with the pill on screen, which reads as the app having hung.
     var isLoaded: Bool { loaded != nil }
 
+    /// Off in a one-shot command. It exits before a load could be used, and
+    /// MLX traps when the process exits under a load still running.
+    nonisolated(unsafe) static var warmsInBackground = true
+
     /// Starts the load if nothing is doing it, and returns at once.
     func warm() {
-        guard loaded == nil, loading == nil else { return }
+        guard Self.warmsInBackground, loaded == nil, loading == nil else { return }
         Task { [weak self] in
             do { try await self?.prepare() } catch {
                 Log.write("word vectors: \(error.localizedDescription);"

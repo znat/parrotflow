@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# parrotflow: {returns: json}
+# parrotflow: {returns: json, runner: python}
 """Sommes d'argent dictées, écrites avec le symbole.
 
 "cinq euros" -> "5 €". "25 euros 50" -> "25,50 €". Transcript
@@ -135,6 +135,10 @@ RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler i
      rf"\b(?P<n>{AMOUNT})\s+{OF}(?P<cur>{CUR})\b",
      somme),
 ]]
+
+
+def run(envelope):
+    return engine.run(sys.modules[__name__], envelope)
 
 
 if __name__ == "__main__":

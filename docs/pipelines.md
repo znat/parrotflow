@@ -762,6 +762,20 @@ key written in the config entry wins over the script's line, and with neither
 the defaults apply. `--check-config` prints each value and where it came from.
 See [authoring.md](authoring.md#declare-it-in-the-script).
 
+#### `runner: python`
+
+The built-in Python scripts also declare `runner: python`. They then run in one
+Python process the app starts at launch and stops at quit,
+`built-in/runner/worker.py`, instead of a process per step. Each step sends the
+same envelope over a pipe and gets the same answer back. A step the worker
+cannot answer runs as a process. A script that hangs in both costs two
+timeouts, 4 s by default, where it cost one before. See [authoring.md](authoring.md#run-it-warm) for how a script of your
+own opts in, and the rule on module-level state.
+
+Two steps on the same text and language within one dictation share one parse.
+A `parse: true` step after a `parse: vectors` step gets that parse without the
+vectors. The other order parses twice, since the first parse has no vectors.
+
 #### `parse: true` and `parse: vectors`
 
 A `returns: json` command can ask for the syrinx parse of its text:
