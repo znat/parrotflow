@@ -1,0 +1,14 @@
+# A script whose first lines declare `returns: json`, run as it declares and
+# then with the config writing `returns: text` over it.
+languages: [en]
+transforms:
+  - name: declared
+    description: a script that declares its protocol
+    command: declared.sh
+  - name: overridden
+    description: the same script, with the config asking for text
+    command: declared/declared.sh
+    returns: text
+pipeline:
+  - transform: declared
+  - transform: overridden

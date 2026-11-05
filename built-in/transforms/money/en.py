@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json}
 """English amounts of money, written with the symbol.
 
 "twenty dollars" -> "$20". "twenty five euros fifty" -> "€25.50". Transcript

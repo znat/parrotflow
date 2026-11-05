@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json}
 """English dates and clock times, written the way they were said.
 
 "at ten fifteen" -> "at 10:15". "March third twenty twenty-six" -> "March 3,

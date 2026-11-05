@@ -239,6 +239,51 @@ YAML
 run_config vectors
 check "parse: false or empty on a text command, parse: Vectors and a quoted true pass the check" "$code,$(warnings)" "0,0"
 
+# --- a script declares what its envelope needs -----------------------------------
+
+mkdir -p "$WORK/declares/transforms/tidy" "$WORK/declares/transforms/node" "$WORK/declares/transforms/bad"
+printf '#!/bin/sh\n# parrotflow: {returns: json, parse: vectors}\ncat\n' \
+  > "$WORK/declares/transforms/tidy/tidy.sh"
+printf '#!/usr/bin/env node\n// parrotflow: {returns: json}\n' > "$WORK/declares/transforms/node/node.js"
+chmod +x "$WORK/declares/transforms/tidy/tidy.sh" "$WORK/declares/transforms/node/node.js"
+cat > "$WORK/declares/config.yaml" <<'YAML'
+transforms:
+  - name: tidy
+    description: a script that declares the parse and its vectors
+    command: tidy.sh
+  - name: node
+    description: a script whose line is a // comment
+    command: node.js
+  - name: less
+    description: the config asks for less than the script declares
+    command: tidy/tidy.sh
+    parse: true
+  - name: plain
+    description: the config turns the protocol off
+    command: tidy/tidy.sh
+    returns: text
+YAML
+run_config declares
+check "scripts that declare their needs pass the check" "$code,$(warnings)" "0,0"
+check "and --check-config says where each value came from" \
+  "$(printf '%s\n' "$out" | grep -cx ' *returns json (script), parse vectors (script)'),$(printf '%s\n' "$out" | grep -cx ' *returns json (script)'),$(printf '%s\n' "$out" | grep -cx ' *returns json (script), parse true (config)'),$(printf '%s\n' "$out" | grep -cx ' *returns text (config)')" "1,1,1,1"
+check "and says when the config asks for less" \
+  "$(printf '%s\n' "$out" | grep -c '"less" writes `parse: true` and its script declares `parse: vectors`'),$(printf '%s\n' "$out" | grep -c '"plain" writes `returns: text` and its script declares `returns: json`')" "1,1"
+
+for line in '{returns: json, parse: words}' '{retruns: json}' 'returns=json' '{parse: true}'; do
+  printf '#!/bin/sh\n# parrotflow: %s\ncat\n' "$line" > "$WORK/declares/transforms/bad/bad.sh"
+  chmod +x "$WORK/declares/transforms/bad/bad.sh"
+  cat > "$WORK/declares/config.yaml" <<'YAML'
+transforms:
+  - name: bad
+    description: a script whose line cannot be read
+    command: bad.sh
+YAML
+  run_config declares
+  check "a script with \`# parrotflow: $line\` fails the check, named" \
+    "$code,$(printf '%s\n' "$out" | grep -c '✗ transforms: "bad" has a script whose `parrotflow:` line')" "1,1"
+done
+
 # --- readings: true only on a returns: json command -----------------------------
 
 mkdir -p "$WORK/readings"

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json, parse: vectors}
 """What the speaker did not mean to say, taken out. Transcript on stdin,
 rewrite on stdout.
 

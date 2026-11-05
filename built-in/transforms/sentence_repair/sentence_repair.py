@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json, parse: true, readings: true}
 """Sentence marks a pause wrote, taken out again.
 
     - name: sentence_repair

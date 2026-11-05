@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json}
 """Sommes d'argent dictées, écrites avec le symbole.
 
 "cinq euros" -> "5 €". "25 euros 50" -> "25,50 €". Transcript

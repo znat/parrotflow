@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json}
 """Fit a dictated sentence to the text it is landing in. Envelope on stdin.
 
     - name: join

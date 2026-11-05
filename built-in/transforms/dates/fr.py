@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# parrotflow: {returns: json}
 """Dates et heures dictées, écrites comme elles ont été dites.
 
 "dix heures quinze" -> "10h15". "le trois décembre" -> "le 3 décembre".
