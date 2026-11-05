@@ -179,7 +179,7 @@ after the same backup. See [cli.md](cli.md#--upgrade-config).
 
 | Version | What the upgrade changes |
 |---|---|
-| 1 | Sentence repair becomes the `sentence_repair` transform. The `transcription.sentence_repair:` block goes, or `transcription.interpret:`, with its comment paragraph and its commented option lines. So does every step that names either, written `- sentence_repair`, `- stage: sentence_repair` or `- {stage: sentence_repair, …}`. The transform is added to `transforms:` if it is missing, and `- transform: sentence_repair` becomes the first step of `pipeline:`, unless the list already has it. A config with no `pipeline:` gets one with this one step. A block that said `enabled: false` still gets the step: delete the line to turn it off. See [pipelines.md](pipelines.md#sentence-marks-a-pause-put-there). |
+| 1 | Sentence repair becomes the `sentence_repair` transform. The `transcription.sentence_repair:` block goes, or `transcription.interpret:`, with its comment paragraph and its commented option lines. So does every step that names either, written `- sentence_repair`, `- stage: sentence_repair` or `- {stage: sentence_repair, …}`. The transform is added to `transforms:` if it is missing, and `- transform: sentence_repair` becomes the first step of `pipeline:`, unless the list already has it. A config with no `pipeline:` gets one with this one step. A block that said `enabled: false` still gets the step: delete the line to turn it off. Two comments the shipped config carried about the old order are reworded, where they still read as shipped. See [pipelines.md](pipelines.md#sentence-marks-a-pause-put-there). |
 
 ## Where things live
 
