@@ -111,8 +111,9 @@ enum ConfigMigration {
         let plan = try plan(text, directory: url.deletingLastPathComponent())
         guard plan.changes else { return nil }
         let backup = backupURL(for: url, version: plan.from)
-        try FileManager.default.copyItem(at: url, to: backup)
-        try plan.after.write(to: url, atomically: true, encoding: .utf8)
+        try Data(text.utf8).write(to: backup, options: .withoutOverwriting)
+        // Through a symlink, so a config kept elsewhere stays linked.
+        try plan.after.write(to: url.resolvingSymlinksInPath(), atomically: true, encoding: .utf8)
         return Written(plan: plan, backup: backup)
     }
 
@@ -271,7 +272,7 @@ enum ConfigMigration {
             out = removingStageSteps(from: out)
             out = definingTransform(in: out)
             out = listingStep(in: out)
-            return out
+            return reworded(out, comments: staleComments)
         },
         holds: { config in
             config.transform(named: "sentence_repair") != nil
@@ -282,6 +283,37 @@ enum ConfigMigration {
                 && !config.transcription.unknownStages.contains { ["sentence_repair", "interpret"].contains($0) }
         }
     )
+
+    /// Comments the shipped config carried about the stage, and what the
+    /// shipped config says now. Replaced only where every line still reads as
+    /// shipped.
+    static let staleComments: [([String], [String])] = [
+        ([
+            "  # Not a pipeline step either: it is handed spans measured on the transcript",
+            "  # as the decoder wrote it, and any edit above it moves them. It runs second,",
+            "  # after `sentence_repair` and before everything below.",
+        ], [
+            "  # Not a pipeline step: it is handed spans measured on the transcript as the",
+            "  # decoder wrote it, and any edit above it moves them. It runs first, before",
+            "  # everything below.",
+        ]),
+        ([
+            "  # parse and the readings and calls no model. It steps aside while the",
+            "  # `sentence_repair` block is on. See docs/pipelines.md.",
+        ], [
+            "  # parse and the readings and calls no model. See docs/pipelines.md.",
+        ]),
+    ]
+
+    static func reworded(_ lines: [String], comments: [([String], [String])]) -> [String] {
+        var out = lines
+        for (old, new) in comments {
+            guard let at = out.indices.first(where: { Array(out[$0...].prefix(old.count)) == old })
+            else { continue }
+            out.replaceSubrange(at..<(at + old.count), with: new)
+        }
+        return out
+    }
 
     static let definition = [
         "# Sentence marks a pause wrote, taken out again. Reads the parse and the",

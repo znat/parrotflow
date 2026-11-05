@@ -90,6 +90,19 @@ check "it says an upgrade is pending" "$(printf '%s\n' "$out" | grep -c 'version
 check "the retired block names the command" \
   "$(printf '%s\n' "$out" | grep -c '✗ transcription.sentence_repair no longer does anything — it is the `sentence_repair` transform now.*--upgrade-config --write')" "1"
 
+# A config kept elsewhere and linked in stays linked, and its backup holds
+# the old text rather than another link.
+mkdir -p "$WORK/linked" "$WORK/elsewhere"
+cp "$CASES/block-enabled.yaml" "$WORK/elsewhere/config.yaml"
+ln -s "$WORK/elsewhere/config.yaml" "$WORK/linked/config.yaml"
+pf "$WORK/linked" --upgrade-config --write >/dev/null
+check "a linked config is still a link" "$([ -L "$WORK/linked/config.yaml" ] && echo link)" "link"
+check "and the file it points at is upgraded" \
+  "$(cmp -s "$CASES/block-enabled.want.yaml" "$WORK/elsewhere/config.yaml" && echo same)" "same"
+backups=("$WORK/linked"/config.yaml.bak-*)
+check "and its backup is the old text, not a link" \
+  "$([ ! -L "${backups[0]}" ] && cmp -s "$CASES/block-enabled.yaml" "${backups[0]}" && echo old)" "old"
+
 mkdir -p "$WORK/example"
 cp "$ROOT/built-in/config.example.yaml" "$WORK/example/config.yaml"
 check "the upgraded old example runs the shipped example's pipeline" \
