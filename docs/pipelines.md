@@ -313,8 +313,8 @@ when it is joined to a capitalised `PROPN` at most two words away as
 (after a joined mark, not when the parse calls it a function word: that is the
 article `A`), when it has a capital after its first letter (PR, iOS), when it is `I` or
 starts with `I'`, when it is a nationality word in the dictated language, or
-when the `vocabulary` stage wrote it. A doubled full stop `..` is written as
-one. The rules are the same in every language; only the nationality list
+when the `vocabulary` stage wrote it. A mark before a line break stays. A
+doubled full stop `..` is written as one. The rules are the same in every language; only the nationality list
 differs, and French's is empty.
 
 **It never runs twice.** If the `sentence_repair` stage ran on the text, the

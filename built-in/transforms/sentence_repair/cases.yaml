@@ -68,6 +68,8 @@ cases:
     input: "we can try it on. A smaller model first and then the big one"
     expect: "we can try it on a smaller model first and then the big one"
   - probe: join
+    input: "you should see a parrot.\nAt the top right of your screen."
+  - probe: join
     input: "I will ask him. Nathan knows the answer."
   - probe: join
     input: "we finished the migration. The tests are all green now."

@@ -182,7 +182,8 @@ def periods(text, abbreviations):
 def joins(text, readings, words, facts):
     """Each boundary Qwen reads best with no mark: the mark goes, and with it
     the space French sets before `?`. The next word is re-cased by the
-    capitals rule. None when the readings are not of this text."""
+    capitals rule. A line break keeps its mark. None when the readings are not
+    of this text."""
     at = characters(text)
     starts = {word.start: i for i, word in enumerate(words)}
     edits = []
@@ -194,7 +195,7 @@ def joins(text, readings, words, facts):
         mark, word = at[boundary["at"]], at[boundary["word_at"]]
         if text[mark] != boundary["mark"] or not text[word].isupper():
             return None
-        if word not in starts:
+        if word not in starts or "\n" in text[mark:word]:
             continue
         end = mark + 1
         while end < word and text[end] == text[mark]:
