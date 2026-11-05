@@ -103,6 +103,16 @@ backups=("$WORK/linked"/config.yaml.bak-*)
 check "and its backup is the old text, not a link" \
   "$([ ! -L "${backups[0]}" ] && cmp -s "$CASES/block-enabled.yaml" "${backups[0]}" && echo old)" "old"
 
+# A config can hold keys: the upgraded file and its backup keep its mode.
+mkdir -p "$WORK/private"
+cp "$CASES/block-enabled.yaml" "$WORK/private/config.yaml"
+chmod 600 "$WORK/private/config.yaml"
+pf "$WORK/private" --upgrade-config --write >/dev/null
+backups=("$WORK/private"/config.yaml.bak-*)
+check "a 0600 config stays 0600, and so is its backup" \
+  "$(stat -f '%Lp' "$WORK/private/config.yaml") $(stat -f '%Lp' "${backups[0]}")" "600 600"
+check "and no temporary file is left" "$(ls -A "$WORK/private" | grep -c upgrade)" "0"
+
 mkdir -p "$WORK/example"
 cp "$ROOT/built-in/config.example.yaml" "$WORK/example/config.yaml"
 check "the upgraded old example runs the shipped example's pipeline" \

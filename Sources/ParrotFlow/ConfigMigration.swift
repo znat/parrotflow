@@ -110,11 +110,40 @@ enum ConfigMigration {
         let text = try String(contentsOf: url, encoding: .utf8)
         let plan = try plan(text, directory: url.deletingLastPathComponent())
         guard plan.changes else { return nil }
-        let backup = backupURL(for: url, version: plan.from)
-        try Data(text.utf8).write(to: backup, options: .withoutOverwriting)
         // Through a symlink, so a config kept elsewhere stays linked.
-        try plan.after.write(to: url.resolvingSymlinksInPath(), atomically: true, encoding: .utf8)
+        let target = url.resolvingSymlinksInPath()
+        // A config can hold keys. Both files keep its mode, from the moment
+        // they exist.
+        let mode = (try FileManager.default.attributesOfItem(atPath: target.path)[.posixPermissions]
+            as? NSNumber)?.uint16Value ?? 0o600
+        let backup = backupURL(for: url, version: plan.from)
+        try create(backup, holding: Data(text.utf8), mode: mode)
+        let temporary = target.deletingLastPathComponent()
+            .appendingPathComponent(".\(target.lastPathComponent).upgrade-\(getpid())")
+        try create(temporary, holding: Data(plan.after.utf8), mode: mode)
+        guard rename(temporary.path, target.path) == 0 else {
+            let failure = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            unlink(temporary.path)
+            throw failure
+        }
         return Written(plan: plan, backup: backup)
+    }
+
+    /// A new file, refused if the path exists, created with `mode`.
+    static func create(_ url: URL, holding data: Data, mode: UInt16) throws {
+        let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL, mode_t(mode & 0o777))
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        do {
+            guard fchmod(fd, mode_t(mode & 0o777)) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            try handle.write(contentsOf: data)
+            try handle.synchronize()
+        } catch {
+            unlink(url.path)
+            throw error
+        }
     }
 
     /// Never over an earlier backup: a second upgrade on the same day, after a
