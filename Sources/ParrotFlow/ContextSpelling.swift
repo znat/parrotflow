@@ -284,11 +284,13 @@ enum ContextSpelling {
 
     private static let url = try? NSRegularExpression(pattern: #"https?://([^\s<>"'`)]+)"#)
 
-    /// A path is said one segment at a time: `conversationHEALTH` out of
-    /// `github.com/conversationHEALTH/Redcrawl/issues/2507`. Only segments
-    /// that cannot be English on their own.
+    /// A path or a name is said one segment at a time: `conversationHEALTH`
+    /// out of `github.com/conversationHEALTH/Redcrawl/issues/2507`, `serve1`
+    /// out of `redcrawl-serve1-prod`, and a file both whole and in parts. Only
+    /// segments that cannot be English on their own.
     private static func addSegments(of path: String, to found: inout Terms) {
-        for segment in path.split(separator: "/").map(String.init)
+        let parts = path.split(separator: "/") + path.split(whereSeparator: { "/-_.".contains($0) })
+        for segment in parts.map(String.init)
         where norm(segment).count >= 4 && segment.contains(where: \.isLetter)
             && shaped(segment, strippingSigil: false) {
             found.add(segment, .ident)
@@ -319,7 +321,7 @@ enum ContextSpelling {
                norm(stem).count >= 4 {
                 found.add(stem, .ident)
             }
-            if group <= 2, term.contains("/") { addSegments(of: term, to: &found) }
+            if group <= 2 { addSegments(of: term.replacingOccurrences(of: "()", with: ""), to: &found) }
         }
         // The identifier pattern cannot start after `//`, so a URL with a scheme
         // gives no term of its own.
