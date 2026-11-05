@@ -1,0 +1,21 @@
+# Invented. A config that already asked for the vectors, and a readings value
+# the example never shipped. Both are the person's and stay.
+version: 1
+transcription:
+  pipeline:
+    - transform: sentence_repair
+    - transform: disfluency
+
+transforms:
+  - name: sentence_repair
+    description: repair sentence boundaries a pause cut
+    command: built-in/sentence_repair/sentence_repair.py
+    returns: json
+    parse: true
+    readings: false
+
+  - name: disfluency
+    description: delete hesitations, repeats and false starts
+    command: built-in/disfluency/disfluency.py
+    returns: json
+    parse: vectors

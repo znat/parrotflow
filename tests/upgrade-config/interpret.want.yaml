@@ -1,5 +1,5 @@
 # Invented config from the `interpret:` days.
-version: 1
+version: 2
 
 transcription:
   languages: [en, fr]
@@ -19,6 +19,3 @@ transforms:
   - name: sentence_repair
     description: repair sentence boundaries a pause cut
     command: built-in/sentence_repair/sentence_repair.py
-    returns: json
-    parse: true
-    readings: true

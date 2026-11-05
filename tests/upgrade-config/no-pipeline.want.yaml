@@ -1,5 +1,5 @@
 # Invented. No pipeline: the old stage ran on its own default.
-version: 1
+version: 2
 
 transcription:
   languages: [en]
@@ -14,6 +14,3 @@ transforms:
   - name: sentence_repair
     description: repair sentence boundaries a pause cut
     command: built-in/sentence_repair/sentence_repair.py
-    returns: json
-    parse: true
-    readings: true

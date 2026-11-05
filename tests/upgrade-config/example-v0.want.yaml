@@ -7,7 +7,7 @@
 # in docs/configuration.md. Validate with the binary, not by reading:
 #   /Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --check-config
 
-version: 1
+version: 2
 
 hotkey:
   # A bare modifier (right_option, right_command, right_control, fn, ...) or
@@ -266,7 +266,6 @@ transforms:
   - name: dates_en
     description: dictated dates and clock times as digits
     command: built-in/dates/en.py
-    returns: json
     tests: built-in/dates/cases-en.yaml
 
   # Spoken numbers as digits, one script per language. Runs after dates, on
@@ -274,7 +273,6 @@ transforms:
   - name: numbers_en
     description: spoken numbers as digits
     command: built-in/numbers/en.py
-    returns: json
     tests: { path: built-in/numbers/cases-en.yaml }
 
   # Amounts of money with the currency symbol, one script per language. Runs
@@ -284,7 +282,6 @@ transforms:
   - name: money_en
     description: dictated amounts of money with the currency symbol
     command: built-in/money/en.py
-    returns: json
     tests: built-in/money/cases-en.yaml
 
   # Hesitation sounds. A `replace:` rule, so it costs no process at all — the
@@ -329,9 +326,6 @@ transforms:
   - name: sentence_repair
     description: repair sentence boundaries a pause cut
     command: built-in/sentence_repair/sentence_repair.py
-    returns: json
-    parse: true
-    readings: true
 
   - name: disfluency
     description: delete hesitations, repeats and false starts
@@ -340,8 +334,6 @@ transforms:
     # catch-all instead of this — which the rename broke, 25/26.
     say: [repetitions, hesitations, false starts]
     command: built-in/disfluency/disfluency.py
-    returns: json
-    parse: true
     tests: { path: built-in/disfluency/cases.yaml }
 
   # Opens the last dictation's timeline in a text editor: every step, every
