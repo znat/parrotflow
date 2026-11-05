@@ -25,6 +25,7 @@ apply the `slack` transform only in Slack:
 ```yaml
 transcription:
   pipeline:
+    - transform: sentence_repair
     - transform: dates_en
     - transform: numbers_en
     - transform: disfluency
@@ -35,9 +36,9 @@ transcription:
 This is an excerpt, not the complete default pipeline. Keep your other steps
 when adding or reordering transforms.
 
-`sentence_repair` and `vocabulary` are not in this list. They read the
-decoder's own output, so they cannot be ordered — each has a settings block and
-runs before the list. See [The two fixed passes](#the-two-fixed-passes).
+`vocabulary` and `context_spelling` are not in this list. `vocabulary` reads the
+decoder's own output, so it runs before the list. `context_spelling` runs after
+it. Each has a settings block. See [The fixed passes](#the-fixed-passes).
 
 There is one pipeline, and it runs whatever the language. A step that should
 only run in one language says so on the line it affects:
@@ -49,20 +50,19 @@ only run in one language says so on the line it affects:
 
 Being in the pipeline is the only way a *stage* runs, which is why a new
 install is written with them spelled out: turning one off means deleting a line
-you can see, not finding a setting you cannot. Delete `pipeline:` entirely and
-you get every stage back — a missing section is silence, not a choice. Write
-`pipeline: []` and you get none, which is a choice.
+you can see, not finding a setting you cannot. With no `pipeline:` at all, or
+with `pipeline: []`, no step runs.
 
-The two fixed passes are the exception, and they are not in this list at all.
-`pipeline: []` still runs them; their own blocks turn them off. See [The two
-fixed passes](#the-two-fixed-passes).
+The fixed passes are the exception, and they are not in this list at all.
+They run with no `pipeline:` and with `pipeline: []`; their own blocks turn
+them off. See [The fixed passes](#the-fixed-passes).
 
 `pipelines:`, the map keyed by language, is retired. Nothing under it is read.
 `--check-config` exits non-zero and says to write one `pipeline:` list, and the
 app says the same at launch, in the log and in the menu bar. Until you rewrite
-it none of your steps run — the built-in default does, which is `sentence_repair`
-and nothing else. Move the lists into `pipeline:` and put
-`when: language == "fr"` on the steps that only belong to one language.
+it none of your steps run, only the fixed passes. Move the lists into
+`pipeline:` and put `when: language == "fr"` on the steps that only belong to
+one language.
 
 It was three stages until the shapes were counted: `replacements` wrote the
 exact matches, `fuzzy` caught the near ones, `vocabulary` judged them, and the
@@ -70,29 +70,29 @@ order they had to run in was enforced by hand because the three were never
 independent. They are one stage, and the order is no longer something a config
 can get wrong.
 
-## The two fixed passes
+## The fixed passes
 
-`sentence_repair` and `vocabulary` are not in `pipeline:`. Each has a settings block
-under `transcription:`, each runs at a fixed point, and `enabled: false` is the
-only way to turn one off.
+`vocabulary` and `context_spelling` are not in `pipeline:`. Each has a settings
+block under `transcription:`, each runs at a fixed point, and `enabled: false`
+is the only way to turn one off.
 
 | Pass | What it does | Why it cannot move |
 |---|---|---|
-| `sentence_repair` | What you meant, where the decoder wrote what it heard. Today that is the marks a pause put in mid-sentence, taken out again — see [The sentence_repair pass](#the-sentence_repair-pass). English only. | It reads the decoder's own words and their timings. A rewrite above it moves a word and the pause gate lines up against the wrong token. |
 | `vocabulary` | Names. Matches every `heard:` rendering in `vocabulary.yaml`, reaches the near misses you have not taught, then settles each match against the sentence it stands in — see [The name stage](#the-name-stage). | It is handed spans measured on the transcript as the decoder wrote it. Any edit above it moves them (F10). |
+| `context_spelling` | Spells a dictated word the way the screen writes it. See [Spelling a word the way the screen does](#spelling-a-word-the-way-the-screen-does). | It runs after every listed step, on the text they leave. |
 
 ```yaml
 transcription:
-  sentence_repair:
-    enabled: true
   vocabulary:
     enabled: true
+  context_spelling:
+    enabled: true
 ```
 
-Both run before the list, `sentence_repair` first:
+`vocabulary` runs before the list and `context_spelling` after it:
 
 ```
-asr → vad → sentence_repair → vocabulary → pipeline
+asr → vad → vocabulary → pipeline → context_spelling
 ```
 
 Both still publish into the scope, as `asr` and `vad` already do without being
@@ -102,13 +102,19 @@ stages. `when: vocabulary.count > 0` on a transform goes on working, and
 **The rule.** A pipeline stage rewrites text and may go anywhere. A pass that
 reads the decoder's output is fixed and takes a settings block.
 
-A config that still writes `- interpret` or `- vocabulary` in its list keeps
-working. The line is read as "on" and nothing else: the pass runs at the head
-whatever position it was written in, its options are carried into the block,
-and `--check-config` says the line can go. `interpret` is what
-`sentence_repair` was called, and that spelling is still read too. `when:`, `unless:` and `app:` on
-those two lines are dropped — there is no longer a step for a condition to sit
-on.
+A config that still writes `- vocabulary` in its list keeps working. The line
+is read as "on" and nothing else: the pass runs at the head whatever position
+it was written in, its options are carried into the block, and `--check-config`
+says the line can go. `when:`, `unless:` and `app:` on that line are dropped.
+There is no longer a step for a condition to sit on.
+
+`sentence_repair` used to be a fixed pass too, with a
+`transcription.sentence_repair:` block. It is a transform now, the first step
+of the shipped pipeline. See [Sentence marks a pause put
+there](#sentence-marks-a-pause-put-there). A config that still has the block,
+or a `- sentence_repair` or `- interpret` line, fails `--check-config`. The app
+upgrades such a config at launch. See
+[configuration.md](configuration.md#version-and-the-upgrade-at-launch).
 
 ## The stages
 
@@ -200,9 +206,8 @@ each `engine.py`.
 
 The app copies `built-in/transforms/` into
 `~/.config/parrotflow/transforms/built-in/` on every launch. Not all of it is
-in the default pipeline: `email`, `join`, `priorities`, `parse`,
-`sentence_repair` and `substitutions` are there with their case files and no
-step.
+in the default pipeline: `email`, `join`, `priorities`, `parse` and
+`substitutions` are there with their case files and no step.
 
 The default pipeline holds what is free and needs nothing running. A prompt
 transform costs about a second and does nothing without Ollama.
@@ -213,99 +218,41 @@ the first four decided that a word you said was code, and the words they acted
 on — *dot*, *dash*, *point*, *question mark* — are words people also just say.
 They are in git history if you want one back.
 
-## The sentence_repair pass
-
-`sentence_repair` reads what the transcript says against what the speaker
-meant. It is not called `repunctuate` because punctuation is only the first
-thing it does: the misheard-word and disfluency passes belong here too, and
-they will be further switches in this same block.
-
-```yaml
-transcription:
-  sentence_repair:
-    enabled: true
-```
+## Sentence marks a pause put there
 
 A pause mid-sentence makes the transcriber write a period or a question mark
-and capitalise the next word, so one sentence becomes two. This stage reads
-every such boundary three ways — the mark that is there, a comma, and no mark
-at all — and writes the reading a small language model scores highest. There is
-no threshold. Where the joined reading wins, the mark is removed and the next
-word is lowercased. See
-[transcription.md](transcription.md#sentences-a-pause-cut-in-two) for what that
-repairs and what it costs.
-
-With anything to say about it, spell the stage out:
-
-```yaml
-- stage: sentence_repair
-  marks: [".", ",", "?"]   # optional; default. What a boundary can be written with
-  capitals: true           # optional; default. false reads marks only
-  pause: 1.0               # optional; default. Seconds of silence before a bare capital
-```
-
-`marks:` is one list doing two jobs. The sentence enders in it — `.` and `?` —
-are **where a boundary is looked for**. Everything else — the comma — is a
-**reading tried at a boundary**. Take `?` out and question marks stop being
-scanned. Each entry is one punctuation character and at least one must end a
-sentence; anything else is refused by name.
-
-`capitals:` covers the fourth shape: a capitalised word with no mark in front
-of it at all, which is about a third as common as `word. Capital`. Half of
-those capitals are correct, so the stage refuses a run of capitals, a capital
-inside the word and every part of speech but the ones that open a clause.
-`capitals: false` scans the marks and nothing else.
-
-`pause:` is the silence a bare capital needs in front of it before it is read.
-A latency cut, not a safety one: the readings answer those boundaries the same
-way with or without it, and a capital with no pause in front of it is rarely
-the shape this repairs. `pause: 0` reads every one.
-
-**English only, and it says so itself.** The readings are scored by an English
-base model and the mark set is English, so the stage refuses every other
-language. `when: language == "en"` on the step would only restate that.
-
-**Put it first.** The pause gate lines the transcript up against the decoder's
-token timings, so a stage above it that rewrites a word breaks the alignment.
-When that happens the gate stands down for that dictation, the log says so, and
-the readings still run. It is the one stage allowed above `vocabulary`: it
-removes a mark rather than rewriting a word, and it ran above the whole
-pipeline before it was a step.
-
-**Nothing waits for the model, and nothing is downloaded for it here.** 320 MB,
-fetched in the background when the pipeline holds this step and never
-otherwise. A dictation that arrives before the weights are in memory keeps its
-boundaries, and the step still publishes `ran: true` with `changed: false` —
-the failure direction every stage here shares.
-
-It publishes `sentence_repair.count`: how many boundaries were joined.
-
-Delete the line to turn the step off. A pipeline without it does not read
-boundaries at all, and nothing is downloaded for it.
-
-### `sentence_repair.py`, the same repair as a transform
-
-`built-in/transforms/sentence_repair/` does this repair as a pipeline step. It
-runs after `vocabulary`, so it sees the names that stage wrote. It reads the
-syrinx parse and Qwen's readings from its envelope and calls no model itself.
-It ships unwired. To try it, turn the stage off and make it the first step:
+and capitalise the next word, so one sentence becomes two. The
+`sentence_repair` transform takes the mark out again. It is the first step of
+the shipped pipeline:
 
 ```yaml
 transcription:
-  sentence_repair:
-    enabled: false
   pipeline:
     - transform: sentence_repair
     # … the rest of your steps
+
+transforms:
+  - name: sentence_repair
+    description: repair sentence boundaries a pause cut
+    command: built-in/sentence_repair/sentence_repair.py
+    returns: json
+    parse: true
+    readings: true
 ```
+
+It runs after `vocabulary`, so it sees the names that pass wrote. Keep it
+first in the list, so the steps below it read whole sentences. It reads the
+syrinx parse and Qwen's readings from its envelope and calls no model itself.
+See [transcription.md](transcription.md#a-pause-is-not-a-full-stop) for what
+it repairs and what it costs.
 
 Three rules, one per shape:
 
 | Shape | What it does |
 |---|---|
 | `word. lowercase` | The period goes, unless the word before it is in `lists.abbreviations`. No model: in 9,399 clips this shape was never a sentence end. |
-| `word Capital` | A capital mid-sentence is lowercased, unless a guard below keeps it. No pause gate. |
-| `word. Capital`, `word? Capital` | Qwen's readings decide, as in the stage. When `join` wins, the mark goes and the next word is re-cased by the rule above. |
+| `word Capital` | A capital mid-sentence is lowercased, unless a guard below keeps it. No pause is read. |
+| `word. Capital`, `word? Capital` | Qwen's readings decide. When `join` wins, the mark goes and the next word is re-cased by the rule above. |
 
 A capital stays when the parse tags it `PROPN`, when it is in a named entity,
 when it is joined to a capitalised `PROPN` at most two words away as
@@ -313,18 +260,24 @@ when it is joined to a capitalised `PROPN` at most two words away as
 (after a joined mark, not when the parse calls it a function word: that is the
 article `A`), when it has a capital after its first letter (PR, iOS), when it is `I` or
 starts with `I'`, when it is a nationality word in the dictated language, or
-when the `vocabulary` stage wrote it. A mark before a line break stays. A
-doubled full stop `..` is written as one. The rules are the same in every language; only the nationality list
-differs, and French's is empty.
-
-**It never runs twice.** If the `sentence_repair` stage ran on the text, the
-script changes nothing and says so in `sentence_repair.declined`.
-`--check-config` warns when both are on.
+when the `vocabulary` pass wrote it. A mark before a line break stays. A
+doubled full stop `..` is written as one. The rules are the same in every
+language; only the nationality list differs, and French's is empty. The
+readings are made in English and French only, so the third rule runs in those
+two.
 
 Each rule that needs the parse or the readings is skipped when the envelope
-has none, and `declined` says which. It publishes `sentence_repair.count`
-(joins, as the stage does), `periods` and `capitals`. Score it with
+has none, and `sentence_repair.declined` says which. Nothing waits for a
+model: the 320 MB sentence model is fetched in the background when a transform
+asks for `readings: true`, and until it is in memory the joins are skipped and
+the text goes through. It publishes `sentence_repair.count` (joins),
+`periods` and `capitals`. Score it with
 `built-in/transforms/sentence_repair/score.py`.
+
+**Spoken commands get no repair.** "hey parrot, …" skips every transform, and
+this is one.
+
+Delete the line to turn it off.
 
 ## The name stage
 
@@ -359,8 +312,8 @@ what the decoder wrote and the term — so a third reading would be built and
 never shown. Refused rather than rounded down, because a number that says one
 thing and does another teaches nobody anything.
 
-**An option on the wrong stage is refused.** `slot_gate:` on `sentence_repair`, or
-`marks:` on `vocabulary`, used to load and do nothing. `--check-config` names
+**An option on the wrong stage is refused.** `slot_gate:` on a `transform`
+step used to load and do nothing. `--check-config` names
 the key, the stage it was written on and the stage that reads it. A switch that
 loads and does nothing is somebody believing a gate is off while it runs.
 
@@ -456,8 +409,8 @@ capitals because it thought it was writing a name, and the portrait has just
 said this is the ordinary phrase. So the span is written `better stack`.
 
 It fires only on a refused place that glues, and only when every word of the
-span passes the same lexicon test `sentence_repair` uses — `NLTagger` must give the
-word a lemma and must not call it a name. `Mont Blanc` for a term `MontBlanc`
+span passes the lexicon test `--sentence-case` prints. `NLTagger` must give
+the word a lemma and must not call it a name. `Mont Blanc` for a term `MontBlanc`
 is left as heard, and so is any word in capitals throughout. A capital that
 starts a sentence is kept, and a possessive survives: `Better Stack's` becomes
 `better stack's`.
@@ -501,11 +454,11 @@ measured on the text the decoder produced. Put it above everything that edits
 text. `--check-config` refuses a pipeline that puts a transform above it, because a span that has moved cannot be told from a span that was
 always wrong.
 
-`sentence_repair` is the one exception, and it is where the default puts it. It
-removes a mark rather than rewriting a word, and it ran above the whole
-pipeline before it was a step. `replacements` used to be the exception, because
-the stage offers a rule's substitution back and the rules had to have fired
-first; that pass is inside this stage now.
+Nothing runs above it now. `sentence_repair` used to, as a fixed pass. It is
+a transform now, so it runs after this stage and sees the names it wrote.
+`replacements` used to be an exception too, because the stage offers a rule's
+substitution back and the rules had to have fired first. That pass is inside
+this stage now.
 
 It publishes `vocabulary.slots` (how many places the sentence offered),
 `vocabulary.reverted` (the substitutions it undid, as `term -> word`) and
@@ -825,8 +778,8 @@ never loaded.
 
 #### `readings: true`
 
-A `returns: json` command can ask for the scores `sentence_repair` decides a
-sentence boundary by:
+A `returns: json` command can ask for the scores a sentence boundary is
+decided by. The `sentence_repair` transform does:
 
 ```yaml
   - name: sentence_repair
@@ -838,9 +791,10 @@ sentence boundary by:
 
 Its envelope then carries a `readings` field: per `word. Capital` or
 `word? Capital` boundary, the mean log-probability of each reading and the one
-the stage would pick. The fields are in
+that scores highest. The fields are in
 [authoring.md](authoring.md#the-sentence-readings). Nothing waits for the
-model: until it is in memory the field says it is missing. On any other body
+model: it is fetched in the background when a transform asks for it, and
+until it is in memory the field says it is missing. On any other body
 the key is refused, and so is a value that is not a boolean; `--check-config`
 names the transform.
 
@@ -1183,13 +1137,13 @@ any of this exists:
 They are **derived, never claimed**. A stage cannot forget to report `changed`,
 and cannot report it about the wrong string.
 
-Stages add their own on top. `sentence_repair.count` is how many boundaries it
-joined. The built-in ones publish `vocabulary.count`,
+Stages add their own on top. The built-in ones publish `vocabulary.count`,
 `vocabulary.changes` and `vocabulary.before` — how many rules fired, which
 ones, and the sentence the stage was handed — and, for a prompt stage, `model`.
 Each shipped `numbers` script publishes `count` under its own name, so
 `numbers_en.count` and `numbers_fr.count`, and each `dates` and `money` script
-the same.
+the same. `sentence_repair.count` is how many boundaries that transform
+joined.
 No step carries a language gate, so they run on every transcript and always
 publish. A step that a condition *does* skip publishes only
 `<name>.ran = false`, and a later condition then has to ask
@@ -1574,7 +1528,7 @@ step. It is on by default, and `{enabled: false}` turns it off. It takes terms
 off the screen captured at the press — backticked runs, identifiers, names, long words the dictionary does not
 know, and Slack's place, people, roster and code — and matches each run of one
 to four dictated words against them, by letters or by sound. The sentence model
-that `sentence_repair` loads then scores the sentence as dictated against each
+the readings come from then scores the sentence as dictated against each
 rewrite, and a rewrite is kept when it wins by enough: "rewrite line" becomes
 `rewrite_line` when the screen shows it. It reads the screen and the field at
 every press, whether or not the pipeline names `context` or `input`, and uses

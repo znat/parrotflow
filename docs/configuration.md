@@ -37,6 +37,11 @@ not.
 **Validate before you trust it:** `--check-config` prints what the app would
 actually use, and names anything it had to ignore. See [cli.md](cli.md).
 
+**An old file is upgraded at launch.** When a setting is renamed or removed,
+the app rewrites your file for you, after a backup.
+`--upgrade-config` shows the change first. See [`version` and the upgrade at
+launch](#version-and-the-upgrade-at-launch).
+
 **A key no setting reads is warned about.** The parser skips a key it does not
 know, so a typo used to load in silence. `--check-config` now names each one by
 its full path, and suggests the closest key:
@@ -72,6 +77,8 @@ existing file or
 [built-in/config.example.yaml](../built-in/config.example.yaml).
 
 ```yaml
+version: 1              # which upgrade the file was written for; see below
+
 hotkey:
   key: right_command    # a bare modifier, or a character key + modifiers
   modifiers: []         # required for a character key, ignored for a modifier
@@ -90,8 +97,7 @@ transcription:
   activation_phrases: [hey parrot]
   languages: [en]       # en and fr are the supported values; the example file ships [en, fr]
   rewrite_line: true
-  sentence_repair: {enabled: true}    # a fixed pass, not a step — see pipelines.md
-  vocabulary: {enabled: true}   # the same
+  vocabulary: {enabled: true}   # a fixed pass, not a step — see pipelines.md
   pipeline: …           # see pipelines.md
 
 transforms: …           # see pipelines.md
@@ -127,6 +133,53 @@ logging:
   audio: false  # keep each dictation's recording on disk
   spans: true   # one timeline per dictation, rotating at 64 MB
 ```
+
+## `version` and the upgrade at launch
+
+```yaml
+version: 1
+```
+
+`version:` says which upgrade the file was written for. A file without it is
+version 0. This build writes version 1, and `built-in/config.example.yaml`
+starts with it.
+
+**At launch, before it reads the config,** the app applies every upgrade above
+the file's version, in order. It edits lines, so your comments and your order
+stay. Then it:
+
+1. checks that the upgraded file loads;
+2. keeps the old file beside it, as `config.yaml.bak-v<old version>-<yyyy-MM-dd>`,
+   for example `config.yaml.bak-v0-2026-11-05`. If that name is taken, it adds
+   `-2`, then `-3`;
+3. writes the new file, with the new `version:` line;
+4. writes the diff to the log and shows one notice: `config.yaml upgraded to
+   version 1: … The old file is config.yaml.bak-v0-2026-11-05`.
+
+An empty `config.yaml` is upgraded too.
+
+**A failed upgrade changes nothing.** If the upgraded file would not load, the
+file is left untouched and loads as it did before. The notice says
+`config.yaml was not upgraded —` and why. `--check-config` lists the upgrades
+still pending.
+
+**A newer file is left alone.** A `version:` higher than the app knows is read
+as it is and never rewritten. The notice then reads `config.yaml was not
+upgraded — config.yaml is version 2, and this app knows up to 1. Read as it
+is`.
+
+**See the change first.** `--upgrade-config` prints the version change, what
+each upgrade does and a diff, and writes nothing. `--write` makes the change,
+after the same backup. See [cli.md](cli.md#--upgrade-config).
+
+```sh
+/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --upgrade-config
+/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --upgrade-config --write
+```
+
+| Version | What the upgrade changes |
+|---|---|
+| 1 | Sentence repair becomes the `sentence_repair` transform. The `transcription.sentence_repair:` block goes, or `transcription.interpret:`, with its comment paragraph and its commented option lines. So does every step that names either, written `- sentence_repair`, `- stage: sentence_repair` or `- {stage: sentence_repair, …}`. The transform is added to `transforms:` if it is missing, and `- transform: sentence_repair` becomes the first step of `pipeline:`, unless the list already has it. A config with no `pipeline:` gets one with this one step. A block that said `enabled: false` still gets the step: delete the line to turn it off. See [pipelines.md](pipelines.md#sentence-marks-a-pause-put-there). |
 
 ## Where things live
 
@@ -549,20 +602,14 @@ correction ended up appended to the end of a line instead of replacing a word in
 it: ⌃K clears nothing in a composer, and the paste that followed landed on the
 end of what was still there.
 
-## `transcription.sentence_repair` and `transcription.vocabulary`
+## `transcription.vocabulary`
 
-Two passes read the decoder's own output, so neither can be reordered. They are
-settings blocks rather than `pipeline:` lines, they run before the list —
-`sentence_repair` first — and `enabled: false` is the only way off.
+One pass reads the decoder's own output, so it cannot be reordered. It is a
+settings block rather than a `pipeline:` line, it runs before the list, and
+`enabled: false` is the only way off.
 
 ```yaml
 transcription:
-  sentence_repair:
-    enabled: true
-    capitals: true         # read a capital with no mark in front as a boundary
-    pause: 0.35            # seconds of silence a bare capital needs first
-    marks: [".", ",", "?"] # what a boundary may be written with
-
   vocabulary:
     enabled: true
     sound_below: 0.85      # how close a run of words must sound to a term
@@ -583,11 +630,18 @@ app writes, under a header telling you not to edit it. They belong here now.
 The old spelling is still read, so an install that has one keeps its value, and
 `--check-config` names each one and says where to write it.
 
-**An old `pipeline:` keeps working.** A list that still names `- interpret` or
-`- vocabulary` is read as "on". The pass runs at the head whatever position the
-line was written in, any options on the line are carried into the block, and
-`--check-config` says the line can go. `when:`, `unless:` and `app:` on those
-two lines are dropped: there is no step left for a condition to sit on.
+**An old `pipeline:` keeps working.** A list that still names `- vocabulary`
+is read as "on". The pass runs at the head whatever position the line was
+written in, any options on the line are carried into the block, and
+`--check-config` says the line can go. `when:`, `unless:` and `app:` on that
+line are dropped: there is no step left for a condition to sit on.
+
+**`transcription.sentence_repair:` is gone.** Sentence repair is the
+`sentence_repair` transform now, the first step of `pipeline:`. See
+[pipelines.md](pipelines.md#sentence-marks-a-pause-put-there). A config that
+still has the block, `transcription.interpret:`, or a `- sentence_repair` or
+`- interpret` line fails `--check-config`. The app upgrades it at launch. See
+[`version` and the upgrade at launch](#version-and-the-upgrade-at-launch).
 
 ## `transcription.replacements` is retired
 

@@ -34,8 +34,9 @@ Preconditions:
   `N example file(s) written, 0 refreshed.` (31 on this Mac).
 - **Report.** Run
   `.claude/skills/verify-parrotflow/scripts/pf.sh "$RUN" check --check-config`.
-  Exit `0`. The output contains `✓ hotkey            Right ⌘  (push-to-talk, polled)`,
-  a `· pipeline          sentence_repair → vocabulary → ...` line,
+  Exit `0`. The output contains `✓ version           1`,
+  `✓ hotkey            Right ⌘  (push-to-talk, polled)`,
+  a `· pipeline          vocabulary → transform sentence_repair → ...` line,
   `· transforms: "numbers_en" runs a program — built-in/numbers/en.py`,
   `gemma  ollama  gemma4:e4b-mlx  http://localhost:11434`, and
   `· accessibility     needed, but not checkable from a terminal`.

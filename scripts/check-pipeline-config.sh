@@ -73,7 +73,7 @@ run_config absent 'transcription:
 
 check "a config naming no pipeline loads" "$code" "0"
 check "and gets the built-in default, said out loud" \
-  "$(stages)" "vocabulary → context_spelling  (nothing configured, so every stage)"
+  "$(stages)" "vocabulary → context_spelling  (no pipeline: written, so no transforms)"
 
 # --- the retired sentence_repair stage ----------------------------------------
 #
@@ -377,7 +377,7 @@ check "and says what to write instead" \
 check "and says the built-in default is what runs" \
   "$(printf '%s\n' "$out" | grep -c 'no pipeline of yours is running')" "1"
 check "and that is what resolves" \
-  "$(stages)" "vocabulary → context_spelling  (nothing configured, so every stage)"
+  "$(stages)" "vocabulary → context_spelling  (no pipeline: written, so no transforms)"
 
 # --- any shape under the retired key ------------------------------------------
 #
@@ -394,7 +394,7 @@ check "a bare list under pipelines: is refused the same way" "$code" "1"
 check "with the same one message" \
   "$(printf '%s\n' "$out" | grep -c 'transcription.pipelines: is retired')" "1"
 check "and the built-in default resolves" \
-  "$(stages)" "vocabulary → context_spelling  (nothing configured, so every stage)"
+  "$(stages)" "vocabulary → context_spelling  (no pipeline: written, so no transforms)"
 
 # --- the rest of the config still loads ---------------------------------------
 #
@@ -414,7 +414,7 @@ check "a refused pipelines: does not cost the rest of the config" \
 check "including a setting read after it" \
   "$(printf '%s\n' "$out" | grep -c 'copy to clipboard')" "1"
 check "and the built-in default is still what resolves" \
-  "$(stages)" "vocabulary → context_spelling  (nothing configured, so every stage)"
+  "$(stages)" "vocabulary → context_spelling  (no pipeline: written, so no transforms)"
 
 # --- both keys ----------------------------------------------------------------
 

@@ -9,10 +9,11 @@ or asking a general-purpose language model to rewrite every sentence.
 1. **Capture.** The hotkey starts recording from your selected microphone.
 2. **Transcribe.** After release, the finished clip is processed by the local
    speech model.
-3. **Repair and vocabulary.** Fixed passes use the decoder's output and context
-   to handle supported sentence repairs and vocabulary candidates.
+3. **Vocabulary.** A fixed pass uses the decoder's output and context to
+   settle vocabulary candidates.
 4. **Transform.** Your pipeline runs in order, checking conditions before each
-   stage and passing the result to the next.
+   stage and passing the result to the next. The first step repairs sentence
+   marks a pause put in mid-sentence.
 5. **Insert.** The app writes to the destination or copies the result. Offered
    actions let you request another transform afterward.
 

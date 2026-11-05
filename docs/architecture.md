@@ -8,8 +8,9 @@ asking a language model to rewrite every sentence.
 
 1. The hotkey starts capture from the selected microphone.
 2. Releasing it finishes the clip; the local speech model transcribes it.
-3. Fixed sentence-repair and vocabulary passes process the decoder's output.
-4. Your pipeline runs its transforms in order, checking their conditions.
+3. A fixed vocabulary pass processes the decoder's output.
+4. Your pipeline runs its transforms in order, checking their conditions. The
+   first, `sentence_repair`, takes out sentence marks a pause put there.
 5. The result is inserted or copied. Offered actions let you request a further
    transform without making it part of every dictation.
 
@@ -31,6 +32,7 @@ and the [development guide](development.md).
 | Routing | `Router.swift`, `FreeForm.swift` | Which transform an instruction reaches, and what happens when none does |
 | Spoken commands | `LLM.swift`, `LocalLLM.swift` | One call, three protocols — `ollama`, `openai`, `anthropic`. `ModelSpec.swift` is what a config resolves to; every failure degrades to "unavailable" rather than costing the transcript |
 | Config | `Config.swift` | Yams + a `DispatchSource` file watcher for live reload |
+| Config upgrades | `ConfigMigration.swift` | Brings an older `config.yaml` to the current `version:` at launch, line by line, after a backup. See [configuration.md](configuration.md#version-and-the-upgrade-at-launch) |
 | Permissions | `Permissions.swift` | `AVCaptureDevice` for mic, `AXIsProcessTrusted` for Accessibility |
 | Text insertion | `TextInserter.swift`, `SelectionReader.swift` | Paste-via-clipboard, then the pasteboard is put back |
 | Formatted paste | `Markup.swift` | Markdown in, `public.html` / `public.rtf` / plain out. Plain always rides along, and an unmeasured app gets nothing else — [proposals/formatted-paste.md](proposals/formatted-paste.md) |

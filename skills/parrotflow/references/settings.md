@@ -145,10 +145,33 @@ The app asks GitHub's release API whether there is a new release. Nothing about
 the user is sent. The cask updates itself, so `brew upgrade` skips it unless
 given `--greedy`; the menu's "Check for Updates" is the usual way.
 
+## Config version
+
+```yaml
+version: 1
+```
+
+The first key says which upgrade the file was written for. A file without it
+is version 0. Do not change it by hand.
+
+At launch the app upgrades an older file: it applies each upgrade in order,
+keeps the old file as `config.yaml.bak-v<old>-<yyyy-MM-dd>` beside it, writes
+the new one and shows one notice. Comments stay. If the upgraded file would not
+load, nothing is written. A file with a higher version than the app knows is
+read as it is.
+
+Preview with `"$PF" --upgrade-config`: it prints a diff and writes nothing.
+`"$PF" --upgrade-config --write` makes the change, after the same backup. A
+second run says "Nothing to upgrade". When `--check-config` prints
+`· version 0 — 1 upgrade(s) pending`, tell the user the app does this at its
+next launch, or run `--upgrade-config --write` with their OK.
+
 ## Retired keys
 
 `--check-config` names these. Do not write them: `llm:` (now `models:` and
 `commands:`), `free_form` (now `commands.catch_all`), `prompts:` (now
 `transforms:`), `transcription.pipelines` (now one `pipeline:` list),
 `transcription.replacements` (now a `replace:` transform or `vocabulary.yaml`),
-`transcription.interpret` (now `transcription.sentence_repair`).
+`transcription.sentence_repair` and `transcription.interpret` (now the
+`sentence_repair` transform, first in `pipeline:`; `--upgrade-config --write`
+moves them).

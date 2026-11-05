@@ -159,7 +159,7 @@ enum CheckConfigCommand {
                 ? "nothing — the list is empty"
                 : pipeline.steps.map(described).joined(separator: " → ")
             let source = transcription.pipeline == nil
-                ? "  (nothing configured, so every stage)" : ""
+                ? "  (no pipeline: written, so no transforms)" : ""
             emit("  · pipeline          \(stages)\(source)")
         }
 

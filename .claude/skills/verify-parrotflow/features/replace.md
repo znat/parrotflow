@@ -23,7 +23,7 @@ fillers deleted, spoken numbers as digits, dates and money formatted.
 Preconditions:
 
 - A run is open (`RUN` from `start.sh`). The scratch config is the shipped
-  default. Its pipeline is `sentence_repair → vocabulary → transform fillers →
+  default. Its pipeline is `vocabulary → transform sentence_repair → transform fillers →
   transform fillers_fr when language == "fr" → transform dates_en → transform
   numbers_en → transform money_en → transform disfluency`.
 - `python3` is on `PATH` (the log names the one it used).
