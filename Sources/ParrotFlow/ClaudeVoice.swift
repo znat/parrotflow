@@ -278,7 +278,8 @@ final class ClaudeVoice {
         do {
             let raw = try await LLM.complete(
                 system: ClaudeSpeakable.rewritePrompt,
-                user: ClaudeSpeakable.rewriteInput(request: asked, reply: reply, recap: recap),
+                user: ClaudeSpeakable.rewriteInput(request: asked, reply: reply, recap: recap,
+                                                   earlier: turn?.earlier),
                 json: true, maxTokens: 300, config: model
             )
             let parsed = ClaudeSpeakable.parseSpoken(LLM.stripThinking(raw))

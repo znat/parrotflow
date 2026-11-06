@@ -133,6 +133,18 @@ turns:
       - '{"type":"assistant","message":{"content":[{"type":"text","text":"New answer."}]}}'
     answer: "New answer."
     recap: null
+    earlier: "Old answer."
+  - name: a background task notice does not start a turn
+    lines:
+      - '{"type":"user","message":{"role":"user","content":"first"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Old answer."}]}}'
+      - '{"type":"user","message":{"role":"user","content":"second"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Waiting on CI."}]}}'
+      - '{"type":"user","message":{"role":"user","content":"[SYSTEM NOTIFICATION - NOT USER INPUT]\n<task-notification>done</task-notification>"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"CI passed."}]}}'
+    answer: "Waiting on CI.\n\nCI passed."
+    recap: null
+    earlier: "Old answer."
   - name: a reminder line is not a prompt
     lines:
       - '{"type":"user","message":{"role":"user","content":"first"}}'

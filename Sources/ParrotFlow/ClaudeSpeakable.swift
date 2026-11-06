@@ -135,7 +135,9 @@ enum ClaudeSpeakable {
         who asked, who is not looking at the screen.
 
         You get the developer's request ("Request"), and the assistant's reply \
-        ("Reply"), its summary ("Recap"), or both.
+        ("Reply"), its summary ("Recap"), or both. You may also get the turn before \
+        ("Earlier request", "Earlier reply"). Use it only to understand what the request \
+        refers to. Never repeat it.
 
         Say only what the request needs:
         - The result. For an action, confirm in a few words that it was done. For a \
@@ -163,8 +165,15 @@ enum ClaudeSpeakable {
         """
 
     /// What the model is sent: the request, then the reply and the recap.
-    static func rewriteInput(request: String?, reply: String, recap: String?) -> String {
+    static func rewriteInput(request: String?, reply: String, recap: String?, earlier: Earlier? = nil) -> String {
         var parts: [String] = []
+        if let earlier {
+            if let prompt = earlier.prompt, !prompt.isEmpty {
+                parts.append("Earlier request: " + redacted(String(clean(prompt).prefix(600))))
+            }
+            let said = earlier.recap.map(clean) ?? clean(earlier.answer)
+            if !said.isEmpty { parts.append("Earlier reply: " + redacted(String(said.prefix(1500)))) }
+        }
         if let request, !request.isEmpty { parts.append("Request: " + redacted(String(clean(request).prefix(800)))) }
         if !reply.isEmpty { parts.append("Reply: " + String(reply.prefix(6000))) }
         if let recap, !recap.isEmpty { parts.append("Recap: " + String(recap.prefix(800))) }
@@ -430,6 +439,14 @@ enum ClaudeSpeakable {
         var latestText: String?
         /// What the person asked, at the start of the turn.
         var prompt: String?
+        /// The turn before, so the model can tell what the request refers to.
+        var earlier: Earlier?
+    }
+
+    struct Earlier: Equatable {
+        var prompt: String?
+        var answer: String
+        var recap: String?
     }
 
     /// The newest summary in a session's transcript, across turns: the last
@@ -479,10 +496,21 @@ enum ClaudeSpeakable {
     }
 
     static func lastTurn(lines: [String]) -> TurnEnd? {
+        guard let (start, last) = turn(endingAt: lines.endIndex, in: lines) else { return nil }
+        var ended = last
+        if start > lines.startIndex, let (_, before) = turn(endingAt: start, in: lines) {
+            ended.earlier = Earlier(prompt: before.prompt, answer: before.answer, recap: before.recap)
+        }
+        return ended
+    }
+
+    /// The turn whose lines end at `end`, and the index of its prompt line.
+    private static func turn(endingAt end: Int, in lines: [String]) -> (Int, TurnEnd)? {
         var entries: [[String: Any]] = []
         var asked: String?
-        for line in lines.reversed() {
-            guard let data = line.data(using: .utf8),
+        var start = lines.startIndex
+        for index in stride(from: end - 1, through: lines.startIndex, by: -1) {
+            guard let data = lines[index].data(using: .utf8),
                   let entry = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else { continue }
             if isPrompt(entry) {
@@ -490,6 +518,7 @@ enum ClaudeSpeakable {
                 asked = content as? String ?? (content as? [[String: Any]])?
                     .compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
                     .joined(separator: "\n")
+                start = index
                 break
             }
             if entry["type"] as? String == "assistant" { entries.append(entry) }
@@ -522,8 +551,8 @@ enum ClaudeSpeakable {
                 }
             }
         }
-        return TurnEnd(answer: answer.joined(separator: "\n\n"), recap: recap, ask: ask, latestText: latest,
-                       prompt: asked)
+        return (start, TurnEnd(answer: answer.joined(separator: "\n\n"), recap: recap, ask: ask, latestText: latest,
+                               prompt: asked))
     }
 
     /// A line the person typed, as opposed to a tool result or a reminder the
@@ -531,7 +560,10 @@ enum ClaudeSpeakable {
     private static func isPrompt(_ entry: [String: Any]) -> Bool {
         guard entry["type"] as? String == "user", entry["isMeta"] as? Bool != true,
               let message = entry["message"] as? [String: Any] else { return false }
-        if message["content"] is String { return true }
+        // A finished background task arrives as a user line.
+        if let text = message["content"] as? String {
+            return !text.hasPrefix("[SYSTEM NOTIFICATION") && !text.hasPrefix("<task-notification>")
+        }
         let blocks = message["content"] as? [[String: Any]] ?? []
         return !blocks.contains { $0["type"] as? String == "tool_result" }
             && blocks.contains { $0["type"] as? String == "text" }
