@@ -133,7 +133,7 @@ class Handler(BaseHTTPRequestHandler):
         with speaking:
             run = subprocess.run([BIN, "--claude-say", text, "--tone", tone, "--voice", voice],
                                  capture_output=True, text=True, timeout=120)
-        output = " ".join(l for l in run.stdout.splitlines() if l.startswith(("voice:", "done in")))
+        output = " ".join(line for line in run.stdout.splitlines() if line.startswith(("voice:", "done in")))
         self.send(200 if run.returncode == 0 else 500, json.dumps({"output": output, "code": run.returncode}))
 
 
