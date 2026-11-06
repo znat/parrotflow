@@ -254,9 +254,14 @@ enum ClaudeSpeakable {
     }
 
     /// The base tone, then this moment's shift.
+    /// Gemini read "natural, conversational" as a cue to add "um"s and false
+    /// starts the text did not have, in English and French (2026-11-06).
+    static let fluent = "Say exactly the words written, fluently: no added fillers, hesitations, "
+        + "false starts, sighs or laughs."
+
     static func instructions(base: String, shift: String?) -> String {
-        guard let shift, !shift.isEmpty else { return base }
-        return base + " Right now: " + shift + "."
+        guard let shift, !shift.isEmpty else { return base + " " + fluent }
+        return base + " Right now: " + shift + ". " + fluent
     }
 
     private static let stopWords: Set<String> = Set(

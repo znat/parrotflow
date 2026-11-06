@@ -391,7 +391,7 @@ enum ClaudeHooksCommand {
             speaker.remote = ClaudeVoice.remote(config.claude, config)
             let started = Date()
             let style = (voice ?? config.claude.speechVoices.first).map {
-                Speaker.Style(voice: $0, tone: tone ?? config.claude.speechTone)
+                Speaker.Style(voice: $0, tone: tone ?? ClaudeSpeakable.instructions(base: config.claude.speechTone, shift: nil))
             }
             print("tone:  \(style?.tone ?? "(Kokoro has none)")")
             if let remote = speaker.remote {

@@ -284,7 +284,8 @@ final class ClaudeVoice {
         let plain = recap ?? ClaudeSpeakable.truncated(reply)
         guard !plain.isEmpty else { return nil }
         let base = toned ? settings.speechTone : nil
-        let fallback = Spoken(text: plain, tone: base, language: language)
+        let fallback = Spoken(text: plain, tone: base.map { ClaudeSpeakable.instructions(base: $0, shift: nil) },
+                               language: language)
         guard config.llmEnabled else { return fallback }
 
         let named = settings.model.trimmingCharacters(in: .whitespaces)
