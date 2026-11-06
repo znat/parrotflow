@@ -158,6 +158,33 @@ final class SpeakingFrame {
         element(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute)
     }
 
+    /// The split pane that has focus, when the host has panes: the scroll
+    /// area around the focused text. Ghostty 1.4 exposes each split this way
+    /// ("Left pane" > AXScrollArea > AXTextArea). Nil anywhere else, and for
+    /// a pane that fills its window.
+    static func focusedPane(host pid: pid_t) -> AXUIElement? {
+        let app = AXUIElementCreateApplication(pid)
+        guard var current = element(app, kAXFocusedUIElementAttribute),
+              let window = element(app, kAXFocusedWindowAttribute),
+              let windowFrame = frame(of: window) else { return nil }
+        for _ in 0..<4 {
+            if role(of: current) == kAXScrollAreaRole, let paneFrame = frame(of: current),
+               paneFrame.width > 200, paneFrame.height > 120,
+               paneFrame.width < windowFrame.width - 40 || paneFrame.height < windowFrame.height - 80 {
+                return current
+            }
+            guard let parent = element(current, kAXParentAttribute) else { return nil }
+            current = parent
+        }
+        return nil
+    }
+
+    private static func role(of element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &value)
+        return value as? String
+    }
+
     /// A first guess for a session no prompt has been seen from: the host's
     /// only window, else the one whose title names the project, else its
     /// main window. The caller keeps the answer, so it is not re-guessed

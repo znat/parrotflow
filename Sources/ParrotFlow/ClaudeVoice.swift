@@ -52,7 +52,7 @@ final class ClaudeVoice {
         var reminding = false
         var heard: Date?
         var hostPid: pid_t?
-        /// The window this session lives in, kept once known.
+        /// The pane, or else the window, this session lives in, kept once known.
         var window: AXUIElement?
     }
 
@@ -320,8 +320,11 @@ final class ClaudeVoice {
         guard let host = host(of: id) else { return Self.inFront(project: session.project) }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == host else { return false }
         // With two windows in one app, only the session's own counts.
-        guard let window = session.window, let focused = SpeakingFrame.focusedWindow(host: host) else { return true }
-        return CFEqual(window, focused)
+        guard let pinned = session.window else { return true }
+        // A pane is watched only while it has focus; a window, while it is in front.
+        if let pane = SpeakingFrame.focusedPane(host: host), CFEqual(pinned, pane) { return true }
+        guard let focused = SpeakingFrame.focusedWindow(host: host) else { return true }
+        return CFEqual(pinned, focused)
     }
 
     private func host(of id: String) -> pid_t? {
@@ -335,8 +338,9 @@ final class ClaudeVoice {
     /// host is the session's own.
     private func pinWindow(_ id: String) {
         guard let host = host(of: id), NSWorkspace.shared.frontmostApplication?.processIdentifier == host,
-              let window = SpeakingFrame.focusedWindow(host: host) else { return }
-        sessions[id]?.window = window
+              let target = SpeakingFrame.focusedPane(host: host) ?? SpeakingFrame.focusedWindow(host: host)
+        else { return }
+        sessions[id]?.window = target
     }
 
     private func frameSession(_ id: String?) {
