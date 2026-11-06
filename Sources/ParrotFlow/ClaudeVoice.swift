@@ -49,6 +49,8 @@ final class ClaudeVoice {
         var reminding = false
         var heard: Date?
         var hostPid: pid_t?
+        /// The window this session lives in, kept once known.
+        var window: AXUIElement?
     }
 
     struct Spoken: Equatable {
@@ -117,6 +119,7 @@ final class ClaudeVoice {
 
         switch name {
         case "UserPromptSubmit":
+            pinWindow(id)
             if let prompt = event["prompt"] as? String, !prompt.isEmpty { remind(id, request: prompt) }
             turns[id, default: 0] += 1
             if speaker.speakingSession == id { Log.write("claude voice: stopped by a new prompt") }
@@ -299,17 +302,40 @@ final class ClaudeVoice {
     /// app, every session there counts. Without a pid: the window title.
     private func watching(_ id: String) -> Bool {
         guard let session = sessions[id] else { return false }
-        guard let pid = session.pid else { return Self.inFront(project: session.project) }
-        if session.hostPid == nil { sessions[id]?.hostPid = SpeakingFrame.hostApp(of: pid)?.processIdentifier }
-        guard let host = sessions[id]?.hostPid else { return Self.inFront(project: session.project) }
-        return NSWorkspace.shared.frontmostApplication?.processIdentifier == host
+        guard let host = host(of: id) else { return Self.inFront(project: session.project) }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == host else { return false }
+        // With two windows in one app, only the session's own counts.
+        guard let window = session.window, let focused = SpeakingFrame.focusedWindow(host: host) else { return true }
+        return CFEqual(window, focused)
+    }
+
+    private func host(of id: String) -> pid_t? {
+        if sessions[id]?.hostPid == nil, let pid = sessions[id]?.pid {
+            sessions[id]?.hostPid = SpeakingFrame.hostApp(of: pid)?.processIdentifier
+        }
+        return sessions[id]?.hostPid
+    }
+
+    /// A prompt was just sent from this session, so the focused window of its
+    /// host is the session's own.
+    private func pinWindow(_ id: String) {
+        guard let host = host(of: id), NSWorkspace.shared.frontmostApplication?.processIdentifier == host,
+              let window = SpeakingFrame.focusedWindow(host: host) else { return }
+        sessions[id]?.window = window
     }
 
     private func frameSession(_ id: String?) {
-        guard settings.frame, let id, let session = sessions[id], let pid = session.pid else {
+        guard settings.frame, let id, let session = sessions[id], let host = host(of: id) else {
             return frame.hide()
         }
-        frame.show(claude: pid, project: session.project)
+        if let window = session.window, SpeakingFrame.frame(of: window) != nil {
+            return frame.show(window: window)
+        }
+        guard let guess = SpeakingFrame.guessWindow(host: host, project: session.project) else {
+            return frame.hide()
+        }
+        sessions[id]?.window = guess
+        frame.show(window: guess)
     }
 
     private func note(session id: String, event: [String: Any], pid: pid_t?) {
@@ -322,7 +348,10 @@ final class ClaudeVoice {
         session.project = (cwd as NSString).lastPathComponent
         session.account = account
         session.seen = Date()
-        if let pid, pid != session.pid { session.hostPid = nil }
+        if let pid, pid != session.pid {
+            session.hostPid = nil
+            session.window = nil
+        }
         session.pid = pid ?? session.pid
         session.transcript = (event["transcript_path"] as? String).map { URL(fileURLWithPath: $0) } ?? session.transcript
         sessions[id] = session

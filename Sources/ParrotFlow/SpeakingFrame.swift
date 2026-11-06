@@ -17,20 +17,18 @@ final class SpeakingFrame {
     private let halo = CAShapeLayer()
     /// The voice's lift, falling slowly so the glow pulses instead of flickering.
     private var shown: CGFloat = 0
-    private var target: (host: pid_t, project: String)?
+    private var target: AXUIElement?
     private var follow: Timer?
     private var hiding: DispatchWorkItem?
     /// Room outside the window for the halo to spread into.
     private let margin: CGFloat = 48
 
-    func show(claude pid: pid_t, project: String) {
+    /// Frames this one window and follows it. A window that closes hides the frame.
+    func show(window: AXUIElement) {
         hiding?.cancel()
         shown = 0
-        guard let host = Self.hostApp(of: pid) else { return hide(now: true) }
-        target = (host.processIdentifier, project)
-        guard let frame = Self.windowFrame(host: host.processIdentifier, project: project) else {
-            return hide(now: true)
-        }
+        target = window
+        guard let frame = Self.frame(of: window) else { return hide(now: true) }
         let panel = self.panel ?? makePanel()
         place(panel, around: frame)
         if !panel.isVisible || panel.alphaValue < 1 {
@@ -39,8 +37,8 @@ final class SpeakingFrame {
         }
         follow?.invalidate()
         follow = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-            guard let self, let target = self.target, let panel = self.panel,
-                  let frame = Self.windowFrame(host: target.host, project: target.project) else { return }
+            guard let self, let target = self.target, let panel = self.panel else { return }
+            guard let frame = Self.frame(of: target) else { return self.hide(now: true) }
             self.place(panel, around: frame)
         }
     }
@@ -67,16 +65,16 @@ final class SpeakingFrame {
         shown = max(CGFloat(min(1, rms * 10)), shown * 0.82)
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.05)
-        core.opacity = Float(0.8 + 0.2 * shown)
-        core.lineWidth = 4 + 4 * shown
-        halo.opacity = Float(0.4 + 0.6 * shown)
-        halo.lineWidth = 10 + 14 * shown
-        halo.shadowRadius = 16 + 28 * shown
+        core.opacity = Float(0.7 + 0.2 * shown)
+        core.lineWidth = 2 + 2 * shown
+        halo.opacity = Float(0.35 + 0.5 * shown)
+        halo.lineWidth = 5 + 7 * shown
+        halo.shadowRadius = 10 + 16 * shown
         CATransaction.commit()
     }
 
     private func paint() {
-        let bright = color.blended(withFraction: 0.55, of: .white) ?? color
+        let bright = color.blended(withFraction: 0.45, of: .white) ?? color
         let vivid = color.blended(withFraction: 0.25, of: .white) ?? color
         core.strokeColor = bright.cgColor
         core.shadowColor = bright.cgColor
@@ -103,11 +101,11 @@ final class SpeakingFrame {
             layer.shadowOpacity = 1
             view.layer?.addSublayer(layer)
         }
-        core.lineWidth = 4
-        core.shadowRadius = 6
-        halo.lineWidth = 10
-        halo.shadowRadius = 16
-        halo.opacity = 0.4
+        core.lineWidth = 2
+        core.shadowRadius = 4
+        halo.lineWidth = 5
+        halo.shadowRadius = 10
+        halo.opacity = 0.35
         paint()
         panel.contentView = view
         self.panel = panel
@@ -154,31 +152,40 @@ final class SpeakingFrame {
         return nil
     }
 
-    /// The host's only window, else the one whose title names the project,
-    /// else its main window. In AppKit coordinates.
-    static func windowFrame(host pid: pid_t, project: String) -> CGRect? {
+    /// The window the host has focused now. Read when a prompt is sent, it
+    /// is the window that session lives in.
+    static func focusedWindow(host pid: pid_t) -> AXUIElement? {
+        element(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute)
+    }
+
+    /// A first guess for a session no prompt has been seen from: the host's
+    /// only window, else the one whose title names the project, else its
+    /// main window. The caller keeps the answer, so it is not re-guessed
+    /// each time focus moves.
+    static func guessWindow(host pid: pid_t, project: String) -> AXUIElement? {
         let app = AXUIElementCreateApplication(pid)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
               let windows = value as? [AXUIElement] else { return nil }
-        let framed = windows.compactMap { window -> (AXUIElement, CGRect)? in
-            guard let frame = frame(of: window), frame.width > 200, frame.height > 150 else { return nil }
-            return (window, frame)
+        let sized = windows.filter { window in
+            guard let frame = frame(of: window) else { return false }
+            return frame.width > 200 && frame.height > 150
         }
-        guard !framed.isEmpty else { return nil }
-        if framed.count == 1 { return framed[0].1 }
-        if !project.isEmpty, let named = framed.first(where: {
-            title(of: $0.0)?.localizedCaseInsensitiveContains(project) == true
-        }) {
-            return named.1
+        guard !sized.isEmpty else { return nil }
+        if sized.count == 1 { return sized[0] }
+        if !project.isEmpty,
+           let named = sized.first(where: { title(of: $0)?.localizedCaseInsensitiveContains(project) == true }) {
+            return named
         }
-        var main: CFTypeRef?
-        if AXUIElementCopyAttributeValue(app, kAXMainWindowAttribute as CFString, &main) == .success,
-           let main, CFGetTypeID(main) == AXUIElementGetTypeID() {
-            // swiftlint:disable:next force_cast
-            if let frame = frame(of: main as! AXUIElement) { return frame }
-        }
-        return framed[0].1
+        return element(app, kAXMainWindowAttribute) ?? sized[0]
+    }
+
+    private static func element(_ parent: AXUIElement, _ attribute: String) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(parent, attribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        // swiftlint:disable:next force_cast
+        return (value as! AXUIElement)
     }
 
     private static func title(of window: AXUIElement) -> String? {
@@ -188,7 +195,7 @@ final class SpeakingFrame {
     }
 
     /// Accessibility measures from the top of the main screen, AppKit from the bottom.
-    private static func frame(of window: AXUIElement) -> CGRect? {
+    static func frame(of window: AXUIElement) -> CGRect? {
         var position: CFTypeRef?
         var size: CFTypeRef?
         guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &position) == .success,
