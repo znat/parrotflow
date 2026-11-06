@@ -368,11 +368,29 @@ cases:
   - probe: tree
     input: "I want the small one, I mean the large one."
     expect: "I want the large one."
-  # The same sentence said twice. The parse draws arcs from the first sentence
-  # to the second, and `groups` merges the fragment's arc with them, so the
-  # filter drops that group and keeps only "I I".
+  # The arcs of "I wa I" repair into "I" and into "want". Scored apart, V
+  # kept "I I" and dropped "wa", which gave "Wa I want to ship it today."
+  - probe: tree
+    input: "I wa I I want to ship it today."
+    expect: "I want to ship it today."
+  - probe: tree
+    input: "I th I I think we should ship it today."
+    expect: "I think we should ship it today."
+  - probe: tree
+    input: "The build passed this morning. I wa I I want to ship it today."
+    expect: "The build passed this morning. I want to ship it today."
+  - probe: tree
+    input: "The build passed this morning. I th I I think we should ship it today."
+    expect: "The build passed this morning. I think we should ship it today."
+  # The same sentence said twice. The parse draws an arc from the first
+  # sentence to the second; joined with the fragment's arcs, it took the
+  # fragment down with it and left a stray "wa" or "th".
   - probe: tree
     input: "I want to see it. I wa I I want to see it."
     expect: "I want to see it. I want to see it."
-    misses: arc grouping merges the fragment with arcs from the first sentence
-    got: "I want to see it. Wa I want to see it."
+  - probe: tree
+    input: "I think we should ship it. I th I I think we should ship it."
+    expect: "I think we should ship it. I think we should ship it."
+  # The same arc, with nothing to cut after it: V drops it, both stay.
+  - probe: tree
+    input: "I want to ship it today. I want to ship it today."
