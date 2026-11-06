@@ -821,8 +821,20 @@ def cut_ids(tags: list[int], upos: list[str]) -> set[int]:
     return {i for i, (t, u) in enumerate(zip(tags, upos), 1) if t in (ABANDONED, CUE) and u != 'PUNCT'}
 
 
+def sentences(p: ClipParse) -> list[int]:
+    """The sentence index of each token. A sentence-final punctuation token closes one."""
+    out, at = [], 0
+    for word, upos in zip(p['words'], p['upos']):
+        out.append(at)
+        if upos == 'PUNCT' and SENTENCE_END.search(word):
+            at += 1
+    return out
+
+
 def groups(p: ClipParse) -> tuple[list[list[set[int]]], set[int]]:
-    """[(token ids 1-based that are cut, repair heads)] per reparandum arc, chains and overlaps merged."""
+    """[(token ids 1-based that are cut, repair heads)] per try. Two arcs join when they share a cut token, when
+    one repairs into the other's cut tokens, or when their cut tokens touch inside one sentence: "I wa I I want"
+    is one try, though its arcs repair into "I" and into "want"."""
     heads, labels, upos, ws = p['heads'], p['labels'], p['upos'], p['words']
     n = len(ws)
     cutset = cut_ids(derive_tags(ws, heads, labels, upos), upos)
@@ -843,13 +855,25 @@ def groups(p: ClipParse) -> tuple[list[list[set[int]]], set[int]]:
         toks = (span | cues) & cutset
         if toks:
             arcs.append([toks, {head}])
+    sentence = sentences(p)
+    order = {t: k for k, t in enumerate(t for t in range(1, n + 1) if upos[t - 1] != 'PUNCT')}
+
+    def touch(a: set[int], b: set[int]) -> bool:
+        if len({sentence[t - 1] for t in a | b}) > 1:
+            return False
+        ra, rb = [order[t] for t in a], [order[t] for t in b]
+        return min(ra) <= max(rb) + 1 and min(rb) <= max(ra) + 1
+
+    # Arcs that only share a repair head stay apart. Joined, an arc from an
+    # earlier sentence pulled that whole sentence into the try, and V dropped
+    # both.
     merged = True
     while merged:
         merged = False
         for i in range(len(arcs)):
             for j in range(i + 1, len(arcs)):
                 a, b = arcs[i], arcs[j]
-                if a[0] & b[0] or a[1] & b[0] or b[1] & a[0] or a[1] & b[1]:
+                if a[0] & b[0] or a[1] & b[0] or b[1] & a[0] or touch(a[0], b[0]):
                     arcs[i] = [a[0] | b[0], a[1] | b[1]]
                     del arcs[j]
                     merged = True
