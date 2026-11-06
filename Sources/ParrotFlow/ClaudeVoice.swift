@@ -1,4 +1,5 @@
 import AppKit
+import FluidAudio
 import ApplicationServices
 
 /// Speaks Claude Code's progress and answers.
@@ -28,6 +29,8 @@ final class ClaudeVoice {
     /// The turn whose answer was already said from its recap, per session.
     private var recapTurns: [String: Int] = [:]
     private var voices: [String: String] = [:]
+    /// The same, for the local voice's own list.
+    private var localVoices: [String: String] = [:]
     private var lastSpokenSession: String?
     private var lastSpokenAt: Date?
     private var lastIntroduction: Int?
@@ -70,6 +73,7 @@ final class ClaudeVoice {
         speaker.remote = Self.remote(settings, config)
         speaker.local = Speaker.Local(rawValue: settings.local) ?? .kokoro
         speaker.localVoice = settings.localVoice
+        speaker.localPlacement = PocketTtsModelPlacement(rawValue: settings.localPlacement) ?? .gpu
         frame.color = ContextIdentity.nsColor(config.feedback.primaryColor)
         speaker.onSpeakingSession = { [weak self] id in self?.frameSession(id) }
         speaker.onLevel = { [weak self] rms in self?.frame.level(rms) }
@@ -83,7 +87,8 @@ final class ClaudeVoice {
         }
         // The local voice is warmed when it will speak first: no remote voice,
         // or progress lines kept local.
-        let warm = settings.local + ":" + (settings.local == "pocket" ? settings.localVoice : settings.voice)
+        let warm = settings.local + ":" + settings.localPlacement + ":"
+            + (settings.local == "pocket" ? settings.localVoice : settings.voice)
         if settings.enabled, speaker.remote == nil || settings.progressLocal, warmedVoice != warm {
             warmedVoice = warm
             Task { @MainActor in await speaker.warm() }
@@ -435,11 +440,19 @@ final class ClaudeVoice {
     /// A session keeps its voice. A new one takes the first voice no active
     /// session holds, or shares one when there are more sessions than voices.
     private func voice(for id: String) -> String {
-        let pool = settings.speechVoices
-        if let held = voices[id], pool.contains(held) { return held }
-        let taken = Set(activeSessions.keys.compactMap { $0 == id ? nil : voices[$0] })
-        let chosen = pool.first { !taken.contains($0) } ?? pool[voices.count % max(pool.count, 1)]
-        voices[id] = chosen
+        Self.pick(for: id, from: settings.speechVoices, held: &voices, active: Set(activeSessions.keys))
+    }
+
+    private func localVoice(for id: String) -> String? {
+        guard !settings.localVoices.isEmpty else { return nil }
+        return Self.pick(for: id, from: settings.localVoices, held: &localVoices, active: Set(activeSessions.keys))
+    }
+
+    static func pick(for id: String, from pool: [String], held: inout [String: String], active: Set<String>) -> String {
+        if let kept = held[id], pool.contains(kept) { return kept }
+        let taken = Set(active.compactMap { $0 == id ? nil : held[$0] })
+        let chosen = pool.first { !taken.contains($0) } ?? pool[held.count % max(pool.count, 1)]
+        held[id] = chosen
         return chosen
     }
 
@@ -502,7 +515,8 @@ final class ClaudeVoice {
         )
         // Whole, so scripts/tone-play.sh can replay it.
         Log.write("claude voice: said: \(line.prefix(800))")
-        speaker.say(line, style: style, session: session, progress: progress)
+        speaker.say(line, style: style, session: session, progress: progress,
+                    localVoice: local ? localVoice(for: session) : nil)
     }
 }
 

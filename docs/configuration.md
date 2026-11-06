@@ -1400,6 +1400,8 @@ claude:
   speed: 1.0
   local: kokoro          # the voice on this Mac: kokoro, or pocket (PocketTTS, streams)
   local_voice: alba      # a PocketTTS voice
+  local_voices: []       # one per session, like speech_voices; PocketTTS has 27
+  local_placement: gpu   # where PocketTTS runs: gpu, ane or ane-state (Neural Engine)
   progress_local: false  # progress lines on the local voice, answers on `speech`
   speech: ""             # a name under models: for a remote voice; empty = Kokoro
   speech_voices: [Achird, Sulafat, Zubenelgenubi, Callirrhoe, Umbriel, Aoede]

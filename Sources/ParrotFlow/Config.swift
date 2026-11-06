@@ -2878,9 +2878,13 @@ struct Config: Decodable, Equatable {
         var local = "kokoro"
         /// A PocketTTS voice; Kokoro uses `voice`.
         var localVoice = "alba"
+        /// One per session on the local voice, like `speech_voices`. Empty: `local_voice` for all.
+        var localVoices: [String] = []
         /// Progress lines on the local voice even when `speech` names a remote
         /// one: they are short and should come at once.
         var progressLocal = false
+        /// Where PocketTTS runs: `gpu`, `ane` or `ane-state` (the Neural Engine).
+        var localPlacement = "gpu"
         /// A name under `models:` that speaks OpenAI's `/audio/speech`, such
         /// as OpenRouter. Empty means Kokoro, on this Mac.
         var speech = ""
@@ -2897,7 +2901,9 @@ struct Config: Decodable, Equatable {
             case speechVoice = "speech_voice"
             case local
             case localVoice = "local_voice"
+            case localVoices = "local_voices"
             case progressLocal = "progress_local"
+            case localPlacement = "local_placement"
             case speechVoices = "speech_voices"
             case speechTone = "speech_tone"
         }
@@ -2920,7 +2926,9 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(String.self, forKey: .speechTone) { speechTone = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .local) { local = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .localVoice), !v.isEmpty { localVoice = v }
+            if let v = try c.decodeIfPresent([String].self, forKey: .localVoices) { localVoices = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .progressLocal) { progressLocal = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .localPlacement) { localPlacement = v }
         }
 
         var folderURLs: [URL] {

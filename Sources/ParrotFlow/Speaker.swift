@@ -15,6 +15,10 @@ final class Speaker {
     var remote: ModelSpec?
     var local: Local = .kokoro
     var localVoice = PocketTtsConstants.defaultVoice
+    /// Where PocketTTS runs. Off the GPU, it does not wait on a local model there.
+    var localPlacement: PocketTtsModelPlacement = .gpu {
+        didSet { if localPlacement != oldValue { pocket = nil } }
+    }
 
     /// A remote voice and tone for one line. Kokoro ignores both.
     struct Style: Equatable {
@@ -46,6 +50,8 @@ final class Speaker {
         var session: String
         var progress: Bool
         var style: Style?
+        /// The local voice for this line, when the session has its own.
+        var localVoice: String?
         var sentences: [String]
     }
     private struct Chunk {
@@ -87,11 +93,14 @@ final class Speaker {
         }
     }
 
-    func say(_ text: String, style: Style? = nil, session: String = "", progress: Bool = false) {
+    func say(
+        _ text: String, style: Style? = nil, session: String = "", progress: Bool = false, localVoice: String? = nil
+    ) {
         let parts = ClaudeSpeakable.sentences(text)
         guard !parts.isEmpty else { return }
         nextLine += 1
-        lines.append(Line(id: nextLine, session: session, progress: progress, style: style, sentences: parts))
+        lines.append(Line(id: nextLine, session: session, progress: progress, style: style, localVoice: localVoice,
+                          sentences: parts))
         if !synthesizing { synthesize(generation) }
     }
 
@@ -146,12 +155,13 @@ final class Speaker {
         if let pocket { return pocket }
         if let pocketLoading { return try await pocketLoading.value }
         let voice = localVoice
+        let placement = localPlacement
         let task = Task { () throws -> PocketTtsManager in
             let started = Date()
-            let made = PocketTtsManager(defaultVoice: voice)
+            let made = PocketTtsManager(defaultVoice: voice, placement: placement)
             try await made.initialize()
-            Log.write(String(format: "claude voice: PocketTTS ready in %.1fs (voice %@)",
-                             Date().timeIntervalSince(started), voice))
+            Log.write(String(format: "claude voice: PocketTTS ready in %.1fs (voice %@, %@)",
+                             Date().timeIntervalSince(started), voice, placement.rawValue))
             return made
         }
         pocketLoading = task
@@ -200,7 +210,7 @@ final class Speaker {
                 if lines[0].sentences.count > 1 { lines[0].sentences.removeFirst() } else { lines.removeFirst() }
                 inFlight = (line.id, line.session, line.progress)
                 inFlightDropped = false
-                await make(sentence, style: line.style) { [weak self] samples in
+                await make(sentence, style: line.style, localVoice: line.localVoice) { [weak self] samples in
                     guard let self, started == self.generation, !self.inFlightDropped, !samples.isEmpty else {
                         return false
                     }
@@ -221,7 +231,9 @@ final class Speaker {
 
     /// Hands the sentence's audio to `emit`, in one piece or, for PocketTTS,
     /// in pieces as they are made. `emit` says false once the line is dropped.
-    private func make(_ sentence: String, style: Style?, emit: @MainActor ([Float]) -> Bool) async {
+    private func make(
+        _ sentence: String, style: Style?, localVoice lineVoice: String?, emit: @MainActor ([Float]) -> Bool
+    ) async {
         if let remote, let style {
             do {
                 let begun = Date()
@@ -247,7 +259,8 @@ final class Speaker {
                 let begun = Date()
                 var first: TimeInterval?
                 var piece: [Float] = []
-                for try await frame in try await manager.synthesizeStreaming(text: sentence, voice: localVoice) {
+                let speaking = lineVoice ?? localVoice
+                for try await frame in try await manager.synthesizeStreaming(text: sentence, voice: speaking) {
                     piece += frame.samples
                     // About 160 ms per piece: fewer hand-offs, and the first words still start early.
                     if piece.count >= 3_840 {
@@ -257,8 +270,9 @@ final class Speaker {
                     }
                 }
                 if !piece.isEmpty { _ = await emit(piece) }
-                Log.write(String(format: "claude voice: PocketTTS (%@) first sound %.2fs, %d chars in %.2fs",
-                                 localVoice, first ?? Date().timeIntervalSince(begun), sentence.count,
+                Log.write(String(format: "claude voice: PocketTTS (%@, %@) first sound %.2fs, %d chars in %.2fs",
+                                 speaking, localPlacement.rawValue, first ?? Date().timeIntervalSince(begun),
+                                 sentence.count,
                                  Date().timeIntervalSince(begun)))
             }
         } catch {
