@@ -1214,7 +1214,8 @@ $PF --uninstall-claude-hooks [--folder <dir>]...
 $PF --claude-voice-test [cases.yaml]             # text rules; no config, no audio
 $PF --claude-spoken <session.jsonl>              # what the last turn would say
 $PF --claude-explain '<PreToolUse json>' [--context "<text>"]  # one progress line, explained
-$PF --claude-say "<text>"                        # say it through the configured voice
+$PF --claude-say "<text>" [--tone "<instructions>"] [--voice <name>]  # say it
+scripts/tone-lab.py                              # a page to try tones on recent lines
 ```
 
 Install and uninstall must run from the installed app, not from `.build`. A

@@ -459,7 +459,8 @@ final class ClaudeVoice {
                 base: settings.speechTone, shift: progress ? "quick, like a passing remark" : nil
             )
         )
-        Log.write("claude voice: \(line.prefix(120))")
+        // Whole, so scripts/tone-play.sh can replay it.
+        Log.write("claude voice: said: \(line.prefix(800))")
         speaker.say(line, style: style, session: session, progress: progress)
     }
 }

@@ -159,7 +159,13 @@ if let index = arguments.firstIndex(of: "--claude-explain"), arguments.indices.c
     ))
 }
 if let index = arguments.firstIndex(of: "--claude-say"), arguments.indices.contains(index + 1) {
-    ClaudeHooksCommand.say(arguments[index + 1], config: (try? ConfigStore.load()) ?? Config())
+    func value(_ flag: String) -> String? {
+        arguments.firstIndex(of: flag).flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+    }
+    ClaudeHooksCommand.say(
+        arguments[index + 1], config: (try? ConfigStore.load()) ?? Config(),
+        tone: value("--tone"), voice: value("--voice")
+    )
 }
 
 /// `--lang fr` or `--lang en,fr`. One entry pins a grammar; several stand in
