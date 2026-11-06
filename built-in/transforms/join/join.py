@@ -423,6 +423,10 @@ def run(envelope: Envelope) -> Reply:
         # mypy types the `{}` fallback for the required `ctx` as dict[Never, Never].
         box = ((envelope.get("ctx") or {}).get("vars") or {}).get("input") or {}  # type: ignore[call-overload]
         before, after = box.get("before"), box.get("after")
+        if not isinstance(before, str):
+            before = None
+        if not isinstance(after, str):
+            after = None
         protected = protected_terms(envelope)
         if before is None and after is None:
             # No caret, so nothing can be decided about the edges. The stops
@@ -430,8 +434,7 @@ def run(envelope: Envelope) -> Reply:
             # is what makes this worth running in a terminal.
             out, applied = unstopped(text, protected)
         else:
-            # A non-str Scalar raises in `Neighbourhood` and falls to the `except` below.
-            out, applied = join(text, before, after, tag, protected)  # type: ignore[arg-type]
+            out, applied = join(text, before, after, tag, protected)
     except Exception:
         out, applied = text, []
     return {"text": out, "vars": reported(applied)}

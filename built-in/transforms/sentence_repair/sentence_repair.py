@@ -138,9 +138,10 @@ def written_by_vocabulary(vocabulary: dict[str, Scalar]) -> set[str]:
     """The words the `vocabulary` stage put in the text, lowercased."""
     tokens = re.compile(r"[\w'’-]+")
     found: set[str] = set()
-    # A number here raises, and run() returns the text unrepaired.
-    for term in (vocabulary.get("protected") or "").split("; "):  # type: ignore[union-attr]
-        found.update(token.lower() for token in tokens.findall(term))
+    protected = vocabulary.get("protected")
+    if isinstance(protected, str):
+        for term in protected.split("; "):
+            found.update(token.lower() for token in tokens.findall(term))
     before, judged = vocabulary.get("before"), vocabulary.get("judged")
     if isinstance(before, str) and isinstance(judged, str):
         a, b = tokens.findall(before), tokens.findall(judged)
