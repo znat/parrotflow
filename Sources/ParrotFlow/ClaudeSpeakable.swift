@@ -34,12 +34,47 @@ enum ClaudeSpeakable {
         rule(#"\s*[≈~](?=\s*\d)"#, " about "),
         rule(#"\s&\s"#, " and "),
         rule(#"[✓✗⚠︎•·]"#, ""),
+        // Commit hashes say nothing out loud.
+        rule(#"\s*\(?(?:\b(?:at|as|in|on|from)\s+)?\bcommit\s+(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b\)?"#, ""),
+        rule(#"\s*\((?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\)"#, ""),
+        rule(#"\s+(?:as|at)\s+(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b"#, ""),
+        rule(#"\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b"#, ""),
+        // Times as people say them: no seconds, no leading zero.
+        rule(#"\b(\d{1,2}):(\d{2}):\d{2}\b"#, "$1:$2"),
+        rule(#"\b0(\d):(\d{2})\b"#, "$1:$2"),
+        // Units in words.
+        rule(#"(\d)\s?ms\b"#, "$1 milliseconds"),
+        rule(#"(\d)\s?s\b(?!-)"#, "$1 seconds"),
+        rule(#"(\d)\s?GB\b"#, "$1 gigabytes"),
+        rule(#"(\d)\s?MB\b"#, "$1 megabytes"),
+        rule(#"(\d)\s?KB\b"#, "$1 kilobytes"),
+        rule(#"(\d)\s?%"#, "$1 percent"),
     ].compactMap { $0 }
+
+    private static let isoDate = try? NSRegularExpression(pattern: #"\b(\d{4})-(\d{2})-(\d{2})\b"#)
+
+    /// "2026-11-06" → "November 6", with the year only when it is not this one.
+    static func spokenDates(_ text: String, now: Date = Date()) -> String {
+        guard let isoDate else { return text }
+        let thisYear = Calendar.current.component(.year, from: now)
+        let months = DateFormatter().monthSymbols ?? []
+        var out = text
+        for match in isoDate.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+            guard let whole = Range(match.range, in: out),
+                  let year = Range(match.range(at: 1), in: text).flatMap({ Int(text[$0]) }),
+                  let month = Range(match.range(at: 2), in: text).flatMap({ Int(text[$0]) }),
+                  let day = Range(match.range(at: 3), in: text).flatMap({ Int(text[$0]) }),
+                  (1...12).contains(month), months.count == 12 else { continue }
+            let said = "\(months[month - 1]) \(day)" + (year == thisYear ? "" : ", \(year)")
+            out.replaceSubrange(whole, with: said)
+        }
+        return out
+    }
 
     /// Markdown in, sentences out. Lists, headings and paragraphs each become
     /// a sentence, so the voice pauses where the eye would.
     static func clean(_ text: String) -> String {
-        var out = text
+        var out = spokenDates(text)
         for (expression, template) in rules {
             out = expression.stringByReplacingMatches(
                 in: out, range: NSRange(out.startIndex..., in: out), withTemplate: template
@@ -120,7 +155,10 @@ enum ClaudeSpeakable {
         and no passive ("<X> has been <done>").
         - Talk the way a colleague talks: contractions, casual words, no formal phrasing.
         - Keep file names, PR numbers and command names as the reply wrote them.
-        - No code, no lists, no markdown, no paths, no greetings.
+        - No code, no lists, no markdown, no paths, no greetings, no commit hashes.
+        - Say times, dates and numbers the way people say them out loud: "at <hour>:<minute>", \
+        "this morning", "<month> <day>". Round a number when its exact value does not \
+        matter: "about <n> seconds", "a third of a second".
 
         MODE: shorten
         - At most three short sentences and 50 words. Lead with the reply's main \
