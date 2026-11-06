@@ -4474,15 +4474,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// `sound` is the second way in: a mishearing can land on an ordinary word
     /// — `borderplay` -> `boilerplate` — which the word lists always refuse.
-    /// Only `.ordinary`, since punctuation scores 1.00 by construction.
+    /// Only `.ordinary`, since punctuation scores 1.00 by construction. On a
+    /// name it is a hurdle instead; `nil`, no ear, skips it.
     private func teaches(
-        _ change: EditWatch.Change, sound: Float, language: String
+        _ change: EditWatch.Change, sound: Float?, language: String
     ) -> Bool {
         guard let refusal = EditWatch.offers(
             change, sound: sound, language: language
         ) else {
             Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is offered"
-                + " — sound \(String(format: "%.2f", sound))")
+                + " — sound \(sound.map { String(format: "%.2f", $0) } ?? "none")")
             return true
         }
         Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is \(refusal);"

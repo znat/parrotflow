@@ -10,8 +10,14 @@ import Foundation
 /// teaches a term the wrong sentence. `EditWatch.refusal` then decides whether
 /// the correction is about a name. Neither has accessibility or timing behind
 /// it, so both have a set.
+///
+/// `--no-ear` decides as if neither espeak-ng nor the model were here. Neither
+/// can be taken off a machine that has them, so this is how that branch is
+/// checked.
 enum EditDiffCommand {
-    static func run(before: String, now: String, language: String) async -> Int32 {
+    static func run(
+        before: String, now: String, language: String, noEar: Bool = false
+    ) async -> Int32 {
         let changes = EditWatch.changes(from: before, to: now)
         guard !changes.isEmpty else {
             print("no single change")
@@ -24,11 +30,11 @@ enum EditDiffCommand {
             // sentence, where every word is capitalised and the capital says
             // nothing about the word.
             print("  opens: \(EditWatch.opensSentence(in: change.sentence, at: change.nowAt))")
-            // Zero means neither ear answered: no espeak-ng, no model.
-            let sound = await EditWatch.soundsAlike(
+            // `none` means no ear read both words: no espeak-ng, no model.
+            let sound = noEar ? nil : await EditWatch.soundsAlike(
                 change.was, change.now, language: language
             )
-            print("  sound: \(String(format: "%.2f", sound))")
+            print("  sound: \(sound.map { String(format: "%.2f", $0) } ?? "none")")
             // Whether the panel would offer it. The two word lists are the
             // real ones, so the answer is this machine's — and it is the same
             // call the app makes, so this cannot print a decision it would not.

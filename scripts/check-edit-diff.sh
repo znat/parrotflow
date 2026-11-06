@@ -13,7 +13,9 @@
 # panel opens on the correction. That half asks the spell checker and the
 # word-piece list, so it is this machine's answer. A case with `heard:` checks
 # the window and range `EditWatch.asHeard` writes to the trace, and one with
-# `learn:` the line the pill draws.
+# `learn:` the line the pill draws. One with `ear: none` is decided as if
+# neither espeak-ng nor the model were installed. Without espeak-ng, an offer
+# no ear could score is skipped rather than failed.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN=""
@@ -25,9 +27,14 @@ done
 
 failed=0
 seen=0
-while IFS=$'\t' read -r written now want offer heard learn lang; do
+skipped=0
+hasEar=1
+command -v espeak-ng >/dev/null || hasEar=0
+while IFS=$'\t' read -r written now want offer heard learn lang ear; do
   seen=$((seen + 1))
-  out="$("$BIN" --edit-diff "$written" "$now" --lang "$lang" 2>/dev/null)"
+  noEar=()
+  [ "$ear" = "none" ] && noEar=(--no-ear)
+  out="$("$BIN" --edit-diff "$written" "$now" --lang "$lang" ${noEar[@]+"${noEar[@]}"} 2>/dev/null)"
   got="$(grep -vE "^  (in|opens|offer|heard|sound|learn|words|pill): " <<<"$out" | paste -sd '|' - | sed 's/|/ | /g')"
   if [ "$heard" != "-" ]; then
     gotHeard="$(grep -E "^  heard: " <<<"$out" | sed 's/^  heard: //' | paste -sd '|' - | sed 's/|/ | /g')"
@@ -53,6 +60,10 @@ while IFS=$'\t' read -r written now want offer heard learn lang; do
     fi
   fi
   [ "$offer" = "-" ] && continue
+  if [ "$hasEar" -eq 0 ] && [ "$ear" != "none" ] && grep -qE "^  sound: none" <<<"$out"; then
+    skipped=$((skipped + 1))
+    continue
+  fi
   gotOffer="$(grep -E "^  offer: " <<<"$out" | sed 's/^  offer: //' | paste -sd '|' - | sed 's/|/ | /g')"
   if [ "$gotOffer" = "$offer" ]; then
     printf '    offer: %s\n' "$gotOffer"
@@ -63,9 +74,10 @@ while IFS=$'\t' read -r written now want offer heard learn lang; do
 done < <(python3 -c '
 import sys, yaml
 for c in yaml.safe_load(open(sys.argv[1]))["cases"]:
-    print("\t".join([c["written"], c["now"], str(c["expect"]), str(c.get("offer", "-")), str(c.get("heard", "-")), str(c.get("learn", "-")), str(c.get("lang", "en"))]))
+    print("\t".join([c["written"], c["now"], str(c["expect"]), str(c.get("offer", "-")), str(c.get("heard", "-")), str(c.get("learn", "-")), str(c.get("lang", "en")), str(c.get("ear", "-"))]))
 ' "$ROOT/tests/edit-diff-cases.yaml")
 
 if [ "$seen" -eq 0 ]; then echo "Failed: edit-diff — no case was read"; exit 1; fi
+[ "$skipped" -gt 0 ] && echo "  $skipped offer(s) need an ear: brew install espeak-ng"
 [ "$failed" -eq 0 ] && echo "Every check passed." || echo "Failed: edit-diff"
 exit "$failed"
