@@ -128,70 +128,68 @@ enum ClaudeSpeakable {
         sentences(cleaned).prefix(2).joined(separator: " ")
     }
 
-    enum Mode: String {
-        /// A long reply: shorten it to what is worth hearing.
-        case shorten
-        /// A recap or a short reply: change person and tense only.
-        case keep
-    }
-
-    /// The rewrite, and a short shift for how to say it. The base tone is not
-    /// the model's to write: `speechTone` is sent as it is, with the shift after.
+    /// The spoken answer, from the request and what came back. Says the
+    /// result, problems and risks, and leaves the rest on the screen.
     static let rewritePrompt = """
-        You turn a coding assistant's written reply into what it says out loud to the \
-        developer it works with, who is not looking at the screen.
+        You turn a coding assistant's reply into what it says out loud to the developer \
+        who asked, who is not looking at the screen.
 
-        The first line of the message is MODE: shorten or MODE: keep. The rest is the reply.
+        You get the developer's request ("Request"), and the assistant's reply \
+        ("Reply"), its summary ("Recap"), or both.
 
-        Return JSON: {"say": "...", "tone": "..."}
+        Say only what the request needs:
+        - The result. For an action, confirm in a few words that it was done. For a \
+        question, the answer.
+        - Any problem the assistant found, any risk, and anything the developer has to \
+        do or decide.
+        - Leave out the rest: background, loosely related facts, metrics, counts, timings, \
+        versions, commit hashes, branch positions and file lists, unless the request \
+        asked for them.
 
-        say, in both modes:
-        - Every fact comes from the reply. Use its own names, numbers and results. \
-        Never write a result the reply does not state.
-        - First person for what the assistant did or found: "I <did X>", "I'm <doing X>". \
-        Anything the reply says about something else (the app, CI, a build, a test) \
-        keeps that subject.
-        - Simple past or present. No present perfect ("I have <done X>", "I've <done X>") \
-        and no passive ("<X> has been <done>").
-        - Talk the way a colleague talks: contractions, casual words, no formal phrasing.
-        - Keep file names, PR numbers and command names as the reply wrote them.
-        - No code, no lists, no markdown, no paths, no greetings, no commit hashes.
-        - Say times, dates and numbers the way people say them out loud: "at <hour>:<minute>", \
-        "this morning", "<month> <day>". Round a number when its exact value does not \
-        matter: "about <n> seconds", "a third of a second".
+        Return JSON: {"opener": "...", "say": "...", "tone": "..."}
 
-        MODE: shorten
-        - At most three short sentences and 50 words. Lead with the reply's main \
-        result, then what the developer has to do or decide, if the reply asks for \
-        anything. Leave the rest out.
+        opener: one to four words that say how it went, from what happened: done, good \
+        news, a problem, a question, a warning. Never more positive than the reply.
 
-        MODE: keep
-        - A light edit, not a summary. Keep every fact and every question, in the \
-        same order. Change only person, tense and wording.
+        say:
+        - At most two short sentences and 35 words.
+        - Every fact comes from Reply or Recap. Use their names.
+        - First person for what the assistant did: "I <did X>". Anything said about \
+        something else keeps that subject.
+        - Simple past or present. No present perfect ("I've <done X>") and no passive.
+        - Casual, like a colleague. No code, no lists, no markdown, no paths.
 
-        tone: how this moment shifts a relaxed, friendly delivery, in at most 8 words: \
-        pleased when something works, calm and a little sorry when something broke, \
-        curious when asking, easy when routine.
+        tone: how this moment shifts a relaxed, friendly delivery, in at most 8 words.
         """
 
-    /// A shorten-mode result that ran long keeps whole sentences up to about
-    /// `limit` characters, at most three. A semicolon counts as a sentence end.
+    /// What the model is sent: the request, then the reply and the recap.
+    static func rewriteInput(request: String?, reply: String, recap: String?) -> String {
+        var parts: [String] = []
+        if let request, !request.isEmpty { parts.append("Request: " + redacted(String(clean(request).prefix(800)))) }
+        if !reply.isEmpty { parts.append("Reply: " + String(reply.prefix(6000))) }
+        if let recap, !recap.isEmpty { parts.append("Recap: " + String(recap.prefix(800))) }
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// A rewrite that ran long keeps whole sentences up to about `limit`
+    /// characters, at most three. A semicolon counts as a sentence end.
     static func capped(_ said: String, limit: Int = 300) -> String {
         let parts = sentences(said.replacingOccurrences(of: #";\s+"#, with: ". ", options: .regularExpression))
         var kept: [String] = []
         var length = 0
         for part in parts.prefix(3) {
             if !kept.isEmpty, length + part.count > limit { break }
-            let sentence = part.prefix(1).uppercased() + part.dropFirst()
-            kept.append(sentence)
+            kept.append(part.prefix(1).uppercased() + part.dropFirst())
             length += part.count + 1
         }
         return kept.joined(separator: " ")
     }
 
-    /// What the model is sent: the mode, then the text.
-    static func rewriteInput(_ text: String, mode: Mode) -> String {
-        "MODE: \(mode.rawValue)\n\n\(text)"
+    /// "Done" → "Done." so the voice pauses before the facts.
+    static func spokenOpener(_ opener: String?) -> String {
+        let said = clean(opener ?? "").trimmingCharacters(in: .whitespaces)
+        guard let last = said.last else { return "" }
+        return last.isLetter || last.isNumber ? said + "." : said
     }
 
     /// The base tone, then this moment's shift.
@@ -234,7 +232,7 @@ enum ClaudeSpeakable {
 
     /// Reads the model's JSON. A model that answered in plain text still
     /// gives the words, with no tone.
-    static func parseSpoken(_ raw: String) -> (say: String, tone: String?) {
+    static func parseSpoken(_ raw: String) -> (say: String, tone: String?, opener: String?) {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("```") {
             text = text.replacingOccurrences(of: #"^```(?:json)?\s*|\s*```$"#, with: "", options: .regularExpression)
@@ -243,9 +241,10 @@ enum ClaudeSpeakable {
            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let say = object["say"] as? String {
             let tone = (object["tone"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (say, tone?.isEmpty == false ? tone : nil)
+            let opener = (object["opener"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (say, tone?.isEmpty == false ? tone : nil, opener?.isEmpty == false ? opener : nil)
         }
-        return (text, nil)
+        return (text, nil, nil)
     }
 
     // MARK: - Hook event → progress line

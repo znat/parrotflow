@@ -182,7 +182,7 @@ enum ClaudeHooksCommand {
         struct Turn: Decodable {
             var name: String; var lines: [String]; var answer: String; var recap: String?
         }
-        struct Parse: Decodable { var name: String; var raw: String; var say: String; var tone: String? }
+        struct Parse: Decodable { var name: String; var raw: String; var say: String; var tone: String?; var opener: String? }
         var clean: [Clean] = []
         var progress: [Progress] = []
         var turns: [Turn] = []
@@ -263,6 +263,7 @@ enum ClaudeHooksCommand {
             let parsed = ClaudeSpeakable.parseSpoken(item.raw)
             check(item.name, got: parsed.say, want: item.say)
             check(item.name + " (tone)", got: parsed.tone, want: item.tone)
+            check(item.name + " (opener)", got: parsed.opener, want: item.opener)
         }
         for item in cases.capped {
             check(item.name, got: ClaudeSpeakable.capped(item.input), want: item.want)

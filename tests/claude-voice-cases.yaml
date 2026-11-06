@@ -143,6 +143,11 @@ turns:
     recap: null
 
 parse:
+  - name: opener is read beside say and tone
+    raw: '{"opener": "Done", "say": "I switched to main.", "tone": "easy"}'
+    say: "I switched to main."
+    tone: "easy"
+    opener: "Done"
   - name: JSON with say and tone
     raw: '{"say": "The build passes.", "tone": "Relaxed and pleased, smiling."}'
     say: "The build passes."
@@ -288,3 +293,4 @@ summary:
       - '{"type":"user","message":{"role":"user","content":"next"}}'
       - '{"type":"assistant","message":{"content":[{"type":"text","text":"Newest text."}]}}'
     want: "Newest text."
+

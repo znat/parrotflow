@@ -230,10 +230,11 @@ final class ClaudeVoice {
         let settings = settings
         let config = config
         let toned = speaker.remote != nil
+        let request = sessions[session]?.task
         Task.detached {
             if settle > 0 { try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000)) }
             let turn = ended ?? transcript.flatMap { ClaudeSpeakable.lastTurn(transcript: $0) }
-            let spoken = await Self.spoken(turn: turn, written: written, settings: settings,
+            let spoken = await Self.spoken(turn: turn, written: written, request: request, settings: settings,
                                            config: config, toned: toned)
             await MainActor.run { [weak self] in
                 guard let self, let spoken else { return }
@@ -257,48 +258,40 @@ final class ClaudeVoice {
     /// sentences. `toned` asks the model for a tone even when the words
     /// need no rewrite.
     static func spoken(
-        turn: ClaudeSpeakable.TurnEnd?, written: String?, settings: Config.Claude,
-        config: Config, toned: Bool
+        turn: ClaudeSpeakable.TurnEnd?, written: String?, request: String? = nil,
+        settings: Config.Claude, config: Config, toned: Bool
     ) async -> Spoken? {
-        let source: String
-        if let recap = turn?.recap {
-            source = [recap, turn?.ask].compactMap { $0 }.joined(separator: "\n")
-        } else {
-            source = turn?.answer.isEmpty == false ? turn!.answer : (written ?? "")
-        }
-        let cleaned = ClaudeSpeakable.clean(source)
-        guard !cleaned.isEmpty else { return nil }
-        let keep = turn?.recap != nil || ClaudeSpeakable.isShort(cleaned)
-        let plain = turn?.recap != nil ? cleaned : ClaudeSpeakable.truncated(cleaned)
+        let reply = ClaudeSpeakable.clean(turn?.answer.isEmpty == false ? turn!.answer : (written ?? ""))
+        let recap = turn?.recap.map { ClaudeSpeakable.clean([$0, turn?.ask].compactMap { $0 }.joined(separator: "\n")) }
+        let asked = request ?? turn?.prompt
+        let plain = recap ?? ClaudeSpeakable.truncated(reply)
+        guard !plain.isEmpty else { return nil }
         let base = toned ? settings.speechTone : nil
         let fallback = Spoken(text: plain, tone: base)
         guard config.llmEnabled else { return fallback }
 
         let named = settings.model.trimmingCharacters(in: .whitespaces)
         let model = config.model(named: named) ?? config.model(for: .general)
-        let mode: ClaudeSpeakable.Mode = keep ? .keep : .shorten
         let started = Date()
         do {
             let raw = try await LLM.complete(
                 system: ClaudeSpeakable.rewritePrompt,
-                user: ClaudeSpeakable.rewriteInput(String(cleaned.prefix(6000)), mode: mode),
+                user: ClaudeSpeakable.rewriteInput(request: asked, reply: reply, recap: recap),
                 json: true, maxTokens: 300, config: model
             )
             let parsed = ClaudeSpeakable.parseSpoken(LLM.stripThinking(raw))
-            let said = ClaudeSpeakable.clean(parsed.say)
-            let ground = ClaudeSpeakable.grounded(said, in: cleaned)
-            var text = keep
-                ? ClaudeSpeakable.kept(said, original: plain)
-                : (said.isEmpty ? plain : ClaudeSpeakable.capped(said))
-            if ground < ClaudeSpeakable.groundedFloor {
+            let said = ClaudeSpeakable.capped(ClaudeSpeakable.clean(parsed.say), limit: 240)
+            let ground = ClaudeSpeakable.grounded(said, in: [reply, recap ?? "", asked ?? ""].joined(separator: " "))
+            guard !said.isEmpty, ground >= ClaudeSpeakable.groundedFloor else {
                 Log.write(String(format: "claude voice: %@ wrote words the reply does not have (%.2f), saying it plain",
                                  model.name, ground))
-                text = plain
+                return fallback
             }
-            Log.write(String(format: "claude voice: %@ %@ %d chars to %d in %.1fs, shift \"%@\"%@",
-                             model.name, mode.rawValue, cleaned.count, text.count,
-                             Date().timeIntervalSince(started), parsed.tone ?? "none",
-                             text == plain && keep && said != plain ? " (grew, original kept)" : ""))
+            let opener = ClaudeSpeakable.spokenOpener(parsed.opener)
+            let text = opener.isEmpty ? said : opener + " " + said
+            Log.write(String(format: "claude voice: %@ answered in %.1fs, %d chars of reply to %d, shift \"%@\"",
+                             model.name, Date().timeIntervalSince(started), reply.count + (recap?.count ?? 0),
+                             text.count, parsed.tone ?? "none"))
             return Spoken(text: text, tone: base.map { ClaudeSpeakable.instructions(base: $0, shift: parsed.tone) })
         } catch {
             Log.write("claude voice: rewrite failed, saying it plain — \(error.localizedDescription)")
