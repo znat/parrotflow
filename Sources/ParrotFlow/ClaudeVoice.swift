@@ -54,6 +54,8 @@ final class ClaudeVoice {
         var hostPid: pid_t?
         /// The pane, or else the window, this session lives in, kept once known.
         var window: AXUIElement?
+        /// Where that pane or window was, to find it again when Ghostty rebuilds it.
+        var rect: CGRect?
     }
 
     struct Spoken: Equatable {
@@ -320,11 +322,15 @@ final class ClaudeVoice {
         guard let host = host(of: id) else { return Self.inFront(project: session.project) }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == host else { return false }
         // With two windows in one app, only the session's own counts.
-        guard let pinned = session.window else { return true }
+        guard let pinned = session.rect ?? session.window.flatMap(SpeakingFrame.frame(of:)) else { return true }
+        // By place, not by reference: Ghostty rebuilds its elements as focus moves.
         // A pane is watched only while it has focus; a window, while it is in front.
-        if let pane = SpeakingFrame.focusedPane(host: host), CFEqual(pinned, pane) { return true }
-        guard let focused = SpeakingFrame.focusedWindow(host: host) else { return true }
-        return CFEqual(pinned, focused)
+        if let pane = SpeakingFrame.focusedPane(host: host).flatMap(SpeakingFrame.frame(of:)),
+           SpeakingFrame.close(pane, pinned) {
+            return true
+        }
+        guard let focused = SpeakingFrame.focusedWindow(host: host).flatMap(SpeakingFrame.frame(of:)) else { return true }
+        return SpeakingFrame.close(focused, pinned)
     }
 
     private func host(of id: String) -> pid_t? {
@@ -341,20 +347,26 @@ final class ClaudeVoice {
               let target = SpeakingFrame.focusedPane(host: host) ?? SpeakingFrame.focusedWindow(host: host)
         else { return }
         sessions[id]?.window = target
+        sessions[id]?.rect = SpeakingFrame.frame(of: target)
     }
 
     private func frameSession(_ id: String?) {
         guard settings.frame, let id, let session = sessions[id], let host = host(of: id) else {
             return frame.hide()
         }
-        if let window = session.window, SpeakingFrame.frame(of: window) != nil {
-            return frame.show(window: window)
+        frame.onRetarget = { [weak self] element, rect in
+            self?.sessions[id]?.window = element
+            self?.sessions[id]?.rect = rect
+        }
+        if let window = session.window {
+            return frame.show(window: window, host: host, rect: session.rect)
         }
         guard let guess = SpeakingFrame.guessWindow(host: host, project: session.project) else {
             return frame.hide()
         }
         sessions[id]?.window = guess
-        frame.show(window: guess)
+        sessions[id]?.rect = SpeakingFrame.frame(of: guess)
+        frame.show(window: guess, host: host, rect: sessions[id]?.rect)
     }
 
     private func note(session id: String, event: [String: Any], pid: pid_t?) {

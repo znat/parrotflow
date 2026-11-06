@@ -24,11 +24,21 @@ final class SpeakingFrame {
     private let margin: CGFloat = 48
 
     /// Frames this one window and follows it. A window that closes hides the frame.
-    func show(window: AXUIElement) {
+    /// Called when the frame re-ties to the element now at the remembered place.
+    var onRetarget: ((AXUIElement, CGRect) -> Void)?
+    private var targetHost: pid_t?
+    private var lastRect: CGRect?
+
+    /// Frames `window` (a window or a pane) and follows it. `rect` is where it
+    /// was last seen: if the element dies or starts answering for another pane,
+    /// the one still at `rect` is used instead, never the one with focus.
+    func show(window: AXUIElement, host: pid_t, rect: CGRect?) {
         hiding?.cancel()
         shown = 0
         target = window
-        guard let frame = Self.frame(of: window) else { return hide(now: true) }
+        targetHost = host
+        lastRect = rect
+        guard let frame = resolve() else { return hide(now: true) }
         let panel = self.panel ?? makePanel()
         place(panel, around: frame)
         if !panel.isVisible || panel.alphaValue < 1 {
@@ -37,10 +47,61 @@ final class SpeakingFrame {
         }
         follow?.invalidate()
         follow = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-            guard let self, let target = self.target, let panel = self.panel else { return }
-            guard let frame = Self.frame(of: target) else { return self.hide(now: true) }
+            guard let self, self.target != nil, let panel = self.panel else { return }
+            guard let frame = self.resolve() else { return self.hide(now: true) }
             self.place(panel, around: frame)
         }
+    }
+
+    /// Where the framed element is now. Ghostty rebuilds its accessibility
+    /// elements as focus moves, and a kept reference then dies or reports the
+    /// focused pane: the glow followed focus.
+    private func resolve() -> CGRect? {
+        guard let target, let host = targetHost else { return nil }
+        let now = Self.frame(of: target)
+        if let last = lastRect {
+            if let now, Self.close(now, last) { return now }
+            if let found = Self.element(at: last, host: host) {
+                self.target = found
+                onRetarget?(found, last)
+                return last
+            }
+        }
+        guard let now else { return nil }
+        lastRect = now
+        onRetarget?(target, now)
+        return now
+    }
+
+    static func close(_ a: CGRect, _ b: CGRect) -> Bool {
+        abs(a.minX - b.minX) < 4 && abs(a.minY - b.minY) < 4 && abs(a.width - b.width) < 4 && abs(a.height - b.height) < 4
+    }
+
+    /// The host's window or pane at `rect`, looked up afresh.
+    static func element(at rect: CGRect, host pid: pid_t) -> AXUIElement? {
+        let app = AXUIElementCreateApplication(pid)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
+              var queue = value as? [AXUIElement] else { return nil }
+        var depth = 0
+        while !queue.isEmpty, depth < 6 {
+            var next: [AXUIElement] = []
+            for element in queue {
+                let kind = role(of: element)
+                if kind == kAXWindowRole || kind == kAXScrollAreaRole, let frame = frame(of: element),
+                   close(frame, rect) {
+                    return element
+                }
+                var kids: CFTypeRef?
+                if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &kids) == .success,
+                   let children = kids as? [AXUIElement] {
+                    next += children.prefix(24)
+                }
+            }
+            queue = next
+            depth += 1
+        }
+        return nil
     }
 
     /// Half a second after the voice stops, so a pause between sentences
@@ -186,9 +247,9 @@ final class SpeakingFrame {
     }
 
     /// A first guess for a session no prompt has been seen from: the host's
-    /// only window, else the one whose title names the project, else its
-    /// main window. The caller keeps the answer, so it is not re-guessed
-    /// each time focus moves.
+    /// only window, else the one whose title names the project. Nil when that
+    /// is ambiguous: the main window is whichever has focus, so guessing it
+    /// framed the wrong window.
     static func guessWindow(host pid: pid_t, project: String) -> AXUIElement? {
         let app = AXUIElementCreateApplication(pid)
         var value: CFTypeRef?
@@ -204,7 +265,7 @@ final class SpeakingFrame {
            let named = sized.first(where: { title(of: $0)?.localizedCaseInsensitiveContains(project) == true }) {
             return named
         }
-        return element(app, kAXMainWindowAttribute) ?? sized[0]
+        return nil
     }
 
     private static func element(_ parent: AXUIElement, _ attribute: String) -> AXUIElement? {
