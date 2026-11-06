@@ -1398,6 +1398,9 @@ claude:
   model: ""              # a name under models:; empty means the default
   voice: af_heart        # a Kokoro voice
   speed: 1.0
+  local: kokoro          # the voice on this Mac: kokoro, or pocket (PocketTTS, streams)
+  local_voice: alba      # a PocketTTS voice
+  progress_local: false  # progress lines on the local voice, answers on `speech`
   speech: ""             # a name under models: for a remote voice; empty = Kokoro
   speech_voices: [Achird, Sulafat, Zubenelgenubi, Callirrhoe, Umbriel, Aoede]
   speech_tone: "A friendly colleague at the next desk: casual, relaxed, smiling. Not an announcement."

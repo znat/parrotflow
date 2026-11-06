@@ -2,13 +2,19 @@ import AVFoundation
 import FluidAudio
 
 /// Says text one sentence at a time, so the first words play while the rest
-/// are still being made. Kokoro on this Mac, or `remote` when it is set, with
-/// Kokoro taking over any sentence the remote voice fails on.
+/// are still being made. A local voice on this Mac (Kokoro or PocketTTS), or
+/// `remote` for a line that has a style, with the local voice taking over any
+/// sentence the remote one fails on. PocketTTS streams: a sentence arrives in
+/// pieces, and they play back to back.
 final class Speaker {
+
+    enum Local: String { case kokoro, pocket }
 
     var voice = "af_heart"
     var speed: Float = 1.0
     var remote: ModelSpec?
+    var local: Local = .kokoro
+    var localVoice = PocketTtsConstants.defaultVoice
 
     /// A remote voice and tone for one line. Kokoro ignores both.
     struct Style: Equatable {
@@ -20,7 +26,7 @@ final class Speaker {
     /// The output's loudness (RMS), on the main queue, about 45 times a second.
     var onLevel: ((Float) -> Void)?
 
-    var isSpeaking: Bool { current != nil || !ready.isEmpty || !lines.isEmpty || synthesizing }
+    var isSpeaking: Bool { !scheduled.isEmpty || !ready.isEmpty || !lines.isEmpty || synthesizing }
     private(set) var speakingSession: String? {
         didSet { if speakingSession != oldValue { onSpeakingSession?(speakingSession) } }
     }
@@ -31,6 +37,8 @@ final class Speaker {
     private var manager: KokoroAneManager?
     private var managerVoice = ""
     private var loading: (voice: String, task: Task<KokoroAneManager, Error>)?
+    private var pocket: PocketTtsManager?
+    private var pocketLoading: Task<PocketTtsManager, Error>?
 
     /// One spoken line: its sentences, in order, and whose it is.
     private struct Line {
@@ -41,6 +49,7 @@ final class Speaker {
         var sentences: [String]
     }
     private struct Chunk {
+        var seq: Int
         var line: Int
         var session: String
         var progress: Bool
@@ -50,7 +59,9 @@ final class Speaker {
     private var lines: [Line] = []
     /// Made and waiting to play, in order.
     private var ready: [Chunk] = []
-    private var current: Chunk?
+    /// Handed to the player, all from one line, oldest first.
+    private var scheduled: [Chunk] = []
+    private var nextChunk = 0
     /// The sentence being made, so a drop that lands meanwhile still applies.
     private var inFlight: (line: Int, session: String, progress: Bool)?
     private var inFlightDropped = false
@@ -90,7 +101,7 @@ final class Speaker {
         lines.removeAll()
         ready.removeAll()
         synthesizing = false
-        current = nil
+        scheduled.removeAll()
         inFlight = nil
         if engine.isRunning { player.stop() }
         finishIfIdle()
@@ -110,8 +121,8 @@ final class Speaker {
         lines.removeAll { matches($0.session) && kind($0.progress) }
         ready.removeAll { matches($0.session) && kind($0.progress) }
         if let making = inFlight, matches(making.session), kind(making.progress) { inFlightDropped = true }
-        if let playing = current, matches(playing.session), kind(playing.progress) {
-            current = nil
+        if let playing = scheduled.first, matches(playing.session), kind(playing.progress) {
+            scheduled.removeAll()
             player.stop()
             pump()
         }
@@ -123,9 +134,36 @@ final class Speaker {
         await withCheckedContinuation { idleWaiters.append($0) }
     }
 
-    /// Loads Kokoro now, so the first line is not the one that pays for it.
+    /// Loads the local voice now, so the first line is not the one that pays for it.
     func warm() async {
-        _ = try? await loadedManager()
+        switch local {
+        case .kokoro: _ = try? await loadedManager()
+        case .pocket: _ = try? await loadedPocket()
+        }
+    }
+
+    private func loadedPocket() async throws -> PocketTtsManager {
+        if let pocket { return pocket }
+        if let pocketLoading { return try await pocketLoading.value }
+        let voice = localVoice
+        let task = Task { () throws -> PocketTtsManager in
+            let started = Date()
+            let made = PocketTtsManager(defaultVoice: voice)
+            try await made.initialize()
+            Log.write(String(format: "claude voice: PocketTTS ready in %.1fs (voice %@)",
+                             Date().timeIntervalSince(started), voice))
+            return made
+        }
+        pocketLoading = task
+        do {
+            let made = try await task.value
+            pocket = made
+            pocketLoading = nil
+            return made
+        } catch {
+            pocketLoading = nil
+            throw error
+        }
     }
 
     private func loadedManager() async throws -> KokoroAneManager {
@@ -162,13 +200,18 @@ final class Speaker {
                 if lines[0].sentences.count > 1 { lines[0].sentences.removeFirst() } else { lines.removeFirst() }
                 inFlight = (line.id, line.session, line.progress)
                 inFlightDropped = false
-                let samples = await make(sentence, style: line.style)
+                await make(sentence, style: line.style) { [weak self] samples in
+                    guard let self, started == self.generation, !self.inFlightDropped, !samples.isEmpty else {
+                        return false
+                    }
+                    self.nextChunk += 1
+                    self.ready.append(Chunk(seq: self.nextChunk, line: line.id, session: line.session,
+                                            progress: line.progress, samples: samples))
+                    self.pump()
+                    return true
+                }
                 guard started == generation else { return }
-                let dropped = inFlightDropped
                 inFlight = nil
-                guard !dropped, let samples, !samples.isEmpty else { continue }
-                ready.append(Chunk(line: line.id, session: line.session, progress: line.progress, samples: samples))
-                if current == nil { pump() }
             }
             guard started == generation else { return }
             synthesizing = false
@@ -176,7 +219,9 @@ final class Speaker {
         }
     }
 
-    private func make(_ sentence: String, style: Style?) async -> [Float]? {
+    /// Hands the sentence's audio to `emit`, in one piece or, for PocketTTS,
+    /// in pieces as they are made. `emit` says false once the line is dropped.
+    private func make(_ sentence: String, style: Style?, emit: @MainActor ([Float]) -> Bool) async {
         if let remote, let style {
             do {
                 let begun = Date()
@@ -185,34 +230,66 @@ final class Speaker {
                 )
                 Log.write(String(format: "claude voice: %@ (%@) spoke %d chars in %.2fs",
                                  remote.name, style.voice, sentence.count, Date().timeIntervalSince(begun)))
-                return samples
+                _ = await emit(samples)
+                return
             } catch {
-                Log.write("claude voice: \(remote.name) failed, Kokoro takes this one — \(error.localizedDescription)")
+                Log.write("claude voice: \(remote.name) failed, the local voice takes this one — "
+                    + error.localizedDescription)
             }
         }
         do {
-            let kokoro = try await loadedManager()
-            return try await kokoro.synthesizeDetailed(text: sentence, voice: voice, speed: speed).samples
+            switch local {
+            case .kokoro:
+                let kokoro = try await loadedManager()
+                _ = await emit(try await kokoro.synthesizeDetailed(text: sentence, voice: voice, speed: speed).samples)
+            case .pocket:
+                let manager = try await loadedPocket()
+                let begun = Date()
+                var first: TimeInterval?
+                var piece: [Float] = []
+                for try await frame in try await manager.synthesizeStreaming(text: sentence, voice: localVoice) {
+                    piece += frame.samples
+                    // About 160 ms per piece: fewer hand-offs, and the first words still start early.
+                    if piece.count >= 3_840 {
+                        if first == nil { first = Date().timeIntervalSince(begun) }
+                        guard await emit(piece) else { return }
+                        piece.removeAll(keepingCapacity: true)
+                    }
+                }
+                if !piece.isEmpty { _ = await emit(piece) }
+                Log.write(String(format: "claude voice: PocketTTS (%@) first sound %.2fs, %d chars in %.2fs",
+                                 localVoice, first ?? Date().timeIntervalSince(begun), sentence.count,
+                                 Date().timeIntervalSince(begun)))
+            }
         } catch {
-            Log.write("claude voice: Kokoro failed on \"\(sentence.prefix(60))\" — \(error.localizedDescription)")
-            return nil
+            Log.write("claude voice: \(local.rawValue) failed on \"\(sentence.prefix(60))\" — \(error.localizedDescription)")
         }
     }
 
-    /// Plays the next ready sentence, after a pause when the session changes.
+    /// Starts the next line when nothing plays, after a pause when the session
+    /// changes; queues the rest of the playing line back to back.
     private func pump() {
-        guard current == nil, !ready.isEmpty else { return }
-        var chunk = ready.removeFirst()
-        if let last = lastPlayed, last.session != chunk.session, Date().timeIntervalSince(last.ended) < 2 {
-            chunk.samples = [Float](repeating: 0, count: Int(handover * 24_000)) + chunk.samples
+        if scheduled.isEmpty {
+            guard !ready.isEmpty else { return }
+            var chunk = ready.removeFirst()
+            if let last = lastPlayed, last.session != chunk.session, Date().timeIntervalSince(last.ended) < 2 {
+                chunk.samples = [Float](repeating: 0, count: Int(handover * 24_000)) + chunk.samples
+            }
+            schedule(chunk)
         }
-        current = chunk
+        while let next = ready.first, next.line == scheduled.last?.line {
+            schedule(ready.removeFirst())
+        }
+    }
+
+    private func schedule(_ chunk: Chunk) {
+        scheduled.append(chunk)
         speakingSession = chunk.session
         let started = generation
         play(chunk.samples) { [weak self] in
-            guard let self, started == self.generation, self.current?.line == chunk.line else { return }
-            self.lastPlayed = (chunk.session, Date())
-            self.current = nil
+            guard let self, started == self.generation, self.scheduled.first?.seq == chunk.seq else { return }
+            self.scheduled.removeFirst()
+            if self.scheduled.isEmpty { self.lastPlayed = (chunk.session, Date()) }
             self.pump()
             self.finishIfIdle()
         }

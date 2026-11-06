@@ -68,6 +68,8 @@ final class ClaudeVoice {
         speaker.voice = settings.voice
         speaker.speed = settings.speed
         speaker.remote = Self.remote(settings, config)
+        speaker.local = Speaker.Local(rawValue: settings.local) ?? .kokoro
+        speaker.localVoice = settings.localVoice
         frame.color = ContextIdentity.nsColor(config.feedback.primaryColor)
         speaker.onSpeakingSession = { [weak self] id in self?.frameSession(id) }
         speaker.onLevel = { [weak self] rms in self?.frame.level(rms) }
@@ -79,8 +81,11 @@ final class ClaudeVoice {
             listener = nil
             speaker.stop()
         }
-        if settings.enabled, speaker.remote == nil, warmedVoice != settings.voice {
-            warmedVoice = settings.voice
+        // The local voice is warmed when it will speak first: no remote voice,
+        // or progress lines kept local.
+        let warm = settings.local + ":" + (settings.local == "pocket" ? settings.localVoice : settings.voice)
+        if settings.enabled, speaker.remote == nil || settings.progressLocal, warmedVoice != warm {
+            warmedVoice = warm
             Task { @MainActor in await speaker.warm() }
         }
     }
@@ -488,7 +493,8 @@ final class ClaudeVoice {
         sessions[session]?.heard = Date()
         lastSpokenSession = session
         lastSpokenAt = Date()
-        let style = speaker.remote == nil || settings.speechVoices.isEmpty ? nil : Speaker.Style(
+        let local = speaker.remote == nil || settings.speechVoices.isEmpty || (progress && settings.progressLocal)
+        let style = local ? nil : Speaker.Style(
             voice: voice(for: session),
             tone: tone ?? ClaudeSpeakable.instructions(
                 base: settings.speechTone, shift: progress ? "quick, like a passing remark" : nil

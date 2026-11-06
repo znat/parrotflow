@@ -2874,6 +2874,13 @@ struct Config: Decodable, Equatable {
         var model = ""
         var voice = "af_heart"
         var speed: Float = 1.0
+        /// The voice on this Mac: `kokoro`, or `pocket` (PocketTTS, which streams).
+        var local = "kokoro"
+        /// A PocketTTS voice; Kokoro uses `voice`.
+        var localVoice = "alba"
+        /// Progress lines on the local voice even when `speech` names a remote
+        /// one: they are short and should come at once.
+        var progressLocal = false
         /// A name under `models:` that speaks OpenAI's `/audio/speech`, such
         /// as OpenRouter. Empty means Kokoro, on this Mac.
         var speech = ""
@@ -2888,6 +2895,9 @@ struct Config: Decodable, Equatable {
         enum CodingKeys: String, CodingKey {
             case enabled, folders, progress, explain, frame, model, voice, speed, speech
             case speechVoice = "speech_voice"
+            case local
+            case localVoice = "local_voice"
+            case progressLocal = "progress_local"
             case speechVoices = "speech_voices"
             case speechTone = "speech_tone"
         }
@@ -2908,6 +2918,9 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(String.self, forKey: .speechVoice), !v.isEmpty { speechVoices = [v] }
             if let v = try c.decodeIfPresent([String].self, forKey: .speechVoices), !v.isEmpty { speechVoices = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .speechTone) { speechTone = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .local) { local = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .localVoice), !v.isEmpty { localVoice = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .progressLocal) { progressLocal = v }
         }
 
         var folderURLs: [URL] {
@@ -3135,6 +3148,9 @@ struct Config: Decodable, Equatable {
         let claudeModel = claude.model.trimmingCharacters(in: .whitespaces)
         if !claudeModel.isEmpty, model(named: claudeModel) == nil {
             found.append("claude.model: \"\(claudeModel)\" is not under models: — using the default model")
+        }
+        if Speaker.Local(rawValue: claude.local) == nil {
+            found.append("claude.local: \"\(claude.local)\" is not valid — expected kokoro or pocket; using kokoro")
         }
         let speech = claude.speech.trimmingCharacters(in: .whitespaces)
         if !speech.isEmpty {
