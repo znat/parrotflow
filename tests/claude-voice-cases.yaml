@@ -241,3 +241,11 @@ grounded:
     said: "Done."
     source: "Done. Tests pass."
     kept: true
+
+speakable:
+  - name: curly apostrophes become straight
+    input: "I’m checking whether it’s done."
+    want: "I'm checking whether it's done."
+  - name: curly quotes and a dash
+    input: "It said “done” — then stopped…"
+    want: "It said \"done\" ,  then stopped..."

@@ -59,13 +59,28 @@ enum ClaudeSpeakable {
             .trimmingCharacters(in: .whitespaces)
     }
 
+    /// Not after a colon: "Update from parrotflow:" and the sentence it
+    /// introduces are one call to the voice, not two cold starts.
     static func sentences(_ text: String) -> [String] {
         text.replacingOccurrences(
-            of: #"(?<=[.!?:])\s+(?=[A-Z0-9"'(])"#, with: "\u{1}", options: .regularExpression
+            of: #"(?<=[.!?])\s+(?=[A-Z0-9"'(])"#, with: "\u{1}", options: .regularExpression
         )
         .components(separatedBy: "\u{1}")
         .map { $0.trimmingCharacters(in: .whitespaces) }
         .filter { !$0.isEmpty }
+    }
+
+    /// Plain ASCII punctuation for the voice. PocketTTS on the Neural Engine
+    /// (`ane-state`) never finished a sentence with a curly apostrophe in it,
+    /// measured 2026-11-06: `I’m` hung past 60 s, `I'm` took 1.7 s.
+    static func speakable(_ text: String) -> String {
+        var out = text
+        for (from, to) in [("\u{2018}", "'"), ("\u{2019}", "'"), ("\u{02BC}", "'"), ("\u{201C}", "\""),
+                           ("\u{201D}", "\""), ("\u{2026}", "..."), ("\u{2014}", ", "), ("\u{2013}", ", "),
+                           ("\u{00A0}", " ")] {
+            out = out.replacingOccurrences(of: from, with: to)
+        }
+        return out
     }
 
     /// Short enough to say as it is, without a model call.

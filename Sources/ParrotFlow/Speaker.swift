@@ -96,7 +96,7 @@ final class Speaker {
     func say(
         _ text: String, style: Style? = nil, session: String = "", progress: Bool = false, localVoice: String? = nil
     ) {
-        let parts = ClaudeSpeakable.sentences(text)
+        let parts = ClaudeSpeakable.sentences(ClaudeSpeakable.speakable(text))
         guard !parts.isEmpty else { return }
         nextLine += 1
         lines.append(Line(id: nextLine, session: session, progress: progress, style: style, localVoice: localVoice,
@@ -232,7 +232,7 @@ final class Speaker {
     /// Hands the sentence's audio to `emit`, in one piece or, for PocketTTS,
     /// in pieces as they are made. `emit` says false once the line is dropped.
     private func make(
-        _ sentence: String, style: Style?, localVoice lineVoice: String?, emit: @MainActor ([Float]) -> Bool
+        _ sentence: String, style: Style?, localVoice lineVoice: String?, emit: @escaping @MainActor ([Float]) -> Bool
     ) async {
         if let remote, let style {
             do {
@@ -257,19 +257,42 @@ final class Speaker {
             case .pocket:
                 let manager = try await loadedPocket()
                 let begun = Date()
-                var first: TimeInterval?
-                var piece: [Float] = []
                 let speaking = lineVoice ?? localVoice
-                for try await frame in try await manager.synthesizeStreaming(text: sentence, voice: speaking) {
-                    piece += frame.samples
-                    // About 160 ms per piece: fewer hand-offs, and the first words still start early.
-                    if piece.count >= 3_840 {
-                        if first == nil { first = Date().timeIntervalSince(begun) }
-                        guard await emit(piece) else { return }
-                        piece.removeAll(keepingCapacity: true)
+                // A stream that never ends would hold every line queued behind it.
+                let limit = 6 + 0.12 * Double(sentence.count)
+                let first: TimeInterval?
+                do {
+                    first = try await withThrowingTaskGroup(of: TimeInterval?.self) { group in
+                        group.addTask {
+                            var first: TimeInterval?
+                            var piece: [Float] = []
+                            for try await frame in try await manager.synthesizeStreaming(text: sentence, voice: speaking) {
+                                try Task.checkCancellation()
+                                piece += frame.samples
+                                // About 160 ms per piece: fewer hand-offs, and the first words still start early.
+                                if piece.count >= 3_840 {
+                                    if first == nil { first = Date().timeIntervalSince(begun) }
+                                    guard await emit(piece) else { return first }
+                                    piece.removeAll(keepingCapacity: true)
+                                }
+                            }
+                            if !piece.isEmpty { _ = await emit(piece) }
+                            return first
+                        }
+                        group.addTask {
+                            try await Task.sleep(nanoseconds: UInt64(limit * 1_000_000_000))
+                            throw CancellationError()
+                        }
+                        let result = try await group.next() ?? nil
+                        group.cancelAll()
+                        return result
                     }
+                } catch is CancellationError {
+                    Log.write(String(format: "claude voice: PocketTTS (%@, %@) did not finish \"%@\" in %.0fs, skipped",
+                                     speaking, localPlacement.rawValue, String(sentence.prefix(60)), limit))
+                    pocket = nil
+                    return
                 }
-                if !piece.isEmpty { _ = await emit(piece) }
                 Log.write(String(format: "claude voice: PocketTTS (%@, %@) first sound %.2fs, %d chars in %.2fs",
                                  speaking, localPlacement.rawValue, first ?? Date().timeIntervalSince(begun),
                                  sentence.count,
