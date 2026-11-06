@@ -721,12 +721,13 @@ if let index = arguments.firstIndex(of: "--field-dump") {
 
 if let index = arguments.firstIndex(of: "--edit-diff") {
     guard arguments.indices.contains(index + 2) else {
-        print("usage: ParrotFlow --edit-diff \"<before>\" \"<now>\" [--lang fr]")
+        print("usage: ParrotFlow --edit-diff \"<before>\" \"<now>\" [--lang fr] [--no-ear]")
         exit(2)
     }
     let code = await EditDiffCommand.run(
         before: arguments[index + 1], now: arguments[index + 2],
-        language: languageList(arguments)?.first ?? "en"
+        language: languageList(arguments)?.first ?? "en",
+        noEar: arguments.contains("--no-ear")
     )
     exit(code)
 }

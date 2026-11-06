@@ -60,7 +60,8 @@ def load(path):
         # and cut rules too, so reading the baseline off it moved the baseline
         # when the cut rule landed -- 22 offers became 20 with nothing changed.
         r["words_only"] = "words: yes" in shown
-        r["phon"] = float(re.search(r"sound: ([\d.]+)", shown).group(1)) if "sound:" in shown else 0.0
+        sound = re.search(r"sound: ([\d.]+)", shown)
+        r["phon"] = float(sound.group(1)) if sound else 0.0
         r["ends"] = bool(ENDS.search((r.get("heard") or "").strip()))
         # `offers` returns `.ended` only over an accept, so this line means
         # "would be offered but for the cut rule" -- which is what row 3 is.

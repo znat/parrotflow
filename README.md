@@ -90,6 +90,8 @@ transcription:
 ### 3. Vocabulary
 
 Fix a word once and the pill offers to learn it: Y to keep it, N to skip.
+It asks only when your fix sounds like what it heard. A word you swapped
+for a different one is a change of mind, not a mishearing.
 Next time, "upgrade view" becomes "upgrade Vue". In "re-render the whole
 view", the word stays "view".
 

@@ -580,6 +580,8 @@ final class EditWatch {
         case ended
         /// The two readings are one word in two forms.
         case inflected
+        /// A correction onto a name that does not sound like what was heard.
+        case unlike
 
         var description: String {
             switch self {
@@ -587,6 +589,7 @@ final class EditWatch {
             case .ordinary: return "ordinary English"
             case .ended: return "the heard side ends a sentence"
             case .inflected: return "the same word in another form"
+            case .unlike: return "does not sound like what was heard"
             }
         }
     }
@@ -648,6 +651,13 @@ final class EditWatch {
     /// Not the spelling floor `refusal` rejects: that asked spelling to *find*
     /// the pair, this asks sound to classify one already in hand.
     static let soundFloor: Float = 0.65
+
+    /// The floor a correction onto an unknown or capitalised word clears.
+    ///
+    /// 207 recorded name-path pairs, hand-labelled 170 mishearings and 37 not:
+    /// 0.45 offers 154 and 13, 0.40 offers 156 and 16, 0.50 offers 145 and 11.
+    /// The 13 are typos and spelling style, which sound alike by nature.
+    static let nameFloor: Float = 0.45
 
     /// Whether the two readings are one word said two ways.
     ///
@@ -713,7 +723,10 @@ final class EditWatch {
     /// `inflected` is the other thing sound cannot see, and it beats the sound
     /// rule rather than joining it: two forms of one verb score 1.00 on every
     /// ear there is.
-    static func offers(_ change: Change, sound: Float, language: String) -> Refusal? {
+    ///
+    /// On the name path sound is a hurdle, not a way in: `folder` -> `worktree`
+    /// lands on a word no list knows and is a change of mind, not a mishearing.
+    static func offers(_ change: Change, sound: Float?, language: String) -> Refusal? {
         // Only ever over an accept. Asked first it shadowed `punctuation` on
         // `rebase.` -> `rebase:`, which was already refused for a better reason.
         let ended = change.was.trimmingCharacters(in: .whitespaces).last.map {
@@ -725,6 +738,9 @@ final class EditWatch {
         let inflected = inflected(change.was, change.now, language: language)
         guard let refusal = refusal(for: change) else {
             if inflected { return .inflected }
+            // `nil` is no ear, not a low score: without espeak-ng or the model
+            // every name is still offered.
+            if let sound, sound < nameFloor { return .unlike }
             return ended ? .ended : nil
         }
         guard case .ordinary = refusal else { return refusal }
@@ -733,29 +749,27 @@ final class EditWatch {
         // — `grand` -> `grande` — and "ordinary English" is the vaguer of two
         // true answers. `punctuation` still wins: `refusal` asks it first.
         if inflected { return .inflected }
-        if sound >= soundFloor { return ended ? .ended : nil }
+        if let sound, sound >= soundFloor { return ended ? .ended : nil }
         return refusal
     }
 
     /// How alike two words sound, on the better of the two ears.
     ///
     /// Never mixed, the same rule as `VocabularyPass`: espeak's inventory is
-    /// not the model's, so a score compares two readings from one ear. Zero
-    /// when neither answers, and near zero for a term neither can say —
-    /// `when` -> `Qwen` scores 0.30. The word lists catch that one, which is
-    /// why this is an `or` and not a second hurdle.
-    static func soundsAlike(_ was: String, _ now: String, language: String) async -> Float {
+    /// not the model's, so a score compares two readings from one ear. `nil`
+    /// when no ear reads both words, which is not the same as a low score.
+    static func soundsAlike(_ was: String, _ now: String, language: String) async -> Float? {
         // Only an ear already here: `NeuralPhonemes.of` would fetch the model,
         // and this runs behind the panel seconds after a hand correction.
         let neural = NeuralPhonemes.isDownloaded ? NeuralPhonemes.language(language) : nil
-        guard Phonemes.binary != nil || neural != nil else { return 0 }
+        guard Phonemes.binary != nil || neural != nil else { return nil }
         let asking = [was, now]
         let rules = Phonemes.of(asking, voice: Phonemes.voice(for: language))
         let model = neural == nil ? [:] : await NeuralPhonemes.of(asking, language: neural!)
-        var best: Float = 0
+        var best: Float?
         for ear in [rules, model] {
             guard let a = ear[was], let b = ear[now], !a.isEmpty, !b.isEmpty else { continue }
-            best = max(best, Phonemes.similarity(a, b))
+            best = max(best ?? 0, Phonemes.similarity(a, b))
         }
         return best
     }
