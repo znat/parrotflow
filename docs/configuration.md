@@ -1432,6 +1432,9 @@ The spoken text leaves your Mac, as it already does for a hosted `model`.
 
 What it says:
 
+- **Only while you watch:** progress lines are said only when the app that
+  session runs in is in front. Away from it, you hear only answers, questions,
+  plans to approve and permission prompts.
 - **While Claude works:** with `explain` and a model, one sentence on what
   the work achieves ("I'm building the glow around the speaking window"),
   not the tool action on a file. The model gets the tool call and the last thing

@@ -48,6 +48,7 @@ final class ClaudeVoice {
         var reminder: String?
         var reminding = false
         var heard: Date?
+        var hostPid: pid_t?
     }
 
     struct Spoken: Equatable {
@@ -158,6 +159,8 @@ final class ClaudeVoice {
     ) {
         let now = Date()
         if !line.urgent {
+            // Progress is for someone watching; away, only answers and asks are said.
+            if !watching(session) { return }
             if isRecording() || speaker.isSpeaking { return }
             if now.timeIntervalSince(lastProgressAt) < progressInterval { return }
             if line.kind == .read, lastKind == .read,
@@ -292,6 +295,16 @@ final class ClaudeVoice {
 
     // MARK: - Which session is talking
 
+    /// The app this session's Claude runs in is in front. In the desktop
+    /// app, every session there counts. Without a pid: the window title.
+    private func watching(_ id: String) -> Bool {
+        guard let session = sessions[id] else { return false }
+        guard let pid = session.pid else { return Self.inFront(project: session.project) }
+        if session.hostPid == nil { sessions[id]?.hostPid = SpeakingFrame.hostApp(of: pid)?.processIdentifier }
+        guard let host = sessions[id]?.hostPid else { return Self.inFront(project: session.project) }
+        return NSWorkspace.shared.frontmostApplication?.processIdentifier == host
+    }
+
     private func frameSession(_ id: String?) {
         guard settings.frame, let id, let session = sessions[id], let pid = session.pid else {
             return frame.hide()
@@ -309,6 +322,7 @@ final class ClaudeVoice {
         session.project = (cwd as NSString).lastPathComponent
         session.account = account
         session.seen = Date()
+        if let pid, pid != session.pid { session.hostPid = nil }
         session.pid = pid ?? session.pid
         session.transcript = (event["transcript_path"] as? String).map { URL(fileURLWithPath: $0) } ?? session.transcript
         sessions[id] = session
@@ -325,7 +339,7 @@ final class ClaudeVoice {
         guard let this = sessions[id], !this.project.isEmpty else { return "" }
         let other = lastSpokenSession.flatMap { $0 == id ? nil : activeSessions[$0] } != nil
         let quiet = lastSpokenAt.map { Date().timeIntervalSince($0) } ?? .infinity
-        guard Self.names(otherSpokeLast: other, quietFor: quiet, inFront: Self.inFront(project: this.project))
+        guard Self.names(otherSpokeLast: other, quietFor: quiet, inFront: watching(id))
         else { return "" }
         let recent = activeSessions
         let sameProject = recent.values.filter { $0.project == this.project }.count > 1

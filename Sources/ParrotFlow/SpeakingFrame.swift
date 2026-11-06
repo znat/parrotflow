@@ -6,20 +6,26 @@ import QuartzCore
 /// brightens with the voice and follows the window if it moves.
 final class SpeakingFrame {
 
+    /// The configured purple, lightened: as it is, #5F46CA read as too dark.
     var color = ContextIdentity.nsColor(ContextIdentity.defaultPrimary) {
-        didSet { glow.strokeColor = color.cgColor; glow.shadowColor = color.cgColor }
+        didSet { paint() }
     }
 
     private var panel: NSPanel?
-    private let glow = CAShapeLayer()
+    /// A bright line on the window's edge, and a wide halo around it.
+    private let core = CAShapeLayer()
+    private let halo = CAShapeLayer()
+    /// The voice's lift, falling slowly so the glow pulses instead of flickering.
+    private var shown: CGFloat = 0
     private var target: (host: pid_t, project: String)?
     private var follow: Timer?
     private var hiding: DispatchWorkItem?
-    /// Room outside the window for the glow to spread into.
-    private let margin: CGFloat = 16
+    /// Room outside the window for the halo to spread into.
+    private let margin: CGFloat = 48
 
     func show(claude pid: pid_t, project: String) {
         hiding?.cancel()
+        shown = 0
         guard let host = Self.hostApp(of: pid) else { return hide(now: true) }
         target = (host.processIdentifier, project)
         guard let frame = Self.windowFrame(host: host.processIdentifier, project: project) else {
@@ -55,14 +61,27 @@ final class SpeakingFrame {
         DispatchQueue.main.asyncAfter(deadline: .now() + (now ? 0 : 0.5), execute: work)
     }
 
-    /// 0 to about 0.3: the voice's loudness.
+    /// 0 to about 0.3: the voice's loudness. Rises at once, falls over
+    /// about a quarter of a second.
     func level(_ rms: Float) {
-        let lift = CGFloat(min(1, rms * 5))
+        shown = max(CGFloat(min(1, rms * 10)), shown * 0.82)
         CATransaction.begin()
-        CATransaction.setAnimationDuration(0.08)
-        glow.opacity = Float(0.45 + 0.55 * lift)
-        glow.shadowRadius = 6 + 12 * lift
+        CATransaction.setAnimationDuration(0.05)
+        core.opacity = Float(0.8 + 0.2 * shown)
+        core.lineWidth = 4 + 4 * shown
+        halo.opacity = Float(0.4 + 0.6 * shown)
+        halo.lineWidth = 10 + 14 * shown
+        halo.shadowRadius = 16 + 28 * shown
         CATransaction.commit()
+    }
+
+    private func paint() {
+        let bright = color.blended(withFraction: 0.55, of: .white) ?? color
+        let vivid = color.blended(withFraction: 0.25, of: .white) ?? color
+        core.strokeColor = bright.cgColor
+        core.shadowColor = bright.cgColor
+        halo.strokeColor = vivid.withAlphaComponent(0.6).cgColor
+        halo.shadowColor = vivid.cgColor
     }
 
     private func makePanel() -> NSPanel {
@@ -78,15 +97,18 @@ final class SpeakingFrame {
         panel.alphaValue = 0
         let view = NSView()
         view.wantsLayer = true
-        glow.fillColor = nil
-        glow.lineWidth = 3
-        glow.strokeColor = color.cgColor
-        glow.shadowColor = color.cgColor
-        glow.shadowOffset = .zero
-        glow.shadowOpacity = 1
-        glow.shadowRadius = 6
-        glow.opacity = 0.45
-        view.layer?.addSublayer(glow)
+        for layer in [halo, core] {
+            layer.fillColor = nil
+            layer.shadowOffset = .zero
+            layer.shadowOpacity = 1
+            view.layer?.addSublayer(layer)
+        }
+        core.lineWidth = 4
+        core.shadowRadius = 6
+        halo.lineWidth = 10
+        halo.shadowRadius = 16
+        halo.opacity = 0.4
+        paint()
         panel.contentView = view
         self.panel = panel
         return panel
@@ -96,11 +118,14 @@ final class SpeakingFrame {
         let outer = window.insetBy(dx: -margin, dy: -margin)
         if panel.frame != outer { panel.setFrame(outer, display: false) }
         let bounds = CGRect(origin: .zero, size: outer.size)
-        glow.frame = bounds
-        glow.path = CGPath(
-            roundedRect: bounds.insetBy(dx: margin - 1.5, dy: margin - 1.5),
-            cornerWidth: 11, cornerHeight: 11, transform: nil
+        let edge = CGPath(
+            roundedRect: bounds.insetBy(dx: margin - 2, dy: margin - 2),
+            cornerWidth: 12, cornerHeight: 12, transform: nil
         )
+        for layer in [halo, core] {
+            layer.frame = bounds
+            layer.path = edge
+        }
     }
 
     // MARK: - Finding the window
