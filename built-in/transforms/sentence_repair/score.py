@@ -14,6 +14,7 @@ changing a case, the parser or the sentence model.
 
 A case may carry `written:`, the words the `vocabulary` stage wrote before
 this one ran. `--eval` has no vocabulary stage, so only this file reads it.
+`protected:` sets the raw value that stage published, in place of `written:`.
 
 No model call anywhere in this file, except the binary `--record` runs.
 """
@@ -45,6 +46,7 @@ if TYPE_CHECKING:
         lang: NotRequired[str]
         language: NotRequired[str]
         written: NotRequired[list[str]]
+        protected: NotRequired[Scalar]
 
     Field = Literal["text", "upos", "head", "deprel", "ner"]
 
@@ -175,13 +177,14 @@ def record(binary: str) -> None:
     print(f"  {len(found)} envelopes written to {ENVELOPES.name}")
 
 
-def envelope_of(text: str, recorded: Recorded, written: Iterable[str] = ()) -> Replayed:
+def envelope_of(text: str, recorded: Recorded, written: Iterable[str] = (),
+                protected: Scalar | None = None) -> Replayed:
     """The envelope the app would hand over, from what was recorded."""
     return {
         "text": text,
         "ctx": {"language": recorded["language"], "vars": {
             "lists": {"abbreviations": recorded["abbreviations"]},
-            "vocabulary": {"protected": "; ".join(written)},
+            "vocabulary": {"protected": "; ".join(written) if protected is None else protected},
         }},
         "parse": recorded["parse"],
         "readings": recorded["readings"],
@@ -200,7 +203,7 @@ def score(verbose: bool) -> bool:
             continue
         got, edits, declined = sentence_repair.repair(
             case["input"], envelope_of(case["input"], recorded[case["input"]],
-                                       case.get("written", ())))
+                                       case.get("written", ()), case.get("protected")))
         rules = ", ".join(sorted({e.rule for e in edits}))
         if got == want and not declined:
             if verbose:

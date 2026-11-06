@@ -59,6 +59,16 @@ cases:
   - probe: capital
     input: "the agent writes Notes for each step"
     expect: "the agent writes notes for each step"
+  # A `protected` that is not a string is absent. A user stage can publish a
+  # number or a boolean under `vocabulary`.
+  - probe: capital
+    input: "the agent writes Notes for each step"
+    protected: 7
+    expect: "the agent writes notes for each step"
+  - probe: join
+    input: "you should see a parrot. At the top right of your screen."
+    protected: true
+    expect: "you should see a parrot at the top right of your screen."
 
   # From tests/sentence-case-cases.json: the capitals with no mark in front,
   # which the Swift stage read with a part-of-speech filter.
