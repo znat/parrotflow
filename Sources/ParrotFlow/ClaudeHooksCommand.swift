@@ -350,7 +350,12 @@ enum ClaudeHooksCommand {
     }
 
     /// `tone` replaces the whole instructions, so they can be tried as written.
-    static func say(_ text: String, config: Config, tone: String? = nil, voice: String? = nil) -> Never {
+    static func say(
+        _ text: String, config: Config, tone: String? = nil, voice: String? = nil, output: String? = nil
+    ) -> Never {
+        if let output, let remote = ClaudeVoice.remote(config.claude, config) {
+            save(text, to: output, remote: remote, tone: tone, voice: voice ?? config.claude.speechVoices.first ?? "")
+        }
         Task { @MainActor in
             let speaker = Speaker()
             speaker.voice = config.claude.voice
@@ -374,5 +379,43 @@ enum ClaudeHooksCommand {
         }
         RunLoop.main.run()
         exit(0)
+    }
+
+    /// The remote voice into a 24 kHz WAV instead of the speakers: a clip to
+    /// clone a PocketTTS voice from.
+    private static func save(_ text: String, to path: String, remote: ModelSpec, tone: String?, voice: String) -> Never {
+        Task { @MainActor in
+            var samples: [Float] = []
+            do {
+                let timing = try await RemoteSpeech.stream(
+                    ClaudeSpeakable.speakable(text), voice: voice, tone: tone, speed: 1, config: remote
+                ) { piece in
+                    samples += piece
+                    return true
+                }
+                try wav(samples, rate: RemoteSpeech.sampleRate).write(to: URL(fileURLWithPath: path))
+                print(String(format: "saved %@: %.1fs of audio, %@ at %d Hz, first sound %.2fs",
+                             path, Double(samples.count) / Double(RemoteSpeech.sampleRate),
+                             timing.contentType, timing.rate, timing.firstAudio))
+                exit(0)
+            } catch {
+                print("✗ \(error.localizedDescription)")
+                exit(1)
+            }
+        }
+        RunLoop.main.run()
+        exit(0)
+    }
+
+    private static func wav(_ samples: [Float], rate: Int) -> Data {
+        var data = Data()
+        func put<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+        let bytes = samples.count * 2
+        data.append(contentsOf: Array("RIFF".utf8)); put(UInt32(36 + bytes))
+        data.append(contentsOf: Array("WAVEfmt ".utf8)); put(UInt32(16)); put(UInt16(1)); put(UInt16(1))
+        put(UInt32(rate)); put(UInt32(rate * 2)); put(UInt16(2)); put(UInt16(16))
+        data.append(contentsOf: Array("data".utf8)); put(UInt32(bytes))
+        for sample in samples { put(Int16(max(-1, min(1, sample)) * 32_767)) }
+        return data
     }
 }

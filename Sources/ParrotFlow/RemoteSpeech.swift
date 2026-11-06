@@ -13,6 +13,33 @@ enum RemoteSpeech {
     struct Timing {
         var firstAudio: TimeInterval
         var total: TimeInterval
+        var contentType: String
+        var rate: Int
+    }
+
+    /// The PCM rate: from `Content-Type` (`audio/pcm;rate=44100`) when the
+    /// provider says it, else per provider. Fish Audio played as 24 kHz came
+    /// out slow and low.
+    static func rate(contentType: String, model: String) -> Int {
+        if let range = contentType.range(of: #"rate=(\d+)"#, options: .regularExpression),
+           let value = Int(contentType[range].dropFirst(5)) {
+            return value
+        }
+        return model.hasPrefix("fish-audio/") ? 44_100 : sampleRate
+    }
+
+    /// Linear interpolation to the player's 24 kHz.
+    static func resample(_ samples: [Float], from rate: Int) -> [Float] {
+        guard rate != sampleRate, !samples.isEmpty else { return samples }
+        let step = Double(rate) / Double(sampleRate)
+        let count = Int(Double(samples.count) / step)
+        return (0..<count).map { index in
+            let position = Double(index) * step
+            let low = Int(position)
+            let high = min(low + 1, samples.count - 1)
+            let weight = Float(position - Double(low))
+            return samples[low] * (1 - weight) + samples[high] * weight
+        }
     }
 
     /// `tone` goes out as `instructions`. A model that refuses it with a 400
@@ -76,6 +103,7 @@ enum RemoteSpeech {
             throw LLM.Failure.badStatus(config, http.statusCode, "expected pcm audio, got \(type)")
         }
 
+        let pcmRate = rate(contentType: type, model: config.model)
         var buffer = Data()
         var header: Bool?
         var first: TimeInterval?
@@ -94,13 +122,14 @@ enum RemoteSpeech {
             let piece = buffer.prefix(pieceBytes - pieceBytes % 2)
             buffer.removeSubrange(..<piece.count)
             if first == nil { first = Date().timeIntervalSince(started) }
-            guard await emit(samples(fromPCM16: Data(piece))) else { break }
+            guard await emit(resample(samples(fromPCM16: Data(piece)), from: pcmRate)) else { break }
         }
         if buffer.count >= 2 {
             if first == nil { first = Date().timeIntervalSince(started) }
-            _ = await emit(samples(fromPCM16: buffer.prefix(buffer.count - buffer.count % 2)))
+            _ = await emit(resample(samples(fromPCM16: buffer.prefix(buffer.count - buffer.count % 2)), from: pcmRate))
         }
-        return Timing(firstAudio: first ?? Date().timeIntervalSince(started), total: Date().timeIntervalSince(started))
+        return Timing(firstAudio: first ?? Date().timeIntervalSince(started), total: Date().timeIntervalSince(started),
+                      contentType: type, rate: pcmRate)
     }
 
     /// Where the samples start in a WAV: after the `data` chunk's 8-byte header.

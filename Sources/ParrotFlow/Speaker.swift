@@ -239,8 +239,9 @@ final class Speaker {
                 let timing = try await RemoteSpeech.stream(
                     sentence, voice: style.voice, tone: style.tone, speed: speed, config: remote, emit: emit
                 )
-                Log.write(String(format: "claude voice: %@ (%@) first sound %.2fs, %d chars in %.2fs",
-                                 remote.name, style.voice, timing.firstAudio, sentence.count, timing.total))
+                Log.write(String(format: "claude voice: %@ (%@) first sound %.2fs, %d chars in %.2fs, %@ at %d Hz",
+                                 remote.name, style.voice, timing.firstAudio, sentence.count, timing.total,
+                                 timing.contentType, timing.rate))
                 return
             } catch {
                 Log.write("claude voice: \(remote.name) failed, the local voice takes this one — "

@@ -164,7 +164,7 @@ if let index = arguments.firstIndex(of: "--claude-say"), arguments.indices.conta
     }
     ClaudeHooksCommand.say(
         arguments[index + 1], config: (try? ConfigStore.load()) ?? Config(),
-        tone: value("--tone"), voice: value("--voice")
+        tone: value("--tone"), voice: value("--voice"), output: value("--output")
     )
 }
 
