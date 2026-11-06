@@ -434,3 +434,8 @@ jobs:
       # are scored by scripts/check-counter-portrait.sh, which needs one.
       - name: Sound groups
         run: scripts/check-sound-group.sh
+
+      # What Claude Code's answers and hook events sound like: the text rules
+      # only, no model and no audio.
+      - name: The Claude voice text rules
+        run: scripts/check-claude-voice.sh
