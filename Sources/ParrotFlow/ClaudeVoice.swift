@@ -270,9 +270,15 @@ final class ClaudeVoice {
             )
             let parsed = ClaudeSpeakable.parseSpoken(LLM.stripThinking(raw))
             let said = ClaudeSpeakable.clean(parsed.say)
-            let text = keep
+            let ground = ClaudeSpeakable.grounded(said, in: cleaned)
+            var text = keep
                 ? ClaudeSpeakable.kept(said, original: plain)
                 : (said.isEmpty ? plain : ClaudeSpeakable.capped(said))
+            if ground < ClaudeSpeakable.groundedFloor {
+                Log.write(String(format: "claude voice: %@ wrote words the reply does not have (%.2f), saying it plain",
+                                 model.name, ground))
+                text = plain
+            }
             Log.write(String(format: "claude voice: %@ %@ %d chars to %d in %.1fs, shift \"%@\"%@",
                              model.name, mode.rawValue, cleaned.count, text.count,
                              Date().timeIntervalSince(started), parsed.tone ?? "none",

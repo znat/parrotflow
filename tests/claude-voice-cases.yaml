@@ -223,3 +223,21 @@ naming:
     quiet_for: 120
     in_front: false
     named: true
+
+grounded:
+  - name: a faithful summary is kept
+    said: "I merged PR 403 into main. CI is green, and the spoken digits work now."
+    source: "Merged PR 403 into main as 8c15cf77. Spoken digits, separators and learning all work. CI is green on the branch."
+    kept: true
+  - name: the prompt's own example is refused
+    said: "I fixed the crash."
+    source: "I merged PR 403 into main. The branch passes 12 of 12 invented cases against 8 of 12 on main."
+    kept: false
+  - name: an invented result is refused
+    said: "I deployed the release and the dashboard shows zero errors."
+    source: "I merged PR 403 into main. The branch passes 12 of 12 invented cases against 8 of 12 on main."
+    kept: false
+  - name: short plain words still count as grounded
+    said: "Done."
+    source: "Done. Tests pass."
+    kept: true

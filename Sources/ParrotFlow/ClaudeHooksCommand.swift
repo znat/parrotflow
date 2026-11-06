@@ -199,8 +199,10 @@ enum ClaudeHooksCommand {
             }
         }
         var naming: [Naming] = []
+        struct Grounding: Decodable { var name: String; var said: String; var source: String; var kept: Bool }
+        var grounded: [Grounding] = []
 
-        enum CodingKeys: String, CodingKey { case clean, progress, turns, parse, capped, redacted, naming }
+        enum CodingKeys: String, CodingKey { case clean, progress, turns, parse, capped, redacted, naming, grounded }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -211,6 +213,7 @@ enum ClaudeHooksCommand {
             capped = try c.decodeIfPresent([Clean].self, forKey: .capped) ?? []
             redacted = try c.decodeIfPresent([Clean].self, forKey: .redacted) ?? []
             naming = try c.decodeIfPresent([Naming].self, forKey: .naming) ?? []
+            grounded = try c.decodeIfPresent([Grounding].self, forKey: .grounded) ?? []
         }
     }
 
@@ -263,6 +266,10 @@ enum ClaudeHooksCommand {
                 otherSpokeLast: item.otherSpokeLast, quietFor: item.quietFor, inFront: item.inFront
             )
             check(item.name, got: said ? "named" : "not named", want: item.named ? "named" : "not named")
+        }
+        for item in cases.grounded {
+            let keeps = ClaudeSpeakable.grounded(item.said, in: item.source) >= ClaudeSpeakable.groundedFloor
+            check(item.name, got: keeps ? "kept" : "plain", want: item.kept ? "kept" : "plain")
         }
         let count = ClaudeVoice.introductions.count
         let repeats = (0..<count).flatMap { last in (0..<50).map { (last, $0) } }

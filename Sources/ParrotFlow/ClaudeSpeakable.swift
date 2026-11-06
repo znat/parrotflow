@@ -91,30 +91,34 @@ enum ClaudeSpeakable {
         You turn a coding assistant's written reply into what it says out loud to the \
         developer it works with, who is not looking at the screen.
 
-        The first line of the message is MODE: shorten or MODE: keep.
+        The first line of the message is MODE: shorten or MODE: keep. The rest is the reply.
 
         Return JSON: {"say": "...", "tone": "..."}
 
         say, in both modes:
-        - First person for what the assistant did or found: "I fixed the crash", \
-        "I'm checking the log". Any other subject stays: "the app can't load it" \
-        stays about the app, "CI is green" stays about CI.
-        - Simple past or present. Never the present perfect, and never the passive: \
-        not "The crash has been fixed", not "I've fixed the crash".
+        - Every fact comes from the reply. Use its own names, numbers and results. \
+        Never write a result the reply does not state.
+        - First person for what the assistant did or found: "I <did X>", "I'm <doing X>". \
+        Anything the reply says about something else (the app, CI, a build, a test) \
+        keeps that subject.
+        - Simple past or present. No present perfect ("I have <done X>", "I've <done X>") \
+        and no passive ("<X> has been <done>").
         - Talk the way a colleague talks: contractions, casual words, no formal phrasing.
         - Keep file names, PR numbers and command names as the reply wrote them.
         - No code, no lists, no markdown, no paths, no greetings.
 
         MODE: shorten
-        - At most three short sentences and 50 words. Lead with the result, then \
-        what the developer has to do or decide, if anything. Leave the rest out.
+        - At most three short sentences and 50 words. Lead with the reply's main \
+        result, then what the developer has to do or decide, if the reply asks for \
+        anything. Leave the rest out.
 
         MODE: keep
-        - Keep every fact and every question, in the same order. Change only person, \
-        tense and wording. Add nothing that is not in the text.
+        - A light edit, not a summary. Keep every fact and every question, in the \
+        same order. Change only person, tense and wording.
 
-        tone: how this moment shifts a relaxed, friendly delivery, in at most 8 words. \
-        For example "a little pleased", "calm, a little sorry", "curious", "easy, routine".
+        tone: how this moment shifts a relaxed, friendly delivery, in at most 8 words: \
+        pleased when something works, calm and a little sorry when something broke, \
+        curious when asking, easy when routine.
         """
 
     /// A shorten-mode result that ran long keeps whole sentences up to about
@@ -142,6 +146,32 @@ enum ClaudeSpeakable {
         guard let shift, !shift.isEmpty else { return base }
         return base + " Right now: " + shift + "."
     }
+
+    private static let stopWords: Set<String> = Set(
+        ("this that with from have will what when then they them their there were your just into also than "
+            + "only about after before because which would could should being been does doing done here more "
+            + "most some such very over").split(separator: " ").map(String.init)
+    )
+
+    private static let wordPattern = try? NSRegularExpression(pattern: #"[a-z0-9][a-z0-9'.-]{3,}"#)
+
+    private static func contentWords(_ text: String) -> Set<String> {
+        let lower = text.lowercased()
+        let found = wordPattern?.matches(in: lower, range: NSRange(lower.startIndex..., in: lower))
+            .compactMap { Range($0.range, in: lower).map { String(lower[$0]) } } ?? []
+        return Set(found).subtracting(stopWords)
+    }
+
+    /// The share of the output's content words that the input also has. A
+    /// small model wrote "I fixed the crash", its prompt's own example, for
+    /// four of ten long answers; those score 0.
+    static func grounded(_ said: String, in source: String) -> Double {
+        let out = contentWords(said)
+        guard !out.isEmpty else { return 1 }
+        return Double(out.intersection(contentWords(source)).count) / Double(out.count)
+    }
+
+    static let groundedFloor = 0.4
 
     /// A keep-mode result that grew is one the model added to; the original
     /// words are said instead.
@@ -251,12 +281,13 @@ enum ClaudeSpeakable {
         A coding assistant is about to use a tool. Say out loud, in one short sentence, \
         what it is working on right now, to the developer it works with.
 
-        - Say what the work achieves: the feature, fix or answer it moves forward. Not \
-        the tool action: "I'm building the glow around the speaking window", not \
-        "I'm writing SpeakingFrame.swift" or "I'm running a command".
+        - Say what the work moves forward, the feature or fix, not the tool action. \
+        "I'm <reading|writing|running> <a file or command>" is the tool action; \
+        "I'm <doing the task>" is the work.
+        - Take the purpose only from the session's task, the tool's description and what \
+        the assistant just wrote. Never add a goal they do not state. When the purpose \
+        is unclear, say plainly what it is checking or changing, from the description.
         - Name a file or a command only when it is the point.
-        - Find the purpose in the session's task and in what the assistant just wrote. \
-        Never invent one. When it is unclear, say plainly what it is checking or changing.
         - First person, present continuous, at most 16 words, casual, like a colleague.
         - No code, no paths, no flags, no quotes.
 
@@ -268,8 +299,8 @@ enum ClaudeSpeakable {
         developer's attention comes back to it from another session.
 
         - One or two sentences, at most 25 words in all.
-        - Say the goal, not the steps: "This is the one where we're adding a glow \
-        around the speaking window."
+        - Say the goal from the request, not the steps, in the shape "This is the one \
+        where we're <the goal>." Every word of the goal comes from the request.
         - Casual, like a colleague. No file names, paths, code or quotes.
 
         Output only the reminder.
