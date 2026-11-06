@@ -30,7 +30,6 @@ final class ClaudeVoice {
     private var lastSpokenSession: String?
     private var lastSpokenAt: Date?
     private var lastIntroduction: Int?
-    private var lastWasProgress = false
     /// Bumped per progress line, so a slow explanation of an older call is dropped.
     private var progressSeq = 0
     /// Past this, the call being explained is likely over.
@@ -97,8 +96,8 @@ final class ClaudeVoice {
         switch name {
         case "UserPromptSubmit":
             turns[id, default: 0] += 1
-            if speaker.isSpeaking { Log.write("claude voice: stopped by a new prompt") }
-            speaker.stop()
+            if speaker.speakingSession == id { Log.write("claude voice: stopped by a new prompt") }
+            speaker.stop(session: id)
         case "PreToolUse":
             let tool = event["tool_name"] as? String ?? ""
             let input = event["tool_input"] as? [String: Any] ?? [:]
@@ -200,8 +199,8 @@ final class ClaudeVoice {
                 self.lastKind = nil
                 self.whenFree { [weak self] in
                     guard let self else { return }
-                    // A progress line gives way; another session's answer does not.
-                    if self.lastWasProgress, self.speaker.isSpeaking { self.speaker.stop() }
+                    // Progress lines give way; another session's answer keeps its place.
+                    self.speaker.dropProgress()
                     self.say(spoken.text, session: session, tone: spoken.tone)
                 }
             }
@@ -358,7 +357,6 @@ final class ClaudeVoice {
         let line = prefix(for: session) + text
         lastSpokenSession = session
         lastSpokenAt = Date()
-        lastWasProgress = progress
         let style = speaker.remote == nil || settings.speechVoices.isEmpty ? nil : Speaker.Style(
             voice: voice(for: session),
             tone: tone ?? ClaudeSpeakable.instructions(
@@ -366,7 +364,7 @@ final class ClaudeVoice {
             )
         )
         Log.write("claude voice: \(line.prefix(120))")
-        speaker.say(line, style: style)
+        speaker.say(line, style: style, session: session, progress: progress)
     }
 }
 
