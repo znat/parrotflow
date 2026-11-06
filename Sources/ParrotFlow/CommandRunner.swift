@@ -92,7 +92,14 @@ enum CommandRunner {
                 let name = String(path[path.index(after: dot)...])
                 nested[namespace, default: [:]][name] = value
             }
-            try container.encode(nested, forKey: Key("vars"))
+            try container.encode(nested, forKey: Key(CodingKeys.vars.stringValue))
+        }
+
+        /// `vars`, and the bare names the pipeline seeds. Any other bare name
+        /// is a scalar too.
+        enum CodingKeys: String, CodingKey, CaseIterable {
+            case vars, text, app, language
+            case bundleID = "bundle_id"
         }
 
         struct Key: CodingKey {
@@ -110,7 +117,7 @@ enum CommandRunner {
     /// the scope, and the scope is scalars because a `when:` condition compares
     /// scalars. An array of records would drag `Scope.Value` somewhere it does
     /// not need to go.
-    private struct Envelope: Encodable {
+    fileprivate struct Envelope: Encodable {
         let text: String
         let ctx: Context
         /// Recomputed per stage, against the text *this* stage was handed.
@@ -132,6 +139,10 @@ enum CommandRunner {
         let parse: ParseField?
         /// Only for a transform that declared `readings: true`. See `ReadingsField`.
         let readings: ReadingsField?
+
+        enum CodingKeys: String, CodingKey, CaseIterable {
+            case text, ctx, tokens, trace, aligned, parse, readings
+        }
     }
 
     /// What must come back. Both keys optional, because a script that only
@@ -142,7 +153,7 @@ enum CommandRunner {
         var text: String?
         var vars: [String: Scope.Value] = [:]
 
-        enum CodingKeys: String, CodingKey { case text, vars }
+        enum CodingKeys: String, CodingKey, CaseIterable { case text, vars }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -621,5 +632,48 @@ enum CommandRunner {
         guard resolved != nil, fm.fileExists(atPath: program),
               !fm.isExecutableFile(atPath: program) else { return nil }
         return "\(program) is not executable — chmod +x it"
+    }
+}
+
+
+extension CommandRunner {
+    static func envelopeSchema() throws -> [String: Any] {
+        try EnvelopeSchema.document(envelope: Envelope.self, reply: Reply.self)
+    }
+}
+
+extension CommandRunner.Envelope: EnvelopeDescribed {
+    static let schemaName = "Envelope"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .text: return .required(.string)
+        case .ctx: return .required(.type(CommandRunner.Context.self))
+        case .tokens: return .required(.array(.type(Tagger.Token.self)))
+        case .trace: return .optional(.type(Trace.Snapshot.self))
+        case .aligned: return .required(.boolean)
+        case .parse: return .optional(.type(ParseField.self))
+        case .readings: return .optional(.type(ReadingsField.self))
+        }
+    }
+}
+
+extension CommandRunner.Context: EnvelopeDescribed {
+    static let schemaName = "Ctx"
+    static var others: EnvelopeSchema? { .scalar }
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .vars: return .required(.map(.map(.scalar)))
+        case .text, .app, .bundleID, .language: return .optional(.string)
+        }
+    }
+}
+
+extension CommandRunner.Reply: EnvelopeDescribed {
+    static let schemaName = "Reply"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .text: return .optional(.nullable(.string))
+        case .vars: return .optional(.map(.scalar))
+        }
     }
 }

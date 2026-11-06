@@ -23,12 +23,18 @@ noun behind it is an adjective, which is what keeps "a 20 dollar bill" whole.
 `engine.py` beside this file holds the loop, the JSON protocol and the
 cross-language guard, and says how to add a language.
 """
+from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import engine  # noqa: E402 — the path above is what makes it importable
+
+if TYPE_CHECKING:
+    from envelope import Envelope, Reply
 
 CODE = "en"
 
@@ -79,7 +85,7 @@ CUR = engine.alt(CURRENCIES)
 SCALE = engine.alt(SCALES)
 
 
-def symbol(word):
+def symbol(word: str) -> str:
     return CURRENCIES[word.lower()]
 
 
@@ -89,7 +95,7 @@ def symbol(word):
 CLAUSE_END = re.compile(r"\s*(?:[.,;:!?)\]]|$)")
 
 
-def singular_ok(m, text, tail=False):
+def singular_ok(m: re.Match[str], text: str, tail: bool = False) -> bool:
     """Whether a singular currency word here is an amount.
 
     Plural always is. Singular is when the amount is one ("the fee is one
@@ -110,7 +116,7 @@ def singular_ok(m, text, tail=False):
 
 # --- what the rules write ----------------------------------------------------
 
-def with_cents(m, text):
+def with_cents(m: re.Match[str], text: str) -> str | None:
     """"twenty dollars and fifty cents" -> "$20.50"."""
     word = m.group("cur")
     if engine.half_of_a_number(m, text, TENS):
@@ -125,7 +131,7 @@ def with_cents(m, text):
     return f"{symbol(word)}{written}.{cents:02d}"
 
 
-def bare_cents_tail(m, text):
+def bare_cents_tail(m: re.Match[str], text: str) -> str | None:
     """"twenty five euros fifty" -> "€25.50". The cents word was not said.
 
     Only a tail of ten and over. "20 dollars 3" is a count that ran on, and a
@@ -148,7 +154,7 @@ def bare_cents_tail(m, text):
     return f"{symbol(word)}{written}.{cents:02d}"
 
 
-def with_scale(m, text):
+def with_scale(m: re.Match[str], text: str) -> str | None:
     """"2.5 million dollars" -> "$2.5 million". The scale word stays a word."""
     word = m.group("cur")
     if engine.half_of_a_number(m, text, TENS):
@@ -159,7 +165,7 @@ def with_scale(m, text):
     return f"{symbol(word)}{whole} {m.group('scale').lower()}"
 
 
-def plain(m, text):
+def plain(m: re.Match[str], text: str) -> str | None:
     """"twenty dollars" -> "$20"."""
     word = m.group("cur")
     if engine.half_of_a_number(m, text, TENS):
@@ -172,7 +178,7 @@ def plain(m, text):
 
 # Order is the whole of rule precedence: the longest form of an amount before
 # its shorter ones, so the cents never get left behind as a stray number.
-RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler in [
+RULES: list[engine.Rule] = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler in [
     ("amount and cents",
      rf"\b(?P<n>{AMOUNT})\s+(?P<cur>{CUR})\s+(?:and\s+)?(?P<c>\d{{1,2}}|{UNIT})"
      rf"\s+(?:{engine.alt(CENTS)})\b",
@@ -189,7 +195,7 @@ RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler i
 ]]
 
 
-def run(envelope):
+def run(envelope: Envelope) -> Reply:
     return engine.run(sys.modules[__name__], envelope)
 
 

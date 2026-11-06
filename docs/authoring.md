@@ -407,6 +407,66 @@ if __name__ == "__main__":
 - **`runner: process` in the config entry turns it off** for one transform.
   `PARROTFLOW_PYTHON_WORKER=off` in the environment turns it off for all.
 
+### Types for the envelope
+
+`--envelope-schema` prints the envelope as a JSON Schema (draft 2020-12). The
+root is what a `returns: json` command reads on stdin. `$defs/Reply` is what it
+prints back. The schema is built from the Swift types that write the envelope,
+so it cannot drift from them.
+
+```sh
+$PF --envelope-schema > envelope.schema.json
+```
+
+For Python, `envelope.py` has the same shapes as stdlib `TypedDict`s:
+`Envelope`, `Ctx`, `Token`, `Parse`, `Word`, `Readings`, `Boundary`, `Trace`
+and `Reply`. It ships in the app, at
+`ParrotFlow.app/Contents/Resources/built-in/runner/envelope.py`
+(`built-in/runner/envelope.py` in this repository). The built-in scripts use it
+like this:
+
+```python
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from envelope import Envelope, Reply
+
+def run(envelope: Envelope) -> Reply:
+    return {"text": envelope["text"].upper()}
+```
+
+- **Import it under `TYPE_CHECKING` only.** It is not on the script's path at
+  run time. The type checker reads it, the script never does, so it costs
+  nothing per dictation.
+- **Point your type checker at its folder.** For mypy, set `MYPYPATH` to the
+  `runner` folder. For pyright, add it to `extraPaths`. Or copy the file next
+  to your script.
+- **It needs Python 3.9 and no package.** `NotRequired` comes from
+  `typing_extensions`, which type checkers bundle, and the import is never run.
+- **A `NotRequired` key can be absent.** `parse` is absent when the parser is
+  not ready, `readings.missing` says why there are no readings, and `trace`
+  is absent outside a dictation. Read them with `.get`.
+- **`ctx` holds more than its listed keys.** Any other bare name in the scope
+  is a string, a number or a boolean.
+
+If you prefer Pydantic models, generate them from the schema in your own
+environment. ParrotFlow does not ship Pydantic:
+
+```sh
+pip install datamodel-code-generator
+$PF --envelope-schema > envelope.schema.json
+datamodel-codegen --input envelope.schema.json --input-file-type jsonschema \
+  --output-model-type pydantic_v2.BaseModel --output envelope_models.py
+```
+
+Then `Envelope.model_validate_json(sys.stdin.read())` parses and checks the
+envelope. A script run as a process pays Pydantic's import time at every step.
+Under `runner: python` it pays it once.
+
+`scripts/check-envelope.sh` checks recorded envelopes against the schema, and
+`envelope.py` against the schema key by key. `scripts/check-python-types.sh`
+runs `mypy --strict` over the built-in scripts. Both run in CI.
+
 ### The parse
 
 `parse: true` beside `returns: json` adds the syrinx parse of `text` to the

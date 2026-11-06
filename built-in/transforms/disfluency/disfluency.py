@@ -48,6 +48,8 @@ No `when:`. A condition has to be a superset of everything the stage can act
 on, and these five rules share no shape. An earlier backreference condition
 silently stopped matching once the pass learned fragments.
 """
+from __future__ import annotations
+
 import base64
 import json
 import math
@@ -55,7 +57,56 @@ import os
 import re
 import struct
 import sys
-from collections import namedtuple
+from typing import (TYPE_CHECKING, AbstractSet, Any, Callable, Iterable, List, NamedTuple, Sequence,
+                    cast)
+
+if TYPE_CHECKING:
+    from typing import TypedDict
+
+    from typing_extensions import NotRequired, ReadOnly
+
+    from envelope import Envelope, Reply
+
+    class ParsedWord(TypedDict):
+        text: ReadOnly[str]
+        upos: ReadOnly[str]
+        head: ReadOnly[int]
+        deprel: ReadOnly[str]
+        tags: ReadOnly[Sequence[float]]
+        vector: ReadOnly[NotRequired[str]]
+
+    class ParseView(TypedDict):
+        """What the rules read of a parse. Read-only, so the envelope's `Parse`
+        and the partial parse `score.py` records both fit."""
+        tag_names: ReadOnly[Sequence[str]]
+        words: ReadOnly[Sequence[ParsedWord]]
+
+    class ClipParse(TypedDict):
+        text: str
+        words: list[str]
+        spans: list[tuple[int, int]]
+        heads: list[int]
+        labels: list[str]
+        upos: list[str]
+        abandoned: list[float]
+        cue: list[float]
+        tw: NotRequired[list[int | None]]
+
+    class Candidate(TypedDict):
+        a: int
+        b: int
+        words: list[int]
+        contiguous: bool
+        p_abandoned: list[float]
+        p_cue: list[float]
+        text_cue: int
+        at_end: bool
+
+    class CutFilter(TypedDict):
+        mu: list[float]
+        sd: list[float]
+        w: list[float]
+        b: float
 
 # Longest repeated phrase considered; longer than 3 words is unseen in the archive.
 MAX_PHRASE = 4
@@ -98,12 +149,12 @@ CONJUNCTIONS = {"and", "or", "et", "ou", "but", "mais", "nor", "ni"}
 SENTENCE_END = re.compile(r"[.!?…]")
 
 
-def bare(word):
+def bare(word: str) -> str:
     """The form two copies are compared on: no case."""
     return word.lower()
 
 
-def is_letter(token):
+def is_letter(token: str) -> bool:
     """A single letter, as in a name being spelled out."""
     return len(token) == 1 and token.isalpha()
 
@@ -117,22 +168,23 @@ class Repeat:
 
     __slots__ = ("tokens", "i", "n", "text", "words")
 
-    def __init__(self, tokens, i, n, text, words):
+    def __init__(self, tokens: list[str], i: int, n: int, text: str,
+                 words: list[re.Match[str]]) -> None:
         self.tokens, self.i, self.n = tokens, i, n
         self.text, self.words = text, words
 
     @property
-    def unit(self):
+    def unit(self) -> list[str]:
         """The repeated run, lowercased."""
         return self.tokens[self.i:self.i + self.n]
 
     @property
-    def raw(self):
+    def raw(self) -> list[str]:
         """The same run as it is actually spelled."""
         return [self.words[j].group() for j in range(self.i, self.i + self.n)]
 
     @property
-    def neighbours(self):
+    def neighbours(self) -> tuple[str, str]:
         """The words either side of the pair, for judging a lone letter."""
         before = self.words[self.i - 1].group() if self.i > 0 else ""
         after_at = self.i + 2 * self.n
@@ -140,14 +192,17 @@ class Repeat:
         return before, after
 
     @property
-    def between(self):
+    def between(self) -> str:
         """What sits between the two copies."""
         return self.text[self.words[self.i + self.n - 1].end():
                          self.words[self.i + self.n].start()]
 
 
 # A reason to leave a repeat alone, with a name. `holds(repeat)` is the test.
-Guard = namedtuple("Guard", ("name", "holds"))
+class Guard(NamedTuple):
+    name: str
+    holds: Callable[[Repeat], bool]
+
 
 # First match wins. The order only decides which name is reported when several
 # guards hold. Every one of these was a real transcript the naive rule damaged.
@@ -170,7 +225,8 @@ KEPT = (
 )
 
 
-def protecting(tokens, i, n, text, words):
+def protecting(tokens: list[str], i: int, n: int, text: str,
+               words: list[re.Match[str]]) -> str | None:
     """The name of the guard that holds this repeat, or None."""
     repeat = Repeat(tokens, i, n, text, words)
     return next((g.name for g in KEPT if g.holds(repeat)), None)
@@ -222,7 +278,7 @@ FUNCTION_WORDS = {
 NEVER_START = {"pr", "prs", "qa", "ui", "ux", "id", "db", "os", "ci", "cd"}
 
 
-def drop_fragments(text, applied):
+def drop_fragments(text: str, applied: list[str]) -> str:
     """A word begun, abandoned, and restarted: "I mean w we can try" -> "I
     mean we can try". Only the adjacent single-letter case; a longer fragment
     ("in the tr in the terminal") isn't reached. Thin evidence — 2 examples in
@@ -268,7 +324,7 @@ def drop_fragments(text, applied):
         text = head + tail
 
 
-def drop_restarts(text, applied):
+def drop_restarts(text: str, applied: list[str]) -> str:
     """A phrase begun, abandoned, and begun again — "in the ter in the terminal".
 
     The frame is the gate. `n-1` words match exactly and the last is a strict
@@ -308,7 +364,7 @@ def drop_restarts(text, applied):
         text = cut_to(text, words, i, i + n)
 
 
-def drop_partials(text, applied):
+def drop_partials(text: str, applied: list[str]) -> str:
     """A word begun, abandoned, and said in full — "co could you check".
 
     Two words, no frame, so the gate is the word itself. A function word before
@@ -352,7 +408,7 @@ def drop_partials(text, applied):
         text = cut_to(text, words, edit, edit + 1)
 
 
-def cut_to(text, words, first, upto):
+def cut_to(text: str, words: list[re.Match[str]], first: int, upto: int) -> str:
     """Delete `words[first:upto]`, keeping the case the first one carried."""
     head, tail = text[:words[first].start()], text[words[upto].start():]
     if words[first].group()[:1].isupper() and tail[:1].islower():
@@ -360,7 +416,7 @@ def cut_to(text, words, first, upto):
     return head + tail
 
 
-def collapse(text, applied):
+def collapse(text: str, applied: list[str]) -> str:
     """Both passes, to a fixed point — a dropped fragment can expose a new
     repetition ("w we we can").
 
@@ -375,7 +431,7 @@ def collapse(text, applied):
         text = out
 
 
-def collapse_repeats(text, applied):
+def collapse_repeats(text: str, applied: list[str]) -> str:
     """Delete the earlier copy of each repetition; the last copy is kept (it
     carries the trailing punctuation/spacing). Longest phrase first, then
     restart — a short match collapsed first can hide a longer one.
@@ -414,7 +470,7 @@ def collapse_repeats(text, applied):
 # The markers each language has, and the form of the verb each is judged on.
 # `like` has no verb, so it goes on its tag. A language with no entry has no
 # filler rule.
-MARKERS = {
+MARKERS: dict[str, dict[str, str | None]] = {
     "en": {"i mean": "mean", "you know": "know", "like": None},
 }
 
@@ -440,15 +496,22 @@ COMMA_AFTER = re.compile(r"^\s*[,;]")
 
 # One word of the parse. `i` and `head` are the parse's 1-based indices,
 # `start` and `end` offsets into the text the filler rule reads.
-Word = namedtuple("Word", ("i", "text", "start", "end", "upos", "head", "dep"))
+class Word(NamedTuple):
+    i: int
+    text: str
+    start: int
+    end: int
+    upos: str
+    head: int
+    dep: str
 
 
-def fold(text):
+def fold(text: str) -> str:
     """Lower case, one code point for one: "İ".lower() is two."""
     return "".join(c.lower() if len(c.lower()) == 1 else c for c in text)
 
 
-def placed(said, out, parse):
+def placed(said: str, out: str, parse: ParseView) -> list[Word] | None:
     """The parse's words that survive the string rules, placed in `out`.
 
     The parse is of `said`, the text this stage was handed. Every rule cuts
@@ -461,6 +524,7 @@ def placed(said, out, parse):
     by `at`: `at` counts Characters, and Python counts code points. None when
     `out` is not `said` with tokens cut.
     """
+    to_out: list[int | None]
     heard, to_out = list(WORD.finditer(said)), [None] * len(said)
     i = len(heard) - 1
     for token in reversed(list(WORD.finditer(out))):
@@ -470,6 +534,7 @@ def placed(said, out, parse):
             return None
         to_out[heard[i].start():heard[i].end()] = range(token.start(), token.end())
         i -= 1
+    words: list[Word]
     words, cursor = [], 0
     for i, word in enumerate(parse["words"], 1):
         start = said.find(word["text"], cursor)
@@ -484,7 +549,7 @@ def placed(said, out, parse):
     return words
 
 
-def tree_of(words, lo, hi):
+def tree_of(words: list[Word], lo: int, hi: int) -> list[Word]:
     """The words of one sentence, offsets made relative to it.
 
     A long text is parsed in windows of several sentences with one root, so a
@@ -497,7 +562,7 @@ def tree_of(words, lo, hi):
                        dep=w.dep if w.head in ids else "root") for w in inside]
 
 
-def sentence_of(text, at, end):
+def sentence_of(text: str, at: int, end: int) -> tuple[str, int, int, int]:
     """The sentence holding the marker, and its offsets inside it.
 
     No `strip()`. Stripping moved every offset and made the cuts eat a letter —
@@ -509,7 +574,7 @@ def sentence_of(text, at, end):
     return text[lo:hi], at - lo, end - lo, lo
 
 
-def anchored(tree, verb, a, b):
+def anchored(tree: list[Word], verb: str, a: int, b: int) -> Word | None:
     """The marker's OWN verb, not the sentence's first one.
 
     Looked up by span because a sentence can hold the same marker twice and
@@ -523,7 +588,7 @@ def anchored(tree, verb, a, b):
                  and w.upos in ("VERB", "AUX")), None)
 
 
-def substitution(tree, a, b):
+def substitution(tree: list[Word], a: int, b: int) -> bool:
     """A noun on both sides of the marker is a self-correction, not a filler.
 
     "I was with James I mean Peter, sorry" — deleting the marker leaves BOTH
@@ -539,7 +604,7 @@ def substitution(tree, a, b):
     return before[-1].upos in ("NOUN", "PROPN") and after[0].upos in ("NOUN", "PROPN")
 
 
-def wants_cut(tree, marker, token, a, b):
+def wants_cut(tree: list[Word], marker: str, token: Word | None, a: int, b: int) -> bool:
     if marker == "like":
         return token is not None and token.upos not in LIKE_KEEPS
     if token is None:
@@ -551,7 +616,7 @@ def wants_cut(tree, marker, token, a, b):
     return not substitution(tree, a, b)
 
 
-def cut(sentence, spans):
+def cut(sentence: str, spans: list[tuple[int, int]]) -> str:
     """Delete every marker in one sentence, and one adjacent comma each.
 
     All of them together, right to left. Done one at a time against the whole
@@ -585,13 +650,13 @@ def cut(sentence, spans):
     return lead + body
 
 
-def marker_pattern(phrase):
+def marker_pattern(phrase: str) -> re.Pattern[str]:
     """The one pattern a marker is found by. Built here so the gate in `clean`
     and the search in `resolve` cannot drift apart."""
     return re.compile(r"\b" + phrase.replace(" ", r"\s+") + r"\b", re.I)
 
 
-def in_correction(parse, words):
+def in_correction(parse: ParseView, words: list[Word]) -> set[int]:
     """The parse indices of `words` the tag head puts in a correction the
     rules left: read as its cue, or within NEAR spoken words of a word read as
     abandoned.
@@ -608,13 +673,14 @@ def in_correction(parse, words):
             or any(t[at_abandoned] >= HOLD for t in tags[max(k - NEAR, 0):k + NEAR + 1])}
 
 
-def resolve(text, markers, words, held=frozenset()):
+def resolve(text: str, markers: dict[str, str | None], words: list[Word],
+            held: AbstractSet[int] = frozenset()) -> tuple[str, list[str]]:
     """Every marker judged against what was said, then cut a sentence at a time.
 
     Judged first because a cut changes the sentence the next marker is judged
     in. A marker with a word in `held` stays.
     """
-    spans = []
+    spans: list[tuple[int, int, str]] = []
     for phrase, verb in markers.items():
         for m in marker_pattern(phrase).finditer(text):
             sentence, a, b, offset = sentence_of(text, m.start(), m.end())
@@ -632,7 +698,7 @@ def resolve(text, markers, words, held=frozenset()):
     return cut_spans(text, spans)
 
 
-def cut_spans(text, spans):
+def cut_spans(text: str, spans: list[tuple[int, int, str]]) -> tuple[str, list[str]]:
     """Delete `(start, end, name)` spans of `text` with `cut`, a sentence at a
     time. Returns the text and the names, sentences from the right.
 
@@ -640,11 +706,11 @@ def cut_spans(text, spans):
     it. A span across a stop gives a slice that overlaps the next sentence's,
     so overlapping slices become one.
     """
-    slices = []
+    slices: list[list[Any]] = []
     for start, end, name in spans:
         sentence, _, _, lo = sentence_of(text, start, end)
         slices.append([lo, lo + len(sentence), [(start, end, name)]])
-    merged = []
+    merged: list[list[Any]] = []
     for lo, hi, held in sorted(slices):
         if merged and lo < merged[-1][1]:
             merged[-1][1] = max(merged[-1][1], hi)
@@ -652,7 +718,7 @@ def cut_spans(text, spans):
         else:
             merged.append([lo, hi, held])
 
-    applied = []
+    applied: list[str] = []
     for lo, hi, held in reversed(merged):
         text = text[:lo] + cut(text[lo:hi], [(a - lo, b - lo) for a, b, _ in held]) + text[hi:]
         applied.extend(name for _, _, name in sorted(held))
@@ -680,10 +746,14 @@ FILTER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cut-filter.js
 # `tokens`: the parse words with a letter or digit, which must all survive the
 # rules. `held`: every parse word inside `words`, punctuation too, so "bor-"
 # goes whole.
-Proposal = namedtuple("Proposal", ("words", "tokens", "held", "score"))
+class Proposal(NamedTuple):
+    words: List[int]
+    tokens: List[int]
+    held: List[int]
+    score: float
 
 
-def subtree(node, heads):
+def subtree(node: int, heads: list[int]) -> set[int]:
     found = {node}
     while True:
         extra = {i for i, h in enumerate(heads, 1) if h in found} - found
@@ -692,11 +762,11 @@ def subtree(node, heads):
         found |= extra
 
 
-def is_filler(label, upos):
+def is_filler(label: str, upos: str) -> bool:
     return label == 'discourse' or upos == 'INTJ'
 
 
-def gap_cues(gap, heads, labels, upos):
+def gap_cues(gap: range, heads: list[int], labels: list[str], upos: list[str]) -> set[int]:
     """Filler words in the gap, plus the gap's non-punctuation words whose head chain reaches one
     without leaving the gap ("I" of "I mean", "de le" of "du coup")."""
     fillers = {j for j in gap if is_filler(labels[j - 1], upos[j - 1])}
@@ -712,9 +782,13 @@ def gap_cues(gap, heads, labels, upos):
     return found
 
 
-def derive_tags(words, heads, labels, upos):
+def derive_tags(words: list[str], heads: list[int], labels: list[str],
+                upos: list[str]) -> list[int]:
     """One tag index per word. Precedence: abandoned > cue > repair > other."""
     n = len(words)
+    abandoned: set[int]
+    cue: set[int]
+    repair: set[int]
     abandoned, cue, repair = set(), set(), set()
     for dep, (head, label) in enumerate(zip(heads, labels), 1):
         if label != 'reparandum' or head == 0:
@@ -742,22 +816,22 @@ def derive_tags(words, heads, labels, upos):
     return tags
 
 
-def cut_ids(tags, upos):
+def cut_ids(tags: list[int], upos: list[str]) -> set[int]:
     """Word ids (1-based, punctuation excluded) the app would delete: abandoned and cue words."""
     return {i for i, (t, u) in enumerate(zip(tags, upos), 1) if t in (ABANDONED, CUE) and u != 'PUNCT'}
 
 
-def groups(p):
+def groups(p: ClipParse) -> tuple[list[list[set[int]]], set[int]]:
     """[(token ids 1-based that are cut, repair heads)] per reparandum arc, chains and overlaps merged."""
     heads, labels, upos, ws = p['heads'], p['labels'], p['upos'], p['words']
     n = len(ws)
     cutset = cut_ids(derive_tags(ws, heads, labels, upos), upos)
-    arcs = []
+    arcs: list[list[set[int]]] = []
     for dep, (head, label) in enumerate(zip(heads, labels), 1):
         if label != 'reparandum' or head == 0:
             continue
         span = subtree(dep, heads)
-        cues = set()
+        cues: set[int] = set()
         if head > max(span):
             cues |= gap_cues(range(max(span) + 1, head), heads, labels, upos)
             k = head + 1
@@ -785,19 +859,19 @@ def groups(p):
     return arcs, cutset
 
 
-def norm(word):
+def norm(word: str) -> str:
     return re.sub(r"[^\w']", '', word.casefold().replace('’', "'")).strip("'")
 
 
-def words(text):
+def words(text: str) -> list[tuple[str, int, int]]:
     """Whitespace words of a text with their character spans."""
     return [(m.group(), m.start(), m.end()) for m in re.finditer(r'\S+', text)]
 
 
-def token_words(clip_parse):
+def token_words(clip_parse: ClipParse) -> list[int | None]:
     """For each parser token, the index of the whitespace word holding it, or None for punctuation."""
     text = clip_parse['text']
-    out = []
+    out: list[int | None] = []
     bounds = [(m.start(), m.end()) for m in re.finditer(r'\S+', text)]
     for (s, _), w in zip(clip_parse['spans'], clip_parse['words']):
         if not any(c.isalnum() for c in w):
@@ -807,19 +881,19 @@ def token_words(clip_parse):
     return out
 
 
-def text_cue(fn, cw, b):
+def text_cue(fn: list[str], cw: set[int], b: int) -> int:
     after = [fn[i] for i in range(b, min(len(fn), b + 2)) if i not in cw]
     seq = [fn[i] for i in cw] + ['|'] + after
     return int(any(seq[k:k + len(m)] == m for m in CUE_MARKERS for k in range(len(seq))))
 
 
-def of_clip(p, text):
+def of_clip(p: ClipParse, text: str) -> list[Candidate]:
     """[candidate without a verdict] for one parsed text."""
     tw = p['tw']
     fn = [norm(w) for w, _, _ in words(text)]
-    out = []
+    out: list[Candidate] = []
     for toks, _ in groups(p)[0]:
-        cw = sorted({tw[t - 1] for t in toks if tw[t - 1] is not None})
+        cw = sorted({cast(int, tw[t - 1]) for t in toks if tw[t - 1] is not None})
         if not cw:
             continue
         b = cw[-1] + 1
@@ -829,13 +903,14 @@ def of_clip(p, text):
     return out
 
 
-def text_features(c):
+def text_features(c: Candidate) -> list[float]:
     pa, pc = c['p_abandoned'], c['p_cue']
     return [max(pa), sum(pa) / len(pa), max(pc), math.log(len(c['words'])), float(c['text_cue']), float(c['contiguous']),
             float(c['at_end'])]
 
 
-def word_vectors(vectors, tw, n):
+def word_vectors(vectors: list[tuple[float, ...]], tw: list[int | None],
+                 n: int) -> tuple[list[list[float]], list[int]]:
     w, cnt = [[0.0] * DIM for _ in range(n)], [0] * n
     for t, i in enumerate(tw):
         if i is not None:
@@ -844,14 +919,15 @@ def word_vectors(vectors, tw, n):
     return w, cnt
 
 
-def half(x):
-    return struct.unpack('<e', struct.pack('<e', x))[0]
+def half(x: float) -> float:
+    rounded: float = struct.unpack('<e', struct.pack('<e', x))[0]
+    return rounded
 
 
-def of_cand(w, cnt, a, b):
+def of_cand(w: list[list[float]], cnt: list[int], a: int, b: int) -> list[float]:
     k = min(NEXT, b - a)
 
-    def mean(idx):
+    def mean(idx: Iterable[int]) -> list[float]:
         idx = [i for i in idx if i < len(cnt) and cnt[i] > 0]
         if not idx:
             return [0.0] * DIM
@@ -860,10 +936,10 @@ def of_cand(w, cnt, a, b):
     return mean(range(a, b)) + mean(range(b, b + k)) + mean([a - 1] if a > 0 else [])
 
 
-_filter = None
+_filter: CutFilter | None = None
 
 
-def cut_filter(row):
+def cut_filter(row: list[float]) -> float:
     """V: P(real) = sigmoid(((x - mu) / sd) . w + b)."""
     global _filter
     if _filter is None:
@@ -874,12 +950,12 @@ def cut_filter(row):
     return 1 / (1 + math.exp(-z))
 
 
-def clip_parse(said, parse):
+def clip_parse(said: str, parse: ParseView) -> ClipParse | None:
     """The envelope's parse in the shape the training code reads, or None
     when a word is not in `said`. Offsets by spelling, as `placed` finds them."""
     names = parse["tag_names"]
     at_abandoned, at_cue = names.index("abandoned"), names.index("cue")
-    p = dict(text=said, words=[], spans=[], heads=[], labels=[], upos=[], abandoned=[], cue=[])
+    p: ClipParse = dict(text=said, words=[], spans=[], heads=[], labels=[], upos=[], abandoned=[], cue=[])
     cursor = 0
     for word in parse["words"]:
         start = said.find(word["text"], cursor)
@@ -897,12 +973,12 @@ def clip_parse(said, parse):
     return p
 
 
-def proposals(said, parse):
+def proposals(said: str, parse: ParseView) -> list[Proposal]:
     """Every tree cut of `said`, scored by V. Needs `parse: vectors`."""
     p = clip_parse(said, parse)
     if p is None:
         raise ValueError("the parse is of another text")
-    vectors = [struct.unpack('<%de' % DIM, base64.b64decode(word["vector"])) for word in parse["words"]]
+    vectors: list[tuple[float, ...]] = [struct.unpack('<%de' % DIM, base64.b64decode(word["vector"])) for word in parse["words"]]
     bounds = words(said)
     w, cnt = word_vectors(vectors, p['tw'], len(bounds))
     ww = [next(k for k, (_, a, b) in enumerate(bounds) if a <= s < b) for s, _ in p['spans']]
@@ -923,7 +999,7 @@ def proposals(said, parse):
 SPELLING = ("spelled aloud", "a letter among letters")
 
 
-def guarded(said, cw):
+def guarded(said: str, cw: list[int]) -> bool:
     """Whether the whitespace words `cw` of `said` are the first copy of a
     spelling the rules keep."""
     bounds = words(said)
@@ -939,7 +1015,7 @@ def guarded(said, cw):
     return set(tokens[i:i + n]) != {"i"} and protecting(tokens, i, n, said, found) in SPELLING
 
 
-def tree_cut(said, out, parse):
+def tree_cut(said: str, out: str, parse: ParseView) -> tuple[str, int, int]:
     """Apply each proposal V keeps whose words all survived the rules and that
     is not a spelling. Returns the text, how many were applied, how many V
     dropped."""
@@ -949,6 +1025,8 @@ def tree_cut(said, out, parse):
         raise ValueError("the parse is of another text")
     alive = {w.i for w in survivors}
     spoken = {w.i for w in survivors if any(c.isalnum() for c in w.text)}
+    gone: set[int]
+    spans: list[list[int]]
     gone, spans, applied, dropped = set(), [], 0, 0
     for proposal in found:
         if proposal.score < THRESHOLD:
@@ -961,7 +1039,7 @@ def tree_cut(said, out, parse):
             continue
         gone |= tokens
         applied += 1
-        run = None
+        run: list[int] | None = None
         for w in survivors:
             if w.i not in tokens:
                 run = None
@@ -974,7 +1052,8 @@ def tree_cut(said, out, parse):
     return out, applied, dropped
 
 
-def word_fillers(said, out, language, parse, applied):
+def word_fillers(said: str, out: str, language: str, parse: ParseView | None,
+                 applied: list[str]) -> tuple[str, str]:
     """The filler rule. Returns the text and why it was skipped, if it was."""
     markers = MARKERS.get(language, {})
     # Nothing said that a parse could judge. `resolve` builds these same
@@ -995,7 +1074,8 @@ def word_fillers(said, out, language, parse, applied):
     return out, ""
 
 
-def clean(text, language="en", parse=None, tally=None):
+def clean(text: str, language: str = "en", parse: ParseView | None = None,
+          tally: dict[str, int] | None = None) -> tuple[str, list[str], str]:
     """Every rule, in order. Returns the text, the passes that fired, and why
     a rule was skipped if one was. `tally`, a dict, gets `tree_cuts` and
     `tree_dropped` when the tree cutter ran.
@@ -1006,7 +1086,7 @@ def clean(text, language="en", parse=None, tally=None):
 
     `parse` is the envelope's syrinx parse of `text`, or None.
     """
-    applied = []
+    applied: list[str] = []
     try:
         out = collapse(text, applied)
         # The parse rule last: by now "I mean I mean" is one marker, and a
@@ -1016,11 +1096,12 @@ def clean(text, language="en", parse=None, tally=None):
         # Fail open — never drop the whole transcript because a guard threw.
         out, applied, declined = text, [], ""
 
-    tokens = (parse or {}).get("words")
+    # mypy types the `{}` fallback as dict[Never, Never].
+    tokens: Sequence[ParsedWord] | None = (parse or {}).get("words")  # type: ignore[call-overload]
     if not tokens or not all("vector" in word for word in tokens):
         return out, applied, declined
     try:
-        out, cuts, dropped = tree_cut(text, out, parse)
+        out, cuts, dropped = tree_cut(text, out, cast("ParseView", parse))
     except Exception as error:
         reason = "tree cut: %s" % (str(error) or type(error).__name__)
         return out, applied, "; ".join(filter(None, (declined, reason)))
@@ -1030,10 +1111,11 @@ def clean(text, language="en", parse=None, tally=None):
     return out, applied, declined
 
 
-def run(payload):
-    tally = {}
+def run(payload: Envelope) -> Reply:
+    tally: dict[str, int] = {}
     out, applied, declined = clean(
-        payload["text"], (payload.get("ctx") or {}).get("language", "en"),
+        # mypy types the `{}` fallback as dict[Never, Never].
+        payload["text"], (payload.get("ctx") or {}).get("language", "en"),  # type: ignore[call-overload]
         payload.get("parse"), tally)
     return {
         "text": out,
@@ -1044,16 +1126,16 @@ def run(payload):
     }
 
 
-def main():
+def main() -> int:
     structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
     raw = sys.stdin.read()
     if structured:
         print(json.dumps(run(json.loads(raw))))
         return 0
-    result = run({"text": raw})
-    sys.stdout.write(result["text"])
+    result = run({"text": raw, "ctx": {"vars": {}}, "tokens": [], "aligned": False})
+    sys.stdout.write(cast(str, result["text"]))
     if result["vars"]["declined"]:
-        sys.stderr.write(result["vars"]["declined"] + "\n")
+        sys.stderr.write(cast(str, result["vars"]["declined"]) + "\n")
     return 0
 
 

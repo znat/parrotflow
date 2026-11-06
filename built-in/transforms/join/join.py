@@ -36,9 +36,21 @@ fixed; "Sarah" and "Tasmeen" are safe.
 **No tag, no lowering.** Run by hand, or by an app build older than `Tagger`,
 this leaves every capital alone rather than falling back to a guess.
 """
+from __future__ import annotations
+
 import json
 import re
 import sys
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from typing import Callable, Literal, Union
+
+    from envelope import Envelope, Reply, Scalar
+
+    Protected = dict[str, list[str]]
+    Owned = Union[tuple[str, str], tuple[None, None]]
+    Case = Literal["upper", "lower", "lower-any", "keep"]
 
 # Ends a sentence. `…` included because the decoder writes it.
 SENTENCE_END = ".!?…"
@@ -66,7 +78,7 @@ LOWERABLE_TAGS = {
 }
 
 
-def lowered(text, anything=False, tag=None):
+def lowered(text: str, anything: bool = False, tag: str | None = None) -> str:
     """The transcript with its first word lowercased, when that is safe.
 
     `anything` drops the closed-class guard, for the one position where no
@@ -94,7 +106,7 @@ def lowered(text, anything=False, tag=None):
     return text[:match.start()] + first[0].lower() + text[match.start() + 1:]
 
 
-def capitalised(text):
+def capitalised(text: str) -> str:
     match = WORD.search(text)
     if not match:
         return text
@@ -116,7 +128,7 @@ ABBREVIATIONS = {
 }
 
 
-def unstopped(text, protected=None):
+def unstopped(text: str, protected: Protected | None = None) -> tuple[str, list[str]]:
     """Stops the decoder wrote at a pause rather than at the end of a sentence.
 
     A boundary it means is followed by a capital, because it capitalises after
@@ -136,9 +148,9 @@ def unstopped(text, protected=None):
     What survives the deletion is a dot an earlier stage wrote, which is not a
     guess: `dotted` publishes `method.` and that is checked below.
     """
-    fired = []
+    fired: list[str] = []
 
-    def spaced(match):
+    def spaced(match: re.Match[str]) -> str:
         term, wrote = covering(text, match.start(), protected)
         if wrote:
             fired.append(f"{term} written by {wrote}")
@@ -155,7 +167,7 @@ def unstopped(text, protected=None):
     return SPURIOUS_STOP.sub(spaced, text), list(dict.fromkeys(fired))
 
 
-def protected_terms(envelope):
+def protected_terms(envelope: Envelope) -> Protected:
     """Terms an earlier stage wrote on purpose, by the stage that wrote them.
 
     The attribution is free. `ctx.vars` already nests by stage name, so a stage
@@ -178,8 +190,9 @@ def protected_terms(envelope):
     safe side: over-protecting leaves a capital you can see and delete, while
     under-protecting turns `max_retries` into `Max_retries`.
     """
-    found = {}
-    for stage, published in ((envelope.get("ctx") or {}).get("vars") or {}).items():
+    found: Protected = {}
+    # mypy types the `{}` fallback for the required `ctx` as dict[Never, Never].
+    for stage, published in ((envelope.get("ctx") or {}).get("vars") or {}).items():  # type: ignore[call-overload]
         if not isinstance(published, dict):
             continue
         terms = [t for t in str(published.get("protected") or "").split("; ") if t]
@@ -188,7 +201,7 @@ def protected_terms(envelope):
     return found
 
 
-def covering(text, index, protected):
+def covering(text: str, index: int, protected: Protected | None) -> Owned:
     """The term covering `text[index]` and the stage that wrote it, or (None, None).
 
     By position, not by word: the question a stop asks is "did somebody put this
@@ -206,7 +219,7 @@ def covering(text, index, protected):
     return None, None
 
 
-def owner(head, protected):
+def owner(head: str, protected: Protected | None) -> Owned:
     """The term at the start of `head` and the stage that wrote it, or (None, None).
 
     Matched against the text rather than against a token, because `WORD` here
@@ -233,18 +246,18 @@ class Neighbourhood:
     ask must not fire.
     """
 
-    def __init__(self, before, after):
+    def __init__(self, before: str | None, after: str | None) -> None:
         self.before = before
         self.after = after
 
     # --- what is known at all ---
     @property
-    def blind(self):
+    def blind(self) -> bool:
         return self.before is None
 
     # --- the leading edge ---
     @property
-    def line_start(self):
+    def line_start(self) -> bool:
         """The caret is at the start of a line.
 
         Two ways to be: a newline behind, or a newline in front. The second is
@@ -255,40 +268,40 @@ class Neighbourhood:
         """
         if self.blind:
             return False
-        return (not self.before.strip()
-                or self.before.endswith("\n")
+        return (not cast("str", self.before).strip()
+                or cast("str", self.before).endswith("\n")
                 or (self.after is not None and self.after.startswith("\n")))
 
     @property
-    def opens_sentence(self):
-        return not self.blind and bool(OPENS_SENTENCE.search(self.before))
+    def opens_sentence(self) -> bool:
+        return not self.blind and bool(OPENS_SENTENCE.search(cast("str", self.before)))
 
     @property
-    def glued(self):
+    def glued(self) -> bool:
         """A bracket or a quote: what follows closes up against it."""
-        return not self.blind and bool(GLUES.search(self.before))
+        return not self.blind and bool(GLUES.search(cast("str", self.before)))
 
     @property
-    def after_compound(self):
+    def after_compound(self) -> bool:
         """A hyphen or a slash — the second half of one word, never a name."""
-        return not self.blind and bool(COMPOUND.search(self.before.rstrip()))
+        return not self.blind and bool(COMPOUND.search(cast("str", self.before).rstrip()))
 
     @property
-    def spaced_already(self):
-        return not self.blind and self.before.endswith((" ", "\t"))
+    def spaced_already(self) -> bool:
+        return not self.blind and cast("str", self.before).endswith((" ", "\t"))
 
     # --- the trailing edge ---
     @property
-    def appending(self):
+    def appending(self) -> bool:
         """Nothing but whitespace follows, so the decoder's stop belongs."""
         return self.after is None or not self.after.strip()
 
     @property
-    def rest(self):
+    def rest(self) -> str:
         return "" if self.after is None else self.after.lstrip()
 
     @property
-    def carries_on(self):
+    def carries_on(self) -> bool:
         """The sentence continues past the caret, so a stop of ours is wrong."""
         if self.appending:
             return False
@@ -296,7 +309,7 @@ class Neighbourhood:
         return head in SENTENCE_END + ",;:)]}\"'" or head.islower()
 
     @property
-    def closes_up(self):
+    def closes_up(self) -> bool:
         """Something already occupies this position, so no space of ours."""
         if self.after is None or self.after == "":
             return False
@@ -321,7 +334,8 @@ class Rule:
 
     __slots__ = ("name", "when", "space", "case")
 
-    def __init__(self, name, when, space, case):
+    def __init__(self, name: str, when: Callable[[Neighbourhood], bool], space: bool,
+                 case: Case) -> None:
         self.name, self.when, self.space, self.case = name, when, space, case
 
 
@@ -338,12 +352,13 @@ LEADING = (
 )
 
 
-def one_sentence(text):
+def one_sentence(text: str) -> bool:
     """No sentence end except possibly the last character."""
     return not any(c in SENTENCE_END for c in text.rstrip()[:-1])
 
 
-def join(text, before, after, tag=None, protected=None):
+def join(text: str, before: str | None, after: str | None, tag: str | None = None,
+         protected: Protected | None = None) -> tuple[str, list[str]]:
     """The fitted transcript, and the names of the rules that fitted it."""
     n = Neighbourhood(before, after)
     body, applied = unstopped(text.strip(), protected)
@@ -386,7 +401,7 @@ def join(text, before, after, tag=None, protected=None):
     return lead + body + tail, applied
 
 
-def main():
+def main() -> None:
     raw = sys.stdin.read()
     try:
         result = run(json.loads(raw))
@@ -398,14 +413,15 @@ def main():
     print(json.dumps(result))
 
 
-def run(envelope):
+def run(envelope: Envelope) -> Reply:
     text = envelope["text"]
     # One guard over the whole decision, not one over half of it. Every branch
     # below is formatting, and none of it is worth a lost transcript.
     try:
         tokens = envelope.get("tokens") or []
         tag = tokens[0].get("tag") if tokens else None
-        box = ((envelope.get("ctx") or {}).get("vars") or {}).get("input") or {}
+        # mypy types the `{}` fallback for the required `ctx` as dict[Never, Never].
+        box = ((envelope.get("ctx") or {}).get("vars") or {}).get("input") or {}  # type: ignore[call-overload]
         before, after = box.get("before"), box.get("after")
         protected = protected_terms(envelope)
         if before is None and after is None:
@@ -414,13 +430,14 @@ def run(envelope):
             # is what makes this worth running in a terminal.
             out, applied = unstopped(text, protected)
         else:
-            out, applied = join(text, before, after, tag, protected)
+            # A non-str Scalar raises in `Neighbourhood` and falls to the `except` below.
+            out, applied = join(text, before, after, tag, protected)  # type: ignore[arg-type]
     except Exception:
         out, applied = text, []
     return {"text": out, "vars": reported(applied)}
 
 
-def reported(applied):
+def reported(applied: list[str]) -> dict[str, Scalar]:
     """The rules that fired, as one scalar.
 
     A comma-joined string rather than a list, because `Scope.Value` is

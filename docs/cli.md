@@ -29,6 +29,7 @@ means it did what it says**, so these compose into scripts — which is what
 |---|---|
 | `--check-config` | Is the config valid, and what will actually run? |
 | `--schema` | Which keys can `config.yaml` hold, and what does each take? |
+| `--envelope-schema` | What does a `returns: json` transform read, and what may it print? |
 | `--upgrade-config` | What would the upgrade at launch change in my config? |
 | `--pipeline <file.yaml> "<text>"` | What does this pipeline do to this sentence? |
 | `--replace "<text>"` | What do my replacement rules do to this sentence? |
@@ -120,6 +121,21 @@ each key on stderr: a key the parser reads with no entry, or an entry the parser
 does not read. `scripts/check-schema.sh` runs it on every pull request.
 
 To use it in VS Code, see [configuration.md](configuration.md#configuration-reference).
+
+### `--envelope-schema`
+
+Prints a JSON Schema (draft 2020-12) of the envelope a `returns: json`
+transform reads on stdin. The reply it prints back is `$defs/Reply`. It reads
+only the binary, not your config, and writes no file.
+
+```sh
+$PF --envelope-schema > envelope.schema.json
+```
+
+Each type lists its keys from the Swift `CodingKeys` that encode it, so a key
+added in Swift without a schema entry does not build. `scripts/check-envelope.sh`
+checks recorded envelopes and `built-in/runner/envelope.py` against it on every
+pull request. See [authoring.md](authoring.md#types-for-the-envelope).
 
 ### `--upgrade-config`
 
@@ -1217,6 +1233,8 @@ scripts/check-context.sh           # what the context stage publishes for a scre
 scripts/check-input.sh             # where the input stage cuts a field, and the caret
 scripts/check-pipeline-config.sh   # which pipeline a config resolves to, and what is refused
 scripts/check-schema.sh            # the config schema against the parser, and unknown-key warnings
+scripts/check-envelope.sh          # what a returns: json command is handed, against --envelope-schema
+scripts/check-python-types.sh     # mypy --strict over the built-in Python
 scripts/check-skill.sh             # the keys, flags and files the public parrotflow skill names
 scripts/check-join.sh              # fitting a clip to the text either side of the caret
 scripts/check-span.sh              # a composer-shaped page, or Slack, or Outlook

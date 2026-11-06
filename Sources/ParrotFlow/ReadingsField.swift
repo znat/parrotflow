@@ -12,13 +12,15 @@ struct ReadingsField: Encodable, Sendable {
         let means: [String: Double]
         let winner: String
 
-        enum CodingKeys: String, CodingKey { case at, mark, wordAt = "word_at", means, winner }
+        enum CodingKeys: String, CodingKey, CaseIterable { case at, mark, wordAt = "word_at", means, winner }
     }
 
     let language: String
     let boundaries: [Boundary]
     /// Why there are no readings when there should be some.
     let missing: String?
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case language, boundaries, missing }
 
     /// Every boundary where a sentence mark is followed by a capital, read
     /// after the doubled-stop collapse, one padded batch per boundary.
@@ -70,5 +72,27 @@ struct ReadingsField: Encodable, Sendable {
             ))
         }
         return ReadingsField(language: language, boundaries: out, missing: nil)
+    }
+}
+
+extension ReadingsField: EnvelopeDescribed {
+    static let schemaName = "Readings"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .language: return .required(.string)
+        case .boundaries: return .required(.array(.type(Boundary.self)))
+        case .missing: return .optional(.string)
+        }
+    }
+}
+
+extension ReadingsField.Boundary: EnvelopeDescribed {
+    static let schemaName = "Boundary"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .at, .wordAt: return .required(.integer)
+        case .mark, .winner: return .required(.string)
+        case .means: return .required(.map(.number))
+        }
     }
 }

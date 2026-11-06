@@ -19,12 +19,18 @@ name, or the `Nth of the Nth` shape. Half of `cases-en.yaml` is text that looks
 like a date and is not. `engine.py` beside this file holds the loop, the JSON
 protocol and the number words, and says how to add a language.
 """
+from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import engine  # noqa: E402 — the path above is what makes it importable
+
+if TYPE_CHECKING:
+    from envelope import Envelope, Reply
 
 # --- the words ---------------------------------------------------------------
 
@@ -79,13 +85,13 @@ YEAR = (r"(?:\d{4}"
 MERIDIEM = r"(?:[ap]\.m\.|[ap]m\b)"
 MONTH = engine.alt(MONTHS)
 
-def clock(hour, minute=None):
+def clock(hour: int, minute: int | None = None) -> str:
     return f"{hour}:{minute:02d}" if minute is not None else str(hour)
 
 
 # --- what the rules write ----------------------------------------------------
 
-def hour_minute(m, text):
+def hour_minute(m: re.Match[str], text: str) -> str | None:
     """"at ten fifteen" -> "at 10:15"; "three thirty pm" -> "3:30 pm"."""
     lead, mer = m.group("lead"), m.group("mer")
     if not lead and not mer:
@@ -107,7 +113,7 @@ def hour_minute(m, text):
             + (" " + mer if mer else ""))
 
 
-def glued_clock(m, text):
+def glued_clock(m: re.Match[str], text: str) -> str | None:
     """"at 1030" -> "at 10:30". The decoder wrote the digits already joined.
 
     Parakeet normalises some spoken times itself, so `hour_minute` never sees
@@ -132,7 +138,7 @@ def glued_clock(m, text):
     return lead + " " + f"{hour}:{minute:02d}" + (" " + mer if mer else "")
 
 
-def oclock(m, _text):
+def oclock(m: re.Match[str], _text: str) -> str | None:
     """"seven o'clock" -> "7 o'clock". The minutes were not said."""
     hour = read_number(m.group("h"))
     if hour is None or not 1 <= hour <= 12:
@@ -140,7 +146,7 @@ def oclock(m, _text):
     return f"{hour} {m.group('oc')}"
 
 
-def named_fraction(m, text):
+def named_fraction(m: re.Match[str], text: str) -> str | None:
     """"half past two" -> "2:30"; "quarter to three" -> "2:45"."""
     kind, hour = m.group("kind").lower(), read_number(m.group("h"))
     if hour is None or not 1 <= hour <= 12:
@@ -156,7 +162,7 @@ def named_fraction(m, text):
     return clock(hour - 1 or 12, 45)
 
 
-def minutes_past(m, text):
+def minutes_past(m: re.Match[str], text: str) -> str | None:
     """"twenty past four" -> "4:20"; "at ten to six" -> "5:50"."""
     minute, hour = read_number(m.group("m")), read_number(m.group("h"))
     if minute is None or hour is None:
@@ -179,7 +185,7 @@ def minutes_past(m, text):
     return (lead + " " if lead else "") + written
 
 
-def hour_meridiem(m, _text):
+def hour_meridiem(m: re.Match[str], _text: str) -> str | None:
     """"three pm" -> "3 pm". No minutes were said, so none are written.
 
     "3pm" is left alone. The hour is already a digit, so the only edit left is
@@ -198,7 +204,7 @@ def hour_meridiem(m, _text):
     return (lead + " " if lead else "") + f"{hour} {mer}"
 
 
-def month_day(m, _text):
+def month_day(m: re.Match[str], _text: str) -> str | None:
     """"March third twenty twenty-six" -> "March 3, 2026".
 
     "July 3rd" with no year is left as it is: the day is already a digit and
@@ -218,7 +224,7 @@ def month_day(m, _text):
     return f"{m.group('mon')} {day}" + (f", {year}" if year else "")
 
 
-def day_month(m, _text):
+def day_month(m: re.Match[str], _text: str) -> str | None:
     """"the third of March" -> "3 March". The "the" goes with it."""
     day = read_ordinal(m.group("d"))
     if day is None or not 1 <= day <= 31:
@@ -229,7 +235,7 @@ def day_month(m, _text):
     return f"{day} {m.group('mon')}" + (f" {year}" if year else "")
 
 
-def day_of_month_number(m, text):
+def day_of_month_number(m: re.Match[str], text: str) -> str | None:
     """"the tenth of the twelfth" -> "10/12"."""
     day, month = read_ordinal(m.group("d")), read_ordinal(m.group("m"))
     if day is None or month is None:
@@ -243,7 +249,7 @@ def day_of_month_number(m, text):
 
 # Order is the whole of rule precedence: dates before times, and the longest
 # form of a time before its shorter ones.
-RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler in [
+RULES: list[engine.Rule] = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler in [
     ("the Nth of the Nth",
      rf"\bthe\s+(?P<d>{ORD})\s+of\s+the\s+(?P<m>{ORD})\b",
      day_of_month_number),
@@ -278,7 +284,7 @@ RULES = [(name, re.compile(pattern, re.I), handler) for name, pattern, handler i
 ]]
 
 
-def run(envelope):
+def run(envelope: Envelope) -> Reply:
     return engine.run(sys.modules[__name__], envelope)
 
 

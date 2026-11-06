@@ -19,11 +19,17 @@ and a bare `cent` or `mille` counts as one. `engine.py` holds the rest.
 
 Score with `./score.py --lang fr`, or `ParrotFlow --eval numbers_fr`.
 """
+from __future__ import annotations
+
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import engine  # noqa: E402
+
+if TYPE_CHECKING:
+    from envelope import Envelope, Reply
 
 
 # No hyphens in these tables: the tokeniser splits on them, so
@@ -103,7 +109,7 @@ GRAMMAR = engine.Grammar(
 )
 
 
-def run(envelope):
+def run(envelope: Envelope) -> Reply:
     return engine.run(GRAMMAR, envelope)
 
 

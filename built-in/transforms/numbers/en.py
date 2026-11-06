@@ -19,14 +19,20 @@ for one below a million. `engine.py` holds the rest, and how to add a language.
 
 Score with `./score.py --lang en`, or `ParrotFlow --eval numbers_en`.
 """
+from __future__ import annotations
+
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import engine  # noqa: E402
 
+if TYPE_CHECKING:
+    from envelope import Envelope, Reply
 
-def suffix(value):
+
+def suffix(value: int) -> str:
     if value % 100 in (11, 12, 13):
         return "th"
     return {1: "st", 2: "nd", 3: "rd"}.get(value % 10, "th")
@@ -84,7 +90,7 @@ GRAMMAR = engine.Grammar(
 )
 
 
-def run(envelope):
+def run(envelope: Envelope) -> Reply:
     return engine.run(GRAMMAR, envelope)
 
 

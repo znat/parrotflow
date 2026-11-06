@@ -709,6 +709,8 @@ enum Trace {
         let at: Int
         let was: String
         let now: String
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case at, was, now }
     }
 
     // MARK: - Words
@@ -795,6 +797,8 @@ enum Trace {
         fileprivate let vad: VAD?
         /// What ran before the stage reading this. Not the whole pipeline.
         fileprivate let stages: [Stage]
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case wav, source, lang, asr, vad, stages }
 
         /// What the decoder wrote, for a caller checking whether the text it
         /// holds is still that. Nil outside a dictation.
@@ -908,6 +912,10 @@ enum Trace {
         let duration: Double
         let processing: Double
         let words: [Word]
+
+        enum CodingKeys: String, CodingKey, CaseIterable {
+            case model, arm, text, confidence, duration, processing, words
+        }
     }
 
     /// One decode of the clip. Several run on a dictation that looks short, and
@@ -928,6 +936,8 @@ enum Trace {
         let speech: Double
         let total: Double
         let segments: [[Double]]
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case seconds, speech, total, segments }
     }
 
     /// Seconds from the hotkey press. Written by a live dictation only: a clip
@@ -1040,6 +1050,8 @@ enum Trace {
         let start: Double
         let end: Double
         let confidence: Float
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case word, start, end, confidence }
     }
 
     fileprivate struct Stage: Encodable {
@@ -1065,7 +1077,7 @@ enum Trace {
         /// are numbers and a regex over English when they are not.
         var vars: [String: Scope.Value]?
 
-        enum CodingKeys: String, CodingKey {
+        enum CodingKeys: String, CodingKey, CaseIterable {
             case name
             case skipCode = "skip_reason"
             case skipped, edits, parts, seconds, vars
@@ -1096,5 +1108,88 @@ enum Trace {
         let name: String
         let seconds: Double
         let note: String?
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case name, seconds, note }
+    }
+}
+
+extension Trace.Snapshot: EnvelopeDescribed {
+    static let schemaName = "Trace"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .wav, .source: return .required(.string)
+        case .lang: return .optional(.string)
+        case .asr: return .optional(.type(Trace.ASR.self))
+        case .vad: return .optional(.type(Trace.VAD.self))
+        case .stages: return .required(.array(.type(Trace.Stage.self)))
+        }
+    }
+}
+
+extension Trace.ASR: EnvelopeDescribed {
+    static let schemaName = "Asr"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .model, .text: return .required(.string)
+        case .arm: return .optional(.string)
+        case .confidence, .duration, .processing: return .required(.number)
+        case .words: return .required(.array(.type(Trace.Word.self)))
+        }
+    }
+}
+
+extension Trace.Word: EnvelopeDescribed {
+    static let schemaName = "AsrWord"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .word: return .required(.string)
+        case .start, .end, .confidence: return .required(.number)
+        }
+    }
+}
+
+extension Trace.VAD: EnvelopeDescribed {
+    static let schemaName = "Vad"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .seconds: return .optional(.number)
+        case .speech, .total: return .required(.number)
+        case .segments: return .required(.array(.array(.number)))
+        }
+    }
+}
+
+extension Trace.Stage: EnvelopeDescribed {
+    static let schemaName = "Stage"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .name: return .required(.string)
+        case .skipCode, .skipped: return .optional(.string)
+        case .edits: return .optional(.array(.type(Trace.Change.self)))
+        case .parts: return .optional(.array(.type(Trace.Part.self)))
+        case .seconds: return .optional(.number)
+        case .vars: return .optional(.map(.scalar))
+        }
+    }
+}
+
+extension Trace.Change: EnvelopeDescribed {
+    static let schemaName = "Change"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .at: return .required(.integer)
+        case .was, .now: return .required(.string)
+        }
+    }
+}
+
+extension Trace.Part: EnvelopeDescribed {
+    static let schemaName = "Part"
+    static func field(_ key: CodingKeys) -> EnvelopeField {
+        switch key {
+        case .name: return .required(.string)
+        case .seconds: return .required(.number)
+        case .note: return .optional(.string)
+        }
     }
 }
