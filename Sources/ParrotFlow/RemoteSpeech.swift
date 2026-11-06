@@ -39,9 +39,10 @@ enum RemoteSpeech {
         var body: [String: Any] = [
             "model": config.model,
             "input": text,
-            "voice": voice,
             "response_format": "pcm",
         ]
+        // Empty: the provider's default voice. Fish Audio lists none.
+        if !voice.isEmpty { body["voice"] = voice }
         // Some providers return 400 for any speed but 1.
         if speed != 1 { body["speed"] = speed }
         if let tone, !tone.isEmpty { body["instructions"] = tone }
