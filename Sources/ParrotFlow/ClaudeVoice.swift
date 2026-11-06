@@ -283,7 +283,7 @@ final class ClaudeVoice {
                 json: true, maxTokens: 300, config: model
             )
             let parsed = ClaudeSpeakable.parseSpoken(LLM.stripThinking(raw))
-            let said = ClaudeSpeakable.capped(ClaudeSpeakable.clean(parsed.say), limit: 240)
+            let said = ClaudeSpeakable.capped(ClaudeSpeakable.clean(parsed.say), limit: 480, count: 4)
             let ground = ClaudeSpeakable.grounded(said, in: [reply, recap ?? "", asked ?? ""].joined(separator: " "))
             guard !said.isEmpty, ground >= ClaudeSpeakable.groundedFloor else {
                 Log.write(String(format: "claude voice: %@ wrote words the reply does not have (%.2f), saying it plain",

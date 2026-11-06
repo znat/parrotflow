@@ -154,7 +154,9 @@ enum ClaudeSpeakable {
         news, a problem, a question, a warning. Never more positive than the reply.
 
         say:
-        - At most two short sentences and 35 words.
+        - Two to four short sentences, at most 70 words.
+        - Lead with the answer. Then the details that make it useful: the reason, what \
+        changed, the names involved, the example that shows it.
         - Every fact comes from Reply or Recap. Use their names.
         - First person for what the assistant did: "I <did X>". Anything said about \
         something else keeps that subject.
@@ -181,12 +183,12 @@ enum ClaudeSpeakable {
     }
 
     /// A rewrite that ran long keeps whole sentences up to about `limit`
-    /// characters, at most three. A semicolon counts as a sentence end.
-    static func capped(_ said: String, limit: Int = 300) -> String {
+    /// characters, at most `count`. A semicolon counts as a sentence end.
+    static func capped(_ said: String, limit: Int = 300, count: Int = 3) -> String {
         let parts = sentences(said.replacingOccurrences(of: #";\s+"#, with: ". ", options: .regularExpression))
         var kept: [String] = []
         var length = 0
-        for part in parts.prefix(3) {
+        for part in parts.prefix(count) {
             if !kept.isEmpty, length + part.count > limit { break }
             kept.append(part.prefix(1).uppercased() + part.dropFirst())
             length += part.count + 1
