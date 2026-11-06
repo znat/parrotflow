@@ -457,6 +457,47 @@ check "a different sentence under the other member is left alone" \
   "Eric Erik" "$(owners)"
 check "and both rows are kept" 2 "$(said)"
 
+# Ordinary words kept over a person. Each pair is from the dev trace,
+# 2026-11-05 and 11-06: every kept phrase was written as a new person term,
+# and that term was then offered over the next phrase. Each pick runs against a
+# vocabulary that holds only the person it was kept over.
+rm -f "$USES"
+keptOver () {
+  printf 'terms:\n  "%s":\n    kind: person\n' "$2" > "$WORK/vocabulary.yaml"
+  pick "$1" "$2" "$3"
+}
+termCount () { python3 -c '
+import sys, yaml
+print(len(yaml.safe_load(open(sys.argv[1]))["terms"]))
+' "$WORK/vocabulary.yaml" 2>/dev/null; }
+check "an ordinary phrase kept over a person is a counter" \
+  "counter Thibaut" "$(keptOver "thing about" Thibaut "One thing about a player is that it works.")"
+check "and it is not written as a term" 1 "$(termCount)"
+check "an ordinary word kept over a person is a counter" \
+  "counter Kwame" "$(keptOver frame Kwame "Could we have a frame around the window which is talking?")"
+check "the out over Thibaut" \
+  "counter Thibaut" "$(keptOver "the out" Thibaut "Unfortunately emotions do not carry over in the out folder.")"
+check "the right over the out" \
+  "counter the out" "$(keptOver "the right" "the out" "Or maybe we find a way to specify the right prompt.")"
+check "What about over thing about" \
+  "counter thing about" "$(keptOver "What about" "thing about" "What about font matter?")"
+check "a phrase with inner punctuation is a counter" \
+  "counter the right" "$(keptOver "here, it" "the right" "If you use the CLI from here, it should work.")"
+check "here or over here, it" \
+  "counter here, it" "$(keptOver "here or" "here, it" "While I was typing here or dictating.")"
+check "here, but over here, it" \
+  "counter here, it" "$(keptOver "here, but" "here, it" "I was dictating here, but it was slow.")"
+check "just about over What about" \
+  "counter What about" "$(keptOver "just about" "What about" "One and two is just about cleanup, right?")"
+check "the rib over the right" \
+  "counter the right" "$(keptOver "the rib" "the right" "It hit the rib.")"
+check "a real name kept over a person is still a person" \
+  "create Mik person" "$(keptOver Mik Mick "Hey good morning Mik.")"
+check "and so is a word no dictionary knows" \
+  "create Tasmeen person" "$(keptOver Tasmeen Thibaut "Tasmeen is on the call.")"
+check "a term kept over a person is a use of it" \
+  "use Thibaut" "$(keptOver Thibaut Thibaut "Thibaut is on the call.")"
+
 echo
 printf '  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -124,9 +124,11 @@ enum CorrectionRecording {
         // would put a guess in the file under the name of a fact.
         let read = NamePlace.kind(of: bare)
         if read != .word { return .create(name: bare, kind: read) }
+        // Choosing an ordinary word over a person is negative evidence for
+        // that name, not a second person.
+        if Replacements.isRealWord(bare) { return .counter(term: term) }
         // The company it keeps: a term that names a person was proposed over
-        // this word, so the word sounds like a person's name. The tagger has
-        // nothing to say about it, so `person` is the only kind on offer.
+        // a word no dictionary knows, so `person` is the only kind on offer.
         if terms[term]?.kind == .person { return .create(name: bare, kind: .person) }
         return .counter(term: term)
     }
