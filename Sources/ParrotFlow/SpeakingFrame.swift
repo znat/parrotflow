@@ -27,6 +27,7 @@ final class SpeakingFrame {
     /// Called when the frame re-ties to the element now at the remembered place.
     var onRetarget: ((AXUIElement, CGRect) -> Void)?
     private var targetHost: pid_t?
+    private var coveredNow = false
     private var lastRect: CGRect?
 
     /// Frames `window` (a window or a pane) and follows it. `rect` is where it
@@ -40,9 +41,12 @@ final class SpeakingFrame {
         lastRect = rect
         guard let frame = resolve() else { return hide(now: true) }
         let panel = self.panel ?? makePanel()
-        place(panel, around: frame)
-        if !panel.isVisible || panel.alphaValue < 1 {
+        if !panel.isVisible {
+            panel.alphaValue = 0
             panel.orderFrontRegardless()
+        }
+        place(panel, around: frame)
+        if !coveredNow, panel.alphaValue < 1 {
             NSAnimationContext.runAnimationGroup { $0.duration = 0.2; panel.animator().alphaValue = 1 }
         }
         follow?.invalidate()
@@ -173,7 +177,32 @@ final class SpeakingFrame {
         return panel
     }
 
+    /// Whether another app's window sits in front of `rect`'s centre. The glow
+    /// floats above everything, so around a covered window it looked like it
+    /// framed the window in front.
+    static func covered(_ rect: CGRect, host: pid_t) -> Bool {
+        guard let top = NSScreen.screens.first?.frame.maxY,
+              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return false }
+        // Window bounds are measured from the top of the main screen, like Accessibility.
+        let centre = CGPoint(x: rect.midX, y: top - rect.midY)
+        for window in list {
+            guard (window[kCGWindowLayer as String] as? Int) == 0,
+                  let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
+                  let x = bounds["X"], let y = bounds["Y"], let width = bounds["Width"], let height = bounds["Height"],
+                  CGRect(x: x, y: y, width: width, height: height).contains(centre) else { continue }
+            return (window[kCGWindowOwnerPID as String] as? pid_t) != host
+        }
+        return false
+    }
+
     private func place(_ panel: NSPanel, around window: CGRect) {
+        let hidden = targetHost.map { Self.covered(window, host: $0) } ?? false
+        if hidden != coveredNow {
+            coveredNow = hidden
+            if hidden { Log.write("claude voice: glow off, the speaking window is behind another app") }
+        }
+        if hidden { panel.alphaValue = 0 } else if panel.isVisible, panel.alphaValue == 0 { panel.alphaValue = 1 }
         let outer = window.insetBy(dx: -margin, dy: -margin)
         if panel.frame != outer { panel.setFrame(outer, display: false) }
         let bounds = CGRect(origin: .zero, size: outer.size)

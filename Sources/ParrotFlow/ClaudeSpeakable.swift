@@ -340,7 +340,8 @@ enum ClaudeSpeakable {
         the assistant just wrote. Never add a goal they do not state. When the purpose \
         is unclear, say plainly what it is checking or changing, from the description.
         - Name a file or a command only when it is the point.
-        - First person, present continuous, at most 16 words, casual, like a colleague.
+        - First person, present continuous, at most 10 words, casual, like a colleague. \
+        Shorter is better: the line is heard while the work goes on.
         - No code, no paths, no flags, no quotes.
 
         Output only the sentence.

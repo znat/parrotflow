@@ -348,6 +348,8 @@ final class ClaudeVoice {
         else { return }
         sessions[id]?.window = target
         sessions[id]?.rect = SpeakingFrame.frame(of: target)
+        let at = sessions[id]?.rect.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" } ?? "-"
+        Log.write("claude voice: pinned \(sessions[id]?.project ?? id) to \(NSRunningApplication(processIdentifier: host)?.localizedName ?? "?") at \(at)")
     }
 
     private func frameSession(_ id: String?) {
@@ -358,14 +360,22 @@ final class ClaudeVoice {
             self?.sessions[id]?.window = element
             self?.sessions[id]?.rect = rect
         }
+        let app = NSRunningApplication(processIdentifier: host)?.localizedName ?? "pid \(host)"
+        func note(_ how: String, _ rect: CGRect?) {
+            let at = rect.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" } ?? "-"
+            Log.write("claude voice: glow for \(session.project) (claude pid \(session.pid ?? 0)) on \(app), \(how) at \(at)")
+        }
         if let window = session.window {
+            note("pinned", session.rect)
             return frame.show(window: window, host: host, rect: session.rect)
         }
         guard let guess = SpeakingFrame.guessWindow(host: host, project: session.project) else {
+            note("no pin and no safe guess, hidden", nil)
             return frame.hide()
         }
         sessions[id]?.window = guess
         sessions[id]?.rect = SpeakingFrame.frame(of: guess)
+        note("guessed", sessions[id]?.rect)
         frame.show(window: guess, host: host, rect: sessions[id]?.rect)
     }
 
@@ -397,6 +407,8 @@ final class ClaudeVoice {
     /// its window is not in front.
     private func prefix(for id: String) -> String {
         guard let this = sessions[id], !this.project.isEmpty else { return "" }
+        // Still on that pane or window: you know which session this is.
+        if watching(id) { return "" }
         let other = lastSpokenSession.flatMap { $0 == id ? nil : activeSessions[$0] } != nil
         let quiet = lastSpokenAt.map { Date().timeIntervalSince($0) } ?? .infinity
         guard Self.names(otherSpokeLast: other, quietFor: quiet, inFront: watching(id))
