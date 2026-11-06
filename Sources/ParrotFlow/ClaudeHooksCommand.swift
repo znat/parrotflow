@@ -203,9 +203,11 @@ enum ClaudeHooksCommand {
         var grounded: [Grounding] = []
         var speakable: [Clean] = []
         var spoken: [Clean] = []
+        struct Summary: Decodable { var name: String; var lines: [String]; var want: String? }
+        var summary: [Summary] = []
 
         enum CodingKeys: String, CodingKey {
-            case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken
+            case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary
         }
 
         init(from decoder: Decoder) throws {
@@ -220,6 +222,7 @@ enum ClaudeHooksCommand {
             grounded = try c.decodeIfPresent([Grounding].self, forKey: .grounded) ?? []
             speakable = try c.decodeIfPresent([Clean].self, forKey: .speakable) ?? []
             spoken = try c.decodeIfPresent([Clean].self, forKey: .spoken) ?? []
+            summary = try c.decodeIfPresent([Summary].self, forKey: .summary) ?? []
         }
     }
 
@@ -272,6 +275,9 @@ enum ClaudeHooksCommand {
                 otherSpokeLast: item.otherSpokeLast, quietFor: item.quietFor, inFront: item.inFront
             )
             check(item.name, got: said ? "named" : "not named", want: item.named ? "named" : "not named")
+        }
+        for item in cases.summary {
+            check(item.name, got: ClaudeSpeakable.latestSummary(lines: item.lines), want: item.want)
         }
         for item in cases.spoken {
             check(item.name, got: ClaudeSpeakable.clean(item.input), want: item.want)

@@ -275,3 +275,16 @@ spoken:
   - name: a date in another year keeps its year
     input: "Released 2025-06-03."
     want: "Released June 3, 2025."
+
+summary:
+  - name: the last recap wins over later text
+    lines:
+      - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__ccd_turn__wrap_up","input":{"recap":"Chatterbox is downloading."}}]}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Waiting for the test."}]}}'
+    want: "Chatterbox is downloading."
+  - name: with no recap, the last text
+    lines:
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Old text."}]}}'
+      - '{"type":"user","message":{"role":"user","content":"next"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Newest text."}]}}'
+    want: "Newest text."

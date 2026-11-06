@@ -130,7 +130,13 @@ final class ClaudeVoice {
         switch name {
         case "UserPromptSubmit":
             pinWindow(id)
-            if let prompt = event["prompt"] as? String, !prompt.isEmpty { remind(id, request: prompt) }
+            if let prompt = event["prompt"] as? String, !prompt.isEmpty {
+                let transcript = (event["transcript_path"] as? String).map { URL(fileURLWithPath: $0) }
+                Task.detached {
+                    let latest = transcript.flatMap { ClaudeSpeakable.latestSummary(transcript: $0) }
+                    await MainActor.run { [weak self] in self?.remind(id, request: prompt, latest: latest) }
+                }
+            }
             turns[id, default: 0] += 1
             if speaker.speakingSession == id { Log.write("claude voice: stopped by a new prompt") }
             speaker.stop(session: id)

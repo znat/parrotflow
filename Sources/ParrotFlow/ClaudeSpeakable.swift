@@ -351,10 +351,16 @@ enum ClaudeSpeakable {
         Write a reminder of what this coding session is about, said out loud when the \
         developer's attention comes back to it from another session.
 
-        - One or two sentences, at most 25 words in all.
-        - Say the goal from the request, not the steps, in the shape "This is the one \
-        where we're <the goal>." Every word of the goal comes from the request.
-        - Casual, like a colleague. No file names, paths, code or quotes.
+        You get the session's latest summary ("Latest") and the request just sent \
+        ("Request"). A request alone is often a follow-up, like asking how something is \
+        going, and says little about the work.
+
+        - One or two sentences, at most 30 words in all.
+        - First what the session is working on, from Latest. Then what was just asked, \
+        from Request. Shape: "This is the one where we're <the work>; you're <the request>."
+        - With no Latest, say the goal from the Request alone.
+        - Every word of the work comes from Latest or Request. Not the steps.
+        - Casual, like a colleague. No file names, paths, code, numbers or quotes.
 
         Output only the reminder.
         """
@@ -424,6 +430,39 @@ enum ClaudeSpeakable {
         var latestText: String?
         /// What the person asked, at the start of the turn.
         var prompt: String?
+    }
+
+    /// The newest summary in a session's transcript, across turns: the last
+    /// wrap-up recap, else the last text Claude wrote. Read when a prompt is
+    /// sent, so the turn it starts has nothing in it yet.
+    static func latestSummary(transcript url: URL, tailBytes: Int = 512 * 1024) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        try? handle.seek(toOffset: size > UInt64(tailBytes) ? size - UInt64(tailBytes) : 0)
+        guard let data = try? handle.readToEnd(), let text = String(data: data, encoding: .utf8) else { return nil }
+        return latestSummary(lines: text.split(separator: "\n").map(String.init))
+    }
+
+    static func latestSummary(lines: [String]) -> String? {
+        var lastText: String?
+        for line in lines.reversed() {
+            guard let data = line.data(using: .utf8),
+                  let entry = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  entry["type"] as? String == "assistant" else { continue }
+            let blocks = (entry["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
+            for block in blocks.reversed() {
+                if block["type"] as? String == "tool_use", (block["name"] as? String ?? "").hasSuffix("wrap_up"),
+                   let recap = (block["input"] as? [String: Any])?["recap"] as? String, !recap.isEmpty {
+                    return recap
+                }
+                if lastText == nil, block["type"] as? String == "text", let text = block["text"] as? String,
+                   !text.isEmpty {
+                    lastText = text
+                }
+            }
+        }
+        return lastText.map { String($0.prefix(600)) }
     }
 
     /// Reads the tail of a session's `.jsonl` and returns the last turn.
