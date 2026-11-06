@@ -32,6 +32,15 @@ clean:
   - name: absolute folder keeps its last part
     input: "Evidence is in /Users/me/Documents/parrotflow-scratch/verify/"
     want: "Evidence is in verify."
+  - name: two folders separated by prose stay two
+    input: "Moved /Users/me/old to /Users/me/new today"
+    want: "Moved old to new today."
+  - name: a folder name with a space
+    input: "It is in ~/Library/Application Support/ParrotFlow/"
+    want: "It is in ParrotFlow."
+  - name: a lowercase folder name with a space
+    input: "Saved to ~/my notes/drafts/"
+    want: "Saved to drafts."
   - name: table is dropped
     input: "Summary:\n| a | b |\n|---|---|\n| 1 | 2 |\nDone."
     want: "Summary: Done."
