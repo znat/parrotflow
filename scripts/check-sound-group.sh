@@ -473,6 +473,7 @@ print(len(yaml.safe_load(open(sys.argv[1]))["terms"]))
 check "an ordinary phrase kept over a person is a counter" \
   "counter Thibaut" "$(keptOver "thing about" Thibaut "One thing about a player is that it works.")"
 check "and it is not written as a term" 1 "$(termCount)"
+check "and the sentence is recorded as a counter" 1 "$(counters)"
 check "an ordinary word kept over a person is a counter" \
   "counter Kwame" "$(keptOver frame Kwame "Could we have a frame around the window which is talking?")"
 check "the out over Thibaut" \
