@@ -1449,7 +1449,10 @@ URL query strings. An
   said as "PR 12 in repo"). A short one is said as it is. A long one is
   rewritten into one to three sentences by `model`. With no model, or when the
   call fails, the first two sentences are said.
-- **Two sessions at once:** each line starts with the project name.
+- **Which session:** a line starts with its project, in a varied way
+  ("Update from parrotflow:", "parrotflow here:"), when the line before came
+  from another active session. A session that was quiet for two minutes is
+  named again when its window is not in front.
 
 Pressing the hotkey or sending a new prompt in that session stops the voice.
 An answer that arrives while you dictate waits until you stop. The voice is

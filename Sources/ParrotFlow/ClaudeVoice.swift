@@ -1,4 +1,5 @@
-import Foundation
+import AppKit
+import ApplicationServices
 
 /// Speaks Claude Code's progress and answers.
 ///
@@ -27,6 +28,8 @@ final class ClaudeVoice {
     private var recapTurns: [String: Int] = [:]
     private var voices: [String: String] = [:]
     private var lastSpokenSession: String?
+    private var lastSpokenAt: Date?
+    private var lastIntroduction: Int?
     private var lastWasProgress = false
     /// Bumped per progress line, so a slow explanation of an older call is dropped.
     private var progressSeq = 0
@@ -280,15 +283,64 @@ final class ClaudeVoice {
         sessions.filter { Date().timeIntervalSince($0.value.seen) < activeWindow }
     }
 
-    /// Names the session when another one spoke in the last ten minutes,
-    /// and the line before this one came from a different session.
+    /// Names the session when the line before came from another session
+    /// that is still active, or when this one was quiet for two minutes and
+    /// its window is not in front.
     private func prefix(for id: String) -> String {
-        guard lastSpokenSession != id else { return "" }
+        guard let this = sessions[id], !this.project.isEmpty else { return "" }
+        let other = lastSpokenSession.flatMap { $0 == id ? nil : activeSessions[$0] } != nil
+        let quiet = lastSpokenAt.map { Date().timeIntervalSince($0) } ?? .infinity
+        guard Self.names(otherSpokeLast: other, quietFor: quiet, inFront: Self.inFront(project: this.project))
+        else { return "" }
         let recent = activeSessions
-        guard recent.count > 1, let this = recent[id], !this.project.isEmpty else { return "" }
         let sameProject = recent.values.filter { $0.project == this.project }.count > 1
         let name = sameProject ? [this.project, this.account].compactMap { $0 }.joined(separator: " ") : this.project
-        return name + ": "
+        let pick = Self.introductionIndex(after: lastIntroduction, seed: Int(Date().timeIntervalSince1970))
+        lastIntroduction = pick
+        return Self.introduction(name, pick)
+    }
+
+    static func names(otherSpokeLast: Bool, quietFor: TimeInterval, inFront: Bool) -> Bool {
+        otherSpokeLast || (quietFor >= 120 && !inFront)
+    }
+
+    static let introductions = [
+        "Update from %@: ", "News from %@: ", "%@ here: ", "Quick one from %@: ", "From %@: ", "On %@: ",
+    ]
+
+    static func introduction(_ name: String, _ index: Int) -> String {
+        String(format: introductions[index % introductions.count], name)
+    }
+
+    /// Any introduction but the one used last.
+    static func introductionIndex(after last: Int?, seed: Int) -> Int {
+        let count = introductions.count
+        var pick = abs(seed) % count
+        if pick == last { pick = (pick + 1) % count }
+        return pick
+    }
+
+    private static let claudeHosts: Set<String> = [
+        "com.anthropic.claudefordesktop", "com.apple.Terminal", "com.googlecode.iterm2",
+        "com.mitchellh.ghostty", "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92",
+        "dev.zed.Zed", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty",
+    ]
+
+    /// Whether this project's Claude window is the one in front: a Claude host
+    /// is frontmost and its window title names the project. A host window with
+    /// no readable title counts as in front.
+    static func inFront(project: String) -> Bool {
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              let bundle = app.bundleIdentifier, claudeHosts.contains(bundle) else { return false }
+        let element = AXUIElementCreateApplication(app.processIdentifier)
+        var window: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &window) == .success,
+              let window, CFGetTypeID(window) == AXUIElementGetTypeID() else { return true }
+        var title: CFTypeRef?
+        // swiftlint:disable:next force_cast
+        AXUIElementCopyAttributeValue(window as! AXUIElement, kAXTitleAttribute as CFString, &title)
+        guard let text = title as? String, !text.isEmpty else { return true }
+        return text.localizedCaseInsensitiveContains(project)
     }
 
     /// A session keeps its voice. A new one takes the first voice no active
@@ -305,6 +357,7 @@ final class ClaudeVoice {
     private func say(_ text: String, session: String, progress: Bool = false, tone: String? = nil) {
         let line = prefix(for: session) + text
         lastSpokenSession = session
+        lastSpokenAt = Date()
         lastWasProgress = progress
         let style = speaker.remote == nil || settings.speechVoices.isEmpty ? nil : Speaker.Style(
             voice: voice(for: session),

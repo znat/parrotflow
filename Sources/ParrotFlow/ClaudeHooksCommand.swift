@@ -187,8 +187,18 @@ enum ClaudeHooksCommand {
         var parse: [Parse] = []
         var capped: [Clean] = []
         var redacted: [Clean] = []
+        struct Naming: Decodable {
+            var name: String; var otherSpokeLast: Bool; var quietFor: Double; var inFront: Bool; var named: Bool
+            enum CodingKeys: String, CodingKey {
+                case name, named
+                case otherSpokeLast = "other_spoke_last"
+                case quietFor = "quiet_for"
+                case inFront = "in_front"
+            }
+        }
+        var naming: [Naming] = []
 
-        enum CodingKeys: String, CodingKey { case clean, progress, turns, parse, capped, redacted }
+        enum CodingKeys: String, CodingKey { case clean, progress, turns, parse, capped, redacted, naming }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -198,6 +208,7 @@ enum ClaudeHooksCommand {
             parse = try c.decodeIfPresent([Parse].self, forKey: .parse) ?? []
             capped = try c.decodeIfPresent([Clean].self, forKey: .capped) ?? []
             redacted = try c.decodeIfPresent([Clean].self, forKey: .redacted) ?? []
+            naming = try c.decodeIfPresent([Naming].self, forKey: .naming) ?? []
         }
     }
 
@@ -245,6 +256,16 @@ enum ClaudeHooksCommand {
         for item in cases.redacted {
             check(item.name, got: ClaudeSpeakable.redacted(item.input), want: item.want)
         }
+        for item in cases.naming {
+            let said = ClaudeVoice.names(
+                otherSpokeLast: item.otherSpokeLast, quietFor: item.quietFor, inFront: item.inFront
+            )
+            check(item.name, got: said ? "named" : "not named", want: item.named ? "named" : "not named")
+        }
+        let count = ClaudeVoice.introductions.count
+        let repeats = (0..<count).flatMap { last in (0..<50).map { (last, $0) } }
+            .filter { ClaudeVoice.introductionIndex(after: $0.0, seed: $0.1) == $0.0 }
+        check("introductions never repeat back to back", got: "\(repeats.count)", want: "0")
         print("\n\(passed)/\(total)")
         return passed == total ? 0 : 1
     }
