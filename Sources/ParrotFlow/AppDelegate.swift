@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotKeys = HotKeyManager()
     private let recorder = Recorder()
     private let pill = PillHUD()
+    private let claudeVoice = ClaudeVoice()
     private let permissions = PermissionsWindowController()
     /// The panel that says what this launch is fetching. See `LaunchPanel`.
     private let launch = LaunchPanel()
@@ -584,6 +585,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The other half of the first press. The recorder warms above; this is
         // the pill's own window, which costs as much again.
         pill.warm()
+        claudeVoice.isRecording = { [weak self] in self?.recorder.isRecording ?? false }
         recorder.onLevel = { [weak self] level in
             self?.pill.model.level = level
         }
@@ -964,6 +966,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Beside the recordings, and re-read here because `output_dir` can move
         // on any save of config.yaml.
         Trace.directory = config.resolvedOutputDir
+        claudeVoice.apply(config)
 
         // Re-read on every save, and acted on: a microphone added to the list
         // is one the next press should already be listening through, not one
@@ -1312,6 +1315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // run between the key going down and the microphone opening, and this
         // is the only measurement that can say what they cost the speaker.
         pressedAt = Date()
+        claudeVoice.silence()
         endTheClipboardNotice(reason: "the next press")
 
         // The gesture, kept for the `Press` built when the recording stops.

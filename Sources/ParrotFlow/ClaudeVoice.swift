@@ -1,0 +1,386 @@
+import Foundation
+
+/// Speaks Claude Code's progress and answers.
+///
+/// Claude Code runs `ParrotFlow --speak-event` from a hook. That process
+/// passes the hook's JSON to this socket and exits, so the hook never waits.
+/// See `ClaudeHooksCommand`.
+final class ClaudeVoice {
+
+    static var socketURL: URL { AppVariant.supportDirectory.appendingPathComponent("claude.sock") }
+
+    /// Set by the app; a line is never said over a dictation.
+    var isRecording: () -> Bool = { false }
+
+    private let speaker = Speaker()
+    private var settings = Config.Claude()
+    private var config = Config()
+    private var listener: SocketListener?
+    private var warmedVoice = ""
+    private var lastProgressAt = Date.distantPast
+    private var lastKind: ClaudeSpeakable.Kind?
+    private var sessions: [String: Session] = [:]
+    /// Per session, bumped by a new prompt, so that session's answer still
+    /// being rewritten is dropped. Other sessions' answers are kept.
+    private var turns: [String: Int] = [:]
+    /// The turn whose answer was already said from its recap, per session.
+    private var recapTurns: [String: Int] = [:]
+    private var voices: [String: String] = [:]
+    private var lastSpokenSession: String?
+    private var lastWasProgress = false
+    /// Bumped per progress line, so a slow explanation of an older call is dropped.
+    private var progressSeq = 0
+    /// Past this, the call being explained is likely over.
+    private let explainLimit: TimeInterval = 5
+
+    private struct Session {
+        var project: String
+        var account: String?
+        var seen: Date
+    }
+
+    struct Spoken: Equatable {
+        var text: String
+        var tone: String?
+    }
+
+    private let progressInterval: TimeInterval = 6
+    private let readingInterval: TimeInterval = 30
+    private let activeWindow: TimeInterval = 600
+
+    func apply(_ config: Config) {
+        self.config = config
+        settings = config.claude
+        speaker.voice = settings.voice
+        speaker.speed = settings.speed
+        speaker.remote = Self.remote(settings, config)
+        if settings.enabled, listener == nil {
+            listener = SocketListener(path: Self.socketURL.path) { [weak self] data in
+                Task { @MainActor in self?.receive(data) }
+            }
+        } else if !settings.enabled, listener != nil {
+            listener = nil
+            speaker.stop()
+        }
+        if settings.enabled, speaker.remote == nil, warmedVoice != settings.voice {
+            warmedVoice = settings.voice
+            Task { @MainActor in await speaker.warm() }
+        }
+    }
+
+    /// The model `claude.speech` names, when it can speak `/audio/speech`.
+    static func remote(_ settings: Config.Claude, _ config: Config) -> ModelSpec? {
+        let name = settings.speech.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, let spec = config.model(named: name), spec.api == .openai else { return nil }
+        return spec
+    }
+
+    /// The hotkey went down: stop talking, now. Answers still on their way
+    /// wait for the dictation to end.
+    func silence() {
+        if speaker.isSpeaking { Log.write("claude voice: stopped by the hotkey") }
+        speaker.stop()
+    }
+
+    // MARK: - Events
+
+    private func receive(_ data: Data) {
+        guard settings.enabled,
+              let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let name = event["hook_event_name"] as? String else { return }
+        let id = event["session_id"] as? String ?? ""
+        note(session: id, event: event)
+
+        switch name {
+        case "UserPromptSubmit":
+            turns[id, default: 0] += 1
+            if speaker.isSpeaking { Log.write("claude voice: stopped by a new prompt") }
+            speaker.stop()
+        case "PreToolUse":
+            let tool = event["tool_name"] as? String ?? ""
+            let input = event["tool_input"] as? [String: Any] ?? [:]
+            // The desktop app's recap comes before the closing message is
+            // written, so saying it here is seconds ahead of `Stop`.
+            if tool.hasSuffix("wrap_up"), let recap = (input["recap"] as? String), !recap.isEmpty {
+                recapTurns[id] = turns[id, default: 0]
+                let ended = ClaudeSpeakable.TurnEnd(answer: "", recap: recap, ask: input["ask"] as? String)
+                answer(ended, written: nil, session: id, settle: 0)
+                return
+            }
+            guard settings.progress, let line = ClaudeSpeakable.progress(tool: tool, input: input) else { return }
+            let transcript = (event["transcript_path"] as? String).map { URL(fileURLWithPath: $0) }
+            progress(line, session: id, tool: tool, input: input, transcript: transcript)
+        case "Notification":
+            guard let message = event["message"] as? String,
+                  let said = ClaudeSpeakable.notification(message) else { return }
+            say(said, session: id)
+        case "Stop":
+            guard event["stop_hook_active"] as? Bool != true else { return }
+            if recapTurns[id] == turns[id, default: 0] {
+                recapTurns[id] = nil
+                return
+            }
+            let transcript = (event["transcript_path"] as? String).map { URL(fileURLWithPath: $0) }
+            answer(nil, transcript: transcript, written: event["last_assistant_message"] as? String,
+                   session: id, settle: 0.4)
+        default:
+            break
+        }
+    }
+
+    private func progress(
+        _ line: ClaudeSpeakable.Line, session: String,
+        tool: String = "", input: [String: Any] = [:], transcript: URL? = nil
+    ) {
+        let now = Date()
+        if !line.urgent {
+            if isRecording() || speaker.isSpeaking { return }
+            if now.timeIntervalSince(lastProgressAt) < progressInterval { return }
+            if line.kind == .read, lastKind == .read,
+               now.timeIntervalSince(lastProgressAt) < readingInterval { return }
+        }
+        lastProgressAt = now
+        lastKind = line.kind
+        progressSeq += 1
+        guard settings.explain, config.llmEnabled, !line.urgent, !tool.isEmpty else {
+            return say(line.text, session: session, progress: true)
+        }
+        let mine = progressSeq
+        let named = settings.model.trimmingCharacters(in: .whitespaces)
+        let model = config.model(named: named) ?? config.model(for: .general)
+        let limit = explainLimit
+        Task.detached {
+            let context = transcript.flatMap { ClaudeSpeakable.lastTurn(transcript: $0, tailBytes: 128 * 1024) }?
+                .latestText
+            let started = Date()
+            let raw = try? await LLM.complete(
+                system: ClaudeSpeakable.explainPrompt,
+                user: ClaudeSpeakable.explainInput(tool: tool, input: input, context: context),
+                json: false, maxTokens: 60, config: model
+            )
+            let elapsed = Date().timeIntervalSince(started)
+            let said = raw.map { ClaudeSpeakable.clean(LLM.stripThinking($0)) } ?? ""
+            await MainActor.run { [weak self] in
+                guard let self, mine == self.progressSeq, !self.isRecording(), !self.speaker.isSpeaking else { return }
+                guard elapsed < limit else {
+                    Log.write(String(format: "claude voice: explanation took %.1fs, dropped", elapsed))
+                    return
+                }
+                if !said.isEmpty {
+                    Log.write(String(format: "claude voice: %@ explained %@ in %.1fs", model.name, tool, elapsed))
+                }
+                self.say(said.isEmpty ? line.text : said, session: session, progress: true)
+            }
+        }
+    }
+
+    /// `settle`: the hook can arrive before the last line of the transcript is written.
+    private func answer(
+        _ ended: ClaudeSpeakable.TurnEnd?, transcript: URL? = nil, written: String?,
+        session: String, settle: TimeInterval
+    ) {
+        let asked = turns[session, default: 0]
+        let settings = settings
+        let config = config
+        let toned = speaker.remote != nil
+        Task.detached {
+            if settle > 0 { try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000)) }
+            let turn = ended ?? transcript.flatMap { ClaudeSpeakable.lastTurn(transcript: $0) }
+            let spoken = await Self.spoken(turn: turn, written: written, settings: settings,
+                                           config: config, toned: toned)
+            await MainActor.run { [weak self] in
+                guard let self, let spoken else { return }
+                guard asked == self.turns[session, default: 0] else {
+                    Log.write("claude voice: dropped an answer — a new prompt came first in that session")
+                    return
+                }
+                self.lastKind = nil
+                self.whenFree { [weak self] in
+                    guard let self else { return }
+                    // A progress line gives way; another session's answer does not.
+                    if self.lastWasProgress, self.speaker.isSpeaking { self.speaker.stop() }
+                    self.say(spoken.text, session: session, tone: spoken.tone)
+                }
+            }
+        }
+    }
+
+    /// What the end of a turn is worth saying, and how. Fails open: no
+    /// model, or a model that fails, still says the recap or the first two
+    /// sentences. `toned` asks the model for a tone even when the words
+    /// need no rewrite.
+    static func spoken(
+        turn: ClaudeSpeakable.TurnEnd?, written: String?, settings: Config.Claude,
+        config: Config, toned: Bool
+    ) async -> Spoken? {
+        let source: String
+        if let recap = turn?.recap {
+            source = [recap, turn?.ask].compactMap { $0 }.joined(separator: "\n")
+        } else {
+            source = turn?.answer.isEmpty == false ? turn!.answer : (written ?? "")
+        }
+        let cleaned = ClaudeSpeakable.clean(source)
+        guard !cleaned.isEmpty else { return nil }
+        let keep = turn?.recap != nil || ClaudeSpeakable.isShort(cleaned)
+        let plain = turn?.recap != nil ? cleaned : ClaudeSpeakable.truncated(cleaned)
+        let base = toned ? settings.speechTone : nil
+        let fallback = Spoken(text: plain, tone: base)
+        guard config.llmEnabled else { return fallback }
+
+        let named = settings.model.trimmingCharacters(in: .whitespaces)
+        let model = config.model(named: named) ?? config.model(for: .general)
+        let mode: ClaudeSpeakable.Mode = keep ? .keep : .shorten
+        let started = Date()
+        do {
+            let raw = try await LLM.complete(
+                system: ClaudeSpeakable.rewritePrompt,
+                user: ClaudeSpeakable.rewriteInput(String(cleaned.prefix(6000)), mode: mode),
+                json: true, maxTokens: 300, config: model
+            )
+            let parsed = ClaudeSpeakable.parseSpoken(LLM.stripThinking(raw))
+            let said = ClaudeSpeakable.clean(parsed.say)
+            let text = keep
+                ? ClaudeSpeakable.kept(said, original: plain)
+                : (said.isEmpty ? plain : ClaudeSpeakable.capped(said))
+            Log.write(String(format: "claude voice: %@ %@ %d chars to %d in %.1fs, shift \"%@\"%@",
+                             model.name, mode.rawValue, cleaned.count, text.count,
+                             Date().timeIntervalSince(started), parsed.tone ?? "none",
+                             text == plain && keep && said != plain ? " (grew, original kept)" : ""))
+            return Spoken(text: text, tone: base.map { ClaudeSpeakable.instructions(base: $0, shift: parsed.tone) })
+        } catch {
+            Log.write("claude voice: rewrite failed, saying it plain — \(error.localizedDescription)")
+            return fallback
+        }
+    }
+
+    /// Holds a line until the dictation in progress is over.
+    private func whenFree(_ action: @escaping () -> Void, waited: TimeInterval = 0) {
+        guard isRecording() else { return action() }
+        guard waited < 600 else {
+            Log.write("claude voice: dropped an answer — still dictating after 10 minutes")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.whenFree(action, waited: waited + 0.5)
+        }
+    }
+
+    // MARK: - Which session is talking
+
+    private func note(session id: String, event: [String: Any]) {
+        let cwd = event["cwd"] as? String ?? ""
+        let account = (event["transcript_path"] as? String)?
+            .split(separator: "/")
+            .first { $0.hasPrefix(".claude-") }
+            .map { String($0.dropFirst(".claude-".count)) }
+        sessions[id] = Session(project: (cwd as NSString).lastPathComponent, account: account, seen: Date())
+    }
+
+    private var activeSessions: [String: Session] {
+        sessions.filter { Date().timeIntervalSince($0.value.seen) < activeWindow }
+    }
+
+    /// Names the session when another one spoke in the last ten minutes,
+    /// and the line before this one came from a different session.
+    private func prefix(for id: String) -> String {
+        guard lastSpokenSession != id else { return "" }
+        let recent = activeSessions
+        guard recent.count > 1, let this = recent[id], !this.project.isEmpty else { return "" }
+        let sameProject = recent.values.filter { $0.project == this.project }.count > 1
+        let name = sameProject ? [this.project, this.account].compactMap { $0 }.joined(separator: " ") : this.project
+        return name + ": "
+    }
+
+    /// A session keeps its voice. A new one takes the first voice no active
+    /// session holds, or shares one when there are more sessions than voices.
+    private func voice(for id: String) -> String {
+        let pool = settings.speechVoices
+        if let held = voices[id], pool.contains(held) { return held }
+        let taken = Set(activeSessions.keys.compactMap { $0 == id ? nil : voices[$0] })
+        let chosen = pool.first { !taken.contains($0) } ?? pool[voices.count % max(pool.count, 1)]
+        voices[id] = chosen
+        return chosen
+    }
+
+    private func say(_ text: String, session: String, progress: Bool = false, tone: String? = nil) {
+        let line = prefix(for: session) + text
+        lastSpokenSession = session
+        lastWasProgress = progress
+        let style = speaker.remote == nil || settings.speechVoices.isEmpty ? nil : Speaker.Style(
+            voice: voice(for: session),
+            tone: tone ?? ClaudeSpeakable.instructions(
+                base: settings.speechTone, shift: progress ? "quick, like a passing remark" : nil
+            )
+        )
+        Log.write("claude voice: \(line.prefix(120))")
+        speaker.say(line, style: style)
+    }
+}
+
+/// A Unix socket that hands each connection's bytes to `handler`.
+final class SocketListener {
+    private let fd: Int32
+    private let path: String
+    private let source: DispatchSourceRead
+
+    init?(path: String, handler: @escaping (Data) -> Void) {
+        var address = sockaddr_un()
+        let capacity = MemoryLayout.size(ofValue: address.sun_path)
+        guard path.utf8.count < capacity else {
+            Log.write("claude voice: socket path is too long (\(path.utf8.count) of \(capacity) bytes)")
+            return nil
+        }
+        try? FileManager.default.createDirectory(
+            atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true
+        )
+        unlink(path)
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return nil }
+        address.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &address.sun_path) { raw in
+            raw.copyBytes(from: path.utf8)
+        }
+        let bound = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard bound == 0, listen(fd, 16) == 0 else {
+            Log.write("claude voice: could not listen on \(path) — errno \(errno)")
+            close(fd)
+            return nil
+        }
+        chmod(path, 0o600)
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+
+        self.fd = fd
+        self.path = path
+        let queue = DispatchQueue(label: "parrotflow.claude-voice")
+        source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+        source.setEventHandler {
+            while true {
+                let client = accept(fd, nil, nil)
+                guard client >= 0 else { return }
+                var timeout = timeval(tv_sec: 1, tv_usec: 0)
+                setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+                var data = Data()
+                var chunk = [UInt8](repeating: 0, count: 64 * 1024)
+                while data.count < 8 * 1024 * 1024 {
+                    let read = Darwin.read(client, &chunk, chunk.count)
+                    guard read > 0 else { break }
+                    data.append(chunk, count: read)
+                }
+                close(client)
+                if !data.isEmpty { handler(data) }
+            }
+        }
+        source.resume()
+        Log.write("claude voice: listening on \(path)")
+    }
+
+    deinit {
+        source.cancel()
+        close(fd)
+        unlink(path)
+    }
+}

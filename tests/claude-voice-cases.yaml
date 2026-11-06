@@ -1,0 +1,198 @@
+# Cases for ClaudeSpeakable: what Claude Code's text and hook events sound like.
+# Run with scripts/check-claude-voice.sh. No model, no audio.
+
+clean:
+  - name: file link keeps the file name
+    input: "Fixed in [Config.swift:42](Sources/ParrotFlow/Config.swift:42)."
+    want: "Fixed in Config.swift."
+  - name: owner/repo#number is a PR
+    input: "Opened znat/parrotflow#327."
+    want: "Opened PR 327 in parrotflow."
+  - name: GitHub PR URL
+    input: "See https://github.com/znat/parrotflow/pull/327 for details"
+    want: "See PR 327 in parrotflow for details."
+  - name: GitHub issue URL
+    input: "Filed https://github.com/znat/parrotflow/issues/12."
+    want: "Filed issue 12 in parrotflow."
+  - name: bare number
+    input: "Merged #42."
+    want: "Merged number 42."
+  - name: code block is dropped
+    input: "Run this:\n```bash\nmake test\n```\nThen restart."
+    want: "Run this: Then restart."
+  - name: bullets become sentences
+    input: "Two changes:\n- **Speaker**: plays audio\n- `ClaudeVoice` listens"
+    want: "Two changes: Speaker: plays audio. ClaudeVoice listens."
+  - name: heading becomes a sentence
+    input: "## What changed\nThe hook is faster."
+    want: "What changed. The hook is faster."
+  - name: home path keeps the file name
+    input: "The log is ~/Library/Logs/ParrotFlow.log now"
+    want: "The log is ParrotFlow.log now."
+  - name: absolute folder keeps its last part
+    input: "Evidence is in /Users/me/Documents/parrotflow-scratch/verify/"
+    want: "Evidence is in verify."
+  - name: table is dropped
+    input: "Summary:\n| a | b |\n|---|---|\n| 1 | 2 |\nDone."
+    want: "Summary: Done."
+  - name: other URL says the site
+    input: "Docs are at https://code.claude.com/docs/en/hooks"
+    want: "Docs are at a link on code.claude.com."
+  - name: arrow
+    input: "Latency went 7s → 1.5s"
+    want: "Latency went 7s to 1.5s."
+  - name: plain prose is left alone
+    input: "Nothing is built yet."
+    want: "Nothing is built yet."
+  - name: snake_case is left alone
+    input: "Set claude.folders and last_assistant_message."
+    want: "Set claude.folders and last_assistant_message."
+
+progress:
+  - name: Bash says its description
+    tool: Bash
+    input: { command: "swift build", description: "Build the release binary." }
+    want: "I'm building the release binary"
+  - name: Bash without a description
+    tool: Bash
+    input: { command: "ls" }
+    want: "I'm running a command"
+  - name: edit names the file
+    tool: Edit
+    input: { file_path: "/Users/me/parrotflow/Sources/ParrotFlow/Config.swift" }
+    want: "I'm editing Config.swift"
+  - name: write names the file
+    tool: Write
+    input: { file_path: "/tmp/notes.md" }
+    want: "I'm writing notes.md"
+  - name: reads collapse into one line
+    tool: Grep
+    input: { pattern: "foo" }
+    want: "I'm looking through the code"
+  - name: agent
+    tool: Agent
+    input: { description: "Find the socket code" }
+    want: "I'm asking an agent to find the socket code"
+  - name: task list is bookkeeping
+    tool: mcp__ccd_turn__update_plan
+    want: null
+  - name: todo list is bookkeeping
+    tool: TodoWrite
+    want: null
+  - name: run doubles its consonant
+    tool: Bash
+    input: { description: "Run the voice cases" }
+    want: "I'm running the voice cases"
+  - name: verb ending in e
+    tool: Bash
+    input: { description: "Remove the scratch folder" }
+    want: "I'm removing the scratch folder"
+  - name: verb ending in ie
+    tool: Bash
+    input: { description: "Tie the hooks together" }
+    want: "I'm tying the hooks together"
+  - name: already a gerund
+    tool: Bash
+    input: { description: "Checking the log" }
+    want: "I'm checking the log"
+  - name: first word is not a plain word
+    tool: Bash
+    input: { description: "npm-install deps" }
+    want: "npm-install deps"
+  - name: browser
+    tool: mcp__Claude_Browser__navigate
+    input: { url: "http://localhost:3000" }
+    want: "I'm using the browser"
+
+turns:
+  - name: answer is the text after the last tool call
+    lines:
+      - '{"type":"user","message":{"role":"user","content":"fix it"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Checking the build."}]}}'
+      - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"make"}}]}}'
+      - '{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}'
+      - '{"type":"assistant","message":{"content":[{"type":"thinking","thinking":""}]}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Done. Tests pass."}]}}'
+    answer: "Done. Tests pass."
+    recap: null
+  - name: wrap-up recap is kept
+    lines:
+      - '{"type":"user","message":{"role":"user","content":"go"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{}}]}}'
+      - '{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}'
+      - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__ccd_turn__wrap_up","input":{"recap":"The fix is in. Not committed."}}]}}'
+      - '{"type":"user","message":{"content":[{"type":"tool_result","content":"shown"}]}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Fixed the crash."}]}}'
+    answer: "Fixed the crash."
+    recap: "The fix is in. Not committed."
+  - name: the previous turn does not leak in
+    lines:
+      - '{"type":"user","message":{"role":"user","content":"first"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Old answer."}]}}'
+      - '{"type":"user","message":{"role":"user","content":"second"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"New answer."}]}}'
+    answer: "New answer."
+    recap: null
+  - name: a reminder line is not a prompt
+    lines:
+      - '{"type":"user","message":{"role":"user","content":"first"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Part one."}]}}'
+      - '{"type":"user","isMeta":true,"message":{"role":"user","content":"<system-reminder>x</system-reminder>"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Part two."}]}}'
+    answer: "Part one.\n\nPart two."
+    recap: null
+
+parse:
+  - name: JSON with say and tone
+    raw: '{"say": "The build passes.", "tone": "Relaxed and pleased, smiling."}'
+    say: "The build passes."
+    tone: "Relaxed and pleased, smiling."
+  - name: JSON in a code fence
+    raw: "```json\n{\"say\": \"Two tests fail.\", \"tone\": \"Calm, a little sorry.\"}\n```"
+    say: "Two tests fail."
+    tone: "Calm, a little sorry."
+  - name: plain text still gives the words
+    raw: "The build passes."
+    say: "The build passes."
+    tone: null
+  - name: empty tone is no tone
+    raw: '{"say": "Done.", "tone": ""}'
+    say: "Done."
+    tone: null
+
+capped:
+  - name: short answer is left alone
+    input: "I merged it. CI is green."
+    want: "I merged it. CI is green."
+  - name: a fourth sentence is dropped
+    input: "One. Two. Three. Four."
+    want: "One. Two. Three."
+  - name: a semicolon ends a sentence
+    input: "I merged it; CI is green."
+    want: "I merged it. CI is green."
+  - name: long sentences stop near 300 characters
+    input: "I merged number 403 into main and the spoken digits now become identifiers the way they should, which closes the bug you saw on Monday with the server names and the ports. CI is green across all of the checks, and the branch passes twelve of twelve of the invented cases against eight of twelve on main today. One test run wrote a few lines to the release log."
+    want: "I merged number 403 into main and the spoken digits now become identifiers the way they should, which closes the bug you saw on Monday with the server names and the ports."
+
+redacted:
+  - name: plain command is left alone
+    input: "swift build -c release && scripts/check-claude-voice.sh"
+    want: "swift build -c release && scripts/check-claude-voice.sh"
+  - name: bearer token
+    input: "curl -H 'Authorization: Bearer abc123def' https://api.example.com/v1"
+    want: "curl -H 'Authorization: Bearer <redacted>' https://api.example.com/v1"
+  - name: key in an environment variable
+    input: "OPENAI_API_KEY=sk-live-0123456789 python3 run.py"
+    want: "OPENAI_API_KEY=<redacted> python3 run.py"
+  - name: token flag
+    input: "gh api --token ghp_abcdefghijklmnop repos"
+    want: "gh api --token <redacted> repos"
+  - name: bare provider key
+    input: "echo sk-or-v1-abcdefghijklmnopqrstuvwxyz"
+    want: "echo <redacted>"
+  - name: URL query string
+    input: "curl https://example.com/hook?sig=abc&user=me"
+    want: "curl https://example.com/hook"
+  - name: long opaque string
+    input: "export X=Zm9vYmFyYmF6cXV4cXV1eHF1dXhmb29iYXJiYXo"
+    want: "export X=<redacted>"
