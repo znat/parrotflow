@@ -131,12 +131,19 @@ enum ClaudeSpeakable {
 
     /// The language a request is written in, as a code like "fr". Nil for a
     /// line too short to tell.
+    /// Only plain words count, and any language but English needs 0.8: on
+    /// 400 real prompts, paths and URLs read as Dutch or Indonesian at
+    /// 0.62-0.95 (2026-11-06).
     static func language(of text: String) -> String? {
-        let plain = clean(text)
-        guard plain.split(whereSeparator: \.isWhitespace).count >= 3 else { return nil }
+        let letters = { (word: Substring) in word.allSatisfy { $0.isLetter || "'’-".contains($0) } }
+        let plain = text.split(whereSeparator: \.isWhitespace).filter { word in
+            letters(word) || (",.?!;:".contains(word.last!) && letters(word.dropLast()))
+        }.joined(separator: " ")
+        guard plain.split(separator: " ").count >= 3 else { return nil }
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(plain)
-        guard let (found, odds) = recognizer.languageHypotheses(withMaximum: 1).first, odds >= 0.6 else { return nil }
+        guard let (found, odds) = recognizer.languageHypotheses(withMaximum: 1).first,
+              odds >= (found == .english ? 0.6 : 0.8) else { return nil }
         return found.rawValue
     }
 

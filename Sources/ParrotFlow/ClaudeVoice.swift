@@ -300,7 +300,11 @@ final class ClaudeVoice {
             let parsed = ClaudeSpeakable.parseSpoken(LLM.stripThinking(raw))
             let said = ClaudeSpeakable.capped(ClaudeSpeakable.clean(parsed.say, language: language), limit: 480, count: 4)
             let ground = ClaudeSpeakable.grounded(said, in: [reply, recap ?? "", asked ?? ""].joined(separator: " "))
-            guard !said.isEmpty, ground >= ClaudeSpeakable.groundedFloor else {
+            // Translated, the words cannot overlap, so the check would always say no.
+            let source = ClaudeSpeakable.language(of: written)
+            let translated = source != nil && source != language
+            if translated { Log.write("claude voice: answer translated from \(source!) to \(language), not checked") }
+            guard !said.isEmpty, translated || ground >= ClaudeSpeakable.groundedFloor else {
                 Log.write(String(format: "claude voice: %@ wrote words the reply does not have (%.2f), saying it plain",
                                  model.name, ground))
                 return fallback

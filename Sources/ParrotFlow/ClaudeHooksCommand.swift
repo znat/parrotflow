@@ -303,6 +303,8 @@ enum ClaudeHooksCommand {
               want: "fr")
         check("an English request is English", got: language("Can you rerun the tests on that branch?"), want: "en")
         check("a short line has no language", got: language("ok go") ?? "none", want: "none")
+        check("a path is not a language", got: language("codex report came back /Users/me/training/BOUNDARY_DATA_V2.md")
+              ?? "none", want: "en")
         let now = Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 11, day: 6))!
         check("an English date", got: ClaudeSpeakable.spokenDates("on 2026-11-06", now: now), want: "on November 6")
         check("an English date, another year", got: ClaudeSpeakable.spokenDates("2025-03-01", now: now),
