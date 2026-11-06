@@ -236,13 +236,11 @@ final class Speaker {
     ) async {
         if let remote, let style {
             do {
-                let begun = Date()
-                let samples = try await RemoteSpeech.synthesize(
-                    sentence, voice: style.voice, tone: style.tone, speed: speed, config: remote
+                let timing = try await RemoteSpeech.stream(
+                    sentence, voice: style.voice, tone: style.tone, speed: speed, config: remote, emit: emit
                 )
-                Log.write(String(format: "claude voice: %@ (%@) spoke %d chars in %.2fs",
-                                 remote.name, style.voice, sentence.count, Date().timeIntervalSince(begun)))
-                _ = await emit(samples)
+                Log.write(String(format: "claude voice: %@ (%@) first sound %.2fs, %d chars in %.2fs",
+                                 remote.name, style.voice, timing.firstAudio, sentence.count, timing.total))
                 return
             } catch {
                 Log.write("claude voice: \(remote.name) failed, the local voice takes this one — "

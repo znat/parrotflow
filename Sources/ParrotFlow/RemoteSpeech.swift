@@ -1,28 +1,39 @@
 import Foundation
 
 /// Text to audio through an OpenAI-style `/audio/speech` endpoint, such as
-/// OpenRouter's. Returns samples at `sampleRate`, ready for `Speaker`.
+/// OpenRouter's. The body is read as it arrives and handed on in pieces, so
+/// a provider that streams starts the voice before the sentence is done.
 enum RemoteSpeech {
 
     /// OpenRouter's Gemini TTS pages give 24 kHz, 16-bit, mono for `pcm`.
     static let sampleRate = 24_000
+    /// About 160 ms of 16-bit audio.
+    static let pieceBytes = 7_680
+
+    struct Timing {
+        var firstAudio: TimeInterval
+        var total: TimeInterval
+    }
 
     /// `tone` goes out as `instructions`. A model that refuses it with a 400
-    /// is asked once more without it.
-    static func synthesize(
-        _ text: String, voice: String, tone: String?, speed: Float, config: ModelSpec
-    ) async throws -> [Float] {
+    /// is asked once more without it. `emit` says false once the line is
+    /// dropped. Throws only before any audio was handed on.
+    static func stream(
+        _ text: String, voice: String, tone: String?, speed: Float, config: ModelSpec,
+        emit: @escaping @MainActor ([Float]) -> Bool
+    ) async throws -> Timing {
         do {
-            return try await request(text, voice: voice, tone: tone, speed: speed, config: config)
+            return try await request(text, voice: voice, tone: tone, speed: speed, config: config, emit: emit)
         } catch LLM.Failure.badStatus(_, 400, let detail) where tone != nil {
             Log.write("claude voice: \(config.name) refused the tone, saying it plain — \(detail)")
-            return try await request(text, voice: voice, tone: nil, speed: speed, config: config)
+            return try await request(text, voice: voice, tone: nil, speed: speed, config: config, emit: emit)
         }
     }
 
     private static func request(
-        _ text: String, voice: String, tone: String?, speed: Float, config: ModelSpec
-    ) async throws -> [Float] {
+        _ text: String, voice: String, tone: String?, speed: Float, config: ModelSpec,
+        emit: @escaping @MainActor ([Float]) -> Bool
+    ) async throws -> Timing {
         guard let key = config.key.resolve() else { throw LLM.Failure.noKey(config) }
         guard let url = URL(string: "\(config.url)/audio/speech") else { throw LLM.Failure.unreachable(config) }
         var body: [String: Any] = [
@@ -43,15 +54,18 @@ enum RemoteSpeech {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = config.timeout
 
-        let data: Data
+        let started = Date()
+        let bytes: URLSession.AsyncBytes
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (bytes, response) = try await URLSession.shared.bytes(for: request)
         } catch {
             throw LLM.Failure.unreachable(config)
         }
         guard let http = response as? HTTPURLResponse else { throw LLM.Failure.unreachable(config) }
         guard http.statusCode == 200 else {
+            var data = Data()
+            for try await byte in bytes { data.append(byte) }
             let detail = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
                 .flatMap { ($0["error"] as? [String: Any])?["message"] as? String } ?? ""
             throw LLM.Failure.badStatus(config, http.statusCode, detail)
@@ -60,7 +74,38 @@ enum RemoteSpeech {
         guard !type.contains("json"), !type.contains("mpeg") else {
             throw LLM.Failure.badStatus(config, http.statusCode, "expected pcm audio, got \(type)")
         }
-        return samples(fromPCM16: data)
+
+        var buffer = Data()
+        var header: Bool?
+        var first: TimeInterval?
+        for try await byte in bytes {
+            buffer.append(byte)
+            // Gemini 3.8 answers a plain request with a WAV header; skip it if it comes.
+            if header == nil, buffer.count >= 4 {
+                header = buffer.prefix(4) == Data("RIFF".utf8)
+            }
+            if header == true {
+                guard let start = dataStart(buffer) else { continue }
+                buffer.removeSubrange(..<start)
+                header = false
+            }
+            guard header == false, buffer.count >= pieceBytes else { continue }
+            let piece = buffer.prefix(pieceBytes - pieceBytes % 2)
+            buffer.removeSubrange(..<piece.count)
+            if first == nil { first = Date().timeIntervalSince(started) }
+            guard await emit(samples(fromPCM16: Data(piece))) else { break }
+        }
+        if buffer.count >= 2 {
+            if first == nil { first = Date().timeIntervalSince(started) }
+            _ = await emit(samples(fromPCM16: buffer.prefix(buffer.count - buffer.count % 2)))
+        }
+        return Timing(firstAudio: first ?? Date().timeIntervalSince(started), total: Date().timeIntervalSince(started))
+    }
+
+    /// Where the samples start in a WAV: after the `data` chunk's 8-byte header.
+    private static func dataStart(_ wav: Data) -> Int? {
+        guard let range = wav.range(of: Data("data".utf8)), wav.count >= range.upperBound + 4 else { return nil }
+        return range.upperBound + 4
     }
 
     /// Signed 16-bit little-endian, as `pcm` is everywhere it is documented.
