@@ -12,7 +12,7 @@
 # tests/envelopes/. Every text is invented. `trace` comes only with a
 # dictation (`--transcribe` loads the 1 GB speech model), so it is checked
 # against envelope.py here and not against recorded bytes.
-set -uo pipefail
+set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
 [ -x "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
