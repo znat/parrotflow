@@ -393,6 +393,8 @@ enum ClaudeHooksCommand {
                     samples += piece
                     return true
                 }
+                // A WAV's sizes are 32-bit: about 12 hours of 24 kHz audio.
+                guard samples.count < Int(UInt32.max / 2) - 64 else { throw CocoaError(.fileWriteFileExists) }
                 try wav(samples, rate: RemoteSpeech.sampleRate).write(to: URL(fileURLWithPath: path))
                 print(String(format: "saved %@: %.1fs of audio, %@ at %d Hz, first sound %.2fs",
                              path, Double(samples.count) / Double(RemoteSpeech.sampleRate),

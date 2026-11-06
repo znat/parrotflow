@@ -21,8 +21,11 @@ enum RemoteSpeech {
     /// provider says it, else per provider. Fish Audio played as 24 kHz came
     /// out slow and low.
     static func rate(contentType: String, model: String) -> Int {
-        if let range = contentType.range(of: #"rate=(\d+)"#, options: .regularExpression),
-           let value = Int(contentType[range].dropFirst(5)) {
+        // Only a plausible rate: a server saying rate=1 would make the resampler
+        // ask for 24,000 samples per sample it sent.
+        if let range = contentType.range(of: #"(^|;)\s*rate=\d{4,6}\b"#, options: .regularExpression),
+           let value = Int(contentType[range].split(separator: "=").last ?? ""),
+           (8_000...192_000).contains(value) {
             return value
         }
         return model.hasPrefix("fish-audio/") ? 44_100 : sampleRate
@@ -30,7 +33,7 @@ enum RemoteSpeech {
 
     /// Linear interpolation to the player's 24 kHz.
     static func resample(_ samples: [Float], from rate: Int) -> [Float] {
-        guard rate != sampleRate, !samples.isEmpty else { return samples }
+        guard rate != sampleRate, (8_000...192_000).contains(rate), !samples.isEmpty else { return samples }
         let step = Double(rate) / Double(sampleRate)
         let count = Int(Double(samples.count) / step)
         return (0..<count).map { index in
