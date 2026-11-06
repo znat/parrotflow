@@ -56,11 +56,14 @@ final class ClaudeVoice {
         var window: AXUIElement?
         /// Where that pane or window was, to find it again when Ghostty rebuilds it.
         var rect: CGRect?
+        /// The language of the latest request that was long enough to tell.
+        var language: String?
     }
 
     struct Spoken: Equatable {
         var text: String
         var tone: String?
+        var language = "en"
     }
 
     private let progressInterval: TimeInterval = 6
@@ -132,6 +135,9 @@ final class ClaudeVoice {
         switch name {
         case "UserPromptSubmit":
             pinWindow(id)
+            if let prompt = event["prompt"] as? String, let language = ClaudeSpeakable.language(of: prompt) {
+                sessions[id]?.language = language
+            }
             if let prompt = event["prompt"] as? String, !prompt.isEmpty {
                 let transcript = (event["transcript_path"] as? String).map { URL(fileURLWithPath: $0) }
                 Task.detached {
@@ -198,17 +204,19 @@ final class ClaudeVoice {
         let model = config.model(named: named) ?? config.model(for: .general)
         let limit = explainLimit
         let task = sessions[session]?.task
+        let language = sessions[session]?.language ?? "en"
         Task.detached {
             let context = transcript.flatMap { ClaudeSpeakable.lastTurn(transcript: $0, tailBytes: 128 * 1024) }?
                 .latestText
             let started = Date()
             let raw = try? await LLM.complete(
                 system: ClaudeSpeakable.explainPrompt,
-                user: ClaudeSpeakable.explainInput(tool: tool, input: input, context: context, task: task),
+                user: ClaudeSpeakable.explainInput(tool: tool, input: input, context: context, task: task,
+                                                  language: language),
                 json: false, maxTokens: 60, config: model
             )
             let elapsed = Date().timeIntervalSince(started)
-            let said = raw.map { ClaudeSpeakable.clean(LLM.stripThinking($0)) } ?? ""
+            let said = raw.map { ClaudeSpeakable.clean(LLM.stripThinking($0), language: language) } ?? ""
             await MainActor.run { [weak self] in
                 guard let self, mine == self.progressSeq, !self.isRecording(), !self.speaker.isSpeaking else { return }
                 guard elapsed < limit else {
@@ -233,11 +241,12 @@ final class ClaudeVoice {
         let config = config
         let toned = speaker.remote != nil
         let request = sessions[session]?.task
+        let language = sessions[session]?.language
         Task.detached {
             if settle > 0 { try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000)) }
             let turn = ended ?? transcript.flatMap { ClaudeSpeakable.lastTurn(transcript: $0) }
-            let spoken = await Self.spoken(turn: turn, written: written, request: request, settings: settings,
-                                           config: config, toned: toned)
+            let spoken = await Self.spoken(turn: turn, written: written, request: request, language: language,
+                                           settings: settings, config: config, toned: toned)
             await MainActor.run { [weak self] in
                 guard let self, let spoken else { return }
                 guard asked == self.turns[session, default: 0] else {
@@ -245,6 +254,7 @@ final class ClaudeVoice {
                     return
                 }
                 self.lastKind = nil
+                if self.sessions[session]?.language == nil { self.sessions[session]?.language = spoken.language }
                 self.whenFree { [weak self] in
                     guard let self else { return }
                     // Progress lines give way; another session's answer keeps its place.
@@ -260,16 +270,21 @@ final class ClaudeVoice {
     /// sentences. `toned` asks the model for a tone even when the words
     /// need no rewrite.
     static func spoken(
-        turn: ClaudeSpeakable.TurnEnd?, written: String?, request: String? = nil,
+        turn: ClaudeSpeakable.TurnEnd?, written: String?, request: String? = nil, language: String? = nil,
         settings: Config.Claude, config: Config, toned: Bool
     ) async -> Spoken? {
-        let reply = ClaudeSpeakable.clean(turn?.answer.isEmpty == false ? turn!.answer : (written ?? ""))
-        let recap = turn?.recap.map { ClaudeSpeakable.clean([$0, turn?.ask].compactMap { $0 }.joined(separator: "\n")) }
         let asked = request ?? turn?.prompt
+        let written = turn?.answer.isEmpty == false ? turn!.answer : (written ?? "")
+        let language = language ?? asked.flatMap(ClaudeSpeakable.language(of:))
+            ?? ClaudeSpeakable.language(of: written) ?? "en"
+        let reply = ClaudeSpeakable.clean(written, language: language)
+        let recap = turn?.recap.map {
+            ClaudeSpeakable.clean([$0, turn?.ask].compactMap { $0 }.joined(separator: "\n"), language: language)
+        }
         let plain = recap ?? ClaudeSpeakable.truncated(reply)
         guard !plain.isEmpty else { return nil }
         let base = toned ? settings.speechTone : nil
-        let fallback = Spoken(text: plain, tone: base)
+        let fallback = Spoken(text: plain, tone: base, language: language)
         guard config.llmEnabled else { return fallback }
 
         let named = settings.model.trimmingCharacters(in: .whitespaces)
@@ -279,11 +294,11 @@ final class ClaudeVoice {
             let raw = try await LLM.complete(
                 system: ClaudeSpeakable.rewritePrompt,
                 user: ClaudeSpeakable.rewriteInput(request: asked, reply: reply, recap: recap,
-                                                   earlier: turn?.earlier),
+                                                   earlier: turn?.earlier, language: language),
                 json: true, maxTokens: 300, config: model
             )
             let parsed = ClaudeSpeakable.parseSpoken(LLM.stripThinking(raw))
-            let said = ClaudeSpeakable.capped(ClaudeSpeakable.clean(parsed.say), limit: 480, count: 4)
+            let said = ClaudeSpeakable.capped(ClaudeSpeakable.clean(parsed.say, language: language), limit: 480, count: 4)
             let ground = ClaudeSpeakable.grounded(said, in: [reply, recap ?? "", asked ?? ""].joined(separator: " "))
             guard !said.isEmpty, ground >= ClaudeSpeakable.groundedFloor else {
                 Log.write(String(format: "claude voice: %@ wrote words the reply does not have (%.2f), saying it plain",
@@ -295,7 +310,8 @@ final class ClaudeVoice {
             Log.write(String(format: "claude voice: %@ answered in %.1fs, %d chars of reply to %d, shift \"%@\"",
                              model.name, Date().timeIntervalSince(started), reply.count + (recap?.count ?? 0),
                              text.count, parsed.tone ?? "none"))
-            return Spoken(text: text, tone: base.map { ClaudeSpeakable.instructions(base: $0, shift: parsed.tone) })
+            return Spoken(text: text, tone: base.map { ClaudeSpeakable.instructions(base: $0, shift: parsed.tone) },
+                          language: language)
         } catch {
             Log.write("claude voice: rewrite failed, saying it plain — \(error.localizedDescription)")
             return fallback
@@ -419,7 +435,7 @@ final class ClaudeVoice {
         let name = sameProject ? [this.project, this.account].compactMap { $0 }.joined(separator: " ") : this.project
         let pick = Self.introductionIndex(after: lastIntroduction, seed: Int(Date().timeIntervalSince1970))
         lastIntroduction = pick
-        return Self.introduction(name, pick)
+        return Self.introduction(name, pick, language: this.language ?? "en")
     }
 
     static func names(otherSpokeLast: Bool, quietFor: TimeInterval, inFront: Bool) -> Bool {
@@ -430,8 +446,15 @@ final class ClaudeVoice {
         "Update from %@: ", "News from %@: ", "%@ here: ", "Quick one from %@: ", "From %@: ", "On %@: ",
     ]
 
-    static func introduction(_ name: String, _ index: Int) -> String {
-        String(format: introductions[index % introductions.count], name)
+    /// The same six, in order, per language. A language with none uses English.
+    static let localIntroductions: [String: [String]] = [
+        "fr": ["Du nouveau sur %@ : ", "Des nouvelles de %@ : ", "Ici %@ : ", "Petit point sur %@ : ",
+               "De la part de %@ : ", "Sur %@ : "],
+    ]
+
+    static func introduction(_ name: String, _ index: Int, language: String = "en") -> String {
+        let list = localIntroductions[language] ?? introductions
+        return String(format: list[index % list.count], name)
     }
 
     /// Any introduction but the one used last.
@@ -487,6 +510,7 @@ final class ClaudeVoice {
     /// Makes the session's reminder from its latest request, off the main queue.
     private func remind(_ id: String, request: String, latest: String? = nil) {
         sessions[id]?.task = request
+        let language = sessions[id]?.language ?? ClaudeSpeakable.language(of: request) ?? "en"
         guard config.llmEnabled, sessions[id]?.reminding != true else { return }
         sessions[id]?.reminding = true
         let named = settings.model.trimmingCharacters(in: .whitespaces)
@@ -494,10 +518,10 @@ final class ClaudeVoice {
         Task.detached {
             let raw = try? await LLM.complete(
                 system: ClaudeSpeakable.reminderPrompt,
-                user: ClaudeSpeakable.reminderInput(request: request, latest: latest),
+                user: ClaudeSpeakable.reminderInput(request: request, latest: latest, language: language),
                 json: false, maxTokens: 80, config: model
             )
-            let said = raw.map { ClaudeSpeakable.capped(ClaudeSpeakable.clean(LLM.stripThinking($0)), limit: 200) }
+            let said = raw.map { ClaudeSpeakable.capped(ClaudeSpeakable.clean(LLM.stripThinking($0), language: language), limit: 200) }
             await MainActor.run { [weak self] in
                 self?.sessions[id]?.reminding = false
                 guard let said, !said.isEmpty else { return }
@@ -534,7 +558,10 @@ final class ClaudeVoice {
         sessions[session]?.heard = Date()
         lastSpokenSession = session
         lastSpokenAt = Date()
-        let local = speaker.remote == nil || settings.speechVoices.isEmpty || (progress && settings.progressLocal)
+        // The local voices speak English only.
+        let english = (sessions[session]?.language ?? "en") == "en"
+        let local = speaker.remote == nil || settings.speechVoices.isEmpty
+            || (progress && settings.progressLocal && english)
         let style = local ? nil : Speaker.Style(
             voice: voice(for: session),
             tone: tone ?? ClaudeSpeakable.instructions(

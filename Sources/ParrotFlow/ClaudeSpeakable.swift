@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 /// The text side of `ClaudeVoice`: what a hook event or a written answer
 /// sounds like. No audio, no network, so `--claude-voice-test` can score it.
@@ -42,40 +43,50 @@ enum ClaudeSpeakable {
         // Times as people say them: no seconds, no leading zero.
         rule(#"\b(\d{1,2}):(\d{2}):\d{2}\b"#, "$1:$2"),
         rule(#"\b0(\d):(\d{2})\b"#, "$1:$2"),
-        // Units in words.
-        rule(#"(\d)\s?ms\b"#, "$1 milliseconds"),
-        rule(#"(\d)\s?s\b(?!-)"#, "$1 seconds"),
-        rule(#"(\d)\s?GB\b"#, "$1 gigabytes"),
-        rule(#"(\d)\s?MB\b"#, "$1 megabytes"),
-        rule(#"(\d)\s?KB\b"#, "$1 kilobytes"),
-        rule(#"(\d)\s?%"#, "$1 percent"),
     ].compactMap { $0 }
+
+    /// Units in words. A language with no table keeps the symbols.
+    private static let units: [String: [(NSRegularExpression, String)]] = [
+        "en": unitRules(["milliseconds", "seconds", "gigabytes", "megabytes", "kilobytes", "percent"]),
+        "fr": unitRules(["millisecondes", "secondes", "gigaoctets", "mégaoctets", "kilooctets", "pour cent"]),
+    ]
+
+    private static func unitRules(_ words: [String]) -> [(NSRegularExpression, String)] {
+        zip([#"(\d)\s?ms\b"#, #"(\d)\s?s\b(?!-)"#, #"(\d)\s?GB\b"#, #"(\d)\s?MB\b"#, #"(\d)\s?KB\b"#,
+             #"(\d)\s?%"#], words).compactMap { rule($0, "$1 " + $1) }
+    }
 
     private static let isoDate = try? NSRegularExpression(pattern: #"\b(\d{4})-(\d{2})-(\d{2})\b"#)
 
-    /// "2026-11-06" → "November 6", with the year only when it is not this one.
-    static func spokenDates(_ text: String, now: Date = Date()) -> String {
+    /// "2026-11-06" → "November 6" or "6 novembre", with the year only when
+    /// it is not this one.
+    static func spokenDates(_ text: String, now: Date = Date(), language: String = "en") -> String {
         guard let isoDate else { return text }
-        let thisYear = Calendar.current.component(.year, from: now)
-        let months = DateFormatter().monthSymbols ?? []
+        let calendar = Calendar(identifier: .gregorian)
+        let thisYear = calendar.component(.year, from: now)
+        let locale = Locale(identifier: language)
+        let format = DateFormatter()
+        format.locale = locale
+        format.calendar = calendar
         var out = text
         for match in isoDate.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
             guard let whole = Range(match.range, in: out),
                   let year = Range(match.range(at: 1), in: text).flatMap({ Int(text[$0]) }),
                   let month = Range(match.range(at: 2), in: text).flatMap({ Int(text[$0]) }),
                   let day = Range(match.range(at: 3), in: text).flatMap({ Int(text[$0]) }),
-                  (1...12).contains(month), months.count == 12 else { continue }
-            let said = "\(months[month - 1]) \(day)" + (year == thisYear ? "" : ", \(year)")
-            out.replaceSubrange(whole, with: said)
+                  let date = calendar.date(from: DateComponents(year: year, month: month, day: day))
+            else { continue }
+            format.setLocalizedDateFormatFromTemplate(year == thisYear ? "MMMMd" : "yMMMMd")
+            out.replaceSubrange(whole, with: format.string(from: date))
         }
         return out
     }
 
     /// Markdown in, sentences out. Lists, headings and paragraphs each become
     /// a sentence, so the voice pauses where the eye would.
-    static func clean(_ text: String) -> String {
-        var out = spokenDates(text)
-        for (expression, template) in rules {
+    static func clean(_ text: String, language: String = "en") -> String {
+        var out = spokenDates(text, language: language)
+        for (expression, template) in rules + (units[language] ?? []) {
             out = expression.stringByReplacingMatches(
                 in: out, range: NSRange(out.startIndex..., in: out), withTemplate: template
             )
@@ -98,7 +109,7 @@ enum ClaudeSpeakable {
     /// introduces are one call to the voice, not two cold starts.
     static func sentences(_ text: String) -> [String] {
         text.replacingOccurrences(
-            of: #"(?<=[.!?])\s+(?=[A-Z0-9"'(])"#, with: "\u{1}", options: .regularExpression
+            of: #"(?<=[.!?])\s+(?=[\p{Lu}0-9"'(«])"#, with: "\u{1}", options: .regularExpression
         )
         .components(separatedBy: "\u{1}")
         .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -116,6 +127,22 @@ enum ClaudeSpeakable {
             out = out.replacingOccurrences(of: from, with: to)
         }
         return out
+    }
+
+    /// The language a request is written in, as a code like "fr". Nil for a
+    /// line too short to tell.
+    static func language(of text: String) -> String? {
+        let plain = clean(text)
+        guard plain.split(whereSeparator: \.isWhitespace).count >= 3 else { return nil }
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(plain)
+        guard let (found, odds) = recognizer.languageHypotheses(withMaximum: 1).first, odds >= 0.6 else { return nil }
+        return found.rawValue
+    }
+
+    /// "fr" → "French", for a prompt.
+    static func languageName(_ code: String) -> String {
+        Locale(identifier: "en").localizedString(forLanguageCode: code) ?? code
     }
 
     /// Short enough to say as it is, without a model call.
@@ -138,6 +165,8 @@ enum ClaudeSpeakable {
         ("Reply"), its summary ("Recap"), or both. You may also get the turn before \
         ("Earlier request", "Earlier reply"). Use it only to understand what the request \
         refers to. Never repeat it.
+
+        Write opener and say in the language named by "Language". Write tone in English.
 
         Say only what the request needs:
         - The result. For an action, confirm in a few words that it was done. For a \
@@ -167,13 +196,15 @@ enum ClaudeSpeakable {
         """
 
     /// What the model is sent: the request, then the reply and the recap.
-    static func rewriteInput(request: String?, reply: String, recap: String?, earlier: Earlier? = nil) -> String {
-        var parts: [String] = []
+    static func rewriteInput(
+        request: String?, reply: String, recap: String?, earlier: Earlier? = nil, language: String = "en"
+    ) -> String {
+        var parts = ["Language: " + languageName(language)]
         if let earlier {
             if let prompt = earlier.prompt, !prompt.isEmpty {
                 parts.append("Earlier request: " + redacted(String(clean(prompt).prefix(600))))
             }
-            let said = earlier.recap.map(clean) ?? clean(earlier.answer)
+            let said = earlier.recap.map { clean($0, language: language) } ?? clean(earlier.answer, language: language)
             if !said.isEmpty { parts.append("Earlier reply: " + redacted(String(said.prefix(1500)))) }
         }
         if let request, !request.isEmpty { parts.append("Request: " + redacted(String(clean(request).prefix(800)))) }
@@ -193,7 +224,19 @@ enum ClaudeSpeakable {
             kept.append(part.prefix(1).uppercased() + part.dropFirst())
             length += part.count + 1
         }
-        return kept.joined(separator: " ")
+        return capitalizedSentences(kept.joined(separator: " "))
+    }
+
+    /// "a term. my examples" → "a term. My examples": the split above only
+    /// cuts before a capital, so a lowercase start stays inside a sentence.
+    static func capitalizedSentences(_ text: String) -> String {
+        guard let pattern = try? NSRegularExpression(pattern: #"(?<=[.!?]\s)\p{Ll}"#) else { return text }
+        var out = text
+        for match in pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+            guard let range = Range(match.range, in: out) else { continue }
+            out.replaceSubrange(range, with: out[range].uppercased())
+        }
+        return out
     }
 
     /// "Done" → "Done." so the voice pauses before the facts.
@@ -212,10 +255,12 @@ enum ClaudeSpeakable {
     private static let stopWords: Set<String> = Set(
         ("this that with from have will what when then they them their there were your just into also than "
             + "only about after before because which would could should being been does doing done here more "
-            + "most some such very over").split(separator: " ").map(String.init)
+            + "most some such very over "
+            + "dans pour avec mais plus tout tous toute cette sont était être avoir fait faire comme aussi "
+            + "encore très quand alors donc leur leurs elle elles nous vous ils sans sous entre depuis").split(separator: " ").map(String.init)
     )
 
-    private static let wordPattern = try? NSRegularExpression(pattern: #"[a-z0-9][a-z0-9'.-]{3,}"#)
+    private static let wordPattern = try? NSRegularExpression(pattern: #"[\p{Ll}0-9][\p{Ll}0-9'.-]{3,}"#)
 
     private static func contentWords(_ text: String) -> Set<String> {
         let lower = text.lowercased()
@@ -354,6 +399,7 @@ enum ClaudeSpeakable {
         - First person, present continuous, at most 10 words, casual, like a colleague. \
         Shorter is better: the line is heard while the work goes on.
         - No code, no paths, no flags, no quotes.
+        - Write in the language named by "Language".
 
         Output only the sentence.
         """
@@ -372,13 +418,14 @@ enum ClaudeSpeakable {
         - With no Latest, say the goal from the Request alone.
         - Every word of the work comes from Latest or Request. Not the steps.
         - Casual, like a colleague. No file names, paths, code, numbers or quotes.
+        - Write in the language named by "Language", with the same shape in that language.
 
         Output only the reminder.
         """
 
     /// The request, and the latest result when there is one, for `reminderPrompt`.
-    static func reminderInput(request: String, latest: String?) -> String {
-        var lines = ["Request: \(redacted(String(clean(request).prefix(1500))))"]
+    static func reminderInput(request: String, latest: String?, language: String = "en") -> String {
+        var lines = ["Language: \(languageName(language))", "Request: \(redacted(String(clean(request).prefix(1500))))"]
         if let latest, !latest.isEmpty { lines.append("Latest: \(clean(latest).prefix(500))") }
         return lines.joined(separator: "\n")
     }
@@ -405,9 +452,11 @@ enum ClaudeSpeakable {
     }
 
     /// The tool call, and what Claude wrote just before it, for `explainPrompt`.
-    static func explainInput(tool: String, input: [String: Any], context: String?, task: String? = nil) -> String {
-        var lines = ["Tool: \(tool)"]
-        if let task, !task.isEmpty { lines.insert("Session task: \(redacted(String(clean(task).prefix(400))))", at: 0) }
+    static func explainInput(
+        tool: String, input: [String: Any], context: String?, task: String? = nil, language: String = "en"
+    ) -> String {
+        var lines = ["Language: \(languageName(language))", "Tool: \(tool)"]
+        if let task, !task.isEmpty { lines.insert("Session task: \(redacted(String(clean(task).prefix(400))))", at: 1) }
         for key in ["description", "command", "file_path", "pattern", "query", "url"] {
             guard var value = input[key] as? String, !value.isEmpty else { continue }
             if key == "file_path" { value = basename(value) }

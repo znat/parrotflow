@@ -298,6 +298,27 @@ enum ClaudeHooksCommand {
         let repeats = (0..<count).flatMap { last in (0..<50).map { (last, $0) } }
             .filter { ClaudeVoice.introductionIndex(after: $0.0, seed: $0.1) == $0.0 }
         check("introductions never repeat back to back", got: "\(repeats.count)", want: "0")
+        let language = ClaudeSpeakable.language(of:)
+        check("a French request is French", got: language("Est-ce que tu peux relancer les tests sur cette branche ?"),
+              want: "fr")
+        check("an English request is English", got: language("Can you rerun the tests on that branch?"), want: "en")
+        check("a short line has no language", got: language("ok go") ?? "none", want: "none")
+        let now = Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 11, day: 6))!
+        check("an English date", got: ClaudeSpeakable.spokenDates("on 2026-11-06", now: now), want: "on November 6")
+        check("an English date, another year", got: ClaudeSpeakable.spokenDates("2025-03-01", now: now),
+              want: "March 1, 2025")
+        check("a French date", got: ClaudeSpeakable.spokenDates("le 2026-11-06", now: now, language: "fr"),
+              want: "le 6 novembre")
+        check("a French date, another year", got: ClaudeSpeakable.spokenDates("2025-03-01", now: now, language: "fr"),
+              want: "1 mars 2025")
+        check("French units", got: ClaudeSpeakable.clean("en 12 s, 40 %", language: "fr"),
+              want: "en 12 secondes, 40 pour cent.")
+        check("a French introduction", got: ClaudeVoice.introduction("parrotflow", 2, language: "fr"),
+              want: "Ici parrotflow : ")
+        check("a language with no introductions uses English", got: ClaudeVoice.introduction("parrotflow", 2, language: "de"),
+              want: "parrotflow here: ")
+        check("a capital after a period", got: ClaudeSpeakable.capped("A new term. my examples were wrong."),
+              want: "A new term. My examples were wrong.")
         print("\n\(passed)/\(total)")
         return passed == total ? 0 : 1
     }
