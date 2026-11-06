@@ -7,6 +7,7 @@
 # heard:  <a>..<b> in "…"    the window and range written to the trace; optional
 # lang:   en | fr            what the pipeline resolved; optional, en by default
 # learn:  Learn? “…”         the line the pill draws; optional
+# ear:    none               decide as if no ear were here; optional
 #
 # The strict half matters more than the generous one. A rewrite read as a
 # correction teaches a term a sentence nobody meant, and a portrait built on
@@ -172,11 +173,19 @@ cases:
     expect:  "Fais -> Et"
     offer:   "no, ordinary English"
 
-  # One name in the span is enough.
+  # One name in the span is enough for the word lists. Without an ear that is
+  # the whole answer.
   - written: "I met Prezi yesterday"
     now:     "I met Praisy Dupont yesterday"
     expect:  "Prezi -> Praisy Dupont"
+    ear:     none
     offer:   "yes"
+
+  # With one, the surname makes the two sides sound apart (0.22).
+  - written: "I met Prezi yesterday"
+    now:     "I met Praisy Dupont yesterday"
+    expect:  "Prezi -> Praisy Dupont"
+    offer:   "no, does not sound like what was heard"
 
   # A reword, 2026-09-03: two words put in for one. Glued to `forinstance`
   # no list knew it, and the panel offered it as a name.
@@ -383,6 +392,62 @@ cases:
     now:     "one two three four five six seven Praisy eight nine ten eleven twelve"
     expect:  "Prezi -> Praisy"
     learn:   'Learn? “… three four five six seven Prezi Praisy eight nine ten eleven twelve”'
+
+# A correction onto a name is offered only when it sounds like what was heard.
+# Swapping one word for another is a change of mind, not a mishearing, and
+# lands on a word no list knows just as a name does.
+  - written: "we keep the build in a folder on the laptop"
+    now:     "we keep the build in a worktree on the laptop"
+    expect:  "folder -> worktree"
+    offer:   "no, does not sound like what was heard"
+
+  # A common word replaced by a handle.
+  - written: "please ping support about the outage"
+    now:     "please ping @build-bot about the outage"
+    expect:  "support -> @build-bot"
+    offer:   "no, does not sound like what was heard"
+
+  # The mishearings the floor keeps, nearest to it first: 0.47, 0.48, 0.65.
+  - written: "the review came from Griptial this morning"
+    now:     "the review came from greptile this morning"
+    expect:  "Griptial -> greptile"
+    offer:   "yes"
+
+  - written: "we drove past the Vercel gardens at noon"
+    now:     "we drove past the Versailles gardens at noon"
+    expect:  "Vercel -> Versailles"
+    offer:   "yes"
+
+  - written: "we should ask when about the parser"
+    now:     "we should ask Qwen about the parser"
+    expect:  "when -> Qwen"
+    offer:   "yes"
+
+  # Both refusals true at once: the sound is the answer, the cut only ever
+  # refuses what would otherwise be offered.
+  - written: "we store it in the folder. then we ship"
+    now:     "we store it in the worktree then we ship"
+    expect:  "folder. -> worktree"
+    offer:   "no, does not sound like what was heard"
+
+  - written: "the review came from Griptial. it was short"
+    now:     "the review came from greptile it was short"
+    expect:  "Griptial. -> greptile"
+    offer:   "no, the heard side ends a sentence"
+
+  # No ear, no floor: without espeak-ng or the model a name is offered, and an
+  # ordinary word is refused, since only the ear can let it in.
+  - written: "we keep the build in a folder on the laptop"
+    now:     "we keep the build in a worktree on the laptop"
+    expect:  "folder -> worktree"
+    ear:     none
+    offer:   "yes"
+
+  - written: "there is a lot of borderplay in this file"
+    now:     "there is a lot of boilerplate in this file"
+    expect:  "borderplay -> boilerplate"
+    ear:     none
+    offer:   "no, ordinary English"
 
 # Not here: the input box between two rules, and a line wrapped onto a second
 # row. Both are several lines of screen, and this set carries one case per line.
