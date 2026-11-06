@@ -201,6 +201,26 @@ cases:
     after: ~
     input: "Three and a half."
     expect: "Three and a half."
+  # A `before` or `after` that is not a string is absent. A user stage can
+  # publish a number or a boolean under `input`.
+  - probe: blind
+    before: 7
+    after: ~
+    input: "i think you should. try this"
+    rule:   "stop at a pause"
+    expect: "i think you should try this"
+  - probe: blind
+    before: true
+    after: true
+    input: "i think you should. try this"
+    rule:   "stop at a pause"
+    expect: "i think you should try this"
+  - probe: newline
+    before: "The limit is wrong.\n"
+    after: 7
+    input: "the cache should be smaller."
+    rule:   "line start"
+    expect: "The cache should be smaller."
 
   # --- an identifier an earlier stage wrote ---
   # `code_identifiers` publishes `protected` — the names it built. Without that
