@@ -73,13 +73,15 @@ enum ClaudeHooksCommand {
     /// blocked Claude once that build was uninstalled, and a build that does
     /// not know `--speak-event` starts a second menu bar app on every tool
     /// call. `nc` exits in about 10 ms either way, and `exit 0` keeps a missing
-    /// app silent. nil for a `.build` binary: it has no bundle id, so its
+    /// app silent. `$PPID` is the Claude process, which `SpeakingFrame` walks
+    /// up from to find the window to frame. nil for a `.build` binary: it has no bundle id, so its
     /// socket path would be the release app's.
     static var hookCommand: String? {
         guard let path = Bundle.main.executableURL?.resolvingSymlinksInPath().path,
               path.contains(".app/Contents/MacOS/") else { return nil }
         let socket = ClaudeVoice.socketURL.path
-        return "[ -S '\(socket)' ] && /usr/bin/nc -U -w 1 '\(socket)' >/dev/null 2>&1; exit 0 # \(tag)"
+        return "[ -S '\(socket)' ] && { echo \"pid=$PPID\"; cat; } | /usr/bin/nc -U -w 1 '\(socket)' >/dev/null 2>&1;"
+            + " exit 0 # \(tag)"
     }
 
     static func install(folders: [URL]) -> Int32 {

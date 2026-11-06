@@ -248,16 +248,39 @@ enum ClaudeSpeakable {
     }
 
     static let explainPrompt = """
-        A coding assistant is about to run a tool. Say out loud, in one short sentence, \
-        what it is doing and why, to the developer it works with.
+        A coding assistant is about to use a tool. Say out loud, in one short sentence, \
+        what it is working on right now, to the developer it works with.
 
-        - First person, present continuous: "I'm checking the log to see why it crashed."
-        - At most 16 words. Plain, casual words, like a colleague.
-        - Say the purpose when the context gives it. Never invent one.
-        - No code, no paths, no flags, no quotes. Name a file by its name only.
+        - Say what the work achieves: the feature, fix or answer it moves forward. Not \
+        the tool action: "I'm building the glow around the speaking window", not \
+        "I'm writing SpeakingFrame.swift" or "I'm running a command".
+        - Name a file or a command only when it is the point.
+        - Find the purpose in the session's task and in what the assistant just wrote. \
+        Never invent one. When it is unclear, say plainly what it is checking or changing.
+        - First person, present continuous, at most 16 words, casual, like a colleague.
+        - No code, no paths, no flags, no quotes.
 
         Output only the sentence.
         """
+
+    static let reminderPrompt = """
+        Write a reminder of what this coding session is about, said out loud when the \
+        developer's attention comes back to it from another session.
+
+        - One or two sentences, at most 25 words in all.
+        - Say the goal, not the steps: "This is the one where we're adding a glow \
+        around the speaking window."
+        - Casual, like a colleague. No file names, paths, code or quotes.
+
+        Output only the reminder.
+        """
+
+    /// The request, and the latest result when there is one, for `reminderPrompt`.
+    static func reminderInput(request: String, latest: String?) -> String {
+        var lines = ["Request: \(redacted(String(clean(request).prefix(1500))))"]
+        if let latest, !latest.isEmpty { lines.append("Latest: \(clean(latest).prefix(500))") }
+        return lines.joined(separator: "\n")
+    }
 
     private static let secrets: [(NSRegularExpression, String)] = [
         rule(#"(?i)\bbearer\s+[^\s'"]+"#, "Bearer <redacted>"),
@@ -281,8 +304,9 @@ enum ClaudeSpeakable {
     }
 
     /// The tool call, and what Claude wrote just before it, for `explainPrompt`.
-    static func explainInput(tool: String, input: [String: Any], context: String?) -> String {
+    static func explainInput(tool: String, input: [String: Any], context: String?, task: String? = nil) -> String {
         var lines = ["Tool: \(tool)"]
+        if let task, !task.isEmpty { lines.insert("Session task: \(redacted(String(clean(task).prefix(400))))", at: 0) }
         for key in ["description", "command", "file_path", "pattern", "query", "url"] {
             guard var value = input[key] as? String, !value.isEmpty else { continue }
             if key == "file_path" { value = basename(value) }
@@ -314,6 +338,8 @@ enum ClaudeSpeakable {
         /// The last text block of the turn, wherever it sits: what Claude
         /// said just before the tool call now running.
         var latestText: String?
+        /// What the person asked, at the start of the turn.
+        var prompt: String?
     }
 
     /// Reads the tail of a session's `.jsonl` and returns the last turn.
@@ -331,11 +357,18 @@ enum ClaudeSpeakable {
 
     static func lastTurn(lines: [String]) -> TurnEnd? {
         var entries: [[String: Any]] = []
+        var asked: String?
         for line in lines.reversed() {
             guard let data = line.data(using: .utf8),
                   let entry = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else { continue }
-            if isPrompt(entry) { break }
+            if isPrompt(entry) {
+                let content = (entry["message"] as? [String: Any])?["content"]
+                asked = content as? String ?? (content as? [[String: Any]])?
+                    .compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
+                    .joined(separator: "\n")
+                break
+            }
             if entry["type"] as? String == "assistant" { entries.append(entry) }
         }
         guard !entries.isEmpty else { return nil }
@@ -366,7 +399,8 @@ enum ClaudeSpeakable {
                 }
             }
         }
-        return TurnEnd(answer: answer.joined(separator: "\n\n"), recap: recap, ask: ask, latestText: latest)
+        return TurnEnd(answer: answer.joined(separator: "\n\n"), recap: recap, ask: ask, latestText: latest,
+                       prompt: asked)
     }
 
     /// A line the person typed, as opposed to a tool result or a reminder the

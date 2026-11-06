@@ -17,6 +17,8 @@ final class Speaker {
     }
     /// Called on the main queue when the session being heard changes; nil when silent.
     var onSpeakingSession: ((String?) -> Void)?
+    /// The output's loudness (RMS), on the main queue, about 45 times a second.
+    var onLevel: ((Float) -> Void)?
 
     var isSpeaking: Bool { current != nil || !ready.isEmpty || !lines.isEmpty || synthesizing }
     private(set) var speakingSession: String? {
@@ -65,6 +67,13 @@ final class Speaker {
     init() {
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: format)
+        player.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            guard let data = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
+            var sum: Float = 0
+            for index in 0..<Int(buffer.frameLength) { sum += data[index] * data[index] }
+            let rms = (sum / Float(buffer.frameLength)).squareRoot()
+            DispatchQueue.main.async { self?.onLevel?(rms) }
+        }
     }
 
     func say(_ text: String, style: Style? = nil, session: String = "", progress: Bool = false) {

@@ -1394,6 +1394,7 @@ claude:
     - ~/.claude-personal
   progress: true         # short lines while Claude works
   explain: true          # those lines in the model's words, with the reason
+  frame: true            # a glow around the speaking session's window
   model: ""              # a name under models:; empty means the default
   voice: af_heart        # a Kokoro voice
   speed: 1.0
@@ -1432,7 +1433,8 @@ The spoken text leaves your Mac, as it already does for a hosted `model`.
 What it says:
 
 - **While Claude works:** with `explain` and a model, one sentence on what
-  Claude is doing and why. The model gets the tool call and the last thing
+  the work achieves ("I'm building the glow around the speaking window"),
+  not the tool action on a file. The model gets the tool call and the last thing
   Claude wrote before it, and the command text leaves your Mac with them,
 with anything that looks like a secret replaced by `<redacted>`: bearer
 tokens, `*_KEY=` and `--token` values, provider keys, long opaque strings and
@@ -1452,7 +1454,16 @@ URL query strings. An
 - **Which session:** a line starts with its project, in a varied way
   ("Update from parrotflow:", "parrotflow here:"), when the line before came
   from another active session. A session that was quiet for two minutes is
-  named again when its window is not in front.
+  named again when its window is not in front. Coming back to a session not
+  heard for 90 seconds, a one- or two-sentence reminder of what it is about
+  comes first, written by `model` from the session's latest request.
+- **Which window:** with `frame`, a glow in `feedback.primary_color` sits
+  around the speaking session's window and brightens with the voice. The
+  window is found from the Claude process: the app it runs in (the Claude
+  app, Terminal, Ghostty, VS Code…), then that app's only window, the one
+  whose title names the project, or its main window. The desktop app shows
+  every session in one window, so the glow goes around all of it. Under tmux
+  there is no app above Claude, and no glow.
 
 Pressing the hotkey or sending a new prompt in that session stops the voice.
 An answer that arrives while you dictate waits until you stop. The voice is

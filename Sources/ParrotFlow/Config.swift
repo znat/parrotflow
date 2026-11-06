@@ -2868,6 +2868,8 @@ struct Config: Decodable, Equatable {
         var progress = true
         /// Progress lines in the model's words, with the reason when there is one.
         var explain = true
+        /// A glow around the window of the session that is speaking.
+        var frame = true
         /// A name under `models:`. Empty means the default model.
         var model = ""
         var voice = "af_heart"
@@ -2884,7 +2886,7 @@ struct Config: Decodable, Equatable {
             + "collaborating with a teammate, speaking face to face. Clear and conversational, not performative."
 
         enum CodingKeys: String, CodingKey {
-            case enabled, folders, progress, explain, model, voice, speed, speech
+            case enabled, folders, progress, explain, frame, model, voice, speed, speech
             case speechVoice = "speech_voice"
             case speechVoices = "speech_voices"
             case speechTone = "speech_tone"
@@ -2898,6 +2900,7 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent([String].self, forKey: .folders), !v.isEmpty { folders = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .progress) { progress = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .explain) { explain = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .frame) { frame = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .model) { model = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .voice) { voice = v }
             if let v = try c.decodeIfPresent(Float.self, forKey: .speed) { speed = v }

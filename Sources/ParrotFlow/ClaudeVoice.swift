@@ -14,6 +14,7 @@ final class ClaudeVoice {
     var isRecording: () -> Bool = { false }
 
     private let speaker = Speaker()
+    private let frame = SpeakingFrame()
     private var settings = Config.Claude()
     private var config = Config()
     private var listener: SocketListener?
@@ -39,6 +40,14 @@ final class ClaudeVoice {
         var project: String
         var account: String?
         var seen: Date
+        /// The Claude process, from the hook's `$PPID`.
+        var pid: pid_t?
+        var transcript: URL?
+        /// The latest request, and the reminder made from it.
+        var task: String?
+        var reminder: String?
+        var reminding = false
+        var heard: Date?
     }
 
     struct Spoken: Equatable {
@@ -56,6 +65,9 @@ final class ClaudeVoice {
         speaker.voice = settings.voice
         speaker.speed = settings.speed
         speaker.remote = Self.remote(settings, config)
+        frame.color = ContextIdentity.nsColor(config.feedback.primaryColor)
+        speaker.onSpeakingSession = { [weak self] id in self?.frameSession(id) }
+        speaker.onLevel = { [weak self] rms in self?.frame.level(rms) }
         if settings.enabled, listener == nil {
             listener = SocketListener(path: Self.socketURL.path) { [weak self] data in
                 Task { @MainActor in self?.receive(data) }
@@ -86,15 +98,25 @@ final class ClaudeVoice {
 
     // MARK: - Events
 
+    /// Hooks send `pid=<Claude's pid>` on the first line, then the event.
+    static func split(_ data: Data) -> (pid: pid_t?, body: Data) {
+        let marker = Data("pid=".utf8)
+        guard data.starts(with: marker), let newline = data.firstIndex(of: 10) else { return (nil, data) }
+        let digits = String(decoding: data[data.startIndex + marker.count..<newline], as: UTF8.self)
+        return (pid_t(digits), Data(data[data.index(after: newline)...]))
+    }
+
     private func receive(_ data: Data) {
+        let (pid, body) = Self.split(data)
         guard settings.enabled,
-              let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let event = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
               let name = event["hook_event_name"] as? String else { return }
         let id = event["session_id"] as? String ?? ""
-        note(session: id, event: event)
+        note(session: id, event: event, pid: pid)
 
         switch name {
         case "UserPromptSubmit":
+            if let prompt = event["prompt"] as? String, !prompt.isEmpty { remind(id, request: prompt) }
             turns[id, default: 0] += 1
             if speaker.speakingSession == id { Log.write("claude voice: stopped by a new prompt") }
             speaker.stop(session: id)
@@ -151,13 +173,14 @@ final class ClaudeVoice {
         let named = settings.model.trimmingCharacters(in: .whitespaces)
         let model = config.model(named: named) ?? config.model(for: .general)
         let limit = explainLimit
+        let task = sessions[session]?.task
         Task.detached {
             let context = transcript.flatMap { ClaudeSpeakable.lastTurn(transcript: $0, tailBytes: 128 * 1024) }?
                 .latestText
             let started = Date()
             let raw = try? await LLM.complete(
                 system: ClaudeSpeakable.explainPrompt,
-                user: ClaudeSpeakable.explainInput(tool: tool, input: input, context: context),
+                user: ClaudeSpeakable.explainInput(tool: tool, input: input, context: context, task: task),
                 json: false, maxTokens: 60, config: model
             )
             let elapsed = Date().timeIntervalSince(started)
@@ -269,13 +292,26 @@ final class ClaudeVoice {
 
     // MARK: - Which session is talking
 
-    private func note(session id: String, event: [String: Any]) {
+    private func frameSession(_ id: String?) {
+        guard settings.frame, let id, let session = sessions[id], let pid = session.pid else {
+            return frame.hide()
+        }
+        frame.show(claude: pid, project: session.project)
+    }
+
+    private func note(session id: String, event: [String: Any], pid: pid_t?) {
         let cwd = event["cwd"] as? String ?? ""
         let account = (event["transcript_path"] as? String)?
             .split(separator: "/")
             .first { $0.hasPrefix(".claude-") }
             .map { String($0.dropFirst(".claude-".count)) }
-        sessions[id] = Session(project: (cwd as NSString).lastPathComponent, account: account, seen: Date())
+        var session = sessions[id] ?? Session(project: "", account: nil, seen: Date())
+        session.project = (cwd as NSString).lastPathComponent
+        session.account = account
+        session.seen = Date()
+        session.pid = pid ?? session.pid
+        session.transcript = (event["transcript_path"] as? String).map { URL(fileURLWithPath: $0) } ?? session.transcript
+        sessions[id] = session
     }
 
     private var activeSessions: [String: Session] {
@@ -353,8 +389,54 @@ final class ClaudeVoice {
         return chosen
     }
 
+    /// Makes the session's reminder from its latest request, off the main queue.
+    private func remind(_ id: String, request: String, latest: String? = nil) {
+        sessions[id]?.task = request
+        guard config.llmEnabled, sessions[id]?.reminding != true else { return }
+        sessions[id]?.reminding = true
+        let named = settings.model.trimmingCharacters(in: .whitespaces)
+        let model = config.model(named: named) ?? config.model(for: .general)
+        Task.detached {
+            let raw = try? await LLM.complete(
+                system: ClaudeSpeakable.reminderPrompt,
+                user: ClaudeSpeakable.reminderInput(request: request, latest: latest),
+                json: false, maxTokens: 80, config: model
+            )
+            let said = raw.map { ClaudeSpeakable.capped(ClaudeSpeakable.clean(LLM.stripThinking($0)), limit: 200) }
+            await MainActor.run { [weak self] in
+                self?.sessions[id]?.reminding = false
+                guard let said, !said.isEmpty else { return }
+                self?.sessions[id]?.reminder = said
+                Log.write("claude voice: reminder for \(self?.sessions[id]?.project ?? id): \(said)")
+            }
+        }
+    }
+
+    /// A session first heard without a prompt this run: its reminder comes
+    /// from the last request in its transcript, ready for next time.
+    private func remindFromTranscript(_ id: String) {
+        guard let session = sessions[id], session.reminder == nil, !session.reminding,
+              let transcript = session.transcript else { return }
+        Task.detached {
+            guard let turn = ClaudeSpeakable.lastTurn(transcript: transcript),
+                  let asked = turn.prompt, !asked.isEmpty else { return }
+            await MainActor.run { [weak self] in
+                self?.remind(id, request: asked, latest: turn.recap ?? turn.latestText)
+            }
+        }
+    }
+
     private func say(_ text: String, session: String, progress: Bool = false, tone: String? = nil) {
-        let line = prefix(for: session) + text
+        let introduced = prefix(for: session)
+        var line = introduced + text
+        // Coming back to a session after a while: what it is about, first.
+        let away = sessions[session]?.heard.map { Date().timeIntervalSince($0) } ?? .infinity
+        if !introduced.isEmpty, lastSpokenSession != session, away >= 90,
+           let reminder = sessions[session]?.reminder {
+            line = introduced + reminder + " " + text
+        }
+        if sessions[session]?.reminder == nil { remindFromTranscript(session) }
+        sessions[session]?.heard = Date()
         lastSpokenSession = session
         lastSpokenAt = Date()
         let style = speaker.remote == nil || settings.speechVoices.isEmpty ? nil : Speaker.Style(
