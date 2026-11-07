@@ -86,6 +86,7 @@ enum ConfigSchema {
                 "Word lists, written once and named. A pattern refers to one as {{name}}."),
             key("updates", .object(updates), "When a new release is offered."),
             key("logging", .object(logging), "What is written to disk about a dictation."),
+            key("claude", .object(claude), "Speaking Claude Code's progress and answers."),
             key("prompts", .list(.object(transform)),
                 "The older name for transforms.",
                 deprecated: "the older name for `transforms:`. Still read; move the entries"
@@ -504,6 +505,54 @@ enum ConfigSchema {
             key("spans", .bool,
                 "One timeline per dictation in spans.jsonl, rotating at 64 MB.",
                 default: true),
+        ])
+    }
+
+    static var claude: Section {
+        let defaults = Config.Claude()
+        return Section(source: "Config.Claude",
+                       keys: Config.Claude.CodingKeys.allCases.map(\.stringValue), fields: [
+            key("enabled", .bool,
+                "Listen for Claude Code's hooks. false keeps them installed and silent.",
+                default: defaults.enabled),
+            key("folders", .list(.text),
+                "Each Claude Code config folder. --install-claude-hooks writes into every one.",
+                default: defaults.folders),
+            key("progress", .bool, "Short lines while Claude works.", default: defaults.progress),
+            key("explain", .bool, "Progress lines in the model's words, with the reason.",
+                default: defaults.explain),
+            key("frame", .bool, "A glow around the window of the session that is speaking.",
+                default: defaults.frame),
+            key("model", .text,
+                "A name under models: that writes what is said. Empty means the default model.",
+                default: defaults.model),
+            key("voice", .text, "A Kokoro voice.", default: defaults.voice),
+            key("speed", .number, "How fast the voice speaks. 1 is normal.",
+                default: Double(defaults.speed)),
+            key("local", .text, "The voice on this Mac: kokoro, or pocket (PocketTTS, which streams).",
+                default: defaults.local),
+            key("local_voice", .text, "A PocketTTS voice.", default: defaults.localVoice),
+            key("local_voices", .list(.text),
+                "PocketTTS voices, one per session. Empty means local_voice for all.",
+                default: defaults.localVoices),
+            key("local_placement", .text,
+                "Where PocketTTS runs: gpu, ane or ane-state (the Neural Engine).",
+                default: defaults.localPlacement),
+            key("progress_local", .bool,
+                "Progress lines on the local voice even when speech names a remote one.",
+                default: defaults.progressLocal),
+            key("speech", .text,
+                "A name under models: that speaks OpenAI's /audio/speech, such as OpenRouter."
+                    + " Empty means the voice on this Mac.",
+                default: defaults.speech),
+            key("speech_voice", .text,
+                "One remote voice for every session. speech_voices wins when both are set."),
+            key("speech_voices", .list(.text),
+                "Remote voices, one per session, in order. A session keeps its voice while it is active.",
+                default: defaults.speechVoices),
+            key("speech_tone", .text,
+                "Sent with every line to the remote voice. The model adds a shift for what happened.",
+                default: defaults.speechTone),
         ])
     }
 
