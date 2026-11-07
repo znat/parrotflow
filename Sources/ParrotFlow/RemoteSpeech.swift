@@ -31,17 +31,35 @@ enum RemoteSpeech {
         return model.hasPrefix("fish-audio/") ? 44_100 : sampleRate
     }
 
-    /// Linear interpolation to the player's 24 kHz.
-    static func resample(_ samples: [Float], from rate: Int) -> [Float] {
-        guard rate != sampleRate, (8_000...192_000).contains(rate), !samples.isEmpty else { return samples }
-        let step = Double(rate) / Double(sampleRate)
-        let count = Int(Double(samples.count) / step)
-        return (0..<count).map { index in
-            let position = Double(index) * step
-            let low = Int(position)
-            let high = min(low + 1, samples.count - 1)
-            let weight = Float(position - Double(low))
-            return samples[low] * (1 - weight) + samples[high] * weight
+    /// Linear interpolation to the player's 24 kHz. The phase and the last
+    /// input sample carry over to the next piece.
+    struct Resampler {
+        private let step: Double?
+        private var carry: [Float] = []
+        private var position: Double = 0
+
+        init(from rate: Int) {
+            step = rate != sampleRate && (8_000...192_000).contains(rate)
+                ? Double(rate) / Double(sampleRate) : nil
+        }
+
+        /// `last` also spends what was kept back for the next piece.
+        mutating func feed(_ samples: [Float], last: Bool = false) -> [Float] {
+            guard let step else { return samples }
+            let input = carry + samples
+            let end = Double(last ? input.count : input.count - 1)
+            var out: [Float] = []
+            while position < end {
+                let low = Int(position)
+                let high = min(low + 1, input.count - 1)
+                let weight = Float(position - Double(low))
+                out.append(input[low] * (1 - weight) + input[high] * weight)
+                position += step
+            }
+            let used = min(Int(position), input.count)
+            carry = Array(input[used...])
+            position -= Double(used)
+            return out
         }
     }
 
@@ -110,6 +128,7 @@ enum RemoteSpeech {
         }
 
         let pcmRate = rate(contentType: type, model: config.model)
+        var resampler = Resampler(from: pcmRate)
         var buffer = Data()
         var header: Bool?
         var first: TimeInterval?
@@ -133,20 +152,30 @@ enum RemoteSpeech {
             let piece = buffer.prefix(pieceBytes - pieceBytes % 2)
             buffer.removeSubrange(..<piece.count)
             if first == nil { first = Date().timeIntervalSince(started) }
-            guard await emit(resample(samples(fromPCM16: Data(piece)), from: pcmRate)) else { break }
+            guard await emit(resampler.feed(samples(fromPCM16: Data(piece)))) else { break }
         }
-        if header != true, buffer.count >= 2 {
-            if first == nil { first = Date().timeIntervalSince(started) }
-            _ = await emit(resample(samples(fromPCM16: buffer.prefix(buffer.count - buffer.count % 2)), from: pcmRate))
+        if header != true {
+            let tail = resampler.feed(samples(fromPCM16: buffer.prefix(buffer.count - buffer.count % 2)), last: true)
+            if !tail.isEmpty {
+                if first == nil { first = Date().timeIntervalSince(started) }
+                _ = await emit(tail)
+            }
         }
         return Timing(firstAudio: first ?? Date().timeIntervalSince(started), total: Date().timeIntervalSince(started),
                       contentType: type, rate: pcmRate)
     }
 
-    /// Where the samples start in a WAV: after the `data` chunk's 8-byte header.
+    /// Where the samples start in a WAV: after the `data` chunk's 8-byte
+    /// header, found by walking the chunks from the 12-byte RIFF header.
+    /// Nil until that header has arrived.
     private static func dataStart(_ wav: Data) -> Int? {
-        guard let range = wav.range(of: Data("data".utf8)), wav.count >= range.upperBound + 4 else { return nil }
-        return range.upperBound + 4
+        var offset = wav.startIndex + 12
+        while offset + 8 <= wav.endIndex {
+            let size = wav[offset + 4 ..< offset + 8].reversed().reduce(0) { $0 << 8 | Int($1) }
+            if wav[offset ..< offset + 4] == Data("data".utf8) { return offset + 8 }
+            offset += 8 + size + size % 2
+        }
+        return nil
     }
 
     /// Signed 16-bit little-endian, as `pcm` is everywhere it is documented.
