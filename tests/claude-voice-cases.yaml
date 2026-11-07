@@ -118,6 +118,102 @@ progress:
   - name: a finished plan
     tool: ExitPlanMode
     want: "The plan's ready when you want to look."
+  # Codex sends the command alone, or the patch text. The command is never said.
+  - name: Codex search reads the code
+    agent: codex
+    tool: Bash
+    input: { command: "rg -n speaksFor Sources" }
+    want: "I'm looking through the code"
+  - name: Codex tests after cd and a variable
+    agent: codex
+    tool: Bash
+    input: { command: "cd /Users/me/proj && FOO=1 timeout 60 swift test --filter Voice" }
+    want: "I'm running the tests"
+  - name: Codex pytest through python
+    agent: codex
+    tool: Bash
+    input: { command: "python -m pytest -q tests" }
+    want: "I'm running the tests"
+  - name: Codex build
+    agent: codex
+    tool: Bash
+    input: { command: "npm run build" }
+    want: "I'm building"
+  - name: Codex listing a tests folder is reading
+    agent: codex
+    tool: Bash
+    input: { command: "ls tests" }
+    want: "I'm looking through the code"
+  - name: Codex git diff
+    agent: codex
+    tool: Bash
+    input: { command: "git diff --stat | tail -3" }
+    want: "I'm looking at the changes"
+  - name: Codex commit keeps its message out
+    agent: codex
+    tool: Bash
+    input: { command: "git commit -m 'rename foo'" }
+    want: "I'm committing"
+  - name: Codex unknown command
+    agent: codex
+    tool: Bash
+    input: { command: "./scripts/deploy.sh --token abc123" }
+    want: "I'm running a command"
+  - name: Codex patch names its file
+    agent: codex
+    tool: apply_patch
+    input:
+      command: "*** Begin Patch\n*** Update File: Sources/ParrotFlow/ClaudeVoice.swift\n@@\n-old\n+new\n*** End Patch"
+    want: "I'm editing ClaudeVoice.swift"
+  - name: Codex patch adding two files
+    agent: codex
+    tool: apply_patch
+    input:
+      command: "*** Begin Patch\n*** Add File: a/Codex.swift\n+x\n*** Add File: b/README.md\n+y\n*** End Patch"
+    want: "I'm writing Codex.swift and README.md"
+  - name: Codex patch with mixed changes to three files
+    agent: codex
+    tool: apply_patch
+    input:
+      command: "*** Begin Patch\n*** Add File: a.swift\n*** Update File: b.swift\n*** Delete File: c.swift\n*** End Patch"
+    want: "I'm editing 3 files"
+  - name: Codex patch deleting a file
+    agent: codex
+    tool: apply_patch
+    input: { command: "*** Begin Patch\n*** Delete File: old/Legacy.swift\n*** End Patch" }
+    want: "I'm deleting Legacy.swift"
+  - name: Codex subagent
+    agent: codex
+    tool: spawn_agent
+    input: { message: "look at the socket code" }
+    want: "I'm starting an agent"
+  - name: Codex plan is bookkeeping
+    agent: codex
+    tool: update_plan
+    want: null
+  - name: Codex question
+    agent: codex
+    tool: request_user_input
+    want: "I have a question for you."
+  - name: Codex browser through MCP
+    agent: codex
+    tool: mcp__chrome__navigate
+    input: { url: "http://localhost:3000" }
+    want: "I'm using the browser"
+
+# Codex PermissionRequest: the approval it waits for.
+waiting:
+  - name: a command waits for an OK
+    tool: Bash
+    input: { command: "rm -rf build" }
+    want: "I need your OK to run a command."
+  - name: an edit waits for an OK, with its file
+    tool: apply_patch
+    input: { command: "*** Begin Patch\n*** Update File: src/main.rs\n*** End Patch" }
+    want: "I need your OK to edit main.rs."
+  - name: another tool waits for an OK
+    tool: mcp__github__create_issue
+    want: "I need your OK to go on."
 
 turns:
   - name: answer is the text after the last tool call
@@ -324,3 +420,75 @@ summary:
       - '{"type":"user","message":{"role":"user","content":"next"}}'
       - '{"type":"assistant","message":{"content":[{"type":"text","text":"Newest text."}]}}'
     want: "Newest text."
+  - name: Codex, the last final answer across turns
+    agent: codex
+    lines:
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a1","phase":"final_answer","content":[{"type":"Text","text":"Renamed foo to bar."}]}}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u2","content":[{"type":"text","text":"now the docs"}]}}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a2","phase":"commentary","content":[{"type":"Text","text":"Reading the docs."}]}}}'
+    want: "Renamed foo to bar."
+  - name: Codex, only commentary so far
+    agent: codex
+    lines:
+      - '{"type":"event_msg","payload":{"type":"user_message","message":"go"}}'
+      - '{"type":"event_msg","payload":{"type":"agent_message","message":"Checking the build.","phase":"commentary"}}'
+    want: "Checking the build."
+
+# Codex rollout lines, shaped as Codex 0.167 writes them. Values invented.
+codex_turns:
+  - name: Codex answer is the final message, not the commentary
+    lines:
+      - '{"type":"session_meta","payload":{"id":"t1","cwd":"/Users/me/proj","cli_version":"0.167.0"}}'
+      - '{"type":"event_msg","payload":{"type":"task_started","turn_id":"7"}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u1","content":[{"type":"text","text":"rename foo to bar"}]}}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a1","phase":"commentary","content":[{"type":"Text","text":"Looking for foo first."}]}}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"CommandExecution","id":"c1","command":"rg foo","exit_code":0}}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a2","phase":"final_answer","content":[{"type":"Text","text":"Renamed foo to bar. cargo build passes."}]}}}'
+      - '{"type":"event_msg","payload":{"type":"task_complete","turn_id":"7","last_agent_message":"Renamed foo to bar. cargo build passes."}}'
+    prompt: "rename foo to bar"
+    answer: "Renamed foo to bar. cargo build passes."
+    latest: "Renamed foo to bar. cargo build passes."
+    earlier: null
+  - name: Codex mid-turn has commentary and no answer yet
+    lines:
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u1","content":[{"type":"text","text":"fix the socket"}]}}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a1","phase":"commentary","content":[{"type":"Text","text":"Reading SocketListener to see why reads drop."}]}}}'
+    prompt: "fix the socket"
+    answer: ""
+    latest: "Reading SocketListener to see why reads drop."
+    earlier: null
+  - name: Codex legacy rollout
+    lines:
+      - '{"type":"event_msg","payload":{"type":"user_message","message":"add a test"}}'
+      - '{"type":"event_msg","payload":{"type":"agent_message","message":"Adding it to the YAML.","phase":"commentary"}}'
+      - '{"type":"event_msg","payload":{"type":"agent_message","message":"Added one case.","phase":"final_answer"}}'
+    prompt: "add a test"
+    answer: "Added one case."
+    latest: "Added one case."
+    earlier: null
+  - name: Codex earlier turn
+    lines:
+      - '{"type":"event_msg","payload":{"type":"user_message","message":"first"}}'
+      - '{"type":"event_msg","payload":{"type":"agent_message","message":"Old answer.","phase":"final_answer"}}'
+      - '{"type":"event_msg","payload":{"type":"user_message","message":"second"}}'
+      - '{"type":"event_msg","payload":{"type":"agent_message","message":"New answer.","phase":"final_answer"}}'
+    prompt: "second"
+    answer: "New answer."
+    latest: "New answer."
+    earlier: "Old answer."
+  - name: Codex injected context is not the prompt
+    lines:
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u1","content":[{"type":"text","text":"what changed?"}]}}}'
+      - '{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>cwd</environment_context>"}]}}'
+      - '{"type":"event_msg","payload":{"type":"task_complete","turn_id":"8","last_agent_message":"Two files changed."}}'
+    prompt: "what changed?"
+    answer: "Two files changed."
+    latest: null
+    earlier: null
+  - name: Codex tail with no prompt in it
+    lines:
+      - '{"type":"event_msg","payload":{"type":"agent_message","message":"Still building.","phase":"commentary"}}'
+    prompt: null
+    answer: ""
+    latest: "Still building."
+    earlier: null
