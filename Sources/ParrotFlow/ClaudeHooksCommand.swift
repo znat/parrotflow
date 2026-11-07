@@ -436,6 +436,23 @@ enum ClaudeHooksCommand {
         check("prose about a token is said as it is",
               got: ClaudeSpeakable.spokenRedacted("The token expired, so I refreshed the skyscrapers page."),
               want: "The token expired, so I refreshed the skyscrapers page.")
+        let spoken: [(String, String, String)] = [
+            ("a URL loses its query", "Open https://example.com/cb?token=abc123&key=xyz now.",
+             "Open https://example.com/cb now."),
+            ("a short password after a colon is not said", "Set password: x9 there.", "Set password: redacted there."),
+            ("an api_key after = is not said", "Use api_key=abc123def.", "Use api_key=redacted."),
+            ("an exported token is not said", "Run export FOO_TOKEN=ghp_abcdefgh12345678 first.",
+             "Run export FOO_TOKEN=redacted first."),
+            ("a password after a space is not said", "Type password hunter2 to log in.",
+             "Type password redacted to log in."),
+            ("a password reset is said as it is", "Your password reset link is on its way.",
+             "Your password reset link is on its way."),
+            ("a secret in prose is said as it is", "The secret is to test first.", "The secret is to test first."),
+            ("an accented word after a token is said", "Le token était expiré.", "Le token était expiré."),
+        ]
+        for (name, input, want) in spoken {
+            check(name, got: ClaudeSpeakable.spokenRedacted(input), want: want)
+        }
         check("a secret is redacted before the cut", got: cut.contains("unter2") ? "leaks" : "redacted",
               want: "redacted")
         let tail = FileManager.default.temporaryDirectory.appendingPathComponent("claude-voice-tail-\(getpid()).jsonl")

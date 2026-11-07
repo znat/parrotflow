@@ -459,16 +459,19 @@ enum ClaudeSpeakable {
         replacing(text, secrets)
     }
 
-    /// Only shapes that are secrets on their own: prose like "the token
-    /// expired" is kept. A secret becomes a word the voice can say.
+    /// Every rule in `secrets`, but prose like "the token expired" is kept. A
+    /// secret becomes a word the voice can say.
     private static let spokenSecrets: [(NSRegularExpression, String)] = [
         // The value: a digit, a sign inside it, or 8 characters. "bearer of bad news" is kept.
         rule(#"(?i)\bbearer\s+(?=[^\s'"]*\d|[^\s'"]*[^A-Za-z\s'".,;:!?]|[^\s'"]*[.,;:!?][^\s'".,;:!?]|[^\s'"]{7,}[^\s'".,;:!?])[^\s'"]*[^\s'".,;:!?]"#,
              "Bearer redacted"),
-        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*=\s*)(['"]?)[^\s'"]*[^\s'".,;:!?]\3"#,
+        rule(#"(https?://[^\s?#'"]+)[?#][^\s'"]*[^\s'".,;:!?]"#, "$1"),
+        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*[:=]\s*)(['"]?)[^\s'"]*[^\s'".,;:!?]\3"#,
              "$1$2redacted"),
-        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(:\s*)(['"]?)(?=[^\s'"]*\d)[^\s'"]*[^\s'".,;:!?]\3"#,
-             "$1$2redacted"),
+        // After a space, only a value shaped like a secret: "the token expired" is kept.
+        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s+)(['"]?)"#
+             + #"(?=[^\s'"]*\d|[^\s'"]*[^\p{L}\s'".,;:!?]|[^\s'"]*[.,;:!?][^\s'".,;:!?]|[^\s'"]{7,}[^\s'".,;:!?])"#
+             + #"[^\s'"]*[^\s'".,;:!?]\3"#, "$1$2redacted"),
         rule(#"\b(?:[spr]k[-_]|gh[posu]_|github_pat_|xox[abpr]-|AKIA|AIza)[-_A-Za-z0-9]{8,}"#, "redacted"),
         rule(#"\b(?=[A-Za-z0-9+/_-]*\d)(?=[A-Za-z0-9+/_-]*[A-Za-z])[A-Za-z0-9+/_-]{32,}={0,2}"#, "redacted"),
     ].compactMap { $0 }
