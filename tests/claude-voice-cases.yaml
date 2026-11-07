@@ -1,0 +1,177 @@
+# Cases for ClaudeSpeakable: what Claude Code's text and hook events sound like.
+# Run with scripts/check-claude-voice.sh. No model, no audio.
+
+clean:
+  - name: file link keeps the file name
+    input: "Fixed in [Config.swift:42](Sources/ParrotFlow/Config.swift:42)."
+    want: "Fixed in Config.swift."
+  - name: owner/repo#number is a PR
+    input: "Opened znat/parrotflow#327."
+    want: "Opened PR 327 in parrotflow."
+  - name: GitHub PR URL
+    input: "See https://github.com/znat/parrotflow/pull/327 for details"
+    want: "See PR 327 in parrotflow for details."
+  - name: GitHub issue URL
+    input: "Filed https://github.com/znat/parrotflow/issues/12."
+    want: "Filed issue 12 in parrotflow."
+  - name: bare number
+    input: "Merged #42."
+    want: "Merged number 42."
+  - name: code block is dropped
+    input: "Run this:\n```bash\nmake test\n```\nThen restart."
+    want: "Run this: Then restart."
+  - name: bullets become sentences
+    input: "Two changes:\n- **Speaker**: plays audio\n- `ClaudeVoice` listens"
+    want: "Two changes: Speaker: plays audio. ClaudeVoice listens."
+  - name: heading becomes a sentence
+    input: "## What changed\nThe hook is faster."
+    want: "What changed. The hook is faster."
+  - name: home path keeps the file name
+    input: "The log is ~/Library/Logs/ParrotFlow.log now"
+    want: "The log is ParrotFlow.log now."
+  - name: absolute folder keeps its last part
+    input: "Evidence is in /Users/me/Documents/parrotflow-scratch/verify/"
+    want: "Evidence is in verify."
+  - name: two folders separated by prose stay two
+    input: "Moved /Users/me/old to /Users/me/new today"
+    want: "Moved old to new today."
+  - name: a folder name with a space
+    input: "It is in ~/Library/Application Support/ParrotFlow/"
+    want: "It is in ParrotFlow."
+  - name: and/or after a folder is prose
+    input: "See /tmp/foo and/or run tests."
+    want: "See foo and/or run tests."
+  - name: table is dropped
+    input: "Summary:\n| a | b |\n|---|---|\n| 1 | 2 |\nDone."
+    want: "Summary: Done."
+  - name: other URL says the site
+    input: "Docs are at https://code.claude.com/docs/en/hooks"
+    want: "Docs are at a link on code.claude.com."
+  - name: arrow
+    input: "Latency went 7s → 1.5s"
+    want: "Latency went 7 seconds to 1.5 seconds."
+  - name: plain prose is left alone
+    input: "Nothing is built yet."
+    want: "Nothing is built yet."
+  - name: snake_case is left alone
+    input: "Set claude.folders and last_assistant_message."
+    want: "Set claude.folders and last_assistant_message."
+
+progress:
+  - name: Bash says its description
+    tool: Bash
+    input: { command: "swift build", description: "Build the release binary." }
+    want: "I'm building the release binary"
+  - name: Bash without a description
+    tool: Bash
+    input: { command: "ls" }
+    want: "I'm running a command"
+  - name: edit names the file
+    tool: Edit
+    input: { file_path: "/Users/me/parrotflow/Sources/ParrotFlow/Config.swift" }
+    want: "I'm editing Config.swift"
+  - name: write names the file
+    tool: Write
+    input: { file_path: "/tmp/notes.md" }
+    want: "I'm writing notes.md"
+  - name: reads collapse into one line
+    tool: Grep
+    input: { pattern: "foo" }
+    want: "I'm looking through the code"
+  - name: agent
+    tool: Agent
+    input: { description: "Find the socket code" }
+    want: "I'm asking an agent to find the socket code"
+  - name: task list is bookkeeping
+    tool: mcp__ccd_turn__update_plan
+    want: null
+  - name: todo list is bookkeeping
+    tool: TodoWrite
+    want: null
+  - name: run doubles its consonant
+    tool: Bash
+    input: { description: "Run the voice cases" }
+    want: "I'm running the voice cases"
+  - name: verb ending in e
+    tool: Bash
+    input: { description: "Remove the scratch folder" }
+    want: "I'm removing the scratch folder"
+  - name: verb ending in ie
+    tool: Bash
+    input: { description: "Tie the hooks together" }
+    want: "I'm tying the hooks together"
+  - name: already a gerund
+    tool: Bash
+    input: { description: "Checking the log" }
+    want: "I'm checking the log"
+  - name: first word is not a plain word
+    tool: Bash
+    input: { description: "npm-install deps" }
+    want: "npm-install deps"
+  - name: browser
+    tool: mcp__Claude_Browser__navigate
+    input: { url: "http://localhost:3000" }
+    want: "I'm using the browser"
+  - name: a question with no text still asks
+    tool: AskUserQuestion
+    want: "I have a question for you."
+  - name: a finished plan
+    tool: ExitPlanMode
+    want: "The plan's ready when you want to look."
+
+redacted:
+  - name: plain command is left alone
+    input: "swift build -c release && scripts/check-claude-voice.sh"
+    want: "swift build -c release && scripts/check-claude-voice.sh"
+  - name: bearer token
+    input: "curl -H 'Authorization: Bearer abc123def' https://api.example.com/v1"
+    want: "curl -H 'Authorization: Bearer <redacted>' https://api.example.com/v1"
+  - name: key in an environment variable
+    input: "OPENAI_API_KEY=sk-live-0123456789 python3 run.py"
+    want: "OPENAI_API_KEY=<redacted> python3 run.py"
+  - name: token flag
+    input: "gh api --token ghp_abcdefghijklmnop repos"
+    want: "gh api --token <redacted> repos"
+  - name: bare provider key
+    input: "echo sk-or-v1-abcdefghijklmnopqrstuvwxyz"
+    want: "echo <redacted>"
+  - name: URL query string
+    input: "curl https://example.com/hook?sig=abc&user=me"
+    want: "curl https://example.com/hook"
+  - name: long opaque string
+    input: "export X=Zm9vYmFyYmF6cXV4cXV1eHF1dXhmb29iYXJiYXo"
+    want: "export X=<redacted>"
+
+speakable:
+  - name: curly apostrophes become straight
+    input: "I’m checking whether it’s done."
+    want: "I'm checking whether it's done."
+  - name: curly quotes and a dash
+    input: "It said “done” — then stopped…"
+    want: "It said \"done\" ,  then stopped..."
+
+spoken:
+  - name: commit phrase is dropped
+    input: "It's installed at commit a8532fd1 and listening."
+    want: "It's installed and listening."
+  - name: hash after as is dropped
+    input: "Merged PR 403 into main as 8c15cf77."
+    want: "Merged PR 403 into main."
+  - name: hash in brackets is dropped
+    input: "The fix (5727371a) is in."
+    want: "The fix is in."
+  - name: a word made of hex letters stays
+    input: "The decade was added."
+    want: "The decade was added."
+  - name: seconds are dropped from a time
+    input: "Listening since 11:42:19."
+    want: "Listening since 11:42."
+  - name: leading zero is dropped
+    input: "It ran at 09:05."
+    want: "It ran at 9:05."
+  - name: units in words
+    input: "Ready in 14.2 s, first sound 340 ms, 509 MB, 1.3 GB, 86% full."
+    want: "Ready in 14.2 seconds, first sound 340 milliseconds, 509 megabytes, 1.3 gigabytes, 86 percent full."
+  - name: a date in another year keeps its year
+    input: "Released 2025-06-03."
+    want: "Released June 3, 2025."

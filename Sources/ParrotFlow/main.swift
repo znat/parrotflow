@@ -24,6 +24,12 @@ if arguments.contains("--version") {
     exit(0)
 }
 
+// Text rules only; no config, so it is safe to run from `make test`.
+if let index = arguments.firstIndex(of: "--claude-voice-test") {
+    let path = arguments.indices.contains(index + 1) ? arguments[index + 1] : "tests/claude-voice-cases.yaml"
+    exit(ClaudeHooksCommand.test(cases: path))
+}
+
 // Above the log and the config: it reads only the code, and writes nothing.
 if arguments.contains("--schema") {
     exit(SchemaCommand.run())
