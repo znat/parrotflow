@@ -11,6 +11,7 @@ set -uo pipefail
 BIN="${PF_BIN:-/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow}"
 LOG="${PF_LOG:-$HOME/Library/Logs/ParrotFlow-Dev.log}"
 [ -x "$BIN" ] || { echo "no app at $BIN — make install first"; exit 1; }
+[ -r "$LOG" ] || { echo "no log at $LOG"; exit 1; }
 
 lines() {
   grep -F "claude voice: said: " "$LOG" | sed 's/^.*claude voice: said: //' | tail -n "$1"

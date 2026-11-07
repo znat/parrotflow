@@ -183,11 +183,11 @@ enum ClaudeHooksCommand {
 
     private static func withoutOurs(_ entries: [[String: Any]], _ hook: Hook) -> [[String: Any]] {
         entries.compactMap { entry in
-            var entry = entry
-            let kept = (entry["hooks"] as? [[String: Any]] ?? []).filter {
-                !hook.owns($0["command"] as? String ?? "")
-            }
+            guard let all = entry["hooks"] as? [[String: Any]] else { return entry }
+            let kept = all.filter { !hook.owns($0["command"] as? String ?? "") }
+            if kept.count == all.count { return entry }
             if kept.isEmpty { return nil }
+            var entry = entry
             entry["hooks"] = kept
             return entry
         }
@@ -519,7 +519,8 @@ enum ClaudeHooksCommand {
         check("hooks off: removed", got: hooks(false, dev), want: "written")
         check("the other variant's hooks stay", got: hookCount(release) + " " + hookCount(dev), want: "4 0")
         check("hooks off again: no write", got: hooks(false, dev), want: "none")
-        let foreign = #"{"env":{"API_KEY":"x"},"hooks":{"Stop":[{"hooks":[{"command":"say done","type":"command"}]}]}}"#
+        let foreign = #"{"env":{"API_KEY":"x"},"hooks":{"Stop":[{"hooks":[{"command":"say done","type":"command"}]},"#
+            + #"{"matcher":"Bash","hooks":[]},{"matcher":"Edit"}]}}"#
         seedSettings(foreign)
         _ = hooks(true, release)
         check("a 0600 settings file stays 0600 after install", got: fileMode(settings), want: "600")

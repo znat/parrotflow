@@ -132,13 +132,16 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
             text, tone, voice = str(body["text"])[:2000], str(body["tone"])[:1000], str(body["voice"])
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, TypeError):
             return self.send(400, json.dumps({"error": "bad request"}))
         if voice not in VOICES or not text.strip():
             return self.send(400, json.dumps({"error": "bad voice or empty text"}))
         with speaking:
-            run = subprocess.run([BIN, "--claude-say", text, "--tone", tone, "--voice", voice],
-                                 capture_output=True, text=True, timeout=120)
+            try:
+                run = subprocess.run([BIN, "--claude-say", text, "--tone", tone, "--voice", voice],
+                                     capture_output=True, text=True, timeout=120)
+            except subprocess.TimeoutExpired:
+                return self.send(504, json.dumps({"error": "no answer in 120 s"}))
         output = " ".join(line for line in run.stdout.splitlines() if line.startswith(("voice:", "done in")))
         self.send(200 if run.returncode == 0 else 500, json.dumps({"output": output, "code": run.returncode}))
 
