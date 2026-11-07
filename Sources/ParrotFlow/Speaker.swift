@@ -17,7 +17,12 @@ final class Speaker {
     var localVoice = PocketTtsConstants.defaultVoice
     /// Where PocketTTS runs. Off the GPU, it does not wait on a local model there.
     var localPlacement: PocketTtsModelPlacement = .gpu {
-        didSet { if localPlacement != oldValue { pocket = nil } }
+        didSet {
+            if localPlacement != oldValue {
+                pocket = nil
+                pocketLoading = nil
+            }
+        }
     }
 
     /// A remote voice and tone for one line. PocketTTS ignores both.
@@ -159,13 +164,16 @@ final class Speaker {
             return made
         }
         pocketLoading = task
+        // A placement change during the load clears `pocketLoading`; this load is then not kept.
         do {
             let made = try await task.value
-            pocket = made
-            pocketLoading = nil
+            if pocketLoading == task {
+                pocket = made
+                pocketLoading = nil
+            }
             return made
         } catch {
-            pocketLoading = nil
+            if pocketLoading == task { pocketLoading = nil }
             throw error
         }
     }
