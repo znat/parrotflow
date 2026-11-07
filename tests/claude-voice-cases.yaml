@@ -287,6 +287,34 @@ parse:
     raw: '{"say": "Done.", "tone": ""}'
     say: "Done."
     tone: null
+  - name: task label is read beside say
+    raw: '{"say": "I fixed it.", "task": "fixing the glow"}'
+    say: "I fixed it."
+    task: "fixing the glow"
+  - name: task label is lowercased, its period dropped
+    raw: '{"say": "I fixed it.", "task": "Fixing The Glow."}'
+    say: "I fixed it."
+    task: "fixing the glow"
+  - name: a French task label keeps its accents
+    raw: '{"say": "J''ai réparé le halo.", "task": "réparer le halo"}'
+    say: "J'ai réparé le halo."
+    task: "réparer le halo"
+  - name: a long task label is no label, and the words stay
+    raw: '{"say": "I fixed it.", "task": "fixing the glow around the ghostty window"}'
+    say: "I fixed it."
+    task: null
+  - name: a one-word task label is no label
+    raw: '{"say": "I fixed it.", "task": "refactoring"}'
+    say: "I fixed it."
+    task: null
+  - name: a task label with a path is no label
+    raw: '{"say": "I fixed it.", "task": "editing Sources/ParrotFlow"}'
+    say: "I fixed it."
+    task: null
+  - name: a task label that is not text is no label
+    raw: '{"say": "I fixed it.", "task": 3}'
+    say: "I fixed it."
+    task: null
 
 capped:
   - name: short answer is left alone
@@ -492,3 +520,44 @@ codex_turns:
     answer: ""
     latest: "Still building."
     earlier: null
+
+session_names:
+  - name: the label wins over the request
+    project: parrotflow
+    label: fixing the glow
+    prompt: "Can you look at the build"
+    want: "parrotflow · fixing the glow"
+  - name: before the first answer, the request's first words
+    project: parrotflow
+    prompt: "Can you fix the glow on the Ghostty window please?"
+    want: "parrotflow · glow ghostty window"
+  - name: the project is not a task word
+    project: parrotflow
+    prompt: "Run the parrotflow checks on main"
+    want: "parrotflow · checks main"
+  - name: paths and tokens are not task words
+    project: parrotflow
+    prompt: "Open Sources/ParrotFlow/PillHUD.swift and set OPENAI_KEY=sk-123 for the glow"
+    want: "parrotflow · open glow"
+  - name: a long folder keeps its start
+    project: parrotflow-claude-voice-session-pill
+    label: fixing the glow
+    want: "parrotflow-claude-voice… · fixing the glow"
+  - name: a folder of 24 characters is whole
+    project: abcdefghijklmnopqrstuvwx
+    label: fixing the glow
+    want: "abcdefghijklmnopqrstuvwx · fixing the glow"
+  - name: a request with no content words names the folder only
+    project: parrotflow
+    prompt: "ok go"
+    want: "parrotflow"
+  - name: no request names the folder only
+    project: parrotflow
+    want: "parrotflow"
+  - name: no folder names the task only
+    project: ""
+    label: fixing the glow
+    want: "fixing the glow"
+  - name: nothing to name shows nothing
+    project: ""
+    prompt: "ok"

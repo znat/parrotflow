@@ -299,7 +299,12 @@ enum ClaudeHooksCommand {
             var name: String; var lines: [String]; var answer: String; var recap: String?
             var earlier: String?
         }
-        struct Parse: Decodable { var name: String; var raw: String; var say: String; var tone: String?; var opener: String? }
+        struct Parse: Decodable {
+            var name: String; var raw: String; var say: String; var tone: String?; var opener: String?; var task: String?
+        }
+        struct SessionName: Decodable {
+            var name: String; var project: String; var label: String?; var prompt: String?; var want: String?
+        }
         var clean: [Clean] = []
         var progress: [Progress] = []
         var turns: [Turn] = []
@@ -324,10 +329,12 @@ enum ClaudeHooksCommand {
         var summary: [Summary] = []
         var waiting: [Progress] = []
         var codexTurns: [CodexTurn] = []
+        var sessionNames: [SessionName] = []
 
         enum CodingKeys: String, CodingKey {
             case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary, waiting
             case codexTurns = "codex_turns"
+            case sessionNames = "session_names"
         }
 
         init(from decoder: Decoder) throws {
@@ -345,6 +352,7 @@ enum ClaudeHooksCommand {
             summary = try c.decodeIfPresent([Summary].self, forKey: .summary) ?? []
             waiting = try c.decodeIfPresent([Progress].self, forKey: .waiting) ?? []
             codexTurns = try c.decodeIfPresent([CodexTurn].self, forKey: .codexTurns) ?? []
+            sessionNames = try c.decodeIfPresent([SessionName].self, forKey: .sessionNames) ?? []
         }
     }
 
@@ -400,6 +408,11 @@ enum ClaudeHooksCommand {
             check(item.name, got: parsed.say, want: item.say)
             check(item.name + " (tone)", got: parsed.tone, want: item.tone)
             check(item.name + " (opener)", got: parsed.opener, want: item.opener)
+            check(item.name + " (task)", got: parsed.task, want: item.task)
+        }
+        for item in cases.sessionNames {
+            let task = item.label ?? ClaudeSpeakable.taskWords(item.prompt, skipping: item.project)
+            check(item.name, got: ClaudeSpeakable.sessionName(project: item.project, task: task), want: item.want)
         }
         for item in cases.capped {
             check(item.name, got: ClaudeSpeakable.capped(item.input), want: item.want)

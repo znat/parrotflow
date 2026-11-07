@@ -2867,6 +2867,8 @@ struct Config: Decodable, Equatable {
         var explain = true
         /// A glow around the window of the session that is speaking.
         var frame = true
+        /// The pill names a session that speaks while its window is not in front.
+        var pill = true
         /// A name under `models:`. Empty means the default model.
         var model = ""
         /// The remote voice's speed. PocketTTS has none.
@@ -2899,7 +2901,7 @@ struct Config: Decodable, Equatable {
             + "collaborating with a teammate, speaking face to face. Clear and conversational, not performative."
 
         enum CodingKeys: String, CodingKey, CaseIterable {
-            case enabled, folders, codex, progress, explain, frame, model, voice, speed, speech
+            case enabled, folders, codex, progress, explain, frame, pill, model, voice, speed, speech
             case codexFolder = "codex_folder"
             case speechVoice = "speech_voice"
             case local
@@ -2922,6 +2924,7 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(Bool.self, forKey: .progress) { progress = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .explain) { explain = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .frame) { frame = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .pill) { pill = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .model) { model = v }
             retired = [CodingKeys.voice, .local].filter { c.contains($0) }.map(\.stringValue)
             if let v = try c.decodeIfPresent(Float.self, forKey: .speed) {
