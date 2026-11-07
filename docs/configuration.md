@@ -1388,7 +1388,8 @@ An agent named under `agents` is on. Its value is its config folder, or a list
 of them. An empty value means its default folder: `~/.claude` for `claude`, and
 `$CODEX_HOME`, then `~/.codex` for `codex`. An agent left out is off, and its
 hooks are taken out of its default folder. Hooks in a folder you no longer
-list stay; `--uninstall-claude-hooks --folder <dir>` takes them out. Without an
+list stay; `--uninstall-claude-hooks --folder <dir>` takes them out. An agent
+left out is not spoken, even from such a hook. Without an
 `agents` key, `claude` alone is on, in `~/.claude`, as before agents had a
 choice. `agents: {}` turns every agent off. Another name under `agents` fails
 `--check-config`. So does a value that is not a folder or a list of folders;
