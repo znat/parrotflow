@@ -7,7 +7,7 @@
 # in docs/configuration.md. Validate with the binary, not by reading:
 #   /Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --check-config
 
-version: 2
+version: 3
 
 hotkey:
   # A bare modifier (right_option, right_command, right_control, fn, ...) or

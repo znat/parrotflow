@@ -1,5 +1,5 @@
 # Invented. Flow style, the way the schema's error message writes it.
-version: 2
+version: 3
 
 transcription:
   pipeline: [{transform: sentence_repair}, {transform: fillers}]

@@ -65,14 +65,15 @@ config: /Users/you/.config/parrotflow/config.yaml
 An older config, before the app has upgraded it:
 
 ```
-  · version           0 — 2 upgrade(s) pending. The app makes them at launch; `<binary> --upgrade-config --write` rewrites the config, after a backup
+  · version           0 — 3 upgrade(s) pending. The app makes them at launch; `<binary> --upgrade-config --write` rewrites the config, after a backup
       1  sentence repair is the sentence_repair transform, the first pipeline step
       2  built-in scripts declare returns:, parse: and readings:, so the values the example wrote for them are gone; disfluency gets parse: vectors
+      3  claude: is voice:, and its folders and codex keys are voice.agents
 ```
 
 It also names, every time and whether or not anything is wrong:
 
-- the config's `version:`. `✓ version 2` is current. An older file gets a `·`
+- the config's `version:`. `✓ version 3` is current. An older file gets a `·`
   line that counts the upgrades pending and gives the
   `--upgrade-config --write` command, then one line per pending upgrade (shown
   above). A file newer than the app says so and is read as it is. See
@@ -93,6 +94,9 @@ It also names, every time and whether or not anything is wrong:
 - an `app:` lookahead that is not anchored, which would run the stage
   everywhere it was written to exclude
 - a `fuzzy` stage with no `replacements` stage before it
+- which agents `voice.agents` hooks, and in which folders. A `claude:` section
+  is a `✗` that names `--upgrade-config --write`. A name under `agents` other
+  than `claude` or `codex` is a `✗` too
 - a key no setting reads, by its full path, with the closest key. This is a
   `⚠` warning: it does not change the exit code
 
@@ -168,12 +172,12 @@ beside it (`-2`, `-3` when that name is taken), writes the new one, writes the
 same lines to the log and prints the launch notice after a `✓`:
 
 ```
-✓ config.yaml upgraded to version 2: built-in scripts declare returns:, parse: and readings:, so the values the example wrote for them are gone; disfluency gets parse: vectors. The old file is config.yaml.bak-v1-2026-11-05
+✓ config.yaml upgraded to version 3: claude: is voice:, and its folders and codex keys are voice.agents. The old file is config.yaml.bak-v2-2026-11-07
 ```
 
 A failure prints the notice after a `✗` and writes nothing.
 
-A second run is a no-op: `✓ <path> is version 2. Nothing to upgrade`. A file
+A second run is a no-op: `✓ <path> is version 3. Nothing to upgrade`. A file
 newer than the app is left as it is, with a `·` line.
 
 Exit 0 when it did what it says, including a no-op. Exit 1 when the file
@@ -1209,9 +1213,9 @@ jumps is only visible in motion. It loops for as many seconds as you give it.
 ## Claude Code's voice
 
 ```sh
-$PF --install-claude-hooks [--folder <dir>]...   # claude.folders unless --folder
+$PF --install-claude-hooks [--folder <dir>]...   # voice.agents.claude unless --folder
 $PF --uninstall-claude-hooks [--folder <dir>]...
-$PF --install-claude-hooks --agent codex [--folder <dir>]  # claude.codex_folder, $CODEX_HOME or ~/.codex
+$PF --install-claude-hooks --agent codex [--folder <dir>]  # voice.agents.codex, $CODEX_HOME or ~/.codex
 $PF --uninstall-claude-hooks --agent codex [--folder <dir>]
 $PF --claude-voice-test [cases.yaml]             # text rules; no config, no audio
 $PF --claude-spoken <session.jsonl>              # what the last turn would say
@@ -1221,13 +1225,13 @@ $PF --claude-say "<text>" --output <clip.wav>     # the remote voice into a 24 k
 scripts/tone-lab.py                              # a page to try tones on recent lines
 ```
 
-The app installs and removes the hooks by itself when `claude.enabled` or
-`claude.codex` changes, so set those too, or the app undoes a hand install at
-launch. These two flags do it by hand. `--agent codex` writes Codex's `hooks.json`;
+The app installs and removes the hooks by itself when `voice.enabled` or
+`voice.agents` changes, so set those too, or the app undoes a hand install at
+launch. These two flags do it by hand, and keep their names. `--agent codex` writes Codex's `hooks.json`;
 approve the hooks once in Codex afterwards. They must run from the installed app,
 not from `.build`. A binary outside an app bundle cannot tell the dev build from the release build,
 so its hook would reach the wrong app. `--speak-event` sends stdin to the
-running app, as the hooks do with `nc`; it is there for testing. See [configuration.md](configuration.md#claude).
+running app, as the hooks do with `nc`; it is there for testing. See [configuration.md](configuration.md#voice).
 
 ## Updates
 

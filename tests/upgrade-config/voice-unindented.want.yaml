@@ -1,0 +1,8 @@
+version: 3
+voice:
+  agents:
+    claude:
+      - ~/.claude
+      # the second account
+      - ~/.claude-work
+  explain: false

@@ -9,7 +9,7 @@
 
 # Which upgrade this file was written for. The app upgrades an older file at
 # launch and keeps the old one beside it; `--upgrade-config` shows the change.
-version: 2
+version: 3
 
 hotkey:
   # A bare modifier (right_option, right_command, right_control, fn, ...) or

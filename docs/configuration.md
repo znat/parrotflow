@@ -77,7 +77,7 @@ existing file or
 [built-in/config.example.yaml](../built-in/config.example.yaml).
 
 ```yaml
-version: 2              # which upgrade the file was written for; see below
+version: 3              # which upgrade the file was written for; see below
 
 hotkey:
   key: right_command    # a bare modifier, or a character key + modifiers
@@ -137,11 +137,11 @@ logging:
 ## `version` and the upgrade at launch
 
 ```yaml
-version: 2
+version: 3
 ```
 
 `version:` says which upgrade the file was written for. A file without it is
-version 0. This build writes version 2, and `built-in/config.example.yaml`
+version 0. This build writes version 3, and `built-in/config.example.yaml`
 starts with it.
 
 **At launch, before it reads the config,** the app applies every upgrade above
@@ -154,7 +154,7 @@ stay. Then it:
    `-2`, then `-3`;
 3. writes the new file, with the new `version:` line;
 4. writes the diff to the log and shows one notice: `config.yaml upgraded to
-   version 2: … The old file is config.yaml.bak-v1-2026-11-05`.
+   version 3: … The old file is config.yaml.bak-v2-2026-11-07`.
 
 An empty `config.yaml` is upgraded too.
 
@@ -165,7 +165,7 @@ still pending.
 
 **A newer file is left alone.** A `version:` higher than the app knows is read
 as it is and never rewritten. The notice then reads `config.yaml was not
-upgraded — config.yaml is version 3, and this app knows up to 2. Read as it
+upgraded — config.yaml is version 4, and this app knows up to 3. Read as it
 is`.
 
 **See the change first.** `--upgrade-config` prints the version change, what
@@ -1369,15 +1369,38 @@ was, not whether it was right. The same archive has the vocabulary pass
 correcting words the decoder scored 0.987 and 1.000. A low score is good
 evidence something is wrong; a high one is not evidence anything is right.
 
-## `claude`
+## `voice`
 
-ParrotFlow can speak what Claude Code does and what it answers. The app
-installs its hooks by itself while `enabled` is true, and takes them out when
-it is false. It checks at launch and each time the config changes, and writes
-nothing when the hooks are already right. The log says
+ParrotFlow can speak what Claude Code and Codex do and what they answer.
+`agents` says which agents it listens to, and where each keeps its config:
+
+```yaml
+voice:
+  enabled: true
+  agents:
+    claude: [~/.claude, ~/.claude-personal]   # one folder, or a list
+    codex:                                    # empty: its default folder
+```
+
+An agent named under `agents` is on. Its value is its config folder, or a list
+of them. An empty value means its default folder: `~/.claude` for `claude`, and
+`$CODEX_HOME`, then `~/.codex` for `codex`. An agent left out is off, and its
+hooks are taken out of its default folder. Hooks in a folder you no longer
+list stay; `--uninstall-claude-hooks --folder <dir>` takes them out. Without an
+`agents` key, `claude` alone is on, in `~/.claude`, as before agents had a
+choice. `agents: {}` turns every agent off. Another name under `agents` fails
+`--check-config`.
+
+This section was `claude:` before version 3. The upgrade at launch renames it:
+`folders` becomes `agents.claude`, and `codex: true` becomes `agents.codex`,
+with the old `codex_folder` as its value.
+
+The app installs the hooks by itself while `enabled` is true, and takes them
+out when it is false. It checks at launch and each time the config changes,
+and writes nothing when the hooks are already right. The log says
 `claude hooks: installed in ~/.claude` or `claude hooks: removed from ~/.claude`.
 
-The hooks are four entries in `settings.json` in every folder under `folders`:
+The Claude Code hooks are four entries in `settings.json` in each of its folders:
 `PreToolUse`, `Stop`, `Notification` and `UserPromptSubmit`. Each one sends
 a `pid=` line, an `agent=claude` line and the event to the app's socket with
 `nc`, and exits in about 10 ms. It never
@@ -1394,13 +1417,12 @@ log. The first copy the app changes is kept as `settings.json.parrotflow-backup`
 `$PF --install-claude-hooks` and `$PF --uninstall-claude-hooks` do the same by
 hand, from the installed app.
 
-Codex (the CLI and the Codex desktop app) is opt-in. With `codex: true` and
-`enabled: true`, the app writes four entries in `hooks.json` in the Codex
-folder: `UserPromptSubmit`, `PreToolUse`, `PermissionRequest` and `Stop`. Each
-sends an `agent=codex` line. `codex: false`, or no `codex` line, takes them
-out. The folder is `codex_folder`, else `$CODEX_HOME`, else `~/.codex`. An app
+Codex (the CLI and the Codex desktop app) is opt-in. With `codex` under
+`agents` and `enabled: true`, the app writes four entries in `hooks.json` in the
+Codex folder: `UserPromptSubmit`, `PreToolUse`, `PermissionRequest` and `Stop`.
+Each sends an `agent=codex` line. No `codex` line takes them out. An app
 opened from the Finder does not see a `CODEX_HOME` set in a shell profile, so
-set `codex_folder` when you moved it. No folder means no Codex: the app does
+write the folder after `codex:` when you moved it. No folder means no Codex: the app does
 nothing and does not create it. It never touches `config.toml` or `notify`.
 The same rules as for Claude apply: your hooks and keys stay, the mode is
 kept, a broken file is left alone, and `hooks.json.parrotflow-backup` is the
@@ -1421,14 +1443,14 @@ them off. A `[hooks]` table in `config.toml` beside `hooks.json` runs both,
 with a warning at startup.
 
 ```yaml
-claude:
+voice:
   enabled: true          # false stops listening and removes the hooks
-  folders:               # one per Claude Code account; default ~/.claude
-    - ~/.claude
-    - ~/.claude-personal
-  codex: false           # Codex hooks too; needs enabled
-  codex_folder: ""       # empty: $CODEX_HOME, then ~/.codex
-  progress: true         # short lines while Claude works
+  agents:                # left out: claude alone, in ~/.claude
+    claude:              # one folder per Claude Code account
+      - ~/.claude
+      - ~/.claude-personal
+    codex:               # empty: $CODEX_HOME, then ~/.codex
+  progress: true         # short lines while an agent works
   explain: true          # those lines in the model's words, with the reason
   frame: true            # a glow around the speaking session's window
   model: ""              # a name under models:; empty means the default
@@ -1456,7 +1478,7 @@ models:
     api: openai
     model: google/gemini-3.1-flash-tts-preview
     endpoint: https://openrouter.ai/api/v1
-claude:
+voice:
   speech: openrouter-tts
   speech_voices: [Achird, Sulafat]   # Gemini has 30; any of them
 ```

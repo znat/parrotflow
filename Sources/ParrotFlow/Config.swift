@@ -46,8 +46,8 @@ struct Config: Decodable, Equatable {
     var retiredKeys: [String] = []
     var updates: UpdatePolicy = UpdatePolicy()
     var logging: Logging = Logging()
-    /// Speaking Claude Code's progress and answers. See `ClaudeVoice`.
-    var claude: Claude = Claude()
+    /// Speaking what coding agents do and answer. See `ClaudeVoice`.
+    var voice = Voice()
     /// Everything nameable: `transforms:`, plus anything still written under
     /// the older `prompts:`.
     var transforms: [Transform] = []
@@ -130,7 +130,7 @@ struct Config: Decodable, Equatable {
         case version, hotkey, audio, feedback, transcription, llm, models, commands
         case transforms, prompts, updates, logging
         case freeForm = "free_form"
-        case lists, claude
+        case lists, voice, claude
     }
 
     private static let listReference = try? NSRegularExpression(pattern: #"\{\{(\w+)\}\}"#)
@@ -2852,16 +2852,14 @@ struct Config: Decodable, Equatable {
         }
     }
 
-    struct Claude: Decodable, Equatable {
+    struct Voice: Decodable, Equatable {
         var enabled = true
-        /// Each Claude Code config folder. `--install-claude-hooks` writes
-        /// into every one, since each is a separate account.
-        var folders: [String] = ["~/.claude"]
-        /// Codex's hooks too, in `codexFolder`. Needs `enabled`.
-        var codex = false
-        /// Empty: `$CODEX_HOME`, then `~/.codex`. An app opened from the Finder
-        /// does not see a `CODEX_HOME` set in a shell profile.
-        var codexFolder = ""
+        /// Each agent whose hooks the app keeps, with its config folders. No
+        /// folders: the agent's default. No `agents:` key: Claude Code alone,
+        /// as before agents had a choice.
+        var agents: [CodingAgent: [String]] = [.claude: []]
+        /// Names under `agents:` that are no agent the app hooks.
+        var unknownAgents: [String] = []
         var progress = true
         /// Progress lines in the model's words, with the reason when there is one.
         var explain = true
@@ -2899,8 +2897,7 @@ struct Config: Decodable, Equatable {
             + "collaborating with a teammate, speaking face to face. Clear and conversational, not performative."
 
         enum CodingKeys: String, CodingKey, CaseIterable {
-            case enabled, folders, codex, progress, explain, frame, model, voice, speed, speech
-            case codexFolder = "codex_folder"
+            case enabled, agents, progress, explain, frame, model, voice, speed, speech
             case speechVoice = "speech_voice"
             case local
             case localVoice = "local_voice"
@@ -2916,9 +2913,21 @@ struct Config: Decodable, Equatable {
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
-            if let v = try c.decodeIfPresent([String].self, forKey: .folders), !v.isEmpty { folders = v }
-            if let v = try c.decodeIfPresent(Bool.self, forKey: .codex) { codex = v }
-            if let v = try c.decodeIfPresent(String.self, forKey: .codexFolder) { codexFolder = v }
+            if c.contains(.agents), try !c.decodeNil(forKey: .agents) {
+                let written = try c.nestedContainer(keyedBy: AgentKey.self, forKey: .agents)
+                agents = [:]
+                for key in written.allKeys {
+                    guard let agent = CodingAgent(rawValue: key.stringValue), CodingAgent.hooked.contains(agent) else {
+                        unknownAgents.append(key.stringValue)
+                        continue
+                    }
+                    let folders = try written.decodeNil(forKey: key) ? []
+                        : (try? written.decode(String.self, forKey: key)).map { [$0] }
+                        ?? written.decode([String].self, forKey: key)
+                    agents[agent] = folders.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                }
+                unknownAgents.sort()
+            }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .progress) { progress = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .explain) { explain = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .frame) { frame = v }
@@ -2937,14 +2946,20 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(String.self, forKey: .localPlacement) { localPlacement = v }
         }
 
-        var folderURLs: [URL] {
-            folders.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
+        private struct AgentKey: CodingKey {
+            let stringValue: String
+            var intValue: Int? { nil }
+            init(stringValue: String) { self.stringValue = stringValue }
+            init?(intValue: Int) { nil }
         }
 
-        var codexFolderURL: URL {
-            let home = ProcessInfo.processInfo.environment["CODEX_HOME"] ?? ""
-            let path = [codexFolder, home].first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? "~/.codex"
-            return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+        /// Where the agent's hooks go, or nil when it is off.
+        func folders(of agent: CodingAgent) -> [URL]? {
+            agents[agent].map { Self.urls($0.isEmpty ? agent.defaultFolders : $0) }
+        }
+
+        static func urls(_ folders: [String]) -> [URL] {
+            folders.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
         }
     }
 
@@ -3019,7 +3034,7 @@ struct Config: Decodable, Equatable {
             self.updates = updates
         }
         if let logging = try c.decodeIfPresent(Logging.self, forKey: .logging) { self.logging = logging }
-        if let claude = try c.decodeIfPresent(Claude.self, forKey: .claude) { self.claude = claude }
+        if let voice = try c.decodeIfPresent(Voice.self, forKey: .voice) { self.voice = voice }
         // `transforms:` first, then anything still under `prompts:`. Both are
         // read: `prompts:` is what every config written before this existed
         // says, and a rename that silently empties the section is the one
@@ -3037,6 +3052,7 @@ struct Config: Decodable, Equatable {
         if ((try? c.decodeIfPresent(LLM.self, forKey: .llm)) ?? nil) != nil {
             retiredKeys.append("llm")
         }
+        if c.contains(.claude) { retiredKeys.append("claude") }
         // Decoded here because this initialiser is hand-rolled. A property and
         // a CodingKey are not enough: miss this line and the lists work in a
         // `--pipeline` fixture and are empty in the app.
@@ -3122,6 +3138,8 @@ struct Config: Decodable, Equatable {
             + " are an entry in `models:`",
         "free_form": "now `commands.catch_all`, which also takes the model it"
             + " runs on: `catch_all: gpt`, or `false` to refuse them",
+        "claude": "now `voice:`, with `folders` and `codex` under `voice.agents`."
+            + " \(ConfigMigration.runIt)",
     ]
 
     /// What to write instead of a pipeline stage that is no longer built in.
@@ -3174,25 +3192,31 @@ struct Config: Decodable, Equatable {
         for key in retiredKeys.sorted() {
             found.append("\(key): \(Self.movedKeys[key] ?? "no longer does anything")")
         }
-        let claudeModel = claude.model.trimmingCharacters(in: .whitespaces)
-        if !claudeModel.isEmpty, model(named: claudeModel) == nil {
-            found.append("claude.model: \"\(claudeModel)\" is not under models: — using the default model")
+        let voiceModel = voice.model.trimmingCharacters(in: .whitespaces)
+        if !voiceModel.isEmpty, model(named: voiceModel) == nil {
+            found.append("voice.model: \"\(voiceModel)\" is not under models: — using the default model")
         }
-        if PocketTtsModelPlacement(rawValue: claude.localPlacement) == nil {
-            found.append("claude.local_placement: \"\(claude.localPlacement)\" is not valid"
+        if PocketTtsModelPlacement(rawValue: voice.localPlacement) == nil {
+            found.append("voice.local_placement: \"\(voice.localPlacement)\" is not valid"
                 + " — expected gpu, ane or ane-state; using gpu")
         }
-        if let refused = claude.refusedSpeed {
-            found.append("claude.speed: \(refused) is not valid — expected a number above 0; using 1")
+        if let refused = voice.refusedSpeed {
+            found.append("voice.speed: \(refused) is not valid — expected a number above 0; using 1")
         }
-        let speech = claude.speech.trimmingCharacters(in: .whitespaces)
+        if !voice.unknownAgents.isEmpty {
+            let one = voice.unknownAgents.count == 1
+            found.append("voice.agents: \(voice.unknownAgents.joined(separator: ", "))"
+                + (one ? " is not an agent" : " are not agents") + " the app hooks — expected "
+                + CodingAgent.hooked.map(\.rawValue).joined(separator: " or "))
+        }
+        let speech = voice.speech.trimmingCharacters(in: .whitespaces)
         if !speech.isEmpty {
             if let spec = model(named: speech) {
                 if spec.api != .openai {
-                    found.append("claude.speech: \"\(speech)\" needs api: openai — using PocketTTS")
+                    found.append("voice.speech: \"\(speech)\" needs api: openai — using PocketTTS")
                 }
             } else {
-                found.append("claude.speech: \"\(speech)\" is not under models: — using PocketTTS")
+                found.append("voice.speech: \"\(speech)\" is not under models: — using PocketTTS")
             }
         }
         for key in transcription.retired {
@@ -3341,8 +3365,8 @@ struct Config: Decodable, Equatable {
             said.append("pipeline: `- transform: verify_names` is the old name judge."
                 + " The app does this itself now — delete the line")
         }
-        for key in claude.retired {
-            said.append("claude.\(key) \(Claude.retiredAdvice)")
+        for key in voice.retired {
+            said.append("voice.\(key) \(Voice.retiredAdvice)")
         }
 
         // The pass left the list. A config that still names it is read as

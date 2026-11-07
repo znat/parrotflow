@@ -81,11 +81,31 @@ for before in "$CASES"/*.yaml; do
     "$(cmp -s "$WORK/$name.after" "$dir/config.yaml" && echo same)" "same"
 
   out="$(pf "$dir" --check-config)"
-  check "$name: --check-config passes" "$?" "0"
+  # A `file:` key the fixture names is not on this Mac.
+  check "$name: --check-config passes" \
+    "$(printf '%s\n' "$out" | grep '^  ✗' | grep -vc '^  ✗ models\.[^:]*: no key at ~/.config/example/')" "0"
   check "$name: version $CURRENT" "$(printf '%s\n' "$out" | grep -c "✓ version *$CURRENT\$")" "1"
-  check "$name: sentence_repair runs" \
+  [ "${from:-0}" -lt 2 ] && check "$name: sentence_repair runs" \
     "$(printf '%s\n' "$out" | grep -c '^  · pipeline .*transform sentence_repair')" "1"
 done
+
+# Which agents each upgraded `claude:` section hooks, and where.
+agents_line() {
+  CODEX_HOME='' pf "$WORK/$1" --check-config | sed -n 's/^  · agents *//p'
+}
+check "the dev config: voice off" "$(agents_line voice-dev)" "off — voice.enabled is false"
+check "folders and codex: both agents" "$(agents_line voice-full)" "claude ~/.claude, ~/.claude-personal; codex ~/.codex"
+check "codex: false: claude alone" "$(agents_line voice-flow)" "claude ~/.claude, ~/work/.claude"
+check "codex alone: claude in its default folder" "$(agents_line voice-codex)" "claude ~/.claude; codex ~/codex-home"
+check "no claude: section: claude alone" "$(agents_line current)" "claude ~/.claude"
+
+dir="$WORK/told-voice"
+mkdir -p "$dir"
+cp "$CASES/voice-full.yaml" "$dir/config.yaml"
+out="$(pf "$dir" --check-config)"
+check "a claude: section fails --check-config" "$?" "1"
+check "and names voice: and the command" \
+  "$(printf '%s\n' "$out" | grep -c '✗ claude: now `voice:`, with `folders` and `codex` under `voice.agents`.*--upgrade-config --write')" "1"
 
 # What an old config is told before it is upgraded.
 dir="$WORK/told"
@@ -93,7 +113,7 @@ mkdir -p "$dir"
 cp "$CASES/block-enabled.yaml" "$dir/config.yaml"
 out="$(pf "$dir" --check-config)"
 check "an old config fails --check-config" "$?" "1"
-check "it says an upgrade is pending" "$(printf '%s\n' "$out" | grep -c 'version *0 — 2 upgrade(s) pending.*--upgrade-config --write')" "1"
+check "it says an upgrade is pending" "$(printf '%s\n' "$out" | grep -c 'version *0 — 3 upgrade(s) pending.*--upgrade-config --write')" "1"
 check "the retired block names the command" \
   "$(printf '%s\n' "$out" | grep -c '✗ transcription.sentence_repair no longer does anything — it is the `sentence_repair` transform now.*--upgrade-config --write')" "1"
 
