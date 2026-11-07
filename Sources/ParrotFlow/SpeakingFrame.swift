@@ -83,10 +83,8 @@ final class SpeakingFrame {
 
     /// The host's window or pane at `rect`, looked up afresh.
     static func element(at rect: CGRect, host pid: pid_t) -> AXUIElement? {
-        let app = AXUIElementCreateApplication(pid)
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
-              var queue = value as? [AXUIElement] else { return nil }
+        guard var queue = value(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement]
+        else { return nil }
         var depth = 0
         // 24 children over 6 levels is millions of calls on the main thread in a deep tree.
         var budget = 400
@@ -100,9 +98,7 @@ final class SpeakingFrame {
                    close(frame, rect) {
                     return element
                 }
-                var kids: CFTypeRef?
-                if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &kids) == .success,
-                   let children = kids as? [AXUIElement] {
+                if let children = value(element, kAXChildrenAttribute) as? [AXUIElement] {
                     next += children.prefix(24)
                 }
             }
@@ -272,10 +268,17 @@ final class SpeakingFrame {
         return nil
     }
 
-    private static func role(of element: AXUIElement) -> String? {
+    /// These calls run on the main thread. A timeout set on an element covers
+    /// only that element, and the default lets a hung host hold the thread for seconds.
+    private static func value(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
+        AXUIElementSetMessagingTimeout(element, 0.5)
         var value: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &value)
-        return value as? String
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
+        return value
+    }
+
+    private static func role(of element: AXUIElement) -> String? {
+        value(element, kAXRoleAttribute) as? String
     }
 
     /// A first guess for a session no prompt has been seen from: the host's
@@ -283,10 +286,8 @@ final class SpeakingFrame {
     /// is ambiguous: the main window is whichever has focus, so guessing it
     /// framed the wrong window.
     static func guessWindow(host pid: pid_t, project: String) -> AXUIElement? {
-        let app = AXUIElementCreateApplication(pid)
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
-              let windows = value as? [AXUIElement] else { return nil }
+        guard let windows = value(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement]
+        else { return nil }
         let sized = windows.filter { window in
             guard let frame = frame(of: window) else { return false }
             return frame.width > 200 && frame.height > 150
@@ -301,26 +302,19 @@ final class SpeakingFrame {
     }
 
     private static func element(_ parent: AXUIElement, _ attribute: String) -> AXUIElement? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(parent, attribute as CFString, &value) == .success,
-              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        guard let found = value(parent, attribute), CFGetTypeID(found) == AXUIElementGetTypeID() else { return nil }
         // swiftlint:disable:next force_cast
-        return (value as! AXUIElement)
+        return (found as! AXUIElement)
     }
 
     private static func title(of window: AXUIElement) -> String? {
-        var value: CFTypeRef?
-        AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &value)
-        return value as? String
+        value(window, kAXTitleAttribute) as? String
     }
 
     /// Accessibility measures from the top of the main screen, AppKit from the bottom.
     static func frame(of window: AXUIElement) -> CGRect? {
-        var position: CFTypeRef?
-        var size: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &position) == .success,
-              AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &size) == .success,
-              let position, let size else { return nil }
+        guard let position = value(window, kAXPositionAttribute), let size = value(window, kAXSizeAttribute)
+        else { return nil }
         var origin = CGPoint.zero
         var extent = CGSize.zero
         // swiftlint:disable force_cast
