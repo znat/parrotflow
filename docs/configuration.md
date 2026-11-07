@@ -1371,8 +1371,9 @@ evidence something is wrong; a high one is not evidence anything is right.
 
 ## `voice`
 
-ParrotFlow can speak what Claude Code and Codex do and what they answer.
-`agents` says which agents it listens to, and where each keeps its config:
+ParrotFlow can speak what Claude Code, Codex and mini-swe-agent do and what
+they answer. `agents` says which agents it listens to, and where each keeps its
+config:
 
 ```yaml
 voice:
@@ -1380,6 +1381,7 @@ voice:
   agents:
     claude: [~/.claude, ~/.claude-personal]   # one folder, or a list
     codex:                                    # empty: its default folder
+    mini:                                     # no folder: mini speaks through a plugin
 ```
 
 An agent named under `agents` is on. Its value is its config folder, or a list
@@ -1391,6 +1393,8 @@ list stay; `--uninstall-claude-hooks --folder <dir>` takes them out. Without an
 choice. `agents: {}` turns every agent off. Another name under `agents` fails
 `--check-config`. So does a value that is not a folder or a list of folders;
 that agent then uses its default folder, and the rest of the config loads.
+`mini` takes no folder. A folder after `mini:` fails `--check-config`, is
+ignored, and mini stays on.
 
 This section was `claude:` before version 3. The upgrade at launch renames it:
 `folders` becomes `agents.claude`, and `codex: true` becomes `agents.codex`,
@@ -1443,6 +1447,50 @@ default since Codex 0.124; `[features] hooks = false` in `config.toml` turns
 them off. A `[hooks]` table in `config.toml` beside `hooks.json` runs both,
 with a warning at startup.
 
+mini-swe-agent has no hooks. It speaks through `parrotflow-mini`, a small
+Python package in this repository (`integrations/mini-swe-agent`). You install
+it once, by hand, into the Python environment mini runs in. The app writes
+nothing for mini. With `uv`:
+
+```sh
+uv tool install mini-swe-agent \
+  --with "parrotflow-mini @ git+https://github.com/znat/parrotflow#subdirectory=integrations/mini-swe-agent"
+```
+
+With `pipx`, after `pipx install mini-swe-agent`:
+
+```sh
+pipx inject mini-swe-agent \
+  "parrotflow-mini @ git+https://github.com/znat/parrotflow#subdirectory=integrations/mini-swe-agent"
+```
+
+From a clone, pass the folder instead: `--with ~/parrotflow/integrations/mini-swe-agent`
+for `uv`, or `pipx inject mini-swe-agent ~/parrotflow/integrations/mini-swe-agent`.
+Then run mini with the plugin's agent class:
+
+```sh
+mini --agent-class parrotflow_mini.ParrotFlowAgent
+# or, from a config: -c mini.yaml -c agent.agent_class=parrotflow_mini.ParrotFlowAgent
+```
+
+Add `mini:` under `voice.agents`. Without that key the app ignores mini's
+events. The plugin sends four events, in the same shape as the hooks:
+the task as `UserPromptSubmit`, each command before it runs as `PreToolUse`
+(with the model's text before it), the wait for your approval in confirm mode
+as `PermissionRequest`, and the end of the task as `Stop`, with the model's
+last text as the answer. A task you type at the end of a run is a new prompt in
+the same session. Each `mini` process is one session. A run that stops on its
+step, cost or time limit, or on an error, is not spoken. The plugin sends to
+the release app's socket, `~/Library/Application Support/ParrotFlow/claude.sock`.
+Set `PARROTFLOW_SOCKET` to `~/Library/Application Support/ParrotFlow Dev/claude.sock`
+for the dev app. When the app is not running, mini runs as before: each send
+gives up after 0.2 s and never raises. The plugin is written against mini 2.4.6
+and uses four of its private methods, so a later mini can drop events.
+
+The plugin stays through `uv tool upgrade mini-swe-agent` (uv 0.6.11) and
+`pipx upgrade mini-swe-agent` (pipx 1.8.0); both were tried from 2.4.5 to 2.4.6.
+`uv tool install --upgrade mini-swe-agent` without `--with` takes it out.
+
 ```yaml
 voice:
   enabled: true          # false stops listening and removes the hooks
@@ -1451,6 +1499,7 @@ voice:
       - ~/.claude
       - ~/.claude-personal
     codex:               # empty: $CODEX_HOME, then ~/.codex
+    mini:                # no folder: needs the parrotflow-mini plugin
   progress: true         # short lines while an agent works
   explain: true          # those lines in the model's words, with the reason
   frame: true            # a glow around the speaking session's window
@@ -1540,7 +1589,8 @@ URL query strings. An
   project folder. Else it is the only terminal window whose title names it.
   Two such windows, or none, mean no glow and no pill. Codex writes the
   project's root folder into the title, so a session started in a subfolder
-  is not found.
+  is not found. mini runs in the foreground of its terminal, so it is framed
+  like Claude, from its own process.
 - **Which session, on screen:** while a session speaks and its
   window is not in front, the pill names it: the project folder and two or
   three words about the task, like "parrotflow · fixing the glow". The words

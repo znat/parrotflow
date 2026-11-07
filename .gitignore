@@ -7,6 +7,9 @@ dist/
 
 # The runner imports built-in/code_identifiers.py, which leaves this behind.
 __pycache__/
+# A pip install of the mini-swe-agent plugin from a local path leaves these.
+integrations/mini-swe-agent/build/
+integrations/mini-swe-agent/*.egg-info/
 
 # One person's voice, and the table mined out of it. It lives in `voice/`
 # beside the config now — see Sources/ParrotFlow/VoiceStore.swift — and these

@@ -129,8 +129,13 @@ run_config agents
 check "a typo in voice is named" \
   "$(printf '%s\n' "$out" | grep -cxF '  ⚠ voice.agent: not a setting. Did you mean "agents"?')" "1"
 check "an unknown agent fails, and says which agents there are" "$code $(printf '%s\n' "$out" \
-  | grep -cxF '  ✗ voice.agents: zork is not an agent the app hooks — expected claude or codex')" "1 1"
+  | grep -cxF '  ✗ voice.agents: zork is not an agent the app speaks for — expected claude, codex or mini')" "1 1"
 check "a known one still hooks, alone" "$(printf '%s\n' "$out" | sed -n 's/^  · agents  *//p')" "codex ~/c"
+printf 'voice:\n  agents:\n    claude:\n    mini: ~/m\n' > "$WORK/agents/config.yaml"
+run_config agents
+check "mini takes no folder: said, and mini is still on" "$code $(printf '%s\n' "$out" \
+  | grep -cxF '  ✗ voice.agents.mini: takes no folder — mini has no hooks file, so the value is ignored')" "1 1"
+check "mini is listed with no folder" "$(printf '%s\n' "$out" | sed -n 's/^  · agents  *//p')" "claude ~/.claude; mini"
 
 # --- typos in lists and either-of keys, beside sections that take any key ---------
 

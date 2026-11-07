@@ -520,9 +520,10 @@ enum ConfigSchema {
                 "Listen for the agents' hooks and keep them installed. false removes them.",
                 default: defaults.enabled),
             key("agents", .open(.either([.empty, .text, .list(.text)])),
-                "Each agent whose hooks the app keeps: claude, codex. The value is its config folder"
+                "Each agent the app speaks for: claude, codex, mini. The value is its config folder"
                     + " or a list of them. Empty means ~/.claude for claude, and $CODEX_HOME, then"
-                    + " ~/.codex for codex. An agent left out is off. No agents key means claude alone.",
+                    + " ~/.codex for codex. mini takes no folder: it speaks through a plugin."
+                    + " An agent left out is off. No agents key means claude alone.",
                 default: ["claude": NSNull()]),
             key("progress", .bool, "Short lines while an agent works.", default: defaults.progress),
             key("explain", .bool, "Progress lines in the model's words, with the reason.",

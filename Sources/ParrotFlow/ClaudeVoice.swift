@@ -2,15 +2,15 @@ import AppKit
 import FluidAudio
 import ApplicationServices
 
-/// The coding agent a hook event comes from. Claude Code and Codex are spoken so far.
+/// The coding agent a hook event comes from: Claude Code, Codex, or mini-swe-agent
+/// through the plugin in `integrations/mini-swe-agent`.
 enum CodingAgent: String, CaseIterable {
     case claude, codex, mini
 
     func progress(tool: String, input: [String: Any]) -> ClaudeSpeakable.Line? {
         switch self {
         case .claude: ClaudeSpeakable.progress(tool: tool, input: input)
-        case .codex: CodexSpeakable.progress(tool: tool, input: input)
-        case .mini: nil
+        case .codex, .mini: CodexSpeakable.progress(tool: tool, input: input)
         }
     }
 
@@ -52,7 +52,7 @@ enum CodingAgent: String, CaseIterable {
         }
     }
 
-    /// The agents `voice.agents` can name.
+    /// The agents whose hooks the app installs. mini speaks through a plugin instead.
     static var hooked: [CodingAgent] { allCases.filter { !$0.hookEvents.isEmpty } }
 
     /// Where the hooks go when `voice.agents` names no folder. An app opened
@@ -67,7 +67,7 @@ enum CodingAgent: String, CaseIterable {
     }
 }
 
-/// Speaks Claude Code's and Codex's progress and answers.
+/// Speaks the coding agents' progress and answers.
 ///
 /// Claude Code runs `ParrotFlow --speak-event` from a hook. That process
 /// passes the hook's JSON to this socket and exits, so the hook never waits.
@@ -249,11 +249,7 @@ final class ClaudeVoice {
     /// The agent whose events this build speaks. Another agent's events and
     /// transcripts differ, so the Claude rules would say wrong lines.
     static func speaksFor(_ name: String) -> CodingAgent? {
-        switch CodingAgent(rawValue: name) {
-        case .claude: .claude
-        case .codex: .codex
-        case .mini, nil: nil
-        }
+        CodingAgent(rawValue: name)
     }
 
     static func key(_ agent: CodingAgent, _ session: String) -> String {
@@ -267,6 +263,10 @@ final class ClaudeVoice {
               let name = event["hook_event_name"] as? String else { return }
         guard let agent = Self.speaksFor(named) else {
             return skip("agent " + named, "events from agent \"\(named.prefix(40))\" are not spoken by this build")
+        }
+        // mini has no hooks to take out, so its events still come when its key is gone.
+        guard settings.folders(of: agent) != nil else {
+            return skip("agent off " + named, "\(named) events are not spoken: voice.agents has no \(named) key")
         }
         if agent == .codex, Self.isSubagent(event) {
             return skip("codex subagent", "Codex subagent events are not spoken")

@@ -780,7 +780,19 @@ enum ClaudeHooksCommand {
         check("a folder, a list, an empty list",
               got: agents("agents: {claude: [~/a, ~/b], codex: ~/c}") + " | " + agents("agents: {claude: []}"),
               want: "claude ~/a,~/b; codex ~/c | claude ~/.claude")
-        check("an unknown agent is set aside", got: agents("agents: {claude: , zork: ~/z, mini: }"), want: "claude ~/.claude ?mini,zork")
+        check("an unknown agent is set aside, and mini hooks nothing",
+              got: agents("agents: {claude: , zork: ~/z, mini: }"), want: "claude ~/.claude ?zork")
+        func spokenFor(_ yaml: String) -> String {
+            guard let settings = try? YAMLDecoder().decode(Config.Voice.self, from: yaml) else { return "unreadable" }
+            return CodingAgent.allCases.filter { settings.folders(of: $0) != nil }.map(\.rawValue).joined(separator: ",")
+                + (settings.folderless.isEmpty ? "" : " ?" + settings.folderless.joined(separator: ","))
+        }
+        check("mini is spoken for only with its key",
+              got: spokenFor("agents: {claude: }") + " | " + spokenFor("agents: {mini: }") + " | " + spokenFor("enabled: true"),
+              want: "claude | mini | claude")
+        check("a folder after mini is said and set aside, and mini stays on",
+              got: spokenFor("agents: {mini: ~/m}") + " | " + spokenFor("agents: {mini: [~/a]}") + " | " + spokenFor("agents: {mini: []}"),
+              want: "mini ?mini | mini ?mini | mini")
         check("a value that is not a folder: the default folder, said, and the rest still loads",
               got: agents("agents: {claude: {x: 1}}\nprogress: false") + " | " + agents("agents: [claude, codex]"),
               want: "claude ~/.claude ! | claude ~/.claude !")
@@ -799,7 +811,11 @@ enum ClaudeHooksCommand {
         check("an event with no agent= line is Claude's", got: received("pid=42\n" + event), want: "42 claude event")
         check("agent=claude is Claude's", got: received("pid=42\nagent=claude\n" + event), want: "42 claude event")
         check("agent=codex is Codex's", got: received("pid=42\nagent=codex\n" + event), want: "42 codex event")
+        check("agent=mini is mini's", got: received("pid=42\nagent=mini\n" + event), want: "42 mini event")
         check("an unknown agent is not spoken", got: received("pid=42\nagent=zork\n" + event), want: "42 ignored event")
+        check("a mini command is said like a Codex one",
+              got: CodingAgent.mini.progress(tool: "Bash", input: ["command": "cd app && python -m pytest -x"])?.text,
+              want: "I'm running the tests")
         func thread(_ json: String) -> String {
             let parsed = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] ?? [:]
             return ClaudeVoice.isSubagent(parsed) ? "subagent" : "main"

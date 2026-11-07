@@ -366,9 +366,10 @@ enum CheckConfigCommand {
             emit("  · models            none — nothing calls a model")
         }
 
-        let agents = CodingAgent.hooked.compactMap { agent in
-            config.voice.folders(of: agent).map {
-                agent.rawValue + " " + $0.map(ClaudeHooksCommand.shown).joined(separator: ", ")
+        let agents = CodingAgent.allCases.compactMap { agent in
+            config.voice.folders(of: agent).map { folders in
+                folders.isEmpty ? agent.rawValue
+                    : agent.rawValue + " " + folders.map(ClaudeHooksCommand.shown).joined(separator: ", ")
             }
         }
         emit("  · agents            " + (!config.voice.enabled ? "off — voice.enabled is false"
