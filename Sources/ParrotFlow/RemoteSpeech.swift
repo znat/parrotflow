@@ -96,7 +96,10 @@ enum RemoteSpeech {
         guard let http = response as? HTTPURLResponse else { throw LLM.Failure.unreachable(config) }
         guard http.statusCode == 200 else {
             var data = Data()
-            for try await byte in bytes { data.append(byte) }
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count >= 8_192 { break }
+            }
             let detail = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
                 .flatMap { ($0["error"] as? [String: Any])?["message"] as? String } ?? ""
             throw LLM.Failure.badStatus(config, http.statusCode, detail)
@@ -117,7 +120,12 @@ enum RemoteSpeech {
                 header = buffer.prefix(4) == Data("RIFF".utf8)
             }
             if header == true {
-                guard let start = dataStart(buffer) else { continue }
+                guard let start = dataStart(buffer) else {
+                    guard buffer.count < 4_096 else {
+                        throw LLM.Failure.badStatus(config, http.statusCode, "a WAV header with no data chunk")
+                    }
+                    continue
+                }
                 buffer.removeSubrange(..<start)
                 header = false
             }
@@ -127,7 +135,7 @@ enum RemoteSpeech {
             if first == nil { first = Date().timeIntervalSince(started) }
             guard await emit(resample(samples(fromPCM16: Data(piece)), from: pcmRate)) else { break }
         }
-        if buffer.count >= 2 {
+        if header != true, buffer.count >= 2 {
             if first == nil { first = Date().timeIntervalSince(started) }
             _ = await emit(resample(samples(fromPCM16: buffer.prefix(buffer.count - buffer.count % 2)), from: pcmRate))
         }
