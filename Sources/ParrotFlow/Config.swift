@@ -1,3 +1,4 @@
+import FluidAudio
 import Foundation
 import Yams
 
@@ -2863,11 +2864,16 @@ struct Config: Decodable, Equatable {
         var frame = true
         /// A name under `models:`. Empty means the default model.
         var model = ""
-        var voice = "af_heart"
+        /// The remote voice's speed. PocketTTS has none.
         var speed: Float = 1.0
-        /// The voice on this Mac: `kokoro`, or `pocket` (PocketTTS, which streams).
-        var local = "kokoro"
-        /// A PocketTTS voice; Kokoro uses `voice`.
+        /// A `speed` of 0 or below, kept for `problems()`; `speed` stays 1.
+        var refusedSpeed: Float?
+        /// `voice` and `local` chose Kokoro and its voice. Read only so
+        /// `notices()` can say they do nothing.
+        var retired: [String] = []
+        static let retiredAdvice = "no longer does anything — it chose Kokoro, and the voice on this Mac"
+            + " is PocketTTS, set by `local_voice`. Delete the line"
+        /// A PocketTTS voice, the voice on this Mac.
         var localVoice = "alba"
         /// One per session on the local voice, like `speech_voices`. Empty: `local_voice` for all.
         var localVoices: [String] = []
@@ -2877,7 +2883,7 @@ struct Config: Decodable, Equatable {
         /// Where PocketTTS runs: `gpu`, `ane` or `ane-state` (the Neural Engine).
         var localPlacement = "gpu"
         /// A name under `models:` that speaks OpenAI's `/audio/speech`, such
-        /// as OpenRouter. Empty means Kokoro, on this Mac.
+        /// as OpenRouter. Empty means PocketTTS, on this Mac.
         var speech = ""
         /// One per session, in order. A session keeps its voice while it is active.
         /// Gemini's conversational voices: friendly, warm, casual, easy-going, breezy.
@@ -2909,13 +2915,14 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(Bool.self, forKey: .explain) { explain = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .frame) { frame = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .model) { model = v }
-            if let v = try c.decodeIfPresent(String.self, forKey: .voice) { voice = v }
-            if let v = try c.decodeIfPresent(Float.self, forKey: .speed) { speed = v }
+            retired = [CodingKeys.voice, .local].filter { c.contains($0) }.map(\.stringValue)
+            if let v = try c.decodeIfPresent(Float.self, forKey: .speed) {
+                if v > 0 { speed = v } else { refusedSpeed = v }
+            }
             if let v = try c.decodeIfPresent(String.self, forKey: .speech) { speech = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .speechVoice), !v.isEmpty { speechVoices = [v] }
             if let v = try c.decodeIfPresent([String].self, forKey: .speechVoices), !v.isEmpty { speechVoices = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .speechTone) { speechTone = v }
-            if let v = try c.decodeIfPresent(String.self, forKey: .local) { local = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .localVoice), !v.isEmpty { localVoice = v }
             if let v = try c.decodeIfPresent([String].self, forKey: .localVoices) { localVoices = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .progressLocal) { progressLocal = v }
@@ -3157,14 +3164,21 @@ struct Config: Decodable, Equatable {
         if !claudeModel.isEmpty, model(named: claudeModel) == nil {
             found.append("claude.model: \"\(claudeModel)\" is not under models: — using the default model")
         }
+        if PocketTtsModelPlacement(rawValue: claude.localPlacement) == nil {
+            found.append("claude.local_placement: \"\(claude.localPlacement)\" is not valid"
+                + " — expected gpu, ane or ane-state; using gpu")
+        }
+        if let refused = claude.refusedSpeed {
+            found.append("claude.speed: \(refused) is not valid — expected a number above 0; using 1")
+        }
         let speech = claude.speech.trimmingCharacters(in: .whitespaces)
         if !speech.isEmpty {
             if let spec = model(named: speech) {
                 if spec.api != .openai {
-                    found.append("claude.speech: \"\(speech)\" needs api: openai — using Kokoro")
+                    found.append("claude.speech: \"\(speech)\" needs api: openai — using PocketTTS")
                 }
             } else {
-                found.append("claude.speech: \"\(speech)\" is not under models: — using Kokoro")
+                found.append("claude.speech: \"\(speech)\" is not under models: — using PocketTTS")
             }
         }
         for key in transcription.retired {
@@ -3312,6 +3326,9 @@ struct Config: Decodable, Equatable {
         if legacyJudge {
             said.append("pipeline: `- transform: verify_names` is the old name judge."
                 + " The app does this itself now — delete the line")
+        }
+        for key in claude.retired {
+            said.append("claude.\(key) \(Claude.retiredAdvice)")
         }
 
         // The pass left the list. A config that still names it is read as

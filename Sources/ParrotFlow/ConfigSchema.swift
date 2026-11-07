@@ -510,6 +510,7 @@ enum ConfigSchema {
 
     static var claude: Section {
         let defaults = Config.Claude()
+        let kokoro = Config.Claude.retiredAdvice
         return Section(source: "Config.Claude",
                        keys: Config.Claude.CodingKeys.allCases.map(\.stringValue), fields: [
             key("enabled", .bool,
@@ -526,12 +527,12 @@ enum ConfigSchema {
             key("model", .text,
                 "A name under models: that writes what is said. Empty means the default model.",
                 default: defaults.model),
-            key("voice", .text, "A Kokoro voice.", default: defaults.voice),
-            key("speed", .number, "How fast the voice speaks. 1 is normal.",
+            key("voice", .text, "Retired.", deprecated: kokoro),
+            key("speed", .range(Bounds(min: 0, aboveMin: true)),
+                "How fast the remote voice speaks. 1 is normal. PocketTTS has no speed.",
                 default: Double(defaults.speed)),
-            key("local", .text, "The voice on this Mac: kokoro, or pocket (PocketTTS, which streams).",
-                default: defaults.local),
-            key("local_voice", .text, "A PocketTTS voice.", default: defaults.localVoice),
+            key("local", .text, "Retired.", deprecated: kokoro),
+            key("local_voice", .text, "A PocketTTS voice, the voice on this Mac.", default: defaults.localVoice),
             key("local_voices", .list(.text),
                 "PocketTTS voices, one per session. Empty means local_voice for all.",
                 default: defaults.localVoices),
