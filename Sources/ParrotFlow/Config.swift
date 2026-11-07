@@ -2857,6 +2857,11 @@ struct Config: Decodable, Equatable {
         /// Each Claude Code config folder. `--install-claude-hooks` writes
         /// into every one, since each is a separate account.
         var folders: [String] = ["~/.claude"]
+        /// Codex's hooks too, in `codexFolder`. Needs `enabled`.
+        var codex = false
+        /// Empty: `$CODEX_HOME`, then `~/.codex`. An app opened from the Finder
+        /// does not see a `CODEX_HOME` set in a shell profile.
+        var codexFolder = ""
         var progress = true
         /// Progress lines in the model's words, with the reason when there is one.
         var explain = true
@@ -2894,7 +2899,8 @@ struct Config: Decodable, Equatable {
             + "collaborating with a teammate, speaking face to face. Clear and conversational, not performative."
 
         enum CodingKeys: String, CodingKey, CaseIterable {
-            case enabled, folders, progress, explain, frame, model, voice, speed, speech
+            case enabled, folders, codex, progress, explain, frame, model, voice, speed, speech
+            case codexFolder = "codex_folder"
             case speechVoice = "speech_voice"
             case local
             case localVoice = "local_voice"
@@ -2911,6 +2917,8 @@ struct Config: Decodable, Equatable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
             if let v = try c.decodeIfPresent([String].self, forKey: .folders), !v.isEmpty { folders = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .codex) { codex = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .codexFolder) { codexFolder = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .progress) { progress = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .explain) { explain = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .frame) { frame = v }
@@ -2931,6 +2939,12 @@ struct Config: Decodable, Equatable {
 
         var folderURLs: [URL] {
             folders.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
+        }
+
+        var codexFolderURL: URL {
+            let home = ProcessInfo.processInfo.environment["CODEX_HOME"] ?? ""
+            let path = [codexFolder, home].first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? "~/.codex"
+            return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
         }
     }
 

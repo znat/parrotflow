@@ -30,6 +30,18 @@ enum CodingAgent: String {
         case .mini: nil
         }
     }
+
+    /// The file in each config folder that holds this agent's hooks.
+    var hooksFile: String { self == .codex ? "hooks.json" : "settings.json" }
+
+    /// The events the app hooks, with the matcher an event takes. Empty: no hooks to install.
+    var hookEvents: [(name: String, matcher: String?)] {
+        switch self {
+        case .claude: [("PreToolUse", "*"), ("Stop", nil), ("Notification", nil), ("UserPromptSubmit", nil)]
+        case .codex: [("UserPromptSubmit", nil), ("PreToolUse", "*"), ("PermissionRequest", "*"), ("Stop", nil)]
+        case .mini: []
+        }
+    }
 }
 
 /// Speaks Claude Code's and Codex's progress and answers.
@@ -129,18 +141,20 @@ final class ClaudeVoice {
         syncHooks()
     }
 
-    /// The hooks follow `claude.enabled`, so nobody runs `--install-claude-hooks`.
+    /// The hooks follow `claude.enabled` and `claude.codex`, so nobody runs `--install-claude-hooks`.
     private func syncHooks() {
-        guard let hook = ClaudeHooksCommand.Hook.current else { return }
-        for (folder, change) in ClaudeHooksCommand.reconcile(
-            enabled: settings.enabled, folders: settings.folderURLs, hook: hook
-        ) {
-            switch change {
-            case .unchanged: break
-            case .written:
-                Log.write("claude hooks: \(settings.enabled ? "installed in" : "removed from") \(ClaudeHooksCommand.shown(folder))")
-            case .failed(let why):
-                if hookProblems.insert(why).inserted { Log.write("claude hooks: \(why)") }
+        guard let current = ClaudeHooksCommand.Hook.current else { return }
+        for (hook, enabled, folders) in ClaudeHooksCommand.targets(settings, hook: current) {
+            let name = hook.agent.rawValue + " hooks"
+            for (folder, change) in ClaudeHooksCommand.reconcile(enabled: enabled, folders: folders, hook: hook) {
+                switch change {
+                case .unchanged: break
+                case .written:
+                    let trust = enabled && hook.agent == .codex ? "; \(ClaudeHooksCommand.codexTrust)" : ""
+                    Log.write("\(name): \(enabled ? "installed in" : "removed from") \(ClaudeHooksCommand.shown(folder))\(trust)")
+                case .failed(let why):
+                    if hookProblems.insert(why).inserted { Log.write("\(name): \(why)") }
+                }
             }
         }
     }

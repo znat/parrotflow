@@ -1394,12 +1394,40 @@ log. The first copy the app changes is kept as `settings.json.parrotflow-backup`
 `$PF --install-claude-hooks` and `$PF --uninstall-claude-hooks` do the same by
 hand, from the installed app.
 
+Codex (the CLI and the Codex desktop app) is opt-in. With `codex: true` and
+`enabled: true`, the app writes four entries in `hooks.json` in the Codex
+folder: `UserPromptSubmit`, `PreToolUse`, `PermissionRequest` and `Stop`. Each
+sends an `agent=codex` line. `codex: false`, or no `codex` line, takes them
+out. The folder is `codex_folder`, else `$CODEX_HOME`, else `~/.codex`. An app
+opened from the Finder does not see a `CODEX_HOME` set in a shell profile, so
+set `codex_folder` when you moved it. No folder means no Codex: the app does
+nothing and does not create it. It never touches `config.toml` or `notify`.
+The same rules as for Claude apply: your hooks and keys stay, the mode is
+kept, a broken file is left alone, and `hooks.json.parrotflow-backup` is the
+first copy.
+
+Codex runs a new hook only once you approve it. After the app writes the
+hooks, the log says `codex hooks: installed in ~/.codex; approve them once in
+Codex, under /hooks or Settings > Hooks`. Open `/hooks` in the CLI, or
+Settings > Hooks in the desktop app, and trust the four entries. The app never
+approves them for you. Codex asks again when an entry changes: the command,
+which holds the socket path (`~/Library/Application Support/ParrotFlow/claude.sock`,
+or `ParrotFlow Dev/` for the dev app), its timeout or its matcher. It also asks
+again when the entry moves, because Codex keys the approval by its place in the
+list. A new entry goes last, so it never moves yours, but removing an entry
+above it moves it. The dev and release apps are approved apart. Hooks are on by
+default since Codex 0.124; `[features] hooks = false` in `config.toml` turns
+them off. A `[hooks]` table in `config.toml` beside `hooks.json` runs both,
+with a warning at startup.
+
 ```yaml
 claude:
   enabled: true          # false stops listening and removes the hooks
   folders:               # one per Claude Code account; default ~/.claude
     - ~/.claude
     - ~/.claude-personal
+  codex: false           # Codex hooks too; needs enabled
+  codex_folder: ""       # empty: $CODEX_HOME, then ~/.codex
   progress: true         # short lines while Claude works
   explain: true          # those lines in the model's words, with the reason
   frame: true            # a glow around the speaking session's window
