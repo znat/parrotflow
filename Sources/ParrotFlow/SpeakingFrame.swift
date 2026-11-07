@@ -325,6 +325,11 @@ final class SpeakingFrame {
         return (found as! AXUIElement)
     }
 
+    /// The window a pane sits in. A window is its own.
+    static func window(of element: AXUIElement) -> AXUIElement? {
+        role(of: element) == kAXWindowRole ? element : Self.element(element, kAXWindowAttribute)
+    }
+
     private static func title(of window: AXUIElement) -> String? {
         value(window, kAXTitleAttribute) as? String
     }

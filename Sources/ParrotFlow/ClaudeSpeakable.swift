@@ -184,7 +184,7 @@ enum ClaudeSpeakable {
         versions, commit hashes, branch positions and file lists, unless the request \
         asked for them.
 
-        Return JSON: {"opener": "...", "say": "...", "tone": "..."}
+        Return JSON: {"opener": "...", "say": "...", "tone": "...", "task": "..."}
 
         opener: one to four words that say how it went, from what happened: done, good \
         news, a problem, a question, a warning. Never more positive than the reply.
@@ -200,6 +200,9 @@ enum ClaudeSpeakable {
         - Casual, like a colleague. No code, no lists, no markdown, no paths.
 
         tone: how this moment shifts a relaxed, friendly delivery, in at most 8 words.
+
+        task: two or three lowercase words, in the language of "Language", that name \
+        what the developer is working on, from the request. No punctuation. Like: fixing the glow.
         """
 
     /// What the model is sent: the request, then the reply and the recap.
@@ -302,7 +305,7 @@ enum ClaudeSpeakable {
 
     /// Reads the model's JSON. A model that answered in plain text still
     /// gives the words, with no tone.
-    static func parseSpoken(_ raw: String) -> (say: String, tone: String?, opener: String?) {
+    static func parseSpoken(_ raw: String) -> (say: String, tone: String?, opener: String?, task: String?) {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("```") {
             text = text.replacingOccurrences(of: #"^```(?:json)?\s*|\s*```$"#, with: "", options: .regularExpression)
@@ -312,9 +315,46 @@ enum ClaudeSpeakable {
            let say = object["say"] as? String {
             let tone = (object["tone"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let opener = (object["opener"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (say, tone?.isEmpty == false ? tone : nil, opener?.isEmpty == false ? opener : nil)
+            return (say, tone?.isEmpty == false ? tone : nil, opener?.isEmpty == false ? opener : nil,
+                    taskLabel(object["task"] as? String))
         }
-        return (text, nil, nil)
+        return (text, nil, nil, nil)
+    }
+
+    /// Two or three plain words, lowercased. Anything else is no label.
+    static func taskLabel(_ raw: String?) -> String? {
+        let words = (raw ?? "").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " .!\n"))
+            .split(separator: " ").map(String.init)
+        guard (2...3).contains(words.count), words.allSatisfy(isPlainWord) else { return nil }
+        return words.joined(separator: " ")
+    }
+
+    /// Letters, with an inner apostrophe or hyphen. Paths, numbers and tokens are not.
+    private static func isPlainWord(_ word: String) -> Bool {
+        guard word.count <= 20, word.first?.isLetter == true, word.last?.isLetter == true else { return false }
+        return word.allSatisfy { $0.isLetter || $0 == "'" || $0 == "-" }
+    }
+
+    private static let promptFillers: Set<String> = ["please", "thanks", "want", "need", "again", "merci"]
+
+    /// Before the first answer gives a label: the first three content words of the request.
+    static func taskWords(_ prompt: String?, skipping project: String = "") -> String? {
+        var seen: [String] = []
+        for token in (prompt ?? "").lowercased().split(whereSeparator: \.isWhitespace) {
+            let word = token.trimmingCharacters(in: .punctuationCharacters)
+            guard word.count >= 4, isPlainWord(word), !stopWords.contains(word), !promptFillers.contains(word),
+                  word != project.lowercased(), !seen.contains(word) else { continue }
+            seen.append(word)
+            if seen.count == 3 { break }
+        }
+        return seen.isEmpty ? nil : seen.joined(separator: " ")
+    }
+
+    /// "parrotflow · fixing the glow". A long folder keeps its start.
+    static func sessionName(project: String, task: String?) -> String? {
+        let folder = project.count > 24 ? String(project.prefix(23)) + "…" : project
+        let parts = [folder, task ?? ""].filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     // MARK: - Hook event → progress line

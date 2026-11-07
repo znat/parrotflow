@@ -1510,6 +1510,15 @@ URL query strings. An
   whose title names the project, or its main window. The desktop app shows
   every session in one window, so the glow goes around all of it. Under tmux
   there is no app above Claude, and no glow.
+- **Which session, on screen:** while a session speaks and its
+  window is not in front, the pill names it: the project folder and two or
+  three words about the task, like "parrotflow · fixing the glow". The words
+  come from the same model call that writes the answer; before the first
+  answer, they are the first words of the request. "Go to session" brings its
+  app to the front and raises its window; tabs in one window cannot be told
+  apart, so the window comes up. The pill goes away a moment after the voice
+  stops. A dictation always takes the pill; it comes back while the session
+  still speaks. Under tmux there is no app to go to, and no pill.
 
 Pressing the hotkey or sending a new prompt in that session stops the voice.
 An answer that arrives while you dictate waits until you stop. The voice on

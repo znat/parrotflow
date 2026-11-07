@@ -55,6 +55,8 @@ final class ClaudeVoice {
 
     /// Set by the app; a line is never said over a dictation.
     var isRecording: () -> Bool = { false }
+    /// Set by the app: the name of the session speaking out of sight, or nil to take it away.
+    var onPill: (String?) -> Void = { _ in }
 
     private let speaker = Speaker()
     private let frame = SpeakingFrame()
@@ -81,6 +83,12 @@ final class ClaudeVoice {
     private var lastSpokenSession: String?
     private var lastSpokenAt: Date?
     private var lastIntroduction: Int?
+    /// The session the pill names.
+    private var pillSession: String?
+    /// Clicked: not named again until it stops speaking.
+    private var pillDismissed: String?
+    private var pillCheck: Timer?
+    private var pillLinger: DispatchWorkItem?
     /// Bumped per progress line, so a slow explanation of an older call is dropped.
     private var progressSeq = 0
     /// Past this, the call being explained is likely over.
@@ -106,12 +114,15 @@ final class ClaudeVoice {
         var rect: CGRect?
         /// The language of the latest request that was long enough to tell.
         var language: String?
+        /// A few words about the task, from the latest rewrite.
+        var label: String?
     }
 
     struct Spoken: Equatable {
         var text: String
         var tone: String?
         var language = "en"
+        var task: String?
     }
 
     private let progressInterval: TimeInterval = 6
@@ -127,7 +138,10 @@ final class ClaudeVoice {
         speaker.localPlacement = PocketTtsModelPlacement(rawValue: settings.localPlacement) ?? .gpu
         frame.color = ContextIdentity.nsColor(config.feedback.primaryColor)
         if !settings.frame { frame.hide(now: true) }
-        speaker.onSpeakingSession = { [weak self] id in self?.frameSession(id) }
+        speaker.onSpeakingSession = { [weak self] id in
+            self?.frameSession(id)
+            self?.pillFor(id)
+        }
         speaker.onLevel = { [weak self] rms in self?.frame.level(rms) }
         if settings.enabled, listener == nil {
             listener = SocketListener(path: Self.socketURL.path) { [weak self] data in
@@ -378,6 +392,7 @@ final class ClaudeVoice {
                 }
                 self.lastKind = nil
                 if self.sessions[session]?.language == nil { self.sessions[session]?.language = spoken.language }
+                if let task = spoken.task { self.sessions[session]?.label = task }
                 self.whenFree { [weak self] in
                     guard let self else { return }
                     // Progress lines give way; another session's answer keeps its place.
@@ -431,7 +446,9 @@ final class ClaudeVoice {
             guard !said.isEmpty, translated || ground >= ClaudeSpeakable.groundedFloor else {
                 Log.write(String(format: "claude voice: %@ wrote words the reply does not have (%.2f), saying it plain",
                                  model.name, ground))
-                return fallback
+                var plain = fallback
+                plain.task = parsed.task
+                return plain
             }
             let opener = ClaudeSpeakable.spokenOpener(parsed.opener)
             let text = opener.isEmpty ? said : opener + " " + said
@@ -439,7 +456,7 @@ final class ClaudeVoice {
                              model.name, Date().timeIntervalSince(started), reply.count + (recap?.count ?? 0),
                              text.count, parsed.tone ?? "none"))
             return Spoken(text: text, tone: base.map { ClaudeSpeakable.instructions(base: $0, shift: parsed.tone) },
-                          language: language)
+                          language: language, task: parsed.task)
         } catch {
             Log.write("claude voice: rewrite failed, saying it plain — \(error.localizedDescription)")
             return fallback
@@ -526,6 +543,54 @@ final class ClaudeVoice {
         sessions[id]?.rect = SpeakingFrame.frame(of: guess)
         note("guessed", sessions[id]?.rect)
         frame.show(window: guess, host: host, rect: sessions[id]?.rect)
+    }
+
+    /// The pill names a session that speaks out of sight. Checked each second, so a
+    /// window brought to the front takes it away, and it comes back after a dictation.
+    private func pillFor(_ id: String?) {
+        pillCheck?.invalidate()
+        pillCheck = nil
+        pillLinger?.cancel()
+        guard let id else {
+            pillDismissed = nil
+            let work = DispatchWorkItem { [weak self] in self?.showPill(nil) }
+            pillLinger = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: work)
+            return
+        }
+        if id != pillDismissed { pillDismissed = nil }
+        checkPill(id)
+        pillCheck = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.checkPill(id) }
+    }
+
+    private func checkPill(_ id: String) {
+        guard id != pillDismissed, host(of: id) != nil, !watching(id), let session = sessions[id],
+              let name = ClaudeSpeakable.sessionName(
+                  project: session.project,
+                  task: session.label ?? ClaudeSpeakable.taskWords(session.task, skipping: session.project))
+        else { return showPill(nil) }
+        showPill(id, name: name)
+    }
+
+    private func showPill(_ id: String?, name: String? = nil) {
+        if let id, id != pillSession, let name { Log.write("claude voice: pill names \(name)") }
+        pillSession = id
+        onPill(id == nil ? nil : name)
+    }
+
+    /// A click on the pill: the session's app comes to the front with its window
+    /// raised. Tabs in one window cannot be told apart, as for the glow.
+    func goToPillSession() {
+        guard let id = pillSession else { return }
+        pillDismissed = id
+        showPill(nil)
+        guard let host = host(of: id), let app = NSRunningApplication(processIdentifier: host) else { return }
+        if let element = sessions[id]?.window, let window = SpeakingFrame.window(of: element) {
+            AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        }
+        let activated = app.activate()
+        Log.write("claude voice: went to \(sessions[id]?.project ?? id) in \(app.localizedName ?? "pid \(host)")"
+                  + (activated ? "" : ", but the app did not come to the front"))
     }
 
     private func note(session id: String, agent: CodingAgent, event: [String: Any], pid: pid_t?) {
