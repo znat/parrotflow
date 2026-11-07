@@ -530,8 +530,6 @@ enum ConfigSchema {
                 default: defaults.explain),
             key("frame", .bool, "A glow around the window of the session that is speaking.",
                 default: defaults.frame),
-            key("pill", .bool, "The pill names a session that speaks while its window is not in front.",
-                default: defaults.pill),
             key("model", .text,
                 "A name under models: that writes what is said. Empty means the default model.",
                 default: defaults.model),

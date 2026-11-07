@@ -138,7 +138,6 @@ final class ClaudeVoice {
         speaker.localPlacement = PocketTtsModelPlacement(rawValue: settings.localPlacement) ?? .gpu
         frame.color = ContextIdentity.nsColor(config.feedback.primaryColor)
         if !settings.frame { frame.hide(now: true) }
-        if !settings.pill { showPill(nil) }
         speaker.onSpeakingSession = { [weak self] id in
             self?.frameSession(id)
             self?.pillFor(id)
@@ -565,7 +564,7 @@ final class ClaudeVoice {
     }
 
     private func checkPill(_ id: String) {
-        guard settings.pill, id != pillDismissed, host(of: id) != nil, !watching(id), let session = sessions[id],
+        guard id != pillDismissed, host(of: id) != nil, !watching(id), let session = sessions[id],
               let name = ClaudeSpeakable.sessionName(
                   project: session.project,
                   task: session.label ?? ClaudeSpeakable.taskWords(session.task, skipping: session.project))
