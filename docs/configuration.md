@@ -1379,10 +1379,12 @@ nothing when the hooks are already right. The log says
 
 The hooks are four entries in `settings.json` in every folder under `folders`:
 `PreToolUse`, `Stop`, `Notification` and `UserPromptSubmit`. Each one sends
-the event to the app's socket with `nc` and exits in about 10 ms. It never
+a `pid=` line, an `agent=claude` line and the event to the app's socket with
+`nc`, and exits in about 10 ms. It never
 runs the app binary, so Claude is not held up when the app is not running,
 is uninstalled, or is a build without this feature. Restart open Claude Code
-sessions after the hooks are installed.
+sessions after the hooks are installed. A hook from an older build sends no
+`agent=` line. It still works, and the app rewrites it once.
 
 Only the entries that name this app's socket change. The dev and release apps
 each keep their own, and your own hooks and other keys stay as they were. The

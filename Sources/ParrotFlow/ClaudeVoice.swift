@@ -2,6 +2,11 @@ import AppKit
 import FluidAudio
 import ApplicationServices
 
+/// The coding agent a hook event comes from. Only Claude Code is spoken so far.
+enum CodingAgent: String {
+    case claude, codex, mini
+}
+
 /// Speaks Claude Code's progress and answers.
 ///
 /// Claude Code runs `ParrotFlow --speak-event` from a hook. That process
@@ -22,8 +27,10 @@ final class ClaudeVoice {
     private var warmedVoice = ""
     /// Each hook problem is logged once, not on every reload.
     private var hookProblems: Set<String> = []
+    private var ignoredAgents: Set<String> = []
     private var lastProgressAt = Date.distantPast
     private var lastKind: ClaudeSpeakable.Kind?
+    /// By `key(_:_:)`, so two agents' session ids never meet.
     private var sessions: [String: Session] = [:]
     /// Per session, bumped by a new prompt, so that session's answer still
     /// being rewritten is dropped. Other sessions' answers are kept.
@@ -42,10 +49,11 @@ final class ClaudeVoice {
     private let explainLimit: TimeInterval = 5
 
     private struct Session {
+        let agent: CodingAgent
         var project: String
         var account: String?
         var seen: Date
-        /// The Claude process, from the hook's `$PPID`.
+        /// The agent's process, from the hook's `$PPID`.
         var pid: pid_t?
         var transcript: URL?
         /// The latest request, and the reminder made from it.
@@ -138,21 +146,51 @@ final class ClaudeVoice {
 
     // MARK: - Events
 
-    /// Hooks send `pid=<Claude's pid>` on the first line, then the event.
-    static func split(_ data: Data) -> (pid: pid_t?, body: Data) {
-        let marker = Data("pid=".utf8)
-        guard data.starts(with: marker), let newline = data.firstIndex(of: 10) else { return (nil, data) }
-        let digits = String(bytes: data[data.startIndex + marker.count..<newline], encoding: .utf8)
-        return (digits.flatMap { pid_t($0) }, Data(data[data.index(after: newline)...]))
+    /// Hooks send `pid=<the agent's pid>` and `agent=<name>` lines, then the
+    /// event. Hooks from older builds send no `agent=` line: that is Claude Code.
+    static func split(_ data: Data) -> (pid: pid_t?, agent: String, body: Data) {
+        var pid: pid_t?
+        var agent = CodingAgent.claude.rawValue
+        var rest = data
+        let pidField = Data("pid=".utf8), agentField = Data("agent=".utf8)
+        while rest.starts(with: pidField) || rest.starts(with: agentField), let newline = rest.firstIndex(of: 10) {
+            let line = String(bytes: rest[rest.startIndex..<newline], encoding: .utf8) ?? ""
+            if rest.starts(with: pidField) {
+                pid = pid_t(line.dropFirst(pidField.count))
+            } else {
+                agent = String(line.dropFirst(agentField.count))
+            }
+            rest = rest[rest.index(after: newline)...]
+        }
+        return (pid, agent, Data(rest))
+    }
+
+    /// The agent whose events this build speaks. Another agent's events and
+    /// transcripts differ, so the Claude rules would say wrong lines.
+    static func speaksFor(_ name: String) -> CodingAgent? {
+        switch CodingAgent(rawValue: name) {
+        case .claude: .claude
+        case .codex, .mini, nil: nil
+        }
+    }
+
+    static func key(_ agent: CodingAgent, _ session: String) -> String {
+        agent.rawValue + ":" + session
     }
 
     private func receive(_ data: Data) {
-        let (pid, body) = Self.split(data)
+        let (pid, named, body) = Self.split(data)
         guard settings.enabled,
               let event = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
               let name = event["hook_event_name"] as? String else { return }
-        let id = event["session_id"] as? String ?? ""
-        note(session: id, event: event, pid: pid)
+        guard let agent = Self.speaksFor(named) else {
+            if ignoredAgents.insert(named).inserted {
+                Log.write("claude voice: events from agent \"\(named.prefix(40))\" are not spoken by this build")
+            }
+            return
+        }
+        let id = Self.key(agent, event["session_id"] as? String ?? "")
+        note(session: id, agent: agent, event: event, pid: pid)
         warmIfNeeded()
 
         switch name {
@@ -412,7 +450,7 @@ final class ClaudeVoice {
         let app = NSRunningApplication(processIdentifier: host)?.localizedName ?? "pid \(host)"
         func note(_ how: String, _ rect: CGRect?) {
             let at = rect.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" } ?? "-"
-            Log.write("claude voice: glow for \(session.project) (claude pid \(session.pid ?? 0)) on \(app), \(how) at \(at)")
+            Log.write("claude voice: glow for \(session.project) (\(session.agent.rawValue) pid \(session.pid ?? 0)) on \(app), \(how) at \(at)")
         }
         if let window = session.window {
             note("pinned", session.rect)
@@ -428,13 +466,13 @@ final class ClaudeVoice {
         frame.show(window: guess, host: host, rect: sessions[id]?.rect)
     }
 
-    private func note(session id: String, event: [String: Any], pid: pid_t?) {
+    private func note(session id: String, agent: CodingAgent, event: [String: Any], pid: pid_t?) {
         let cwd = event["cwd"] as? String ?? ""
         let account = (event["transcript_path"] as? String)?
             .split(separator: "/")
             .first { $0.hasPrefix(".claude-") }
             .map { String($0.dropFirst(".claude-".count)) }
-        var session = sessions[id] ?? Session(project: "", account: nil, seen: Date())
+        var session = sessions[id] ?? Session(agent: agent, project: "", account: nil, seen: Date())
         session.project = (cwd as NSString).lastPathComponent
         session.account = account
         session.seen = Date()
