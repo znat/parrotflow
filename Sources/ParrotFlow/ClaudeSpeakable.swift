@@ -462,7 +462,8 @@ enum ClaudeSpeakable {
     /// Only shapes that are secrets on their own: prose like "the token
     /// expired" is kept. A secret becomes a word the voice can say.
     private static let spokenSecrets: [(NSRegularExpression, String)] = [
-        rule(#"(?i)\bbearer\s+(?=[A-Za-z0-9._~+/=-]*\d|[A-Za-z0-9._~+/=-]{16,})[A-Za-z0-9._~+/=-]*[A-Za-z0-9_~+/=-]"#,
+        // The value: a digit, a sign inside it, or 8 characters. "bearer of bad news" is kept.
+        rule(#"(?i)\bbearer\s+(?=[^\s'"]*\d|[^\s'"]*[^A-Za-z\s'".,;:!?]|[^\s'"]*[.,;:!?][^\s'".,;:!?]|[^\s'"]{7,}[^\s'".,;:!?])[^\s'"]*[^\s'".,;:!?]"#,
              "Bearer redacted"),
         rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*=\s*)(['"]?)[^\s'"]*[^\s'".,;:!?]\3"#,
              "$1$2redacted"),

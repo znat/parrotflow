@@ -178,6 +178,12 @@ enum ClaudeHooksCommand {
         check("a Bearer header is said, its value is not",
               got: ClaudeSpeakable.spokenRedacted("Add a Bearer token header with Bearer abc123xyz."),
               want: "Add a Bearer token header with Bearer redacted.")
+        check("a Bearer value with a sign, a colon or 8 letters is not said",
+              got: ClaudeSpeakable.spokenRedacted("Bearer abc%2Fdef:ghi, Bearer x-y and Bearer abcdefghij."),
+              want: "Bearer redacted, Bearer redacted and Bearer redacted.")
+        check("the bearer of bad news is said as it is",
+              got: ClaudeSpeakable.spokenRedacted("He was the bearer of bad news, so Bearer tokens wait."),
+              want: "He was the bearer of bad news, so Bearer tokens wait.")
         check("prose about a token is said as it is",
               got: ClaudeSpeakable.spokenRedacted("The token expired, so I refreshed the skyscrapers page."),
               want: "The token expired, so I refreshed the skyscrapers page.")
