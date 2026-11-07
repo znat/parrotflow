@@ -78,6 +78,7 @@ final class ClaudeVoice {
         speaker.localVoice = settings.localVoice
         speaker.localPlacement = PocketTtsModelPlacement(rawValue: settings.localPlacement) ?? .gpu
         frame.color = ContextIdentity.nsColor(config.feedback.primaryColor)
+        if !settings.frame { frame.hide(now: true) }
         speaker.onSpeakingSession = { [weak self] id in self?.frameSession(id) }
         speaker.onLevel = { [weak self] rms in self?.frame.level(rms) }
         if settings.enabled, listener == nil {
@@ -372,6 +373,8 @@ final class ClaudeVoice {
     }
 
     private func frameSession(_ id: String?) {
+        // A glow still fading out must not write over a window pinned since.
+        frame.onRetarget = nil
         guard let id else { return frame.hide() }
         // Another session speaks now: the old window's glow goes at once.
         guard settings.frame, let session = sessions[id], let host = host(of: id) else {
@@ -413,6 +416,7 @@ final class ClaudeVoice {
         if let pid, pid != session.pid {
             session.hostPid = nil
             session.window = nil
+            session.rect = nil
         }
         session.pid = pid ?? session.pid
         session.transcript = (event["transcript_path"] as? String).map { URL(fileURLWithPath: $0) } ?? session.transcript

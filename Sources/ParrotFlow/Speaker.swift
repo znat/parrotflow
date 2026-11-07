@@ -199,6 +199,7 @@ final class Speaker {
                 }
                 guard started == generation else { return }
                 inFlight = nil
+                finishIfIdle()
             }
             guard started == generation else { return }
             synthesizing = false
@@ -333,8 +334,18 @@ final class Speaker {
         if !player.isPlaying { player.play() }
     }
 
+    /// Audio still to come for this session: queued, being made, or ready.
+    private func hasMore(_ session: String) -> Bool {
+        lines.contains { $0.session == session } || ready.contains { $0.session == session }
+            || (inFlight?.session == session && !inFlightDropped)
+    }
+
     private func finishIfIdle() {
-        guard !isSpeaking else { return }
+        guard !isSpeaking else {
+            // Silent while another session's line is made: nobody is heard, so the glow goes.
+            if scheduled.isEmpty, let session = speakingSession, !hasMore(session) { speakingSession = nil }
+            return
+        }
         speakingSession = nil
         let waiters = idleWaiters
         idleWaiters.removeAll()
