@@ -132,6 +132,7 @@ enum RemoteSpeech {
         var buffer = Data()
         var header: Bool?
         var first: TimeInterval?
+        var dropped = false
         for try await byte in bytes {
             buffer.append(byte)
             // Gemini 3.8 answers a plain request with a WAV header; skip it if it comes.
@@ -152,9 +153,12 @@ enum RemoteSpeech {
             let piece = buffer.prefix(pieceBytes - pieceBytes % 2)
             buffer.removeSubrange(..<piece.count)
             if first == nil { first = Date().timeIntervalSince(started) }
-            guard await emit(resampler.feed(samples(fromPCM16: Data(piece)))) else { break }
+            guard await emit(resampler.feed(samples(fromPCM16: Data(piece)))) else {
+                dropped = true
+                break
+            }
         }
-        if header != true {
+        if header != true, !dropped {
             let tail = resampler.feed(samples(fromPCM16: buffer.prefix(buffer.count - buffer.count % 2)), last: true)
             if !tail.isEmpty {
                 if first == nil { first = Date().timeIntervalSince(started) }
