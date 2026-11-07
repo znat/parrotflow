@@ -153,6 +153,24 @@ enum ClaudeHooksCommand {
               got: ClaudeSpeakable.lastTurn(transcript: tail, tailBytes: transcript.utf8.count - 1)?.answer,
               want: "Done.")
         try? FileManager.default.removeItem(at: tail)
+        let pane = CGRect(x: 100, y: 200, width: 800, height: 600)
+        check("a pane 3 points off is the same place",
+              got: SpeakingFrame.close(pane, pane.offsetBy(dx: 3, dy: -3)) ? "same" : "other", want: "same")
+        check("a pane 4 points wider is another place",
+              got: SpeakingFrame.close(pane, pane.insetBy(dx: -2, dy: 0)) ? "same" : "other", want: "other")
+        // A pane at y 200 to 800 in AppKit is y 200 to 800 from the top of a 1000-point main screen.
+        let terminal: pid_t = 10, other: pid_t = 20
+        let ownWindow = (pid: terminal, bounds: CGRect(x: 50, y: 150, width: 900, height: 700))
+        func sight(_ windows: [(pid: pid_t, bounds: CGRect)]) -> String {
+            SpeakingFrame.covered(pane, host: terminal, top: 1000, windows: windows) ? "hidden" : "shown"
+        }
+        check("the glow shows on its own window in front", got: sight([ownWindow]), want: "shown")
+        check("the glow hides behind another app", got: sight([(other, pane.insetBy(dx: 200, dy: 200)), ownWindow]),
+              want: "hidden")
+        check("the glow hides behind another window of the same terminal",
+              got: sight([(terminal, pane.insetBy(dx: 200, dy: 200)), ownWindow]), want: "hidden")
+        check("the glow hides when its window is off screen", got: sight([(other, CGRect(x: 0, y: 0, width: 40, height: 40))]),
+              want: "hidden")
         print("\n\(passed)/\(total)")
         return passed == total ? 0 : 1
     }
