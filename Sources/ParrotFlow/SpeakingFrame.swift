@@ -35,6 +35,7 @@ final class SpeakingFrame {
     /// the one still at `rect` is used instead, never the one with focus.
     func show(window: AXUIElement, host: pid_t, rect: CGRect?) {
         hiding?.cancel()
+        follow?.invalidate()
         shown = 0
         target = window
         targetHost = host
@@ -46,10 +47,8 @@ final class SpeakingFrame {
             panel.orderFrontRegardless()
         }
         place(panel, around: frame)
-        if !coveredNow, panel.alphaValue < 1 {
-            NSAnimationContext.runAnimationGroup { $0.duration = 0.2; panel.animator().alphaValue = 1 }
-        }
-        follow?.invalidate()
+        // Always run: during a fade-out alphaValue still reads 1, and that fade would end at 0.
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.2; panel.animator().alphaValue = coveredNow ? 0 : 1 }
         // A read that timed out also gives nil, and `show` runs again only when the speaking session changes.
         var misses = 0
         follow = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
@@ -122,8 +121,11 @@ final class SpeakingFrame {
             guard let self, let panel = self.panel else { return }
             self.follow?.invalidate()
             self.target = nil
+            // A `show` since then replaces this fade and its completion runs at once.
             NSAnimationContext.runAnimationGroup({ $0.duration = 0.3; panel.animator().alphaValue = 0 },
-                                                 completionHandler: { if panel.alphaValue == 0 { panel.orderOut(nil) } })
+                                                 completionHandler: { [weak self] in
+                                                     if self?.target == nil { panel.orderOut(nil) }
+                                                 })
         }
         hiding = work
         DispatchQueue.main.asyncAfter(deadline: .now() + (now ? 0 : 0.5), execute: work)
@@ -182,32 +184,42 @@ final class SpeakingFrame {
         return panel
     }
 
-    /// Whether another app's window sits in front of `rect`'s centre. The glow
-    /// floats above everything, so around a covered window it looked like it
-    /// framed the window in front.
+    /// Whether `rect` is out of sight. The glow floats above everything, so
+    /// around a covered window it looked like it framed the window in front.
     static func covered(_ rect: CGRect, host: pid_t) -> Bool {
         guard let top = NSScreen.screens.first?.frame.maxY,
               let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]] else { return false }
-        // Window bounds are measured from the top of the main screen, like Accessibility.
-        let centre = CGPoint(x: rect.midX, y: top - rect.midY)
-        for window in list {
+        let windows = list.compactMap { window -> (pid: pid_t, bounds: CGRect)? in
             guard (window[kCGWindowLayer as String] as? Int) == 0,
+                  (window[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let pid = window[kCGWindowOwnerPID as String] as? pid_t,
                   let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
-                  let x = bounds["X"], let y = bounds["Y"], let width = bounds["Width"], let height = bounds["Height"],
-                  CGRect(x: x, y: y, width: width, height: height).contains(centre) else { continue }
-            return (window[kCGWindowOwnerPID as String] as? pid_t) != host
+                  let x = bounds["X"], let y = bounds["Y"], let width = bounds["Width"], let height = bounds["Height"]
+            else { return nil }
+            return (pid, CGRect(x: x, y: y, width: width, height: height))
         }
-        return false
+        return covered(rect, host: host, top: top, windows: windows)
+    }
+
+    /// `windows` are on screen, front to back, measured from the top of the main
+    /// screen like Accessibility. Out of sight: the first one at the centre is
+    /// another app's or another window of the host, or none is there (minimized,
+    /// on another Space, the app hidden).
+    static func covered(_ rect: CGRect, host: pid_t, top: CGFloat, windows: [(pid: pid_t, bounds: CGRect)]) -> Bool {
+        let flipped = CGRect(x: rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height)
+        let centre = CGPoint(x: flipped.midX, y: flipped.midY)
+        guard let front = windows.first(where: { $0.bounds.contains(centre) }) else { return true }
+        return front.pid != host || !front.bounds.insetBy(dx: -4, dy: -4).contains(flipped)
     }
 
     private func place(_ panel: NSPanel, around window: CGRect) {
         let hidden = targetHost.map { Self.covered(window, host: $0) } ?? false
         if hidden != coveredNow {
             coveredNow = hidden
-            if hidden { Log.write("claude voice: glow off, the speaking window is behind another app") }
+            panel.alphaValue = hidden ? 0 : 1
+            if hidden { Log.write("claude voice: glow off, the speaking window is out of sight") }
         }
-        if hidden { panel.alphaValue = 0 } else if panel.isVisible, panel.alphaValue == 0 { panel.alphaValue = 1 }
         let outer = window.insetBy(dx: -margin, dy: -margin)
         if panel.frame != outer { panel.setFrame(outer, display: false) }
         let bounds = CGRect(origin: .zero, size: outer.size)
