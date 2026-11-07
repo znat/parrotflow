@@ -17,7 +17,12 @@ final class Speaker {
     var localVoice = PocketTtsConstants.defaultVoice
     /// Where PocketTTS runs. Off the GPU, it does not wait on a local model there.
     var localPlacement: PocketTtsModelPlacement = .gpu {
-        didSet { if localPlacement != oldValue { pocket = nil } }
+        didSet {
+            if localPlacement != oldValue {
+                pocket = nil
+                pocketLoading = nil
+            }
+        }
     }
 
     /// A remote voice and tone for one line. PocketTTS ignores both.
@@ -147,27 +152,30 @@ final class Speaker {
 
     @MainActor private func loadedPocket() async throws -> PocketTtsManager {
         if let pocket { return pocket }
-        if let pocketLoading { return try await pocketLoading.value }
-        let voice = localVoice
         let placement = localPlacement
-        let task = Task { () throws -> PocketTtsManager in
-            let started = Date()
-            let made = PocketTtsManager(defaultVoice: voice, placement: placement)
-            try await made.initialize()
-            Log.write(String(format: "claude voice: PocketTTS ready in %.1fs (voice %@, %@)",
-                             Date().timeIntervalSince(started), voice, placement.rawValue))
-            return made
+        let task: Task<PocketTtsManager, Error>
+        if let pocketLoading {
+            task = pocketLoading
+        } else {
+            let voice = localVoice
+            task = Task { () throws -> PocketTtsManager in
+                let started = Date()
+                let made = PocketTtsManager(defaultVoice: voice, placement: placement)
+                try await made.initialize()
+                Log.write(String(format: "claude voice: PocketTTS ready in %.1fs (voice %@, %@)",
+                                 Date().timeIntervalSince(started), voice, placement.rawValue))
+                return made
+            }
+            pocketLoading = task
         }
-        pocketLoading = task
-        do {
-            let made = try await task.value
-            pocket = made
+        let result = await task.result
+        // A placement change during the load clears `pocketLoading`: that load is dropped and the new one used.
+        guard placement == localPlacement else { return try await loadedPocket() }
+        if pocketLoading == task {
             pocketLoading = nil
-            return made
-        } catch {
-            pocketLoading = nil
-            throw error
+            pocket = try? result.get()
         }
+        return try result.get()
     }
 
     /// Makes the next sentence while the one before plays.
@@ -191,6 +199,7 @@ final class Speaker {
                 }
                 guard started == generation else { return }
                 inFlight = nil
+                finishIfIdle()
             }
             guard started == generation else { return }
             synthesizing = false
@@ -325,8 +334,18 @@ final class Speaker {
         if !player.isPlaying { player.play() }
     }
 
+    /// Audio still to come for this session: queued, being made, or ready.
+    private func hasMore(_ session: String) -> Bool {
+        lines.contains { $0.session == session } || ready.contains { $0.session == session }
+            || (inFlight?.session == session && !inFlightDropped)
+    }
+
     private func finishIfIdle() {
-        guard !isSpeaking else { return }
+        guard !isSpeaking else {
+            // Silent while another session's line is made: nobody is heard, so the glow goes.
+            if scheduled.isEmpty, let session = speakingSession, !hasMore(session) { speakingSession = nil }
+            return
+        }
         speakingSession = nil
         let waiters = idleWaiters
         idleWaiters.removeAll()

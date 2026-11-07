@@ -24,6 +24,16 @@ enum ClaudeHooksCommand {
         var parse: [Parse] = []
         var capped: [Clean] = []
         var redacted: [Clean] = []
+        struct Naming: Decodable {
+            var name: String; var otherSpokeLast: Bool; var quietFor: Double; var inFront: Bool; var named: Bool
+            enum CodingKeys: String, CodingKey {
+                case name, named
+                case otherSpokeLast = "other_spoke_last"
+                case quietFor = "quiet_for"
+                case inFront = "in_front"
+            }
+        }
+        var naming: [Naming] = []
         struct Grounding: Decodable { var name: String; var said: String; var source: String; var kept: Bool }
         var grounded: [Grounding] = []
         var speakable: [Clean] = []
@@ -32,7 +42,7 @@ enum ClaudeHooksCommand {
         var summary: [Summary] = []
 
         enum CodingKeys: String, CodingKey {
-            case clean, progress, turns, parse, capped, redacted, grounded, speakable, spoken, summary
+            case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary
         }
 
         init(from decoder: Decoder) throws {
@@ -43,6 +53,7 @@ enum ClaudeHooksCommand {
             parse = try c.decodeIfPresent([Parse].self, forKey: .parse) ?? []
             capped = try c.decodeIfPresent([Clean].self, forKey: .capped) ?? []
             redacted = try c.decodeIfPresent([Clean].self, forKey: .redacted) ?? []
+            naming = try c.decodeIfPresent([Naming].self, forKey: .naming) ?? []
             grounded = try c.decodeIfPresent([Grounding].self, forKey: .grounded) ?? []
             speakable = try c.decodeIfPresent([Clean].self, forKey: .speakable) ?? []
             spoken = try c.decodeIfPresent([Clean].self, forKey: .spoken) ?? []
@@ -98,6 +109,12 @@ enum ClaudeHooksCommand {
         for item in cases.redacted {
             check(item.name, got: ClaudeSpeakable.redacted(item.input), want: item.want)
         }
+        for item in cases.naming {
+            let said = ClaudeVoice.names(
+                otherSpokeLast: item.otherSpokeLast, quietFor: item.quietFor, inFront: item.inFront
+            )
+            check(item.name, got: said ? "named" : "not named", want: item.named ? "named" : "not named")
+        }
         for item in cases.summary {
             check(item.name, got: ClaudeSpeakable.latestSummary(lines: item.lines), want: item.want)
         }
@@ -111,6 +128,10 @@ enum ClaudeHooksCommand {
             let keeps = ClaudeSpeakable.grounded(item.said, in: item.source) >= ClaudeSpeakable.groundedFloor
             check(item.name, got: keeps ? "kept" : "plain", want: item.kept ? "kept" : "plain")
         }
+        let count = ClaudeVoice.introductions.count
+        let repeats = (0..<count).flatMap { last in (0..<50).map { (last, $0) } }
+            .filter { ClaudeVoice.introductionIndex(after: $0.0, seed: $0.1) == $0.0 }
+        check("introductions never repeat back to back", got: "\(repeats.count)", want: "0")
         let language = ClaudeSpeakable.language(of:)
         check("a French request is French", got: language("Est-ce que tu peux relancer les tests sur cette branche ?"),
               want: "fr")
@@ -129,6 +150,10 @@ enum ClaudeHooksCommand {
               want: "1 mars 2025")
         check("French units", got: ClaudeSpeakable.clean("en 12 s, 40 %", language: "fr"),
               want: "en 12 secondes, 40 pour cent.")
+        check("a French introduction", got: ClaudeVoice.introduction("parrotflow", 2, language: "fr"),
+              want: "Ici parrotflow : ")
+        check("a language with no introductions uses English", got: ClaudeVoice.introduction("parrotflow", 2, language: "de"),
+              want: "parrotflow here: ")
         check("a capital after a period", got: ClaudeSpeakable.capped("A new term. my examples were wrong."),
               want: "A new term. My examples were wrong.")
         check("the reply and recap lose their secrets",
@@ -143,6 +168,25 @@ enum ClaudeHooksCommand {
         let cut = ClaudeSpeakable.explainInput(
             tool: "Bash", input: [:], context: "Use token=hunter2 " + String(repeating: "ok ", count: 164)
         )
+        let fallback = ClaudeSpeakable.truncated(ClaudeSpeakable.clean(
+            "Done. I set `OPENROUTER_API_KEY=sk-or-v1-abcdef1234567890` in your shell."
+        ))
+        check("a key in a reply said plain is not said", got: ClaudeSpeakable.spokenRedacted(fallback),
+              want: "Done. I set OPENROUTER_API_KEY=redacted in your shell.")
+        check("a password after a colon is not said", got: ClaudeSpeakable.spokenRedacted("Use password: hunter2 now."),
+              want: "Use password: redacted now.")
+        check("a Bearer header is said, its value is not",
+              got: ClaudeSpeakable.spokenRedacted("Add a Bearer token header with Bearer abc123xyz."),
+              want: "Add a Bearer token header with Bearer redacted.")
+        check("a Bearer value with a sign, a colon or 8 letters is not said",
+              got: ClaudeSpeakable.spokenRedacted("Bearer abc%2Fdef:ghi, Bearer x-y and Bearer abcdefghij."),
+              want: "Bearer redacted, Bearer redacted and Bearer redacted.")
+        check("the bearer of bad news is said as it is",
+              got: ClaudeSpeakable.spokenRedacted("He was the bearer of bad news, so Bearer tokens wait."),
+              want: "He was the bearer of bad news, so Bearer tokens wait.")
+        check("prose about a token is said as it is",
+              got: ClaudeSpeakable.spokenRedacted("The token expired, so I refreshed the skyscrapers page."),
+              want: "The token expired, so I refreshed the skyscrapers page.")
         check("a secret is redacted before the cut", got: cut.contains("unter2") ? "leaks" : "redacted",
               want: "redacted")
         let tail = FileManager.default.temporaryDirectory.appendingPathComponent("claude-voice-tail-\(getpid()).jsonl")

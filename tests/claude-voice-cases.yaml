@@ -229,6 +229,33 @@ redacted:
     input: "export X=Zm9vYmFyYmF6cXV4cXV1eHF1dXhmb29iYXJiYXo"
     want: "export X=<redacted>"
 
+naming:
+  - name: another session spoke last
+    other_spoke_last: true
+    quiet_for: 5
+    in_front: true
+    named: true
+  - name: same session, a moment ago
+    other_spoke_last: false
+    quiet_for: 20
+    in_front: false
+    named: false
+  - name: same session, quiet, window in front
+    other_spoke_last: false
+    quiet_for: 300
+    in_front: true
+    named: false
+  - name: same session, quiet, window not in front
+    other_spoke_last: false
+    quiet_for: 300
+    in_front: false
+    named: true
+  - name: exactly two minutes counts
+    other_spoke_last: false
+    quiet_for: 120
+    in_front: false
+    named: true
+
 grounded:
   - name: a faithful summary is kept
     said: "I merged PR 403 into main. CI is green, and the spoken digits work now."
