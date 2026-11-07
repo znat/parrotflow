@@ -1396,14 +1396,12 @@ claude:
   explain: true          # those lines in the model's words, with the reason
   frame: true            # a glow around the speaking session's window
   model: ""              # a name under models:; empty means the default
-  voice: af_heart        # a Kokoro voice
-  speed: 1.0
-  local: kokoro          # the voice on this Mac: kokoro, or pocket (PocketTTS, streams)
-  local_voice: alba      # a PocketTTS voice
+  speed: 1.0             # the remote voice's speed, above 0; PocketTTS has none
+  local_voice: alba      # the voice on this Mac, a PocketTTS voice
   local_voices: []       # one per session, like speech_voices; PocketTTS has 27
   local_placement: gpu   # where PocketTTS runs: gpu, ane or ane-state (Neural Engine)
   progress_local: false  # progress lines on the local voice, answers on `speech`
-  speech: ""             # a name under models: for a remote voice; empty = Kokoro
+  speech: ""             # a name under models: for a remote voice; empty = PocketTTS
   speech_voices: [Achird, Sulafat, Zubenelgenubi, Callirrhoe, Umbriel, Aoede]
   # speech_voice: Achird # one remote voice for every session; speech_voices wins
   speech_tone: >-
@@ -1436,7 +1434,7 @@ curious). It goes out as `instructions`. A recap or a short answer keeps its
 own words; only the tone is asked for. A model that refuses `instructions` is
 asked again without them.
 
-A sentence the remote voice fails on is said by Kokoro, which loads then.
+A sentence the remote voice fails on is said by PocketTTS, which loads then.
 The spoken text leaves your Mac, as it already does for a hosted `model`.
 
 What it says:
@@ -1478,9 +1476,11 @@ URL query strings. An
   there is no app above Claude, and no glow.
 
 Pressing the hotkey or sending a new prompt in that session stops the voice.
-An answer that arrives while you dictate waits until you stop. The voice is
-Kokoro, through FluidAudio. It downloads on first use, and it speaks English
-only. A local model adds its load time to the answer: 14.5 s was measured cold
+An answer that arrives while you dictate waits until you stop. The voice on
+this Mac is PocketTTS, through FluidAudio. It downloads on first use, streams
+each sentence, and speaks English only. `voice` and `local` chose Kokoro,
+which is gone; `--check-config` names them so you can delete the lines.
+A local model adds its load time to the answer: 14.5 s was measured cold
 on `gemma`. A fast hosted model suits this job better.
 
 ## `logging`
