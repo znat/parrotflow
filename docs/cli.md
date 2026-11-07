@@ -1215,6 +1215,7 @@ $PF --claude-voice-test [cases.yaml]             # text rules; no config, no aud
 $PF --claude-spoken <session.jsonl>              # what the last turn would say
 $PF --claude-explain '<PreToolUse json>' [--context "<text>"]  # one progress line, explained
 $PF --claude-say "<text>" [--tone "<instructions>"] [--voice <name>]  # say it
+$PF --claude-say "<text>" --output <clip.wav>     # the remote voice into a 24 kHz WAV
 scripts/tone-lab.py                              # a page to try tones on recent lines
 ```
 

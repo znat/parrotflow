@@ -102,7 +102,7 @@ final class ClaudeVoice {
             enabled: settings.enabled, folders: settings.folderURLs, hook: hook
         ) {
             switch change {
-            case .none: break
+            case .unchanged: break
             case .written:
                 Log.write("claude hooks: \(settings.enabled ? "installed in" : "removed from") \(ClaudeHooksCommand.shown(folder))")
             case .failed(let why):

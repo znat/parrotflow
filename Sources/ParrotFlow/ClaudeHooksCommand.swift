@@ -110,7 +110,7 @@ enum ClaudeHooksCommand {
     }
 
     enum Change: Equatable {
-        case none, written, failed(String)
+        case unchanged, written, failed(String)
     }
 
     static func install(folders: [URL]) -> Int32 {
@@ -202,7 +202,7 @@ enum ClaudeHooksCommand {
         var isFolder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else {
             // Nothing to take out of a folder that is not there.
-            return change([:]).isEmpty ? .none : .failed("\(place): no such folder")
+            return change([:]).isEmpty ? .unchanged : .failed("\(place): no such folder")
         }
         var original: Data?
         if FileManager.default.fileExists(atPath: file.path) {
@@ -221,7 +221,7 @@ enum ClaudeHooksCommand {
         }
         let before = settings["hooks"] as? [String: Any] ?? [:]
         let after = change(before)
-        guard !NSDictionary(dictionary: before).isEqual(to: after) else { return .none }
+        guard !NSDictionary(dictionary: before).isEqual(to: after) else { return .unchanged }
         settings["hooks"] = after.isEmpty ? nil : after
         do {
             let data = try JSONSerialization.data(
@@ -585,7 +585,11 @@ enum ClaudeHooksCommand {
         _ text: String, config: Config, tone: String? = nil, voice: String? = nil, output: String? = nil
     ) -> Never {
         let text = ClaudeSpeakable.spokenRedacted(text)
-        if let output, let remote = ClaudeVoice.remote(config.claude, config) {
+        if let output {
+            guard let remote = ClaudeVoice.remote(config.claude, config) else {
+                print("✗ --output needs a remote voice: set claude.speech to a model under models:")
+                exit(1)
+            }
             save(text, to: output, remote: remote, tone: tone, voice: voice ?? config.claude.speechVoices.first ?? "")
         }
         Task { @MainActor in
