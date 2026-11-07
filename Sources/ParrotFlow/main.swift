@@ -137,15 +137,8 @@ if let at = arguments.firstIndex(of: "--upgrade-config") {
 // a trace is a debug artefact and must not be the reason a command fails.
 Trace.directory = (try? ConfigStore.load())?.resolvedOutputDir
 
-if arguments.contains("--install-claude-hooks") {
-    exit(ClaudeHooksCommand.install(
-        folders: ClaudeHooksCommand.folders(arguments, config: try? ConfigStore.load())
-    ))
-}
-if arguments.contains("--uninstall-claude-hooks") {
-    exit(ClaudeHooksCommand.uninstall(
-        folders: ClaudeHooksCommand.folders(arguments, config: try? ConfigStore.load())
-    ))
+if arguments.contains("--install-claude-hooks") || arguments.contains("--uninstall-claude-hooks") {
+    exit(ClaudeHooksCommand.hooks(arguments, config: try? ConfigStore.load()))
 }
 if let index = arguments.firstIndex(of: "--claude-spoken"), arguments.indices.contains(index + 1) {
     exit(ClaudeHooksCommand.spoken(transcript: arguments[index + 1], config: (try? ConfigStore.load()) ?? Config()))

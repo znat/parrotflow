@@ -5,7 +5,7 @@ import Yams
 /// The terminal side of `ClaudeVoice`.
 ///
 ///   --speak-event               what the hooks run; stdin → the app's socket
-///   --install-claude-hooks      into every `claude.folders` entry
+///   --install-claude-hooks      into every `claude.folders` entry; `--agent codex`: the Codex folder
 ///   --uninstall-claude-hooks
 ///   --claude-voice-test <cases> score the text rules, no audio
 ///   --claude-spoken <file>      what the last turn of a transcript would say
@@ -13,7 +13,6 @@ import Yams
 enum ClaudeHooksCommand {
 
     static let marker = "--speak-event"
-    static let events = ["PreToolUse", "Stop", "Notification", "UserPromptSubmit"]
 
     // MARK: - The hook
 
@@ -50,7 +49,21 @@ enum ClaudeHooksCommand {
 
     // MARK: - Install
 
-    static func folders(_ arguments: [String], config: Config?) -> [URL] {
+    /// `--install-claude-hooks` and `--uninstall-claude-hooks`.
+    static func hooks(_ arguments: [String], config: Config?) -> Int32 {
+        let named = arguments.firstIndex(of: "--agent").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : "" }
+        let agent = named == nil ? .claude : named.flatMap(CodingAgent.init(rawValue:))
+        guard let agent, !agent.hookEvents.isEmpty else {
+            print("✗ --agent takes claude or codex")
+            return 2
+        }
+        let folders = folders(arguments, agent: agent, config: config)
+        return arguments.contains("--install-claude-hooks")
+            ? run(true, folders: folders, agent: agent, flag: "--install-claude-hooks")
+            : run(false, folders: folders, agent: agent, flag: "--uninstall-claude-hooks")
+    }
+
+    static func folders(_ arguments: [String], agent: CodingAgent, config: Config?) -> [URL] {
         var given: [String] = []
         var index = 0
         while index < arguments.count {
@@ -63,7 +76,8 @@ enum ClaudeHooksCommand {
         if !given.isEmpty {
             return given.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
         }
-        return (config?.claude ?? Config.Claude()).folderURLs
+        let settings = config?.claude ?? Config.Claude()
+        return agent == .codex ? [settings.codexFolderURL] : settings.folderURLs
     }
 
     /// Names our hook in `settings.json`, for uninstall. Hooks written by older
@@ -95,9 +109,11 @@ enum ClaudeHooksCommand {
             command.contains(tag) ? command.contains("'\(socket)'") : command.contains(marker) && command.contains(app)
         }
 
-        func entry(for event: String) -> [String: Any] {
+        /// Codex trusts a hook by a hash of this entry, so a change here asks
+        /// every Codex user to approve it again.
+        func entry(matcher: String?) -> [String: Any] {
             var entry: [String: Any] = ["hooks": [["type": "command", "command": command, "timeout": 2]]]
-            if event == "PreToolUse" { entry["matcher"] = "*" }
+            entry["matcher"] = matcher
             return entry
         }
 
@@ -115,31 +131,30 @@ enum ClaudeHooksCommand {
         case unchanged, written, failed(String)
     }
 
-    static func install(folders: [URL]) -> Int32 {
-        run(true, folders: folders, flag: "--install-claude-hooks")
-    }
+    static let codexTrust = "approve them once in Codex, under /hooks or Settings > Hooks"
 
-    static func uninstall(folders: [URL]) -> Int32 {
-        run(false, folders: folders, flag: "--uninstall-claude-hooks")
-    }
-
-    private static func run(_ on: Bool, folders: [URL], flag: String) -> Int32 {
-        guard let hook = Hook.current else {
+    private static func run(_ on: Bool, folders: [URL], agent: CodingAgent, flag: String) -> Int32 {
+        guard var hook = Hook.current else {
             print("✗ Run this from the installed app, not from .build:")
             print("  /Applications/\(AppVariant.isDev ? "ParrotFlowDev" : "ParrotFlow").app/Contents/MacOS/ParrotFlow \(flag)")
             return 1
         }
+        hook.agent = agent
         var failed = false
         for (folder, change) in reconcile(enabled: on, folders: folders, hook: hook) {
             if case .failed(let why) = change {
                 print("✗ \(why)")
                 failed = true
+            } else if !isFolder(folder) {
+                print("· \(shown(folder)): no such folder, so nothing to do")
             } else {
-                print("✓ \(shown(folder))/settings.json")
+                print("✓ \(shown(folder))/\(agent.hooksFile)")
             }
         }
         if on, !failed {
-            print("  Claude Code reads hooks at the start of a session, so restart open sessions.")
+            print(agent == .codex
+                ? "  Codex runs new hooks only once you \(codexTrust)."
+                : "  Claude Code reads hooks at the start of a session, so restart open sessions.")
         }
         return failed ? 1 : 0
     }
@@ -148,22 +163,36 @@ enum ClaudeHooksCommand {
     /// off. A file that already matches is not written.
     static func reconcile(enabled: Bool, folders: [URL], hook: Hook) -> [(folder: URL, change: Change)] {
         folders.map { folder in
-            (folder, edit(folder: folder) { hooks in
+            (folder, edit(folder: folder, agent: hook.agent) { hooks in
                 enabled ? installing(hooks, hook) : removing(hooks, hook)
             })
         }
+    }
+
+    /// Each agent's hooks, whether they belong in, and where. Codex is opt-in on top of `enabled`.
+    static func targets(_ settings: Config.Claude, hook: Hook) -> [(hook: Hook, enabled: Bool, folders: [URL])] {
+        var codex = hook
+        codex.agent = .codex
+        return [(hook, settings.enabled, settings.folderURLs),
+                (codex, settings.enabled && settings.codex, [settings.codexFolderURL])]
     }
 
     static func shown(_ folder: URL) -> String {
         (folder.path as NSString).abbreviatingWithTildeInPath
     }
 
-    /// An event that already holds exactly our entry keeps its place.
+    private static func isFolder(_ url: URL) -> Bool {
+        var isFolder: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder) && isFolder.boolValue
+    }
+
+    /// An event that already holds exactly our entry keeps its place. A new
+    /// one goes last: Codex keys its trust by the entry's index.
     private static func installing(_ hooks: [String: Any], _ hook: Hook) -> [String: Any] {
         var hooks = hooks
-        for event in events {
+        for (event, matcher) in hook.agent.hookEvents {
             let entries = hooks[event] as? [[String: Any]] ?? []
-            let wanted = hook.entry(for: event)
+            let wanted = hook.entry(matcher: matcher)
             let others = entries.filter { !NSDictionary(dictionary: $0).isEqual(to: wanted) }
             let kept = withoutOurs(entries, hook)
             if entries.count - others.count == 1, NSArray(array: kept).isEqual(to: others) { continue }
@@ -174,7 +203,7 @@ enum ClaudeHooksCommand {
 
     private static func removing(_ hooks: [String: Any], _ hook: Hook) -> [String: Any] {
         var hooks = hooks
-        for event in events {
+        for (event, _) in hook.agent.hookEvents {
             guard let entries = hooks[event] as? [[String: Any]] else { continue }
             let kept = withoutOurs(entries, hook)
             if NSArray(array: kept).isEqual(to: entries) { continue }
@@ -195,29 +224,27 @@ enum ClaudeHooksCommand {
         }
     }
 
-    /// Reads `settings.json`, changes `hooks`, writes it back when they
-    /// changed. Keeps the first copy it ever changed as
-    /// `settings.json.parrotflow-backup`.
-    private static func edit(folder: URL, _ change: ([String: Any]) -> [String: Any]) -> Change {
-        let place = shown(folder)
-        let file = folder.appendingPathComponent("settings.json")
-        var isFolder: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else {
-            // Nothing to take out of a folder that is not there.
-            return change([:]).isEmpty ? .unchanged : .failed("\(place): no such folder")
+    /// Reads the agent's hooks file, changes `hooks`, writes it back when they
+    /// changed. Keeps the first copy it ever changed as `<file>.parrotflow-backup`.
+    private static func edit(folder: URL, agent: CodingAgent, _ change: ([String: Any]) -> [String: Any]) -> Change {
+        let place = "\(shown(folder))/\(agent.hooksFile)"
+        let file = folder.appendingPathComponent(agent.hooksFile)
+        guard isFolder(folder) else {
+            // Nothing to take out of a folder that is not there. No Codex folder means no Codex.
+            return change([:]).isEmpty || agent == .codex ? .unchanged : .failed("\(shown(folder)): no such folder")
         }
         var original: Data?
         if FileManager.default.fileExists(atPath: file.path) {
             do {
                 original = try Data(contentsOf: file)
             } catch {
-                return .failed("\(place)/settings.json: \(error.localizedDescription)")
+                return .failed("\(place): \(error.localizedDescription)")
             }
         }
         var settings: [String: Any] = [:]
         if let original, !original.isEmpty {
             guard let read = try? JSONSerialization.jsonObject(with: original) as? [String: Any] else {
-                return .failed("\(place)/settings.json is not a JSON object — left alone")
+                return .failed("\(place) is not a JSON object — left alone")
             }
             settings = read
         }
@@ -231,7 +258,7 @@ enum ClaudeHooksCommand {
             )
             try writeSettings(data + Data("\n".utf8), to: file, original: original)
         } catch {
-            return .failed("\(place)/settings.json: \(error.localizedDescription)")
+            return .failed("\(place): \(error.localizedDescription)")
         }
         return .written
     }
@@ -242,7 +269,7 @@ enum ClaudeHooksCommand {
         let target = file.resolvingSymlinksInPath()
         let mode = (try? FileManager.default.attributesOfItem(atPath: target.path)[.posixPermissions]
             as? NSNumber)?.uint16Value ?? 0o600
-        let backup = file.deletingLastPathComponent().appendingPathComponent("settings.json.parrotflow-backup")
+        let backup = file.deletingLastPathComponent().appendingPathComponent(file.lastPathComponent + ".parrotflow-backup")
         if let original, !original.isEmpty, !FileManager.default.fileExists(atPath: backup.path) {
             try ConfigMigration.create(backup, holding: original, mode: mode)
         }
@@ -531,8 +558,8 @@ enum ClaudeHooksCommand {
         let backup = folder.appendingPathComponent("settings.json.parrotflow-backup")
         let release = Hook(socket: "/s/ParrotFlow/claude.sock", app: "/ParrotFlow.app/")
         let dev = Hook(socket: "/s/ParrotFlow Dev/claude.sock", app: "/ParrotFlowDev.app/")
-        func hooks(_ on: Bool, _ hook: Hook) -> String {
-            switch reconcile(enabled: on, folders: [folder], hook: hook).first?.change {
+        func hooks(_ on: Bool, _ hook: Hook, in place: URL? = nil) -> String {
+            switch reconcile(enabled: on, folders: [place ?? folder], hook: hook).first?.change {
             case .written: "written"
             case .failed: "failed"
             default: "none"
@@ -543,8 +570,8 @@ enum ClaudeHooksCommand {
             ((try? FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions]) as? NSNumber)
                 .map { String($0.intValue, radix: 8) } ?? "none"
         }
-        func hookCount(_ hook: Hook) -> String {
-            "\((contents(settings).components(separatedBy: "'\(hook.socket)'").count - 1) / 2)"
+        func hookCount(_ hook: Hook, in file: URL? = nil) -> String {
+            "\((contents(file ?? settings).components(separatedBy: "'\(hook.socket)'").count - 1) / 2)"
         }
         func seedSettings(_ json: String) {
             try? FileManager.default.removeItem(at: settings)
@@ -591,6 +618,71 @@ enum ClaudeHooksCommand {
               got: hookCount(release) + " " + "\(contents(settings).components(separatedBy: "echo agent=claude;").count - 1)",
               want: "4 4")
         check("an upgraded hook is not written again", got: hooks(true, release), want: "none")
+        let codexFolder = folder.appendingPathComponent("codex")
+        let codexFile = codexFolder.appendingPathComponent("hooks.json")
+        let codexBackup = codexFolder.appendingPathComponent("hooks.json.parrotflow-backup")
+        try? FileManager.default.createDirectory(at: codexFolder, withIntermediateDirectories: true)
+        let codexRelease = Hook(socket: release.socket, app: release.app, agent: .codex)
+        let codexDev = Hook(socket: dev.socket, app: dev.app, agent: .codex)
+        func codexHooks() -> [String: [[String: Any]]] {
+            (parsed(contents(codexFile))?["hooks"] as? [String: [[String: Any]]]) ?? [:]
+        }
+        func shape() -> String {
+            codexHooks().sorted { $0.key < $1.key }.map { event, entries in
+                event + " " + entries.map { entry in
+                    let command = (entry["hooks"] as? [[String: Any]])?.first?["command"] as? String ?? ""
+                    return (entry["matcher"] as? String ?? "-") + (command.contains("echo agent=codex;") ? " codex" : " other")
+                }.joined(separator: ", ")
+            }.joined(separator: "; ")
+        }
+        check("codex hooks on: written into a new hooks.json", got: hooks(true, codexRelease, in: codexFolder),
+              want: "written")
+        check("codex hooks: four events, a matcher on tools and permissions, agent=codex", got: shape(),
+              want: "PermissionRequest * codex; PreToolUse * codex; Stop - codex; UserPromptSubmit - codex")
+        check("a new hooks.json is 0600", got: fileMode(codexFile), want: "600")
+        check("codex hooks on again: no write", got: hooks(true, codexRelease, in: codexFolder), want: "none")
+        _ = hooks(true, codexDev, in: codexFolder)
+        _ = hooks(false, codexDev, in: codexFolder)
+        check("the other variant's codex hooks come and go, these stay",
+              got: hookCount(codexRelease, in: codexFile) + " " + hookCount(codexDev, in: codexFile), want: "4 0")
+        let foreignCodex = #"{"description":"mine","hooks":{"PreToolUse":[{"matcher":"Bash","#
+            + #""hooks":[{"command":"./guard.sh","type":"command"}]}]}}"#
+        try? FileManager.default.removeItem(at: codexFile)
+        try? FileManager.default.removeItem(at: codexBackup)
+        try? ConfigMigration.create(codexFile, holding: Data(foreignCodex.utf8), mode: 0o644)
+        _ = hooks(true, codexRelease, in: codexFolder)
+        check("a codex hook goes after the user's own, so their trust index stays",
+              got: codexHooks()["PreToolUse"]?.map { $0["matcher"] as? String ?? "-" }.joined(separator: " "),
+              want: "Bash *")
+        check("a 0644 hooks.json stays 0644, its backup is the first copy",
+              got: fileMode(codexFile) + " " + (contents(codexBackup) == foreignCodex ? "first" : "other"),
+              want: "644 first")
+        _ = hooks(false, codexRelease, in: codexFolder)
+        check("codex hooks off: the user's hooks.json is back, mode kept",
+              got: (parsed(contents(codexFile)) == parsed(foreignCodex) ? "same " : contents(codexFile)) + fileMode(codexFile),
+              want: "same 644")
+        let noCodex = folder.appendingPathComponent("no-codex")
+        check("no Codex folder: nothing written, no error, no folder made",
+              got: hooks(true, codexRelease, in: noCodex) + " "
+                + (FileManager.default.fileExists(atPath: noCodex.path) ? "made" : "absent"),
+              want: "none absent")
+        check("a missing Claude folder is still an error", got: hooks(true, release, in: noCodex), want: "failed")
+        func sync(_ yaml: String) -> String {
+            let decoded = try? YAMLDecoder().decode(Config.Claude.self, from: yaml + "\ncodex_folder: " + codexFolder.path)
+            guard let settings = decoded,
+                  let target = targets(settings, hook: release).first(where: { $0.hook.agent == .codex }) else { return "-" }
+            return reconcile(enabled: target.enabled, folders: target.folders, hook: target.hook).first?.change == .written
+                ? "written " + hookCount(codexRelease, in: codexFile) : "none"
+        }
+        try? FileManager.default.removeItem(at: codexFile)
+        check("codex on with claude off installs nothing", got: sync("enabled: false\ncodex: true"), want: "none")
+        check("codex on with claude on installs", got: sync("codex: true"), want: "written 4")
+        check("removing the codex key uninstalls", got: sync("progress: true"), want: "written 0")
+        var withFolder = Config()
+        withFolder.claude.codexFolder = "~/codex-elsewhere"
+        check("--agent codex installs into codex_folder",
+              got: folders(["--install-claude-hooks", "--agent", "codex"], agent: .codex, config: withFolder).first?.path,
+              want: NSHomeDirectory() + "/codex-elsewhere")
         try? FileManager.default.removeItem(at: folder)
         let event = #"{"hook_event_name":"Stop","session_id":"s"}"#
         func received(_ payload: String) -> String {
