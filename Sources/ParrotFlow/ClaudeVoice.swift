@@ -43,6 +43,15 @@ enum CodingAgent: String, CaseIterable {
         }
     }
 
+    /// The agent's own app, which shows its sessions in one window.
+    var desktopApp: String? {
+        switch self {
+        case .claude: "com.anthropic.claudefordesktop"
+        case .codex: "com.openai.codex"
+        case .mini: nil
+        }
+    }
+
     /// The agents `voice.agents` can name.
     static var hooked: [CodingAgent] { allCases.filter { !$0.hookEvents.isEmpty } }
 
@@ -130,6 +139,10 @@ final class ClaudeVoice {
         var language: String?
         /// A few words about the task, from the latest rewrite.
         var label: String?
+        /// Behind Codex's shared app server, the window is found by its title.
+        var byTitle = false
+        /// No single window had that title; tried again after the next prompt.
+        var titleMissed = false
     }
 
     struct Spoken: Equatable {
@@ -265,6 +278,7 @@ final class ClaudeVoice {
 
         switch name {
         case "UserPromptSubmit":
+            findByTitle(id, prompted: true)
             pinWindow(id)
             if let prompt = event["prompt"] as? String, let language = ClaudeSpeakable.language(of: prompt) {
                 sessions[id]?.language = language
@@ -495,7 +509,7 @@ final class ClaudeVoice {
     /// app, every session there counts. Without a pid: the window title.
     private func watching(_ id: String) -> Bool {
         guard let session = sessions[id] else { return false }
-        guard let host = host(of: id) else { return Self.inFront(project: session.project) }
+        guard let host = host(of: id) else { return Self.inFront(project: session.project, agent: session.agent) }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == host else { return false }
         // With two windows in one app, only the session's own counts.
         guard let pinned = session.rect ?? session.window.flatMap(SpeakingFrame.frame(of:)) else { return true }
@@ -510,16 +524,64 @@ final class ClaudeVoice {
     }
 
     private func host(of id: String) -> pid_t? {
-        if sessions[id]?.hostPid == nil, let pid = sessions[id]?.pid {
+        guard let session = sessions[id], session.hostPid == nil, !session.byTitle, let pid = session.pid
+        else { return sessions[id]?.hostPid }
+        guard session.agent == .codex else {
             sessions[id]?.hostPid = SpeakingFrame.hostApp(of: pid)?.processIdentifier
+            return sessions[id]?.hostPid
+        }
+        switch SpeakingFrame.codexHost(SpeakingFrame.ancestors(of: pid)) {
+        case .app(let app): sessions[id]?.hostPid = app
+        case .byTitle: sessions[id]?.byTitle = true
+        case .none: break
         }
         return sessions[id]?.hostPid
+    }
+
+    /// Codex's shared app server hides which terminal a session runs in. Just
+    /// after a prompt, a terminal in front whose window names the project is
+    /// the one. Else the only terminal window that names it and that no other
+    /// such session holds.
+    private func findByTitle(_ id: String, prompted: Bool) {
+        _ = host(of: id)
+        guard let session = sessions[id], session.byTitle else { return }
+        if prompted {
+            // The session may have moved since: found afresh on each prompt.
+            sessions[id]?.hostPid = nil
+            sessions[id]?.window = nil
+            sessions[id]?.rect = nil
+            sessions[id]?.titleMissed = false
+        } else if session.hostPid != nil || session.titleMissed {
+            return
+        }
+        if prompted, let front = NSWorkspace.shared.frontmostApplication,
+           Self.terminalHosts.contains(front.bundleIdentifier ?? ""),
+           SpeakingFrame.focusedWindow(host: front.processIdentifier, naming: session.project) != nil {
+            // `pinWindow` pins its focused pane or window next.
+            sessions[id]?.hostPid = front.processIdentifier
+            return
+        }
+        let taken = activeSessions.compactMap { $0.key != id && $0.value.byTitle ? $0.value.rect : nil }
+        guard let (host, window) = SpeakingFrame.titledWindow(project: session.project, hosts: Self.terminalHosts,
+                                                              taken: taken) else {
+            sessions[id]?.titleMissed = true
+            Log.write("claude voice: no single terminal window names \(session.project), no glow")
+            return
+        }
+        sessions[id]?.hostPid = host
+        sessions[id]?.window = window
+        sessions[id]?.rect = SpeakingFrame.frame(of: window)
+        let app = NSRunningApplication(processIdentifier: host)?.localizedName ?? "pid \(host)"
+        Log.write("claude voice: found \(session.project) in \(app) by its window title")
     }
 
     /// A prompt was just sent from this session, so the focused window of its
     /// host is the session's own.
     private func pinWindow(_ id: String) {
-        guard let host = host(of: id), NSWorkspace.shared.frontmostApplication?.processIdentifier == host,
+        guard let host = host(of: id), let session = sessions[id],
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == host,
+              // Found by title: the focused window is the session's only when it names the project too.
+              !session.byTitle || SpeakingFrame.focusedWindow(host: host, naming: session.project) != nil,
               let target = SpeakingFrame.focusedPane(host: host) ?? SpeakingFrame.focusedWindow(host: host)
         else { return }
         sessions[id]?.window = target
@@ -532,6 +594,7 @@ final class ClaudeVoice {
         // A glow still fading out must not write over a window pinned since.
         frame.onRetarget = nil
         guard let id else { return frame.hide() }
+        findByTitle(id, prompted: false)
         // Another session speaks now: the old window's glow goes at once.
         guard settings.frame, let session = sessions[id], let host = host(of: id) else {
             return frame.hide(now: true)
@@ -621,6 +684,8 @@ final class ClaudeVoice {
             session.hostPid = nil
             session.window = nil
             session.rect = nil
+            session.byTitle = false
+            session.titleMissed = false
         }
         session.pid = pid ?? session.pid
         let transcript = Self.transcript(event)
@@ -681,18 +746,18 @@ final class ClaudeVoice {
         return pick
     }
 
-    private static let claudeHosts: Set<String> = [
-        "com.anthropic.claudefordesktop", "com.apple.Terminal", "com.googlecode.iterm2",
+    private static let terminalHosts: Set<String> = [
+        "com.apple.Terminal", "com.googlecode.iterm2",
         "com.mitchellh.ghostty", "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92",
         "dev.zed.Zed", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty",
     ]
 
-    /// Whether this project's Claude window is the one in front: a Claude host
-    /// is frontmost and its window title names the project. A host window with
-    /// no readable title counts as in front.
-    static func inFront(project: String) -> Bool {
-        guard let app = NSWorkspace.shared.frontmostApplication,
-              let bundle = app.bundleIdentifier, claudeHosts.contains(bundle) else { return false }
+    /// Whether this project's window is the one in front: a terminal or the
+    /// agent's own app is frontmost and its window title names the project. A
+    /// host window with no readable title counts as in front.
+    static func inFront(project: String, agent: CodingAgent) -> Bool {
+        guard let app = NSWorkspace.shared.frontmostApplication, let bundle = app.bundleIdentifier,
+              terminalHosts.contains(bundle) || bundle == agent.desktopApp else { return false }
         let element = AXUIElementCreateApplication(app.processIdentifier)
         var window: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &window) == .success,

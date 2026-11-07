@@ -569,6 +569,74 @@ enum ClaudeHooksCommand {
               got: sight([(terminal, pane.insetBy(dx: 200, dy: 200)), ownWindow]), want: "hidden")
         check("the glow hides when its window is off screen", got: sight([(other, CGRect(x: 0, y: 0, width: 40, height: 40))]),
               want: "hidden")
+        typealias Ancestor = SpeakingFrame.Ancestor
+        let shell = Ancestor(pid: 3, arguments: ["-zsh"])
+        let iterm = Ancestor(pid: 9, bundle: "com.googlecode.iterm2", regular: true)
+        let tui = Ancestor(pid: 5, arguments: ["/opt/homebrew/bin/codex", "--yolo"])
+        let desktop = Ancestor(pid: 7, bundle: "com.openai.codex", regular: true)
+        func host(_ chain: [Ancestor]) -> String {
+            switch SpeakingFrame.codexHost(chain) {
+            case .app(let pid): "app \(pid)"
+            case .byTitle: "title"
+            case .none: "none"
+            }
+        }
+        let server = Ancestor(pid: 4, arguments: ["codex", "app-server", "--analytics-default-enabled"])
+        let daemon = Ancestor(pid: 4, arguments: ["/usr/local/bin/codex", "app-server", "--managed-daemon"])
+        check("codex in the desktop app: the app", got: host([server, Ancestor(pid: 6, arguments: ["ChatGPT Helper"]), desktop]),
+              want: "app 7")
+        check("codex in a terminal, no daemon: the terminal", got: host([tui, shell, iterm]), want: "app 9")
+        check("codex behind the daemon a first session started: by title",
+              got: host([daemon, tui, shell, iterm]), want: "title")
+        check("codex behind an older daemon with no flag, under a session: by title",
+              got: host([server, tui, shell, iterm]), want: "title")
+        check("codex behind a daemon left to launchd: by title", got: host([daemon]), want: "title")
+        check("codex behind an older daemon left to launchd: by title", got: host([server]), want: "title")
+        check("codex behind the daemon the desktop app started: by title", got: host([daemon, desktop]), want: "title")
+        check("codex in the VS Code extension: VS Code",
+              got: host([server, Ancestor(pid: 6, arguments: ["Code Helper (Plugin)"]),
+                         Ancestor(pid: 8, bundle: "com.microsoft.VSCode", regular: true)]), want: "app 8")
+        check("the CLI bundled in ChatGPT.app is not a host",
+              got: host([Ancestor(pid: 5, bundle: "com.openai.codex.cli", regular: true, arguments: ["codex"]), shell, iterm]),
+              want: "app 9")
+        check("codex under tmux: no host", got: host([tui, shell, Ancestor(pid: 2, arguments: ["tmux"])]), want: "none")
+        var procargs: [UInt8] = [3, 0, 0, 0]
+        for field in ["/x/codex", "", "", "codex", "app-server", "--managed-daemon", "HOME=/u"] {
+            procargs += Array(field.utf8) + [0]
+        }
+        check("process arguments stop before the environment",
+              got: SpeakingFrame.arguments(procargs: procargs).joined(separator: " "),
+              want: "codex app-server --managed-daemon")
+        check("this process's own arguments are read",
+              got: SpeakingFrame.ancestors(of: getpid()).first?.arguments.dropFirst().first ?? "-",
+              want: "--claude-voice-test")
+        let long = "a-rather-long-project-folder"
+        let titles: [(String?, String, Bool)] = [
+            ("⠋ Working · fix the glow · parrotflow", "parrotflow", true),
+            ("PARROTFLOW", "parrotflow", true),
+            ("codex · parrotflow-scratch", "parrotflow", false),
+            ("rapid notes", "api", false),
+            ("codex · a-rather-long-project...", long, true),
+            ("codex · \(long)", long, false),
+            ("parrotflow", "", false),
+            (nil, "parrotflow", false),
+        ]
+        for (title, project, want) in titles {
+            check("\"\(title ?? "no title")\" names \"\(project)\": \(want)",
+                  got: "\(SpeakingFrame.names(title, project: project))", want: "\(want)")
+        }
+        let left = CGRect(x: 0, y: 0, width: 800, height: 600), right = CGRect(x: 820, y: 0, width: 800, height: 600)
+        func picked(_ windows: [(title: String?, rect: CGRect?)], taken: [CGRect] = []) -> String {
+            SpeakingFrame.pick(windows, project: "parrotflow", taken: taken).map { "\($0)" } ?? "none"
+        }
+        check("one window names the project: that one",
+              got: picked([("zsh", left), ("codex · parrotflow", right)]), want: "1")
+        check("two windows name the project: none", got: picked([("parrotflow", left), ("parrotflow", right)]), want: "none")
+        check("no window names the project: none", got: picked([("zsh", left), ("notes", right)]), want: "none")
+        check("two name it, another session holds one: the other",
+              got: picked([("parrotflow", left), ("parrotflow", right)], taken: [left]), want: "1")
+        check("the only one is held by another session: none",
+              got: picked([("parrotflow", left), ("zsh", right)], taken: [left]), want: "none")
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("claude-hooks-\(getpid())")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let settings = folder.appendingPathComponent("settings.json")
