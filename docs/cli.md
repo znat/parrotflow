@@ -158,8 +158,9 @@ With no path it reads the variant's `config.yaml`, and honours
 and a unified diff:
 
 ```
-/Users/you/.config/parrotflow/config.yaml: version 1 -> 2
+/Users/you/.config/parrotflow/config.yaml: version 1 -> 3
   2  built-in scripts declare returns:, parse: and readings:, so the values the example wrote for them are gone; disfluency gets parse: vectors
+  3  claude: is voice:, and its folders and codex keys are voice.agents
 --- config.yaml
 +++ config.yaml
 …

@@ -704,6 +704,7 @@ enum ClaudeHooksCommand {
             let on = targets(settings, hook: release).filter(\.enabled)
             return on.map { "\($0.hook.agent.rawValue) " + $0.folders.map(shown).joined(separator: ",") }
                 .joined(separator: "; ") + (settings.unknownAgents.isEmpty ? "" : " ?" + settings.unknownAgents.joined(separator: ","))
+                + (settings.refusedAgents == nil ? "" : " !")
         }
         check("no agents key: claude in ~/.claude", got: agents("enabled: true"), want: "claude ~/.claude")
         check("agents commented out: claude in ~/.claude", got: agents("agents:"), want: "claude ~/.claude")
@@ -712,6 +713,9 @@ enum ClaudeHooksCommand {
               got: agents("agents: {claude: [~/a, ~/b], codex: ~/c}") + " | " + agents("agents: {claude: []}"),
               want: "claude ~/a,~/b; codex ~/c | claude ~/.claude")
         check("an unknown agent is set aside", got: agents("agents: {claude: , zork: ~/z, mini: }"), want: "claude ~/.claude ?mini,zork")
+        check("a value that is not a folder: the default folder, said, and the rest still loads",
+              got: agents("agents: {claude: {x: 1}}\nprogress: false") + " | " + agents("agents: [claude, codex]"),
+              want: "claude ~/.claude ! | claude ~/.claude !")
         var withFolder = Config()
         withFolder.voice.agents[.codex] = ["~/codex-elsewhere"]
         check("--agent codex installs into voice.agents.codex",

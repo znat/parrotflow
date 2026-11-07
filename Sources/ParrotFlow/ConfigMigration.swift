@@ -24,6 +24,8 @@ enum ConfigMigration {
         let apply: ([String]) -> [String]
         /// What the edited file must hold. Asked of the decoded result.
         let holds: (Config) -> Bool
+        /// What to edit by hand when `holds` fails.
+        var byHand: String?
     }
 
     static let steps: [Step] = [sentenceRepairTransform, scriptsDeclareNeeds, voiceSection]
@@ -55,6 +57,7 @@ enum ConfigMigration {
                 return "the upgraded config would not load — \(why)"
             case .notDone(let version):
                 return "step \(version) did not do what it is for"
+                    + (ConfigMigration.steps.first { $0.version == version }?.byHand.map { ". " + $0 } ?? "")
             }
         }
     }
@@ -628,7 +631,9 @@ enum ConfigMigration {
             out[at] = "voice:" + rest
             return out
         },
-        holds: { !$0.retiredKeys.contains("claude") }
+        holds: { !$0.retiredKeys.contains("claude") },
+        byHand: "Rename `claude:` to `voice:` by hand, with `folders` and `codex` under"
+            + " `voice.agents`, and keep only one of `claude:` and `voice:`"
     )
 
     /// `folders:` becomes `agents:` with `claude:` under it, in its place.

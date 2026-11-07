@@ -2860,6 +2860,8 @@ struct Config: Decodable, Equatable {
         var agents: [CodingAgent: [String]] = [.claude: []]
         /// Names under `agents:` that are no agent the app hooks.
         var unknownAgents: [String] = []
+        /// What `problems()` says about an `agents:` it could not read.
+        var refusedAgents: String?
         var progress = true
         /// Progress lines in the model's words, with the reason when there is one.
         var explain = true
@@ -2914,19 +2916,7 @@ struct Config: Decodable, Equatable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
             if c.contains(.agents), try !c.decodeNil(forKey: .agents) {
-                let written = try c.nestedContainer(keyedBy: AgentKey.self, forKey: .agents)
-                agents = [:]
-                for key in written.allKeys {
-                    guard let agent = CodingAgent(rawValue: key.stringValue), CodingAgent.hooked.contains(agent) else {
-                        unknownAgents.append(key.stringValue)
-                        continue
-                    }
-                    let folders = try written.decodeNil(forKey: key) ? []
-                        : (try? written.decode(String.self, forKey: key)).map { [$0] }
-                        ?? written.decode([String].self, forKey: key)
-                    agents[agent] = folders.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-                }
-                unknownAgents.sort()
+                readAgents(c)
             }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .progress) { progress = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .explain) { explain = v }
@@ -2944,6 +2934,33 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent([String].self, forKey: .localVoices) { localVoices = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .progressLocal) { progressLocal = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .localPlacement) { localPlacement = v }
+        }
+
+        /// A value it cannot read is said by `problems()`, and the rest of the
+        /// config still loads.
+        private mutating func readAgents(_ c: KeyedDecodingContainer<CodingKeys>) {
+            guard let written = try? c.nestedContainer(keyedBy: AgentKey.self, forKey: .agents) else {
+                refusedAgents = "not a map of agents to folders — using claude alone"
+                return
+            }
+            agents = [:]
+            var refused: [String] = []
+            for key in written.allKeys {
+                guard let agent = CodingAgent(rawValue: key.stringValue), CodingAgent.hooked.contains(agent) else {
+                    unknownAgents.append(key.stringValue)
+                    continue
+                }
+                let folders = (try? written.decodeNil(forKey: key)) == true ? []
+                    : (try? written.decode(String.self, forKey: key)).map { [$0] }
+                    ?? (try? written.decode([String].self, forKey: key))
+                if folders == nil { refused.append(key.stringValue) }
+                agents[agent] = (folders ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            }
+            unknownAgents.sort()
+            if !refused.isEmpty {
+                refusedAgents = refused.sorted().joined(separator: ", ")
+                    + (refused.count == 1 ? " takes" : " take") + " a folder or a list of folders — using the default folder"
+            }
         }
 
         private struct AgentKey: CodingKey {
@@ -3209,6 +3226,7 @@ struct Config: Decodable, Equatable {
                 + (one ? " is not an agent" : " are not agents") + " the app hooks — expected "
                 + CodingAgent.hooked.map(\.rawValue).joined(separator: " or "))
         }
+        if let refused = voice.refusedAgents { found.append("voice.agents: \(refused)") }
         let speech = voice.speech.trimmingCharacters(in: .whitespaces)
         if !speech.isEmpty {
             if let spec = model(named: speech) {

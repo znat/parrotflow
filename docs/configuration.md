@@ -1389,7 +1389,8 @@ hooks are taken out of its default folder. Hooks in a folder you no longer
 list stay; `--uninstall-claude-hooks --folder <dir>` takes them out. Without an
 `agents` key, `claude` alone is on, in `~/.claude`, as before agents had a
 choice. `agents: {}` turns every agent off. Another name under `agents` fails
-`--check-config`.
+`--check-config`. So does a value that is not a folder or a list of folders;
+that agent then uses its default folder, and the rest of the config loads.
 
 This section was `claude:` before version 3. The upgrade at launch renames it:
 `folders` becomes `agents.claude`, and `codex: true` becomes `agents.codex`,
