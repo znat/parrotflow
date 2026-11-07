@@ -204,13 +204,24 @@ final class Speaker {
         _ sentence: String, style: Style?, localVoice lineVoice: String?, emit: @escaping @MainActor ([Float]) -> Bool
     ) async {
         if let remote, let style {
+            // A stream that breaks after its first piece would be said twice
+            // if PocketTTS took the whole sentence.
+            var started = false
+            let tracked: @MainActor ([Float]) -> Bool = { samples in
+                started = true
+                return emit(samples)
+            }
             do {
                 let timing = try await RemoteSpeech.stream(
-                    sentence, voice: style.voice, tone: style.tone, speed: speed, config: remote, emit: emit
+                    sentence, voice: style.voice, tone: style.tone, speed: speed, config: remote, emit: tracked
                 )
                 Log.write(String(format: "claude voice: %@ (%@) first sound %.2fs, %d chars in %.2fs, %@ at %d Hz",
                                  remote.name, style.voice, timing.firstAudio, sentence.count, timing.total,
                                  timing.contentType, timing.rate))
+                return
+            } catch where started {
+                Log.write("claude voice: \(remote.name) stopped part way, the rest is skipped — "
+                    + error.localizedDescription)
                 return
             } catch {
                 Log.write("claude voice: \(remote.name) failed, PocketTTS takes this one — "

@@ -65,7 +65,8 @@ enum RemoteSpeech {
 
     /// `tone` goes out as `instructions`. A model that refuses it with a 400
     /// is asked once more without it. `emit` says false once the line is
-    /// dropped. Throws only before any audio was handed on.
+    /// dropped. A connection that breaks mid-stream throws after audio was
+    /// handed on.
     static func stream(
         _ text: String, voice: String, tone: String?, speed: Float, config: ModelSpec,
         emit: @escaping @MainActor ([Float]) -> Bool
