@@ -545,15 +545,20 @@ enum ClaudeSpeakable {
     /// wrap-up recap, else the last text Claude wrote. Read when a prompt is
     /// sent, so the turn it starts has nothing in it yet.
     static func latestSummary(transcript url: URL, tailBytes: Int = 512 * 1024) -> String? {
+        tail(of: url, bytes: tailBytes).flatMap(latestSummary(lines:))
+    }
+
+    /// The last `bytes` of a `.jsonl` file, as lines.
+    static func tail(of url: URL, bytes: Int) -> [String]? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
-        try? handle.seek(toOffset: size > UInt64(tailBytes) ? size - UInt64(tailBytes) : 0)
+        try? handle.seek(toOffset: size > UInt64(bytes) ? size - UInt64(bytes) : 0)
         guard let data = try? handle.readToEnd() else { return nil }
         // The tail can start inside a character; that first line is cut anyway.
         // swiftlint:disable:next optional_data_string_conversion
         let text = String(decoding: data, as: UTF8.self)
-        return latestSummary(lines: text.split(separator: "\n").map(String.init))
+        return text.split(separator: "\n").map(String.init)
     }
 
     static func latestSummary(lines: [String]) -> String? {
@@ -579,15 +584,7 @@ enum ClaudeSpeakable {
 
     /// Reads the tail of a session's `.jsonl` and returns the last turn.
     static func lastTurn(transcript url: URL, tailBytes: Int = 512 * 1024) -> TurnEnd? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-        let size = (try? handle.seekToEnd()) ?? 0
-        let start = size > UInt64(tailBytes) ? size - UInt64(tailBytes) : 0
-        try? handle.seek(toOffset: start)
-        guard let data = try? handle.readToEnd() else { return nil }
-        // swiftlint:disable:next optional_data_string_conversion
-        let text = String(decoding: data, as: UTF8.self)
-        return lastTurn(lines: text.split(separator: "\n").map(String.init))
+        tail(of: url, bytes: tailBytes).flatMap(lastTurn(lines:))
     }
 
     static func lastTurn(lines: [String]) -> TurnEnd? {
@@ -665,6 +662,6 @@ enum ClaudeSpeakable {
     }
 }
 
-private extension String {
+extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
 }

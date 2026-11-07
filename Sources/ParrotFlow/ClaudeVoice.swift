@@ -2,12 +2,37 @@ import AppKit
 import FluidAudio
 import ApplicationServices
 
-/// The coding agent a hook event comes from. Only Claude Code is spoken so far.
+/// The coding agent a hook event comes from. Claude Code and Codex are spoken so far.
 enum CodingAgent: String {
     case claude, codex, mini
+
+    func progress(tool: String, input: [String: Any]) -> ClaudeSpeakable.Line? {
+        switch self {
+        case .claude: ClaudeSpeakable.progress(tool: tool, input: input)
+        case .codex: CodexSpeakable.progress(tool: tool, input: input)
+        case .mini: nil
+        }
+    }
+
+    /// The turn that just ended, read from this agent's own transcript format.
+    func lastTurn(transcript: URL, tailBytes: Int = 512 * 1024) -> ClaudeSpeakable.TurnEnd? {
+        switch self {
+        case .claude: ClaudeSpeakable.lastTurn(transcript: transcript, tailBytes: tailBytes)
+        case .codex: CodexSpeakable.lastTurn(transcript: transcript, tailBytes: tailBytes)
+        case .mini: nil
+        }
+    }
+
+    func latestSummary(transcript: URL) -> String? {
+        switch self {
+        case .claude: ClaudeSpeakable.latestSummary(transcript: transcript)
+        case .codex: CodexSpeakable.latestSummary(transcript: transcript)
+        case .mini: nil
+        }
+    }
 }
 
-/// Speaks Claude Code's progress and answers.
+/// Speaks Claude Code's and Codex's progress and answers.
 ///
 /// Claude Code runs `ParrotFlow --speak-event` from a hook. That process
 /// passes the hook's JSON to this socket and exits, so the hook never waits.
@@ -27,7 +52,8 @@ final class ClaudeVoice {
     private var warmedVoice = ""
     /// Each hook problem is logged once, not on every reload.
     private var hookProblems: Set<String> = []
-    private var ignoredAgents: Set<String> = []
+    /// Agents, events and transcripts this build skips, each logged once.
+    private var skipped: Set<String> = []
     private var lastProgressAt = Date.distantPast
     private var lastKind: ClaudeSpeakable.Kind?
     /// By `key(_:_:)`, so two agents' session ids never meet.
@@ -170,7 +196,8 @@ final class ClaudeVoice {
     static func speaksFor(_ name: String) -> CodingAgent? {
         switch CodingAgent(rawValue: name) {
         case .claude: .claude
-        case .codex, .mini, nil: nil
+        case .codex: .codex
+        case .mini, nil: nil
         }
     }
 
@@ -184,14 +211,15 @@ final class ClaudeVoice {
               let event = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
               let name = event["hook_event_name"] as? String else { return }
         guard let agent = Self.speaksFor(named) else {
-            if ignoredAgents.insert(named).inserted {
-                Log.write("claude voice: events from agent \"\(named.prefix(40))\" are not spoken by this build")
-            }
-            return
+            return skip("agent " + named, "events from agent \"\(named.prefix(40))\" are not spoken by this build")
+        }
+        if agent == .codex, Self.isSubagent(event) {
+            return skip("codex subagent", "Codex subagent events are not spoken")
         }
         let id = Self.key(agent, event["session_id"] as? String ?? "")
         note(session: id, agent: agent, event: event, pid: pid)
         warmIfNeeded()
+        let transcript = Self.transcript(event)
 
         switch name {
         case "UserPromptSubmit":
@@ -200,9 +228,8 @@ final class ClaudeVoice {
                 sessions[id]?.language = language
             }
             if let prompt = event["prompt"] as? String, !prompt.isEmpty {
-                let transcript = (event["transcript_path"] as? String).map { URL(fileURLWithPath: $0) }
                 Task.detached {
-                    let latest = transcript.flatMap { ClaudeSpeakable.latestSummary(transcript: $0) }
+                    let latest = transcript.flatMap { agent.latestSummary(transcript: $0) }
                     await MainActor.run { [weak self] in self?.remind(id, request: prompt, latest: latest) }
                 }
             }
@@ -220,12 +247,15 @@ final class ClaudeVoice {
                 answer(ended, written: nil, session: id, settle: 0)
                 return
             }
-            guard settings.progress, let line = ClaudeSpeakable.progress(tool: tool, input: input) else { return }
-            let transcript = (event["transcript_path"] as? String).map { URL(fileURLWithPath: $0) }
+            guard settings.progress, let line = agent.progress(tool: tool, input: input) else { return }
             progress(line, session: id, tool: tool, input: input, transcript: transcript)
         case "Notification":
             guard let message = event["message"] as? String,
                   let said = ClaudeSpeakable.notification(message) else { return }
+            whenFree { [weak self] in self?.say(said, session: id) }
+        case "PermissionRequest":
+            let said = CodexSpeakable.waiting(tool: event["tool_name"] as? String ?? "",
+                                              input: event["tool_input"] as? [String: Any] ?? [:])
             whenFree { [weak self] in self?.say(said, session: id) }
         case "Stop":
             guard event["stop_hook_active"] as? Bool != true else { return }
@@ -233,12 +263,28 @@ final class ClaudeVoice {
                 recapTurns[id] = nil
                 return
             }
-            let transcript = (event["transcript_path"] as? String).map { URL(fileURLWithPath: $0) }
             answer(nil, transcript: transcript, written: event["last_assistant_message"] as? String,
                    session: id, settle: 0.4)
         default:
-            break
+            skip(agent.rawValue + " " + name, "\(agent.rawValue) event \(name.prefix(40)) is not spoken")
         }
+    }
+
+    /// A Codex subagent's thread would speak as a session of its own. Codex
+    /// writes absent optional fields as null.
+    static func isSubagent(_ event: [String: Any]) -> Bool {
+        (event["agent_id"] as? String)?.isEmpty == false
+    }
+
+    private func skip(_ key: String, _ why: String) {
+        if skipped.insert(key).inserted { Log.write("claude voice: " + why) }
+    }
+
+    /// The event's transcript, nil when it has none or it is a Codex rollout
+    /// compressed to `.jsonl.zst`: macOS has no zstd decoder.
+    static func transcript(_ event: [String: Any]) -> URL? {
+        guard let path = (event["transcript_path"] as? String)?.nilIfEmpty, !path.hasSuffix(".zst") else { return nil }
+        return URL(fileURLWithPath: path)
     }
 
     private func progress(
@@ -266,8 +312,9 @@ final class ClaudeVoice {
         let limit = explainLimit
         let task = sessions[session]?.task
         let language = sessions[session]?.language ?? "en"
+        let agent = sessions[session]?.agent
         Task.detached {
-            let context = transcript.flatMap { ClaudeSpeakable.lastTurn(transcript: $0, tailBytes: 128 * 1024) }?
+            let context = transcript.flatMap { agent?.lastTurn(transcript: $0, tailBytes: 128 * 1024) }?
                 .latestText
             let started = Date()
             let raw = try? await LLM.complete(
@@ -303,9 +350,10 @@ final class ClaudeVoice {
         let toned = speaker.remote != nil
         let request = sessions[session]?.task
         let language = sessions[session]?.language
+        let agent = sessions[session]?.agent
         Task.detached {
             if settle > 0 { try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000)) }
-            let turn = ended ?? transcript.flatMap { ClaudeSpeakable.lastTurn(transcript: $0) }
+            let turn = ended ?? transcript.flatMap { agent?.lastTurn(transcript: $0) }
             let spoken = await Self.spoken(turn: turn, written: written, request: request, language: language,
                                            settings: settings, config: config, toned: toned)
             await MainActor.run { [weak self] in
@@ -482,7 +530,11 @@ final class ClaudeVoice {
             session.rect = nil
         }
         session.pid = pid ?? session.pid
-        session.transcript = (event["transcript_path"] as? String).map { URL(fileURLWithPath: $0) } ?? session.transcript
+        let transcript = Self.transcript(event)
+        if transcript == nil, let path = (event["transcript_path"] as? String)?.nilIfEmpty {
+            skip("transcript " + path, "\(session.project): \(ClaudeSpeakable.basename(path)) is compressed, not read")
+        }
+        session.transcript = transcript ?? session.transcript
         sessions[id] = session
     }
 
@@ -607,8 +659,9 @@ final class ClaudeVoice {
     private func remindFromTranscript(_ id: String) {
         guard let session = sessions[id], session.reminder == nil, !session.reminding,
               let transcript = session.transcript else { return }
+        let agent = session.agent
         Task.detached {
-            guard let turn = ClaudeSpeakable.lastTurn(transcript: transcript),
+            guard let turn = agent.lastTurn(transcript: transcript),
                   let asked = turn.prompt, !asked.isEmpty else { return }
             await MainActor.run { [weak self] in
                 self?.remind(id, request: asked, latest: turn.recap ?? turn.latestText)

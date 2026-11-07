@@ -262,7 +262,11 @@ enum ClaudeHooksCommand {
     struct Cases: Decodable {
         struct Clean: Decodable { var name: String; var input: String; var want: String }
         struct Progress: Decodable {
-            var name: String; var tool: String; var input: [String: String]?; var want: String?
+            var name: String; var tool: String; var input: [String: String]?; var want: String?; var agent: String?
+        }
+        struct CodexTurn: Decodable {
+            var name: String; var lines: [String]; var prompt: String?; var answer: String; var latest: String?
+            var earlier: String?
         }
         struct Turn: Decodable {
             var name: String; var lines: [String]; var answer: String; var recap: String?
@@ -289,11 +293,14 @@ enum ClaudeHooksCommand {
         var grounded: [Grounding] = []
         var speakable: [Clean] = []
         var spoken: [Clean] = []
-        struct Summary: Decodable { var name: String; var lines: [String]; var want: String? }
+        struct Summary: Decodable { var name: String; var lines: [String]; var want: String?; var agent: String? }
         var summary: [Summary] = []
+        var waiting: [Progress] = []
+        var codexTurns: [CodexTurn] = []
 
         enum CodingKeys: String, CodingKey {
-            case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary
+            case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary, waiting
+            case codexTurns = "codex_turns"
         }
 
         init(from decoder: Decoder) throws {
@@ -309,6 +316,8 @@ enum ClaudeHooksCommand {
             speakable = try c.decodeIfPresent([Clean].self, forKey: .speakable) ?? []
             spoken = try c.decodeIfPresent([Clean].self, forKey: .spoken) ?? []
             summary = try c.decodeIfPresent([Summary].self, forKey: .summary) ?? []
+            waiting = try c.decodeIfPresent([Progress].self, forKey: .waiting) ?? []
+            codexTurns = try c.decodeIfPresent([CodexTurn].self, forKey: .codexTurns) ?? []
         }
     }
 
@@ -336,9 +345,20 @@ enum ClaudeHooksCommand {
         for item in cases.clean {
             check(item.name, got: ClaudeSpeakable.clean(item.input), want: item.want)
         }
+        func agent(_ name: String?) -> CodingAgent { name.flatMap(CodingAgent.init(rawValue:)) ?? .claude }
         for item in cases.progress {
-            let line = ClaudeSpeakable.progress(tool: item.tool, input: item.input ?? [:])
+            let line = agent(item.agent).progress(tool: item.tool, input: item.input ?? [:])
             check(item.name, got: line?.text, want: item.want)
+        }
+        for item in cases.waiting {
+            check(item.name, got: CodexSpeakable.waiting(tool: item.tool, input: item.input ?? [:]), want: item.want)
+        }
+        for item in cases.codexTurns {
+            let ended = CodexSpeakable.lastTurn(lines: item.lines)
+            check(item.name, got: ended?.answer, want: item.answer)
+            check(item.name + " (prompt)", got: ended?.prompt, want: item.prompt)
+            check(item.name + " (latest)", got: ended?.latestText, want: item.latest)
+            check(item.name + " (earlier)", got: ended?.earlier?.answer, want: item.earlier)
         }
         for item in cases.turns {
             let ended = ClaudeSpeakable.lastTurn(lines: item.lines)
@@ -367,7 +387,9 @@ enum ClaudeHooksCommand {
             check(item.name, got: said ? "named" : "not named", want: item.named ? "named" : "not named")
         }
         for item in cases.summary {
-            check(item.name, got: ClaudeSpeakable.latestSummary(lines: item.lines), want: item.want)
+            let got = agent(item.agent) == .codex
+                ? CodexSpeakable.latestSummary(lines: item.lines) : ClaudeSpeakable.latestSummary(lines: item.lines)
+            check(item.name, got: got, want: item.want)
         }
         for item in cases.spoken {
             check(item.name, got: ClaudeSpeakable.clean(item.input), want: item.want)
@@ -465,6 +487,26 @@ enum ClaudeHooksCommand {
               got: ClaudeSpeakable.lastTurn(transcript: tail, tailBytes: transcript.utf8.count - 1)?.answer,
               want: "Done.")
         try? FileManager.default.removeItem(at: tail)
+        let rollout = tail.deletingPathExtension().appendingPathExtension("rollout.jsonl")
+        let rolloutLines = [
+            #"{"type":"event_msg","payload":{"type":"user_message","message":"an old prompt cut by the tail"}}"#,
+            #"{"type":"event_msg","payload":{"type":"user_message","message":"rename foo"}}"#,
+            #"{"type":"event_msg","payload":{"type":"agent_message","message":"Renamed it.","phase":"final_answer"}}"#,
+        ]
+        let rolloutText = rolloutLines.joined(separator: "\n") + "\n"
+        try? Data(rolloutText.utf8).write(to: rollout)
+        let codexTurn = CodingAgent.codex.lastTurn(transcript: rollout,
+                                                   tailBytes: rolloutText.utf8.count - rolloutLines[0].utf8.count + 5)
+        check("a Codex rollout tail reads its last turn, the cut line is skipped",
+              got: [codexTurn?.prompt, codexTurn?.answer, codexTurn?.earlier == nil ? "no earlier" : "earlier"]
+                .map { $0 ?? "-" }.joined(separator: " | "),
+              want: "rename foo | Renamed it. | no earlier")
+        try? FileManager.default.removeItem(at: rollout)
+        check("a compressed Codex rollout is not read",
+              got: ClaudeVoice.transcript(["transcript_path": "/s/rollout-1.jsonl.zst"])?.path ?? "not read", want: "not read")
+        check("a plain Codex rollout is read",
+              got: ClaudeVoice.transcript(["transcript_path": "/s/rollout-1.jsonl"])?.path ?? "not read",
+              want: "/s/rollout-1.jsonl")
         let pane = CGRect(x: 100, y: 200, width: 800, height: 600)
         check("a pane 3 points off is the same place",
               got: SpeakingFrame.close(pane, pane.offsetBy(dx: 3, dy: -3)) ? "same" : "other", want: "same")
@@ -558,7 +600,14 @@ enum ClaudeHooksCommand {
         }
         check("an event with no agent= line is Claude's", got: received("pid=42\n" + event), want: "42 claude event")
         check("agent=claude is Claude's", got: received("pid=42\nagent=claude\n" + event), want: "42 claude event")
+        check("agent=codex is Codex's", got: received("pid=42\nagent=codex\n" + event), want: "42 codex event")
         check("an unknown agent is not spoken", got: received("pid=42\nagent=zork\n" + event), want: "42 ignored event")
+        func thread(_ json: String) -> String {
+            let parsed = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] ?? [:]
+            return ClaudeVoice.isSubagent(parsed) ? "subagent" : "main"
+        }
+        check("a Codex event with a null agent_id is the main thread", got: thread(#"{"agent_id":null}"#), want: "main")
+        check("a Codex event with an agent_id is a subagent's", got: thread(#"{"agent_id":"a1"}"#), want: "subagent")
         check("an event with no header is Claude's", got: received(event), want: "- claude event")
         check("one session id under two agents is two sessions",
               got: "\(Set([ClaudeVoice.key(.claude, "s"), ClaudeVoice.key(.codex, "s"), ClaudeVoice.key(.claude, "s")]).count)",
