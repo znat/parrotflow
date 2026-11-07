@@ -168,20 +168,14 @@ final class Speaker {
             }
             pocketLoading = task
         }
+        let result = await task.result
         // A placement change during the load clears `pocketLoading`: that load is dropped and the new one used.
-        do {
-            let made = try await task.value
-            guard placement == localPlacement else { return try await loadedPocket() }
-            if pocketLoading == task {
-                pocket = made
-                pocketLoading = nil
-            }
-            return made
-        } catch {
-            guard placement == localPlacement else { return try await loadedPocket() }
-            if pocketLoading == task { pocketLoading = nil }
-            throw error
+        guard placement == localPlacement else { return try await loadedPocket() }
+        if pocketLoading == task {
+            pocketLoading = nil
+            pocket = try? result.get()
         }
+        return try result.get()
     }
 
     /// Makes the next sentence while the one before plays.
