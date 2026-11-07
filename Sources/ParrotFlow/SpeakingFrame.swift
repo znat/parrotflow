@@ -50,9 +50,15 @@ final class SpeakingFrame {
             NSAnimationContext.runAnimationGroup { $0.duration = 0.2; panel.animator().alphaValue = 1 }
         }
         follow?.invalidate()
+        // A read that timed out also gives nil, and `show` runs again only when the speaking session changes.
+        var misses = 0
         follow = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
             guard let self, self.target != nil, let panel = self.panel else { return }
-            guard let frame = self.resolve() else { return self.hide(now: true) }
+            guard let frame = self.resolve() else {
+                misses += 1
+                return misses >= 3 ? self.hide(now: true) : ()
+            }
+            misses = 0
             self.place(panel, around: frame)
         }
     }
