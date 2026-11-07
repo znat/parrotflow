@@ -1369,6 +1369,120 @@ was, not whether it was right. The same archive has the vocabulary pass
 correcting words the decoder scored 0.987 and 1.000. A low score is good
 evidence something is wrong; a high one is not evidence anything is right.
 
+## `claude`
+
+ParrotFlow can speak what Claude Code does and what it answers. It is off
+until you install the hooks:
+
+```sh
+$PF --install-claude-hooks
+```
+
+That adds four hooks to `settings.json` in every folder under `folders`:
+`PreToolUse`, `Stop`, `Notification` and `UserPromptSubmit`. Each one sends
+the event to the app's socket with `nc` and exits in about 10 ms. It never
+runs the app binary, so Claude is not held up when the app is not running,
+is uninstalled, or is a build without this feature. Restart open Claude Code sessions after installing.
+`--uninstall-claude-hooks` removes them and leaves your own hooks alone. The
+first copy of each `settings.json` is kept as `settings.json.parrotflow-backup`.
+
+```yaml
+claude:
+  enabled: true          # false stops listening; the hooks stay installed
+  folders:               # one per Claude Code account; default ~/.claude
+    - ~/.claude
+    - ~/.claude-personal
+  progress: true         # short lines while Claude works
+  explain: true          # those lines in the model's words, with the reason
+  frame: true            # a glow around the speaking session's window
+  model: ""              # a name under models:; empty means the default
+  voice: af_heart        # a Kokoro voice
+  speed: 1.0
+  local: kokoro          # the voice on this Mac: kokoro, or pocket (PocketTTS, streams)
+  local_voice: alba      # a PocketTTS voice
+  local_voices: []       # one per session, like speech_voices; PocketTTS has 27
+  local_placement: gpu   # where PocketTTS runs: gpu, ane or ane-state (Neural Engine)
+  progress_local: false  # progress lines on the local voice, answers on `speech`
+  speech: ""             # a name under models: for a remote voice; empty = Kokoro
+  speech_voices: [Achird, Sulafat, Zubenelgenubi, Callirrhoe, Umbriel, Aoede]
+  # speech_voice: Achird # one remote voice for every session; speech_voices wins
+  speech_tone: >-
+    Speak in a relaxed, friendly, natural tone, like a software engineer colleague
+    collaborating with a teammate, speaking face to face. Clear and conversational,
+    not performative.
+```
+
+`speech` sends each sentence to an OpenAI-style `/audio/speech` endpoint and
+plays the 24 kHz 16-bit PCM it returns. OpenRouter has one, for many voice
+models. The entry under `models:` takes its key like any other model:
+
+```yaml
+models:
+  openrouter-tts:
+    api: openai
+    model: google/gemini-3.1-flash-tts-preview
+    endpoint: https://openrouter.ai/api/v1
+claude:
+  speech: openrouter-tts
+  speech_voices: [Achird, Sulafat]   # Gemini has 30; any of them
+```
+
+Each session takes the first voice no active session holds, and keeps it.
+The default list is Gemini's friendly, warm, casual and easy-going voices.
+The firm and informative ones (`Kore`, `Charon`) sounded like announcements.
+With a remote voice, the `model` call that shortens an answer also returns a
+tone: `speech_tone`, shifted for what happened (pleased, a little sorry,
+curious). It goes out as `instructions`. A recap or a short answer keeps its
+own words; only the tone is asked for. A model that refuses `instructions` is
+asked again without them.
+
+A sentence the remote voice fails on is said by Kokoro, which loads then.
+The spoken text leaves your Mac, as it already does for a hosted `model`.
+
+What it says:
+
+- **Only while you watch:** progress lines are said only when the app that
+  session runs in is in front. Away from it, you hear only answers, questions,
+  plans to approve and permission prompts.
+- **While Claude works:** with `explain` and a model, one sentence on what
+  the work achieves ("I'm building the glow around the speaking window"),
+  not the tool action on a file. The model gets the tool call and the last thing
+  Claude wrote before it, and the command text leaves your Mac with them,
+with anything that looks like a secret replaced by `<redacted>`: bearer
+tokens, `*_KEY=` and `--token` values, provider keys, long opaque strings and
+URL query strings. An
+  explanation that takes over 5 s is dropped, since the call is likely done.
+  Without a model, or when the call fails: the Bash description in the first
+  person ("I'm checking the dev app"), "I'm editing Config.swift", or "I'm
+  looking through the code". At most one line every 6 seconds, and
+  none while you dictate or while it is already speaking.
+- **When Claude asks:** a question or a plan to approve is said at once.
+- **When the turn ends:** in the desktop app, the turn's recap. It is said
+  as soon as Claude sends it, before the closing message is written. Elsewhere the
+  answer is cleaned (code, tables, paths and links removed, `owner/repo#12`
+  said as "PR 12 in repo"). A short one is said as it is. A long one is
+  rewritten into one to three sentences by `model`. With no model, or when the
+  call fails, the first two sentences are said.
+- **Which session:** a line starts with its project, in a varied way
+  ("Update from parrotflow:", "parrotflow here:"), when the line before came
+  from another active session. A session that was quiet for two minutes is
+  named again when its window is not in front. Coming back to a session not
+  heard for 90 seconds, a one- or two-sentence reminder of what it is about
+  comes first, written by `model` from the session's latest request.
+- **Which window:** with `frame`, a glow in `feedback.primary_color` sits
+  around the speaking session's window and brightens with the voice. The
+  window is found from the Claude process: the app it runs in (the Claude
+  app, Terminal, Ghostty, VS Code…), then that app's only window, the one
+  whose title names the project, or its main window. The desktop app shows
+  every session in one window, so the glow goes around all of it. Under tmux
+  there is no app above Claude, and no glow.
+
+Pressing the hotkey or sending a new prompt in that session stops the voice.
+An answer that arrives while you dictate waits until you stop. The voice is
+Kokoro, through FluidAudio. It downloads on first use, and it speaks English
+only. A local model adds its load time to the answer: 14.5 s was measured cold
+on `gemma`. A fast hosted model suits this job better.
+
 ## `logging`
 
 What gets written to disk about a dictation, apart from the transcript itself.

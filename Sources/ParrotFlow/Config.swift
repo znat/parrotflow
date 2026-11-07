@@ -45,6 +45,8 @@ struct Config: Decodable, Equatable {
     var retiredKeys: [String] = []
     var updates: UpdatePolicy = UpdatePolicy()
     var logging: Logging = Logging()
+    /// Speaking Claude Code's progress and answers. See `ClaudeVoice`.
+    var claude: Claude = Claude()
     /// Everything nameable: `transforms:`, plus anything still written under
     /// the older `prompts:`.
     var transforms: [Transform] = []
@@ -127,7 +129,7 @@ struct Config: Decodable, Equatable {
         case version, hotkey, audio, feedback, transcription, llm, models, commands
         case transforms, prompts, updates, logging
         case freeForm = "free_form"
-        case lists
+        case lists, claude
     }
 
     private static let listReference = try? NSRegularExpression(pattern: #"\{\{(\w+)\}\}"#)
@@ -2849,6 +2851,82 @@ struct Config: Decodable, Equatable {
         }
     }
 
+    struct Claude: Decodable, Equatable {
+        var enabled = true
+        /// Each Claude Code config folder. `--install-claude-hooks` writes
+        /// into every one, since each is a separate account.
+        var folders: [String] = ["~/.claude"]
+        var progress = true
+        /// Progress lines in the model's words, with the reason when there is one.
+        var explain = true
+        /// A glow around the window of the session that is speaking.
+        var frame = true
+        /// A name under `models:`. Empty means the default model.
+        var model = ""
+        var voice = "af_heart"
+        var speed: Float = 1.0
+        /// The voice on this Mac: `kokoro`, or `pocket` (PocketTTS, which streams).
+        var local = "kokoro"
+        /// A PocketTTS voice; Kokoro uses `voice`.
+        var localVoice = "alba"
+        /// One per session on the local voice, like `speech_voices`. Empty: `local_voice` for all.
+        var localVoices: [String] = []
+        /// Progress lines on the local voice even when `speech` names a remote
+        /// one: they are short and should come at once.
+        var progressLocal = false
+        /// Where PocketTTS runs: `gpu`, `ane` or `ane-state` (the Neural Engine).
+        var localPlacement = "gpu"
+        /// A name under `models:` that speaks OpenAI's `/audio/speech`, such
+        /// as OpenRouter. Empty means Kokoro, on this Mac.
+        var speech = ""
+        /// One per session, in order. A session keeps its voice while it is active.
+        /// Gemini's conversational voices: friendly, warm, casual, easy-going, breezy.
+        /// Kore and Charon, firm and informative, sounded like announcements.
+        var speechVoices = ["Achird", "Sulafat", "Zubenelgenubi", "Callirrhoe", "Umbriel", "Aoede"]
+        /// Always in the voice. The model adds a shift for what happened.
+        var speechTone = "Speak in a relaxed, friendly, natural tone, like a software engineer colleague "
+            + "collaborating with a teammate, speaking face to face. Clear and conversational, not performative."
+
+        enum CodingKeys: String, CodingKey, CaseIterable {
+            case enabled, folders, progress, explain, frame, model, voice, speed, speech
+            case speechVoice = "speech_voice"
+            case local
+            case localVoice = "local_voice"
+            case localVoices = "local_voices"
+            case progressLocal = "progress_local"
+            case localPlacement = "local_placement"
+            case speechVoices = "speech_voices"
+            case speechTone = "speech_tone"
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
+            if let v = try c.decodeIfPresent([String].self, forKey: .folders), !v.isEmpty { folders = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .progress) { progress = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .explain) { explain = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .frame) { frame = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .model) { model = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .voice) { voice = v }
+            if let v = try c.decodeIfPresent(Float.self, forKey: .speed) { speed = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .speech) { speech = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .speechVoice), !v.isEmpty { speechVoices = [v] }
+            if let v = try c.decodeIfPresent([String].self, forKey: .speechVoices), !v.isEmpty { speechVoices = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .speechTone) { speechTone = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .local) { local = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .localVoice), !v.isEmpty { localVoice = v }
+            if let v = try c.decodeIfPresent([String].self, forKey: .localVoices) { localVoices = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .progressLocal) { progressLocal = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .localPlacement) { localPlacement = v }
+        }
+
+        var folderURLs: [URL] {
+            folders.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
+        }
+    }
+
     /// What gets written to disk about a dictation, apart from the transcript
     /// itself.
     ///
@@ -2920,6 +2998,7 @@ struct Config: Decodable, Equatable {
             self.updates = updates
         }
         if let logging = try c.decodeIfPresent(Logging.self, forKey: .logging) { self.logging = logging }
+        if let claude = try c.decodeIfPresent(Claude.self, forKey: .claude) { self.claude = claude }
         // `transforms:` first, then anything still under `prompts:`. Both are
         // read: `prompts:` is what every config written before this existed
         // says, and a rename that silently empties the section is the one
@@ -3073,6 +3152,20 @@ struct Config: Decodable, Equatable {
         }
         for key in retiredKeys.sorted() {
             found.append("\(key): \(Self.movedKeys[key] ?? "no longer does anything")")
+        }
+        let claudeModel = claude.model.trimmingCharacters(in: .whitespaces)
+        if !claudeModel.isEmpty, model(named: claudeModel) == nil {
+            found.append("claude.model: \"\(claudeModel)\" is not under models: — using the default model")
+        }
+        let speech = claude.speech.trimmingCharacters(in: .whitespaces)
+        if !speech.isEmpty {
+            if let spec = model(named: speech) {
+                if spec.api != .openai {
+                    found.append("claude.speech: \"\(speech)\" needs api: openai — using Kokoro")
+                }
+            } else {
+                found.append("claude.speech: \"\(speech)\" is not under models: — using Kokoro")
+            }
         }
         for key in transcription.retired {
             let said = key == "replacements"
