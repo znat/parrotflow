@@ -1533,6 +1533,14 @@ URL query strings. An
   whose title names the project, or its main window. The desktop app shows
   every session in one window, so the glow goes around all of it. Under tmux
   there is no app above Claude, and no glow.
+  Codex in its desktop app (ChatGPT.app) is framed the same way. Codex 0.157
+  and later run terminal sessions through one shared app server, so the
+  process no longer tells which terminal a session is in. Then the window is
+  the terminal window in front when you send a prompt, if its title names the
+  project folder. Else it is the only terminal window whose title names it.
+  Two such windows, or none, mean no glow and no pill. Codex writes the
+  project's root folder into the title, so a session started in a subfolder
+  is not found.
 - **Which session, on screen:** while a session speaks and its
   window is not in front, the pill names it: the project folder and two or
   three words about the task, like "parrotflow · fixing the glow". The words

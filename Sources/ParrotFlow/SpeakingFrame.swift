@@ -304,12 +304,7 @@ final class SpeakingFrame {
     /// is ambiguous: the main window is whichever has focus, so guessing it
     /// framed the wrong window.
     static func guessWindow(host pid: pid_t, project: String) -> AXUIElement? {
-        guard let windows = value(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement]
-        else { return nil }
-        let sized = windows.filter { window in
-            guard let frame = frame(of: window) else { return false }
-            return frame.width > 200 && frame.height > 150
-        }
+        let sized = sizedWindows(host: pid)
         guard !sized.isEmpty else { return nil }
         if sized.count == 1 { return sized[0] }
         if !project.isEmpty,
@@ -317,6 +312,127 @@ final class SpeakingFrame {
             return named
         }
         return nil
+    }
+
+    /// The host's windows big enough to hold a session.
+    private static func sizedWindows(host pid: pid_t, limit: Int = .max) -> [AXUIElement] {
+        let windows = value(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement] ?? []
+        return windows.prefix(limit).filter { window in
+            guard let frame = frame(of: window) else { return false }
+            return frame.width > 200 && frame.height > 150
+        }
+    }
+
+    // MARK: - Codex
+
+    /// A process on the way up from the agent's.
+    struct Ancestor {
+        var pid: pid_t
+        var bundle: String?
+        var regular = false
+        var arguments: [String] = []
+    }
+
+    enum CodexHost: Equatable {
+        case app(pid_t)
+        /// The pid says nothing of the window: find it by its title.
+        case byTitle
+        case none
+    }
+
+    /// Where a Codex session runs. The desktop app and the VS Code extension
+    /// start a `codex app-server` of their own. Codex 0.157 and later serve
+    /// terminal sessions from one shared app server instead, started with
+    /// `setsid` by the first terminal session, then left to launchd.
+    static func codexHost(_ chain: [Ancestor]) -> CodexHost {
+        var server = false
+        for (index, process) in chain.enumerated() {
+            if process.arguments.contains("app-server") {
+                let parent = index + 1 < chain.count ? chain[index + 1].arguments.first : nil
+                let underCodex = parent.map { ($0 as NSString).lastPathComponent == "codex" } ?? false
+                if process.arguments.contains("--managed-daemon") || underCodex { return .byTitle }
+                server = true
+            } else if process.regular, process.bundle != "com.openai.codex.cli" {
+                // The CLI inside ChatGPT.app is a bundle too, with no window.
+                return .app(process.pid)
+            }
+        }
+        return server ? .byTitle : .none
+    }
+
+    static func ancestors(of pid: pid_t) -> [Ancestor] {
+        var chain: [Ancestor] = []
+        var current: pid_t? = pid
+        while let process = current, chain.count < 24 {
+            let app = NSRunningApplication(processIdentifier: process)
+            chain.append(Ancestor(pid: process, bundle: app?.bundleIdentifier,
+                                  regular: app?.activationPolicy == .regular, arguments: arguments(of: process)))
+            current = parent(of: process)
+        }
+        return chain
+    }
+
+    private static func arguments(of pid: pid_t) -> [String] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0 else { return [] }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return [] }
+        return arguments(procargs: Array(buffer.prefix(size)))
+    }
+
+    /// `KERN_PROCARGS2`: argc as an Int32, the executable path, NUL padding,
+    /// then the arguments and the environment, each ending in a NUL.
+    static func arguments(procargs: [UInt8]) -> [String] {
+        guard procargs.count > 4 else { return [] }
+        let argc = procargs.prefix(4).enumerated().reduce(0) { $0 | Int($1.element) << (8 * $1.offset) }
+        return procargs.dropFirst(4).split(separator: 0).dropFirst().prefix(argc)
+            .map { String(bytes: $0, encoding: .utf8) ?? "" }
+    }
+
+    /// Whether `title` names `project` as Codex writes it there: whole, or cut to
+    /// 21 characters and "..." past 24. "parrotflow" is not in "parrotflow-scratch".
+    static func names(_ title: String?, project: String) -> Bool {
+        guard let title, !project.isEmpty else { return false }
+        let needle = project.count > 24 ? String(project.prefix(21)) + "..." : project
+        func wordy(_ index: String.Index?) -> Bool {
+            guard let index else { return false }
+            let letter = title[index]
+            return letter.isLetter || letter.isNumber || "-_.".contains(letter)
+        }
+        var from = title.startIndex
+        while let found = title.range(of: needle, options: .caseInsensitive, range: from..<title.endIndex) {
+            let before = found.lowerBound > title.startIndex ? title.index(before: found.lowerBound) : nil
+            let after = found.upperBound < title.endIndex ? found.upperBound : nil
+            if !wordy(before), !wordy(after) { return true }
+            from = title.index(after: found.lowerBound)
+        }
+        return false
+    }
+
+    /// The only window whose title names the project, once those at `taken`
+    /// are set aside. None, or two: nil, since a wrong glow is worse than none.
+    static func pick(_ windows: [(title: String?, rect: CGRect?)], project: String, taken: [CGRect]) -> Int? {
+        let free = windows.indices.filter { index in
+            guard names(windows[index].title, project: project) else { return false }
+            return !taken.contains { place in windows[index].rect.map { close($0, place) } ?? false }
+        }
+        return free.count == 1 ? free[0] : nil
+    }
+
+    /// The window, in any of the running `hosts`, that `pick` chooses.
+    static func titledWindow(project: String, hosts: Set<String>, taken: [CGRect]) -> (host: pid_t, window: AXUIElement)? {
+        var found: [(host: pid_t, window: AXUIElement)] = []
+        for app in NSWorkspace.shared.runningApplications where hosts.contains(app.bundleIdentifier ?? "") {
+            found += sizedWindows(host: app.processIdentifier, limit: 20).map { (app.processIdentifier, $0) }
+        }
+        let described = found.map { (title: title(of: $0.window), rect: frame(of: $0.window)) }
+        return pick(described, project: project, taken: taken).map { found[$0] }
+    }
+
+    /// The host's focused window, when its title names the project.
+    static func focusedWindow(host pid: pid_t, naming project: String) -> AXUIElement? {
+        focusedWindow(host: pid).flatMap { names(title(of: $0), project: project) ? $0 : nil }
     }
 
     private static func element(_ parent: AXUIElement, _ attribute: String) -> AXUIElement? {
