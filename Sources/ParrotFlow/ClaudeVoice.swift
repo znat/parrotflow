@@ -89,13 +89,18 @@ final class ClaudeVoice {
             listener = nil
             speaker.stop()
         }
-        // The local voice is warmed when it will speak first: no remote voice,
-        // or progress lines kept local.
+        warmIfNeeded()
+    }
+
+    /// The local voice is warmed when it will speak first: no remote voice,
+    /// or progress lines kept local. Only once a hook was heard, so a Mac
+    /// without Claude Code hooks never loads it.
+    private func warmIfNeeded() {
         let warm = settings.localPlacement + ":" + settings.localVoice
-        if settings.enabled, speaker.remote == nil || settings.progressLocal, warmedVoice != warm {
-            warmedVoice = warm
-            Task { @MainActor in await speaker.warm() }
-        }
+        guard settings.enabled, !sessions.isEmpty, speaker.remote == nil || settings.progressLocal,
+              warmedVoice != warm else { return }
+        warmedVoice = warm
+        Task { @MainActor in await speaker.warm() }
     }
 
     /// The model `claude.speech` names, when it can speak `/audio/speech`.
@@ -129,6 +134,7 @@ final class ClaudeVoice {
               let name = event["hook_event_name"] as? String else { return }
         let id = event["session_id"] as? String ?? ""
         note(session: id, event: event, pid: pid)
+        warmIfNeeded()
 
         switch name {
         case "UserPromptSubmit":
@@ -163,7 +169,7 @@ final class ClaudeVoice {
         case "Notification":
             guard let message = event["message"] as? String,
                   let said = ClaudeSpeakable.notification(message) else { return }
-            say(said, session: id)
+            whenFree { [weak self] in self?.say(said, session: id) }
         case "Stop":
             guard event["stop_hook_active"] as? Bool != true else { return }
             if recapTurns[id] == turns[id, default: 0] {
@@ -195,7 +201,7 @@ final class ClaudeVoice {
         lastKind = line.kind
         progressSeq += 1
         guard settings.explain, config.llmEnabled, !line.urgent, !tool.isEmpty else {
-            return say(line.text, session: session, progress: true)
+            return whenFree { [weak self] in self?.say(line.text, session: session, progress: true) }
         }
         let mine = progressSeq
         let named = settings.model.trimmingCharacters(in: .whitespaces)
@@ -629,6 +635,8 @@ final class SocketListener {
             while true {
                 let client = accept(fd, nil, nil)
                 guard client >= 0 else { return }
+                // Accepted sockets inherit O_NONBLOCK on macOS: a read before the hook wrote dropped the event.
+                _ = fcntl(client, F_SETFL, fcntl(client, F_GETFL) & ~O_NONBLOCK)
                 var timeout = timeval(tv_sec: 1, tv_usec: 0)
                 setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
                 var data = Data()
@@ -642,13 +650,13 @@ final class SocketListener {
                 if !data.isEmpty { handler(data) }
             }
         }
+        source.setCancelHandler { close(fd) }
         source.resume()
         Log.write("claude voice: listening on \(path)")
     }
 
     deinit {
         source.cancel()
-        close(fd)
         unlink(path)
     }
 }

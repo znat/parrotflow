@@ -152,27 +152,33 @@ final class Speaker {
 
     @MainActor private func loadedPocket() async throws -> PocketTtsManager {
         if let pocket { return pocket }
-        if let pocketLoading { return try await pocketLoading.value }
-        let voice = localVoice
         let placement = localPlacement
-        let task = Task { () throws -> PocketTtsManager in
-            let started = Date()
-            let made = PocketTtsManager(defaultVoice: voice, placement: placement)
-            try await made.initialize()
-            Log.write(String(format: "claude voice: PocketTTS ready in %.1fs (voice %@, %@)",
-                             Date().timeIntervalSince(started), voice, placement.rawValue))
-            return made
+        let task: Task<PocketTtsManager, Error>
+        if let pocketLoading {
+            task = pocketLoading
+        } else {
+            let voice = localVoice
+            task = Task { () throws -> PocketTtsManager in
+                let started = Date()
+                let made = PocketTtsManager(defaultVoice: voice, placement: placement)
+                try await made.initialize()
+                Log.write(String(format: "claude voice: PocketTTS ready in %.1fs (voice %@, %@)",
+                                 Date().timeIntervalSince(started), voice, placement.rawValue))
+                return made
+            }
+            pocketLoading = task
         }
-        pocketLoading = task
-        // A placement change during the load clears `pocketLoading`; this load is then not kept.
+        // A placement change during the load clears `pocketLoading`: that load is dropped and the new one used.
         do {
             let made = try await task.value
+            guard placement == localPlacement else { return try await loadedPocket() }
             if pocketLoading == task {
                 pocket = made
                 pocketLoading = nil
             }
             return made
         } catch {
+            guard placement == localPlacement else { return try await loadedPocket() }
             if pocketLoading == task { pocketLoading = nil }
             throw error
         }

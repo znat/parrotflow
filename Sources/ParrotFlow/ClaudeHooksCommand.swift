@@ -175,6 +175,9 @@ enum ClaudeHooksCommand {
               want: "Done. I set OPENROUTER_API_KEY=redacted in your shell.")
         check("a password after a colon is not said", got: ClaudeSpeakable.spokenRedacted("Use password: hunter2 now."),
               want: "Use password: redacted now.")
+        check("a Bearer header is said, its value is not",
+              got: ClaudeSpeakable.spokenRedacted("Add a Bearer token header with Bearer abc123xyz."),
+              want: "Add a Bearer token header with Bearer redacted.")
         check("prose about a token is said as it is",
               got: ClaudeSpeakable.spokenRedacted("The token expired, so I refreshed the skyscrapers page."),
               want: "The token expired, so I refreshed the skyscrapers page.")
