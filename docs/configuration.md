@@ -1371,24 +1371,30 @@ evidence something is wrong; a high one is not evidence anything is right.
 
 ## `claude`
 
-ParrotFlow can speak what Claude Code does and what it answers. It is off
-until you install the hooks:
+ParrotFlow can speak what Claude Code does and what it answers. The app
+installs its hooks by itself while `enabled` is true, and takes them out when
+it is false. It checks at launch and each time the config changes, and writes
+nothing when the hooks are already right. The log says
+`claude hooks: installed in ~/.claude` or `claude hooks: removed from ~/.claude`.
 
-```sh
-$PF --install-claude-hooks
-```
-
-That adds four hooks to `settings.json` in every folder under `folders`:
+The hooks are four entries in `settings.json` in every folder under `folders`:
 `PreToolUse`, `Stop`, `Notification` and `UserPromptSubmit`. Each one sends
 the event to the app's socket with `nc` and exits in about 10 ms. It never
 runs the app binary, so Claude is not held up when the app is not running,
-is uninstalled, or is a build without this feature. Restart open Claude Code sessions after installing.
-`--uninstall-claude-hooks` removes them and leaves your own hooks alone. The
-first copy of each `settings.json` is kept as `settings.json.parrotflow-backup`.
+is uninstalled, or is a build without this feature. Restart open Claude Code
+sessions after the hooks are installed.
+
+Only the entries that name this app's socket change. The dev and release apps
+each keep their own, and your own hooks and other keys stay as they were. The
+file keeps its permissions, and is 0600 when the app creates it. A
+`settings.json` that is not a JSON object is left alone, with one line in the
+log. The first copy the app changes is kept as `settings.json.parrotflow-backup`.
+`$PF --install-claude-hooks` and `$PF --uninstall-claude-hooks` do the same by
+hand, from the installed app.
 
 ```yaml
 claude:
-  enabled: true          # false stops listening; the hooks stay installed
+  enabled: true          # false stops listening and removes the hooks
   folders:               # one per Claude Code account; default ~/.claude
     - ~/.claude
     - ~/.claude-personal

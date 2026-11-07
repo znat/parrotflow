@@ -108,7 +108,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def host_ok(self):
+        # A page on another site that rebinds its name to 127.0.0.1 sends its own Host.
+        return self.headers.get("Host") in (f"127.0.0.1:{PORT}", f"localhost:{PORT}")
+
     def do_GET(self):
+        if not self.host_ok():
+            return self.send(403, json.dumps({"error": "forbidden"}))
         if self.path == "/":
             page = (PAGE.replace("__TONE__", html.escape(BASE_TONE))
                     .replace("__VOICES__", "".join(f"<option>{v}</option>" for v in VOICES))
@@ -121,7 +127,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         # Only this page may make the Mac speak.
-        if self.path != "/say" or self.headers.get("Origin") not in (ORIGIN, f"http://localhost:{PORT}"):
+        if not self.host_ok() or self.path != "/say" or self.headers.get("Origin") not in (ORIGIN, f"http://localhost:{PORT}"):
             return self.send(403, json.dumps({"error": "forbidden"}))
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))

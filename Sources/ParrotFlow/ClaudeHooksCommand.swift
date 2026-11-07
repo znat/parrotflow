@@ -70,64 +70,122 @@ enum ClaudeHooksCommand {
     /// builds carry `marker` instead.
     static let tag = "parrotflow-speak-event"
 
-    /// `nc` to the app's socket, not the app binary. The binary in a hook
-    /// blocked Claude once that build was uninstalled, and a build that does
-    /// not know `--speak-event` starts a second menu bar app on every tool
-    /// call. `nc` exits in about 10 ms either way, and `exit 0` keeps a missing
-    /// app silent. `$PPID` is the Claude process, which `SpeakingFrame` walks
-    /// up from to find the window to frame. nil for a `.build` binary: it has no bundle id, so its
-    /// socket path would be the release app's.
-    static var hookCommand: String? {
-        guard let path = Bundle.main.executableURL?.resolvingSymlinksInPath().path,
-              path.contains(".app/Contents/MacOS/") else { return nil }
-        let socket = ClaudeVoice.socketURL.path
-        return "[ -S '\(socket)' ] && { echo \"pid=$PPID\"; cat; } | /usr/bin/nc -U -w 1 '\(socket)' >/dev/null 2>&1;"
-            + " exit 0 # \(tag)"
+    /// One app variant's hook. The dev and release apps each listen on their
+    /// own socket, and each owns only the entries that name it: both are often
+    /// installed at once.
+    struct Hook {
+        var socket: String
+        /// `/ParrotFlowDev.app/`: hooks from older builds ran that binary with `marker`.
+        var app: String
+
+        /// `nc` to the app's socket, not the app binary. The binary in a hook
+        /// blocked Claude once that build was uninstalled, and a build that does
+        /// not know `--speak-event` starts a second menu bar app on every tool
+        /// call. `nc` exits in about 10 ms either way, and `exit 0` keeps a missing
+        /// app silent. `$PPID` is the Claude process, which `SpeakingFrame` walks
+        /// up from to find the window to frame.
+        var command: String {
+            "[ -S '\(socket)' ] && { echo \"pid=$PPID\"; cat; } | /usr/bin/nc -U -w 1 '\(socket)' >/dev/null 2>&1;"
+                + " exit 0 # \(tag)"
+        }
+
+        func owns(_ command: String) -> Bool {
+            command.contains(tag) ? command.contains("'\(socket)'") : command.contains(marker) && command.contains(app)
+        }
+
+        func entry(for event: String) -> [String: Any] {
+            var entry: [String: Any] = ["hooks": [["type": "command", "command": command, "timeout": 2]]]
+            if event == "PreToolUse" { entry["matcher"] = "*" }
+            return entry
+        }
+
+        /// nil for a `.build` binary: it has no bundle id, so its socket path
+        /// would be the release app's.
+        static var current: Hook? {
+            guard let path = Bundle.main.executableURL?.resolvingSymlinksInPath().path,
+                  let bundle = path.range(of: ".app/Contents/MacOS/") else { return nil }
+            let name = (String(path[..<bundle.lowerBound]) as NSString).lastPathComponent
+            return Hook(socket: ClaudeVoice.socketURL.path, app: "/\(name).app/")
+        }
+    }
+
+    enum Change: Equatable {
+        case none, written, failed(String)
     }
 
     static func install(folders: [URL]) -> Int32 {
-        guard let command = hookCommand else {
+        run(true, folders: folders, flag: "--install-claude-hooks")
+    }
+
+    static func uninstall(folders: [URL]) -> Int32 {
+        run(false, folders: folders, flag: "--uninstall-claude-hooks")
+    }
+
+    private static func run(_ on: Bool, folders: [URL], flag: String) -> Int32 {
+        guard let hook = Hook.current else {
             print("✗ Run this from the installed app, not from .build:")
-            print("  /Applications/\(AppVariant.isDev ? "ParrotFlowDev" : "ParrotFlow").app/Contents/MacOS/ParrotFlow --install-claude-hooks")
+            print("  /Applications/\(AppVariant.isDev ? "ParrotFlowDev" : "ParrotFlow").app/Contents/MacOS/ParrotFlow \(flag)")
             return 1
         }
         var failed = false
-        for folder in folders {
-            failed = !edit(folder: folder) { hooks in
-                for event in events {
-                    var entries = withoutOurs(hooks[event])
-                    var entry: [String: Any] = ["hooks": [["type": "command", "command": command, "timeout": 2]]]
-                    if event == "PreToolUse" { entry["matcher"] = "*" }
-                    entries.append(entry)
-                    hooks[event] = entries
-                }
-            } || failed
+        for (folder, change) in reconcile(enabled: on, folders: folders, hook: hook) {
+            if case .failed(let why) = change {
+                print("✗ \(why)")
+                failed = true
+            } else {
+                print("✓ \(shown(folder))/settings.json")
+            }
         }
-        if !failed {
+        if on, !failed {
             print("  Claude Code reads hooks at the start of a session, so restart open sessions.")
         }
         return failed ? 1 : 0
     }
 
-    static func uninstall(folders: [URL]) -> Int32 {
-        var failed = false
-        for folder in folders {
-            failed = !edit(folder: folder) { hooks in
-                for event in events {
-                    let entries = withoutOurs(hooks[event])
-                    hooks[event] = entries.isEmpty ? nil : entries
-                }
-            } || failed
+    /// The hooks follow `claude.enabled`: in every folder when on, out when
+    /// off. A file that already matches is not written.
+    static func reconcile(enabled: Bool, folders: [URL], hook: Hook) -> [(folder: URL, change: Change)] {
+        folders.map { folder in
+            (folder, edit(folder: folder) { hooks in
+                enabled ? installing(hooks, hook) : removing(hooks, hook)
+            })
         }
-        return failed ? 1 : 0
     }
 
-    private static func withoutOurs(_ value: Any?) -> [[String: Any]] {
-        (value as? [[String: Any]] ?? []).compactMap { entry in
+    static func shown(_ folder: URL) -> String {
+        (folder.path as NSString).abbreviatingWithTildeInPath
+    }
+
+    /// An event that already holds exactly our entry keeps its place.
+    private static func installing(_ hooks: [String: Any], _ hook: Hook) -> [String: Any] {
+        var hooks = hooks
+        for event in events {
+            let entries = hooks[event] as? [[String: Any]] ?? []
+            let wanted = hook.entry(for: event)
+            let others = entries.filter { !NSDictionary(dictionary: $0).isEqual(to: wanted) }
+            let kept = withoutOurs(entries, hook)
+            if entries.count - others.count == 1, NSArray(array: kept).isEqual(to: others) { continue }
+            hooks[event] = kept + [wanted]
+        }
+        return hooks
+    }
+
+    private static func removing(_ hooks: [String: Any], _ hook: Hook) -> [String: Any] {
+        var hooks = hooks
+        for event in events {
+            guard let entries = hooks[event] as? [[String: Any]] else { continue }
+            let kept = withoutOurs(entries, hook)
+            if NSArray(array: kept).isEqual(to: entries) { continue }
+            hooks[event] = kept.isEmpty ? nil : kept
+        }
+        return hooks
+    }
+
+    private static func withoutOurs(_ entries: [[String: Any]], _ hook: Hook) -> [[String: Any]] {
+        entries.compactMap { entry in
             var entry = entry
             let kept = (entry["hooks"] as? [[String: Any]] ?? []).filter {
-                let command = $0["command"] as? String ?? ""
-                return !(command.contains(tag) || command.contains(marker))
+                !hook.owns($0["command"] as? String ?? "")
             }
             if kept.isEmpty { return nil }
             entry["hooks"] = kept
@@ -135,42 +193,66 @@ enum ClaudeHooksCommand {
         }
     }
 
-    /// Reads `settings.json`, changes `hooks`, writes it back. Keeps the first
-    /// copy it ever saw as `settings.json.parrotflow-backup`.
-    private static func edit(folder: URL, _ change: (inout [String: Any]) -> Void) -> Bool {
-        let shown = (folder.path as NSString).abbreviatingWithTildeInPath
+    /// Reads `settings.json`, changes `hooks`, writes it back when they
+    /// changed. Keeps the first copy it ever changed as
+    /// `settings.json.parrotflow-backup`.
+    private static func edit(folder: URL, _ change: ([String: Any]) -> [String: Any]) -> Change {
+        let place = shown(folder)
+        let file = folder.appendingPathComponent("settings.json")
         var isFolder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else {
-            print("✗ \(shown): no such folder")
-            return false
+            // Nothing to take out of a folder that is not there.
+            return change([:]).isEmpty ? .none : .failed("\(place): no such folder")
         }
-        let file = folder.appendingPathComponent("settings.json")
+        var original: Data?
+        if FileManager.default.fileExists(atPath: file.path) {
+            do {
+                original = try Data(contentsOf: file)
+            } catch {
+                return .failed("\(place)/settings.json: \(error.localizedDescription)")
+            }
+        }
         var settings: [String: Any] = [:]
-        if let data = try? Data(contentsOf: file), !data.isEmpty {
-            guard let read = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                print("✗ \(shown)/settings.json is not a JSON object — left alone")
-                return false
+        if let original, !original.isEmpty {
+            guard let read = try? JSONSerialization.jsonObject(with: original) as? [String: Any] else {
+                return .failed("\(place)/settings.json is not a JSON object — left alone")
             }
             settings = read
-            let backup = folder.appendingPathComponent("settings.json.parrotflow-backup")
-            if !FileManager.default.fileExists(atPath: backup.path) {
-                try? data.write(to: backup)
-            }
         }
-        var hooks = settings["hooks"] as? [String: Any] ?? [:]
-        change(&hooks)
-        settings["hooks"] = hooks.isEmpty ? nil : hooks
+        let before = settings["hooks"] as? [String: Any] ?? [:]
+        let after = change(before)
+        guard !NSDictionary(dictionary: before).isEqual(to: after) else { return .none }
+        settings["hooks"] = after.isEmpty ? nil : after
         do {
             let data = try JSONSerialization.data(
                 withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             )
-            try (data + Data("\n".utf8)).write(to: file, options: .atomic)
+            try writeSettings(data + Data("\n".utf8), to: file, original: original)
         } catch {
-            print("✗ \(shown)/settings.json: \(error.localizedDescription)")
-            return false
+            return .failed("\(place)/settings.json: \(error.localizedDescription)")
         }
-        print("✓ \(shown)/settings.json")
-        return true
+        return .written
+    }
+
+    /// A settings file can hold keys: the new file and the backup keep its
+    /// mode, 0600 when it is new. Through a symlink, so a linked file stays linked.
+    private static func writeSettings(_ data: Data, to file: URL, original: Data?) throws {
+        let target = file.resolvingSymlinksInPath()
+        let mode = (try? FileManager.default.attributesOfItem(atPath: target.path)[.posixPermissions]
+            as? NSNumber)?.uint16Value ?? 0o600
+        let backup = file.deletingLastPathComponent().appendingPathComponent("settings.json.parrotflow-backup")
+        if let original, !original.isEmpty, !FileManager.default.fileExists(atPath: backup.path) {
+            try ConfigMigration.create(backup, holding: original, mode: mode)
+        }
+        let temporary = target.deletingLastPathComponent()
+            .appendingPathComponent(".\(target.lastPathComponent).parrotflow-\(getpid())")
+        unlink(temporary.path)
+        try ConfigMigration.create(temporary, holding: data, mode: mode)
+        guard rename(temporary.path, target.path) == 0 else {
+            let failure = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            unlink(temporary.path)
+            throw failure
+        }
     }
 
     // MARK: - Checks
@@ -382,6 +464,64 @@ enum ClaudeHooksCommand {
               got: sight([(terminal, pane.insetBy(dx: 200, dy: 200)), ownWindow]), want: "hidden")
         check("the glow hides when its window is off screen", got: sight([(other, CGRect(x: 0, y: 0, width: 40, height: 40))]),
               want: "hidden")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("claude-hooks-\(getpid())")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let settings = folder.appendingPathComponent("settings.json")
+        let backup = folder.appendingPathComponent("settings.json.parrotflow-backup")
+        let release = Hook(socket: "/s/ParrotFlow/claude.sock", app: "/ParrotFlow.app/")
+        let dev = Hook(socket: "/s/ParrotFlow Dev/claude.sock", app: "/ParrotFlowDev.app/")
+        func hooks(_ on: Bool, _ hook: Hook) -> String {
+            switch reconcile(enabled: on, folders: [folder], hook: hook).first?.change {
+            case .written: "written"
+            case .failed: "failed"
+            default: "none"
+            }
+        }
+        func contents(_ url: URL) -> String { (try? String(contentsOf: url, encoding: .utf8)) ?? "" }
+        func fileMode(_ url: URL) -> String {
+            ((try? FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions]) as? NSNumber)
+                .map { String($0.intValue, radix: 8) } ?? "none"
+        }
+        func hookCount(_ hook: Hook) -> String {
+            "\((contents(settings).components(separatedBy: "'\(hook.socket)'").count - 1) / 2)"
+        }
+        func seedSettings(_ json: String) {
+            try? FileManager.default.removeItem(at: settings)
+            try? FileManager.default.removeItem(at: backup)
+            try? ConfigMigration.create(settings, holding: Data(json.utf8), mode: 0o600)
+        }
+        func parsed(_ text: String) -> NSDictionary? {
+            (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? NSDictionary
+        }
+        check("hooks on: written into a new file", got: hooks(true, release), want: "written")
+        check("hooks on: one per event", got: hookCount(release), want: "4")
+        check("a new settings file is 0600", got: fileMode(settings), want: "600")
+        check("hooks on again: no write", got: hooks(true, release), want: "none")
+        check("the other variant installs beside it", got: hooks(true, dev), want: "written")
+        check("both variants hold their own hooks", got: hookCount(release) + " " + hookCount(dev), want: "4 4")
+        check("hooks off: removed", got: hooks(false, dev), want: "written")
+        check("the other variant's hooks stay", got: hookCount(release) + " " + hookCount(dev), want: "4 0")
+        check("hooks off again: no write", got: hooks(false, dev), want: "none")
+        let foreign = #"{"env":{"API_KEY":"x"},"hooks":{"Stop":[{"hooks":[{"command":"say done","type":"command"}]}]}}"#
+        seedSettings(foreign)
+        _ = hooks(true, release)
+        check("a 0600 settings file stays 0600 after install", got: fileMode(settings), want: "600")
+        check("its backup is the first copy, 0600 too",
+              got: fileMode(backup) + " " + (contents(backup) == foreign ? "first" : "other"), want: "600 first")
+        _ = hooks(false, release)
+        check("a 0600 settings file stays 0600 after uninstall", got: fileMode(settings), want: "600")
+        check("another tool's hooks and keys stay",
+              got: parsed(contents(settings)) == parsed(foreign) ? "same" : contents(settings), want: "same")
+        seedSettings(#"{"hooks":{"Stop":[{"hooks":["#
+            + #"{"command":"/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --speak-event","type":"command"},"#
+            + #"{"command":"/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --speak-event","type":"command"}]}]}}"#)
+        _ = hooks(false, dev)
+        check("an older dev hook goes, the older release one stays",
+              got: ["ParrotFlowDev.app", "ParrotFlow.app"].filter(contents(settings).contains).joined(separator: " "),
+              want: "ParrotFlow.app")
+        seedSettings("{")
+        check("broken JSON is left alone", got: hooks(true, release) + " " + contents(settings), want: "failed {")
+        try? FileManager.default.removeItem(at: folder)
         print("\n\(passed)/\(total)")
         return passed == total ? 0 : 1
     }

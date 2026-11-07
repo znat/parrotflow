@@ -1218,8 +1218,9 @@ $PF --claude-say "<text>" [--tone "<instructions>"] [--voice <name>]  # say it
 scripts/tone-lab.py                              # a page to try tones on recent lines
 ```
 
-Install and uninstall must run from the installed app, not from `.build`. A
-binary outside an app bundle cannot tell the dev build from the release build,
+The app installs and removes the hooks by itself when `claude.enabled`
+changes. These two flags do it by hand. They must run from the installed app,
+not from `.build`. A binary outside an app bundle cannot tell the dev build from the release build,
 so its hook would reach the wrong app. `--speak-event` sends stdin to the
 running app, as the hooks do with `nc`; it is there for testing. See [configuration.md](configuration.md#claude).
 
