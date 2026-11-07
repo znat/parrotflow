@@ -215,8 +215,8 @@ enum ClaudeSpeakable {
             if !said.isEmpty { parts.append("Earlier reply: " + redacted(String(said.prefix(1500)))) }
         }
         if let request, !request.isEmpty { parts.append("Request: " + redacted(String(clean(request).prefix(800)))) }
-        if !reply.isEmpty { parts.append("Reply: " + String(reply.prefix(6000))) }
-        if let recap, !recap.isEmpty { parts.append("Recap: " + String(recap.prefix(800))) }
+        if !reply.isEmpty { parts.append("Reply: " + redacted(String(reply.prefix(6000)))) }
+        if let recap, !recap.isEmpty { parts.append("Recap: " + redacted(String(recap.prefix(800)))) }
         return parts.joined(separator: "\n\n")
     }
 
@@ -438,7 +438,7 @@ enum ClaudeSpeakable {
     /// The request, and the latest result when there is one, for `reminderPrompt`.
     static func reminderInput(request: String, latest: String?, language: String = "en") -> String {
         var lines = ["Language: \(languageName(language))", "Request: \(redacted(String(clean(request).prefix(1500))))"]
-        if let latest, !latest.isEmpty { lines.append("Latest: \(clean(latest).prefix(500))") }
+        if let latest, !latest.isEmpty { lines.append("Latest: \(redacted(String(clean(latest).prefix(500))))") }
         return lines.joined(separator: "\n")
     }
 
@@ -475,7 +475,7 @@ enum ClaudeSpeakable {
             lines.append("\(key): \(redacted(String(value.prefix(600))))")
         }
         if let context, !context.isEmpty {
-            lines.append("What the assistant just wrote: \(clean(context).suffix(500))")
+            lines.append("What the assistant just wrote: \(redacted(String(clean(context).suffix(500))))")
         }
         return lines.joined(separator: "\n")
     }

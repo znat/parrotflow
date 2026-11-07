@@ -131,6 +131,15 @@ enum ClaudeHooksCommand {
               want: "en 12 secondes, 40 pour cent.")
         check("a capital after a period", got: ClaudeSpeakable.capped("A new term. my examples were wrong."),
               want: "A new term. My examples were wrong.")
+        check("the reply and recap lose their secrets",
+              got: ClaudeSpeakable.rewriteInput(request: nil, reply: "Set API_KEY=sk-abc123", recap: "Bearer xyz789"),
+              want: "Language: English\n\nReply: Set API_KEY=<redacted>\n\nRecap: Bearer <redacted>")
+        check("the latest summary loses its secrets",
+              got: ClaudeSpeakable.reminderInput(request: "go on", latest: "I used token=abc123 there"),
+              want: "Language: English\nRequest: go on.\nLatest: I used token=<redacted> there.")
+        check("what the assistant wrote loses its secrets",
+              got: ClaudeSpeakable.explainInput(tool: "Bash", input: [:], context: "Use password: hunter2 now"),
+              want: "Language: English\nTool: Bash\nWhat the assistant just wrote: Use password: <redacted> now.")
         print("\n\(passed)/\(total)")
         return passed == total ? 0 : 1
     }
