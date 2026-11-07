@@ -3,7 +3,7 @@ import FluidAudio
 import ApplicationServices
 
 /// The coding agent a hook event comes from. Claude Code and Codex are spoken so far.
-enum CodingAgent: String {
+enum CodingAgent: String, CaseIterable {
     case claude, codex, mini
 
     func progress(tool: String, input: [String: Any]) -> ClaudeSpeakable.Line? {
@@ -42,6 +42,20 @@ enum CodingAgent: String {
         case .mini: []
         }
     }
+
+    /// The agents `voice.agents` can name.
+    static var hooked: [CodingAgent] { allCases.filter { !$0.hookEvents.isEmpty } }
+
+    /// Where the hooks go when `voice.agents` names no folder. An app opened
+    /// from the Finder does not see a `CODEX_HOME` set in a shell profile.
+    var defaultFolders: [String] {
+        switch self {
+        case .claude: ["~/.claude"]
+        case .codex: [ProcessInfo.processInfo.environment["CODEX_HOME"] ?? ""]
+            .map { $0.trimmingCharacters(in: .whitespaces).isEmpty ? "~/.codex" : $0 }
+        case .mini: []
+        }
+    }
 }
 
 /// Speaks Claude Code's and Codex's progress and answers.
@@ -60,7 +74,7 @@ final class ClaudeVoice {
 
     private let speaker = Speaker()
     private let frame = SpeakingFrame()
-    private var settings = Config.Claude()
+    private var settings = Config.Voice()
     private var config = Config()
     private var listener: SocketListener?
     private var warmedVoice = ""
@@ -131,7 +145,7 @@ final class ClaudeVoice {
 
     func apply(_ config: Config) {
         self.config = config
-        settings = config.claude
+        settings = config.voice
         speaker.speed = settings.speed
         speaker.remote = Self.remote(settings, config)
         speaker.localVoice = settings.localVoice
@@ -155,7 +169,7 @@ final class ClaudeVoice {
         syncHooks()
     }
 
-    /// The hooks follow `claude.enabled` and `claude.codex`, so nobody runs `--install-claude-hooks`.
+    /// The hooks follow `voice.enabled` and `voice.agents`, so nobody runs `--install-claude-hooks`.
     private func syncHooks() {
         guard let current = ClaudeHooksCommand.Hook.current else { return }
         for (hook, enabled, folders) in ClaudeHooksCommand.targets(settings, hook: current) {
@@ -184,8 +198,8 @@ final class ClaudeVoice {
         Task { @MainActor in await speaker.warm() }
     }
 
-    /// The model `claude.speech` names, when it can speak `/audio/speech`.
-    static func remote(_ settings: Config.Claude, _ config: Config) -> ModelSpec? {
+    /// The model `voice.speech` names, when it can speak `/audio/speech`.
+    static func remote(_ settings: Config.Voice, _ config: Config) -> ModelSpec? {
         let name = settings.speech.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty, let spec = config.model(named: name), spec.api == .openai else { return nil }
         return spec
@@ -409,7 +423,7 @@ final class ClaudeVoice {
     /// need no rewrite.
     static func spoken(
         turn: ClaudeSpeakable.TurnEnd?, written: String?, request: String? = nil, language: String? = nil,
-        settings: Config.Claude, config: Config, toned: Bool
+        settings: Config.Voice, config: Config, toned: Bool
     ) async -> Spoken? {
         let asked = request ?? turn?.prompt
         let written = turn.flatMap { $0.answer.isEmpty ? nil : $0.answer } ?? written ?? ""

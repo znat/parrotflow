@@ -31,6 +31,8 @@ enum ConfigSchema {
         case open(Kind)
         case anything
         case either([Kind])
+        /// A key written with no value.
+        case empty
     }
 
     struct Field {
@@ -86,7 +88,8 @@ enum ConfigSchema {
                 "Word lists, written once and named. A pattern refers to one as {{name}}."),
             key("updates", .object(updates), "When a new release is offered."),
             key("logging", .object(logging), "What is written to disk about a dictation."),
-            key("claude", .object(claude), "Speaking Claude Code's progress and answers."),
+            key("voice", .object(voice), "Speaking what Claude Code and Codex do and answer."),
+            key("claude", .anything, "Renamed voice.", deprecated: Config.movedKeys["claude"]),
             key("prompts", .list(.object(transform)),
                 "The older name for transforms.",
                 deprecated: "the older name for `transforms:`. Still read; move the entries"
@@ -508,24 +511,20 @@ enum ConfigSchema {
         ])
     }
 
-    static var claude: Section {
-        let defaults = Config.Claude()
-        let kokoro = Config.Claude.retiredAdvice
-        return Section(source: "Config.Claude",
-                       keys: Config.Claude.CodingKeys.allCases.map(\.stringValue), fields: [
+    static var voice: Section {
+        let defaults = Config.Voice()
+        let kokoro = Config.Voice.retiredAdvice
+        return Section(source: "Config.Voice",
+                       keys: Config.Voice.CodingKeys.allCases.map(\.stringValue), fields: [
             key("enabled", .bool,
-                "Listen for Claude Code's hooks and keep them installed. false removes them.",
+                "Listen for the agents' hooks and keep them installed. false removes them.",
                 default: defaults.enabled),
-            key("folders", .list(.text),
-                "Each Claude Code config folder. --install-claude-hooks writes into every one.",
-                default: defaults.folders),
-            key("codex", .bool,
-                "Codex's hooks too, in codex_folder, while enabled is true. false removes them.",
-                default: defaults.codex),
-            key("codex_folder", .text,
-                "Codex's config folder. Empty means $CODEX_HOME, then ~/.codex.",
-                default: defaults.codexFolder),
-            key("progress", .bool, "Short lines while Claude works.", default: defaults.progress),
+            key("agents", .open(.either([.empty, .text, .list(.text)])),
+                "Each agent whose hooks the app keeps: claude, codex. The value is its config folder"
+                    + " or a list of them. Empty means ~/.claude for claude, and $CODEX_HOME, then"
+                    + " ~/.codex for codex. An agent left out is off. No agents key means claude alone.",
+                default: ["claude": NSNull()]),
+            key("progress", .bool, "Short lines while an agent works.", default: defaults.progress),
             key("explain", .bool, "Progress lines in the model's words, with the reason.",
                 default: defaults.explain),
             key("frame", .bool, "A glow around the window of the session that is speaking.",
@@ -655,6 +654,7 @@ enum ConfigSchema {
         case .open(let inner): return ["type": "object", "additionalProperties": json(inner)]
         case .anything: return [:]
         case .either(let kinds): return ["anyOf": kinds.map(json)]
+        case .empty: return ["type": "null"]
         }
     }
 

@@ -2,7 +2,7 @@
 # `examples/` spelling, and a program of their own. The shipped values go from
 # the first two, a trailing comment stays on its own line, and the program
 # keeps its keys.
-version: 2
+version: 3
 transcription:
   pipeline:
     - transform: sentence_repair

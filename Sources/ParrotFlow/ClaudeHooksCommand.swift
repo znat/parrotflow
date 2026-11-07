@@ -5,7 +5,7 @@ import Yams
 /// The terminal side of `ClaudeVoice`.
 ///
 ///   --speak-event               what the hooks run; stdin → the app's socket
-///   --install-claude-hooks      into every `claude.folders` entry; `--agent codex`: the Codex folder
+///   --install-claude-hooks      into `voice.agents.claude`'s folders; `--agent codex`: Codex's
 ///   --uninstall-claude-hooks
 ///   --claude-voice-test <cases> score the text rules, no audio
 ///   --claude-spoken <file>      what the last turn of a transcript would say
@@ -76,8 +76,8 @@ enum ClaudeHooksCommand {
         if !given.isEmpty {
             return given.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
         }
-        let settings = config?.claude ?? Config.Claude()
-        return agent == .codex ? [settings.codexFolderURL] : settings.folderURLs
+        let settings = config?.voice ?? Config.Voice()
+        return settings.folders(of: agent) ?? Config.Voice.urls(agent.defaultFolders)
     }
 
     /// Names our hook in `settings.json`, for uninstall. Hooks written by older
@@ -159,8 +159,8 @@ enum ClaudeHooksCommand {
         return failed ? 1 : 0
     }
 
-    /// The hooks follow `claude.enabled`: in every folder when on, out when
-    /// off. A file that already matches is not written.
+    /// In every folder when on, out when off. A file that already matches is
+    /// not written.
     static func reconcile(enabled: Bool, folders: [URL], hook: Hook) -> [(folder: URL, change: Change)] {
         folders.map { folder in
             (folder, edit(folder: folder, agent: hook.agent) { hooks in
@@ -169,12 +169,16 @@ enum ClaudeHooksCommand {
         }
     }
 
-    /// Each agent's hooks, whether they belong in, and where. Codex is opt-in on top of `enabled`.
-    static func targets(_ settings: Config.Claude, hook: Hook) -> [(hook: Hook, enabled: Bool, folders: [URL])] {
-        var codex = hook
-        codex.agent = .codex
-        return [(hook, settings.enabled, settings.folderURLs),
-                (codex, settings.enabled && settings.codex, [settings.codexFolderURL])]
+    /// Each agent's hooks, whether they belong in, and where. An agent that is
+    /// off has them taken out of its default folders.
+    static func targets(_ settings: Config.Voice, hook: Hook) -> [(hook: Hook, enabled: Bool, folders: [URL])] {
+        CodingAgent.hooked.map { agent in
+            var hook = hook
+            hook.agent = agent
+            let folders = settings.folders(of: agent)
+            return (hook, settings.enabled && folders != nil,
+                    folders ?? Config.Voice.urls(agent.defaultFolders))
+        }
     }
 
     static func shown(_ folder: URL) -> String {
@@ -681,19 +685,40 @@ enum ClaudeHooksCommand {
               want: "none absent")
         check("a missing Claude folder is still an error", got: hooks(true, release, in: noCodex), want: "failed")
         func sync(_ yaml: String) -> String {
-            let decoded = try? YAMLDecoder().decode(Config.Claude.self, from: yaml + "\ncodex_folder: " + codexFolder.path)
+            let decoded = try? YAMLDecoder().decode(Config.Voice.self, from: yaml.replacingOccurrences(of: "CODEX", with: codexFolder.path))
             guard let settings = decoded,
                   let target = targets(settings, hook: release).first(where: { $0.hook.agent == .codex }) else { return "-" }
             return reconcile(enabled: target.enabled, folders: target.folders, hook: target.hook).first?.change == .written
                 ? "written " + hookCount(codexRelease, in: codexFile) : "none"
         }
         try? FileManager.default.removeItem(at: codexFile)
-        check("codex on with claude off installs nothing", got: sync("enabled: false\ncodex: true"), want: "none")
-        check("codex on with claude on installs", got: sync("codex: true"), want: "written 4")
-        check("removing the codex key uninstalls", got: sync("progress: true"), want: "written 0")
+        // An agent that is off is taken out of its default folder: here, not ~/.codex.
+        let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
+        setenv("CODEX_HOME", codexFolder.path, 1)
+        check("codex on with voice off installs nothing", got: sync("enabled: false\nagents: {codex: CODEX}"), want: "none")
+        check("codex on with voice on installs", got: sync("agents: {claude: , codex: CODEX}"), want: "written 4")
+        check("removing the codex key uninstalls", got: sync("agents: {claude: }"), want: "written 0")
+        if let codexHome { setenv("CODEX_HOME", codexHome, 1) } else { unsetenv("CODEX_HOME") }
+        func agents(_ yaml: String) -> String {
+            guard let settings = try? YAMLDecoder().decode(Config.Voice.self, from: yaml) else { return "unreadable" }
+            let on = targets(settings, hook: release).filter(\.enabled)
+            return on.map { "\($0.hook.agent.rawValue) " + $0.folders.map(shown).joined(separator: ",") }
+                .joined(separator: "; ") + (settings.unknownAgents.isEmpty ? "" : " ?" + settings.unknownAgents.joined(separator: ","))
+                + (settings.refusedAgents == nil ? "" : " !")
+        }
+        check("no agents key: claude in ~/.claude", got: agents("enabled: true"), want: "claude ~/.claude")
+        check("agents commented out: claude in ~/.claude", got: agents("agents:"), want: "claude ~/.claude")
+        check("agents: {} is no agent", got: agents("agents: {}"), want: "")
+        check("a folder, a list, an empty list",
+              got: agents("agents: {claude: [~/a, ~/b], codex: ~/c}") + " | " + agents("agents: {claude: []}"),
+              want: "claude ~/a,~/b; codex ~/c | claude ~/.claude")
+        check("an unknown agent is set aside", got: agents("agents: {claude: , zork: ~/z, mini: }"), want: "claude ~/.claude ?mini,zork")
+        check("a value that is not a folder: the default folder, said, and the rest still loads",
+              got: agents("agents: {claude: {x: 1}}\nprogress: false") + " | " + agents("agents: [claude, codex]"),
+              want: "claude ~/.claude ! | claude ~/.claude !")
         var withFolder = Config()
-        withFolder.claude.codexFolder = "~/codex-elsewhere"
-        check("--agent codex installs into codex_folder",
+        withFolder.voice.agents[.codex] = ["~/codex-elsewhere"]
+        check("--agent codex installs into voice.agents.codex",
               got: folders(["--install-claude-hooks", "--agent", "codex"], agent: .codex, config: withFolder).first?.path,
               want: NSHomeDirectory() + "/codex-elsewhere")
         try? FileManager.default.removeItem(at: folder)
@@ -731,8 +756,8 @@ enum ClaudeHooksCommand {
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             said = await ClaudeVoice.spoken(
-                turn: ended, written: nil, settings: config.claude, config: config,
-                toned: ClaudeVoice.remote(config.claude, config) != nil
+                turn: ended, written: nil, settings: config.voice, config: config,
+                toned: ClaudeVoice.remote(config.voice, config) != nil
             )
             done.signal()
         }
@@ -754,7 +779,7 @@ enum ClaudeHooksCommand {
             return 2
         }
         let input = event["tool_input"] as? [String: Any] ?? [:]
-        let named = config.claude.model.trimmingCharacters(in: .whitespaces)
+        let named = config.voice.model.trimmingCharacters(in: .whitespaces)
         let model = config.model(named: named) ?? config.model(for: .general)
         var said = ""
         let started = Date()
@@ -781,21 +806,21 @@ enum ClaudeHooksCommand {
     ) -> Never {
         let text = ClaudeSpeakable.spokenRedacted(text)
         if let output {
-            guard let remote = ClaudeVoice.remote(config.claude, config) else {
-                print("✗ --output needs a remote voice: set claude.speech to a model under models:")
+            guard let remote = ClaudeVoice.remote(config.voice, config) else {
+                print("✗ --output needs a remote voice: set voice.speech to a model under models:")
                 exit(1)
             }
-            save(text, to: output, remote: remote, tone: tone, voice: voice ?? config.claude.speechVoices.first ?? "")
+            save(text, to: output, remote: remote, tone: tone, voice: voice ?? config.voice.speechVoices.first ?? "")
         }
         Task { @MainActor in
             let speaker = Speaker()
-            speaker.localVoice = config.claude.localVoice
-            speaker.localPlacement = PocketTtsModelPlacement(rawValue: config.claude.localPlacement) ?? .gpu
-            speaker.speed = config.claude.speed
-            speaker.remote = ClaudeVoice.remote(config.claude, config)
+            speaker.localVoice = config.voice.localVoice
+            speaker.localPlacement = PocketTtsModelPlacement(rawValue: config.voice.localPlacement) ?? .gpu
+            speaker.speed = config.voice.speed
+            speaker.remote = ClaudeVoice.remote(config.voice, config)
             let started = Date()
-            let style = (voice ?? config.claude.speechVoices.first).map {
-                Speaker.Style(voice: $0, tone: tone ?? ClaudeSpeakable.instructions(base: config.claude.speechTone, shift: nil))
+            let style = (voice ?? config.voice.speechVoices.first).map {
+                Speaker.Style(voice: $0, tone: tone ?? ClaudeSpeakable.instructions(base: config.voice.speechTone, shift: nil))
             }
             print("tone:  \(style?.tone ?? "(PocketTTS has none)")")
             if let remote = speaker.remote {

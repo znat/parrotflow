@@ -54,8 +54,8 @@ clean:
     input: "Nothing is built yet."
     want: "Nothing is built yet."
   - name: snake_case is left alone
-    input: "Set claude.folders and last_assistant_message."
-    want: "Set claude.folders and last_assistant_message."
+    input: "Set voice.agents and last_assistant_message."
+    want: "Set voice.agents and last_assistant_message."
 
 progress:
   - name: Bash says its description

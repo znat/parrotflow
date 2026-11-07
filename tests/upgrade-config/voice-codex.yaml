@@ -1,0 +1,6 @@
+version: 2
+claude:
+    frame: false
+    # Codex, in its own folder.
+    codex: yes
+    codex_folder: ~/codex-home
