@@ -439,3 +439,8 @@ jobs:
       # only, no model and no audio.
       - name: The Claude voice text rules
         run: scripts/check-claude-voice.sh
+
+      # The events the mini-swe-agent plugin sends, on a stub of mini: CI
+      # does not install mini itself.
+      - name: The mini-swe-agent plugin
+        run: scripts/check-mini-plugin.sh

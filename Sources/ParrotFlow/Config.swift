@@ -2854,12 +2854,14 @@ struct Config: Decodable, Equatable {
 
     struct Voice: Decodable, Equatable {
         var enabled = true
-        /// Each agent whose hooks the app keeps, with its config folders. No
-        /// folders: the agent's default. No `agents:` key: Claude Code alone,
-        /// as before agents had a choice.
+        /// Each agent the app speaks for, with the config folders that get its
+        /// hooks. No folders: the agent's default. No `agents:` key: Claude
+        /// Code alone, as before agents had a choice.
         var agents: [CodingAgent: [String]] = [.claude: []]
-        /// Names under `agents:` that are no agent the app hooks.
+        /// Names under `agents:` that are no agent the app speaks for.
         var unknownAgents: [String] = []
+        /// Agents with no hooks file that were given a folder anyway.
+        var folderless: [String] = []
         /// What `problems()` says about an `agents:` it could not read.
         var refusedAgents: String?
         var progress = true
@@ -2946,15 +2948,21 @@ struct Config: Decodable, Equatable {
             agents = [:]
             var refused: [String] = []
             for key in written.allKeys {
-                guard let agent = CodingAgent(rawValue: key.stringValue), CodingAgent.hooked.contains(agent) else {
+                guard let agent = CodingAgent(rawValue: key.stringValue) else {
                     unknownAgents.append(key.stringValue)
                     continue
                 }
                 let folders = (try? written.decodeNil(forKey: key)) == true ? []
                     : (try? written.decode(String.self, forKey: key)).map { [$0] }
                     ?? (try? written.decode([String].self, forKey: key))
+                let kept = (folders ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                if agent.hookEvents.isEmpty {
+                    if folders == nil || !kept.isEmpty { folderless.append(key.stringValue) }
+                    agents[agent] = []
+                    continue
+                }
                 if folders == nil { refused.append(key.stringValue) }
-                agents[agent] = (folders ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                agents[agent] = kept
             }
             unknownAgents.sort()
             if !refused.isEmpty {
@@ -3222,9 +3230,13 @@ struct Config: Decodable, Equatable {
         }
         if !voice.unknownAgents.isEmpty {
             let one = voice.unknownAgents.count == 1
+            let names = CodingAgent.allCases.map(\.rawValue)
             found.append("voice.agents: \(voice.unknownAgents.joined(separator: ", "))"
-                + (one ? " is not an agent" : " are not agents") + " the app hooks — expected "
-                + CodingAgent.hooked.map(\.rawValue).joined(separator: " or "))
+                + (one ? " is not an agent" : " are not agents") + " the app speaks for — expected "
+                + names.dropLast().joined(separator: ", ") + " or " + (names.last ?? ""))
+        }
+        for agent in voice.folderless {
+            found.append("voice.agents.\(agent): takes no folder — \(agent) has no hooks file, so the value is ignored")
         }
         if let refused = voice.refusedAgents { found.append("voice.agents: \(refused)") }
         let speech = voice.speech.trimmingCharacters(in: .whitespaces)

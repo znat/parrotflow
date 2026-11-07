@@ -96,7 +96,7 @@ It also names, every time and whether or not anything is wrong:
 - a `fuzzy` stage with no `replacements` stage before it
 - which agents `voice.agents` hooks, and in which folders. A `claude:` section
   is a `✗` that names `--upgrade-config --write`. A name under `agents` other
-  than `claude` or `codex` is a `✗` too
+  than `claude`, `codex` or `mini` is a `✗` too, and so is a folder after `mini`
 - a key no setting reads, by its full path, with the closest key. This is a
   `⚠` warning: it does not change the exit code
 

@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "parrotflow-mini"
+version = "0.1.0"
+description = "Speaks mini-swe-agent's progress and answers through the ParrotFlow app on macOS."
+license = { text = "GPL-3.0" }
+requires-python = ">=3.10"
+
+[tool.setuptools]
+py-modules = ["parrotflow_mini"]
