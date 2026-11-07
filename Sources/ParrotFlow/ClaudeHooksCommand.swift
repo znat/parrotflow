@@ -153,6 +153,11 @@ enum ClaudeHooksCommand {
               got: ClaudeSpeakable.lastTurn(transcript: tail, tailBytes: transcript.utf8.count - 1)?.answer,
               want: "Done.")
         try? FileManager.default.removeItem(at: tail)
+        let pane = CGRect(x: 100, y: 200, width: 800, height: 600)
+        check("a pane 3 points off is the same place",
+              got: SpeakingFrame.close(pane, pane.offsetBy(dx: 3, dy: -3)) ? "same" : "other", want: "same")
+        check("a pane 4 points wider is another place",
+              got: SpeakingFrame.close(pane, pane.insetBy(dx: -2, dy: 0)) ? "same" : "other", want: "other")
         print("\n\(passed)/\(total)")
         return passed == total ? 0 : 1
     }
