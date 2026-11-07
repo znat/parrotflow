@@ -209,14 +209,14 @@ enum ClaudeSpeakable {
         var parts = ["Language: " + languageName(language)]
         if let earlier {
             if let prompt = earlier.prompt, !prompt.isEmpty {
-                parts.append("Earlier request: " + redacted(String(clean(prompt).prefix(600))))
+                parts.append("Earlier request: " + String(redacted(clean(prompt)).prefix(600)))
             }
             let said = earlier.recap.map { clean($0, language: language) } ?? clean(earlier.answer, language: language)
-            if !said.isEmpty { parts.append("Earlier reply: " + redacted(String(said.prefix(1500)))) }
+            if !said.isEmpty { parts.append("Earlier reply: " + String(redacted(said).prefix(1500))) }
         }
-        if let request, !request.isEmpty { parts.append("Request: " + redacted(String(clean(request).prefix(800)))) }
-        if !reply.isEmpty { parts.append("Reply: " + redacted(String(reply.prefix(6000)))) }
-        if let recap, !recap.isEmpty { parts.append("Recap: " + redacted(String(recap.prefix(800)))) }
+        if let request, !request.isEmpty { parts.append("Request: " + String(redacted(clean(request)).prefix(800))) }
+        if !reply.isEmpty { parts.append("Reply: " + String(redacted(reply).prefix(6000))) }
+        if let recap, !recap.isEmpty { parts.append("Recap: " + String(redacted(recap).prefix(800))) }
         return parts.joined(separator: "\n\n")
     }
 
@@ -272,12 +272,14 @@ enum ClaudeSpeakable {
             + "encore très quand alors donc leur leurs elle elles nous vous ils sans sous entre depuis").split(separator: " ").map(String.init)
     )
 
-    private static let wordPattern = try? NSRegularExpression(pattern: #"[\p{Ll}0-9][\p{Ll}0-9'.-]{3,}"#)
+    private static let wordPattern = try? NSRegularExpression(pattern: #"[\p{Ll}0-9][\p{Ll}0-9'.-]*"#)
 
     private static func contentWords(_ text: String) -> Set<String> {
         let lower = text.lowercased()
+        let edges = CharacterSet(charactersIn: ".'-")
         let found = wordPattern?.matches(in: lower, range: NSRange(lower.startIndex..., in: lower))
-            .compactMap { Range($0.range, in: lower).map { String(lower[$0]) } } ?? []
+            .compactMap { Range($0.range, in: lower).map { String(lower[$0]).trimmingCharacters(in: edges) } }
+            .filter { $0.count >= 4 } ?? []
         return Set(found).subtracting(stopWords)
     }
 
@@ -437,8 +439,8 @@ enum ClaudeSpeakable {
 
     /// The request, and the latest result when there is one, for `reminderPrompt`.
     static func reminderInput(request: String, latest: String?, language: String = "en") -> String {
-        var lines = ["Language: \(languageName(language))", "Request: \(redacted(String(clean(request).prefix(1500))))"]
-        if let latest, !latest.isEmpty { lines.append("Latest: \(redacted(String(clean(latest).prefix(500))))") }
+        var lines = ["Language: \(languageName(language))", "Request: \(String(redacted(clean(request)).prefix(1500)))"]
+        if let latest, !latest.isEmpty { lines.append("Latest: \(String(redacted(clean(latest)).prefix(500)))") }
         return lines.joined(separator: "\n")
     }
 
@@ -468,14 +470,14 @@ enum ClaudeSpeakable {
         tool: String, input: [String: Any], context: String?, task: String? = nil, language: String = "en"
     ) -> String {
         var lines = ["Language: \(languageName(language))", "Tool: \(tool)"]
-        if let task, !task.isEmpty { lines.insert("Session task: \(redacted(String(clean(task).prefix(400))))", at: 1) }
+        if let task, !task.isEmpty { lines.insert("Session task: \(String(redacted(clean(task)).prefix(400)))", at: 1) }
         for key in ["description", "command", "file_path", "pattern", "query", "url"] {
             guard var value = input[key] as? String, !value.isEmpty else { continue }
             if key == "file_path" { value = basename(value) }
-            lines.append("\(key): \(redacted(String(value.prefix(600))))")
+            lines.append("\(key): \(String(redacted(value).prefix(600)))")
         }
         if let context, !context.isEmpty {
-            lines.append("What the assistant just wrote: \(redacted(String(clean(context).suffix(500))))")
+            lines.append("What the assistant just wrote: \(String(redacted(clean(context)).suffix(500)))")
         }
         return lines.joined(separator: "\n")
     }
@@ -520,7 +522,10 @@ enum ClaudeSpeakable {
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
         try? handle.seek(toOffset: size > UInt64(tailBytes) ? size - UInt64(tailBytes) : 0)
-        guard let data = try? handle.readToEnd(), let text = String(data: data, encoding: .utf8) else { return nil }
+        guard let data = try? handle.readToEnd() else { return nil }
+        // The tail can start inside a character; that first line is cut anyway.
+        // swiftlint:disable:next optional_data_string_conversion
+        let text = String(decoding: data, as: UTF8.self)
         return latestSummary(lines: text.split(separator: "\n").map(String.init))
     }
 
@@ -552,9 +557,9 @@ enum ClaudeSpeakable {
         let size = (try? handle.seekToEnd()) ?? 0
         let start = size > UInt64(tailBytes) ? size - UInt64(tailBytes) : 0
         try? handle.seek(toOffset: start)
-        guard let data = try? handle.readToEnd(), let text = String(data: data, encoding: .utf8) else {
-            return nil
-        }
+        guard let data = try? handle.readToEnd() else { return nil }
+        // swiftlint:disable:next optional_data_string_conversion
+        let text = String(decoding: data, as: UTF8.self)
         return lastTurn(lines: text.split(separator: "\n").map(String.init))
     }
 

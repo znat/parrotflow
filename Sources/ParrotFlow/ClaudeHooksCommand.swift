@@ -140,6 +140,19 @@ enum ClaudeHooksCommand {
         check("what the assistant wrote loses its secrets",
               got: ClaudeSpeakable.explainInput(tool: "Bash", input: [:], context: "Use password: hunter2 now"),
               want: "Language: English\nTool: Bash\nWhat the assistant just wrote: Use password: <redacted> now.")
+        let cut = ClaudeSpeakable.explainInput(
+            tool: "Bash", input: [:], context: "Use token=hunter2 " + String(repeating: "ok ", count: 164)
+        )
+        check("a secret is redacted before the cut", got: cut.contains("unter2") ? "leaks" : "redacted",
+              want: "redacted")
+        let tail = FileManager.default.temporaryDirectory.appendingPathComponent("claude-voice-tail-\(getpid()).jsonl")
+        let transcript = "é\n" + #"{"type":"user","message":{"role":"user","content":"go"}}"# + "\n"
+            + #"{"type":"assistant","message":{"content":[{"type":"text","text":"Done."}]}}"# + "\n"
+        try? Data(transcript.utf8).write(to: tail)
+        check("a tail that starts inside a character still reads",
+              got: ClaudeSpeakable.lastTurn(transcript: tail, tailBytes: transcript.utf8.count - 1)?.answer,
+              want: "Done.")
+        try? FileManager.default.removeItem(at: tail)
         print("\n\(passed)/\(total)")
         return passed == total ? 0 : 1
     }

@@ -246,6 +246,10 @@ grounded:
     said: "Done."
     source: "Done. Tests pass."
     kept: true
+  - name: a word before a period matches the same word
+    said: "Merged. Released. Deployed."
+    source: "I merged, released and deployed it"
+    kept: true
 
 speakable:
   - name: curly apostrophes become straight
