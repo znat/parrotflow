@@ -213,8 +213,7 @@ final class ClaudeVoice {
         guard let agent = Self.speaksFor(named) else {
             return skip("agent " + named, "events from agent \"\(named.prefix(40))\" are not spoken by this build")
         }
-        // A Codex subagent's thread would speak as a session of its own.
-        if agent == .codex, event["agent_id"] != nil {
+        if agent == .codex, Self.isSubagent(event) {
             return skip("codex subagent", "Codex subagent events are not spoken")
         }
         let id = Self.key(agent, event["session_id"] as? String ?? "")
@@ -269,6 +268,12 @@ final class ClaudeVoice {
         default:
             skip(agent.rawValue + " " + name, "\(agent.rawValue) event \(name.prefix(40)) is not spoken")
         }
+    }
+
+    /// A Codex subagent's thread would speak as a session of its own. Codex
+    /// writes absent optional fields as null.
+    static func isSubagent(_ event: [String: Any]) -> Bool {
+        (event["agent_id"] as? String)?.isEmpty == false
     }
 
     private func skip(_ key: String, _ why: String) {

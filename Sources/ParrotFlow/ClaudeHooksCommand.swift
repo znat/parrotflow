@@ -602,6 +602,12 @@ enum ClaudeHooksCommand {
         check("agent=claude is Claude's", got: received("pid=42\nagent=claude\n" + event), want: "42 claude event")
         check("agent=codex is Codex's", got: received("pid=42\nagent=codex\n" + event), want: "42 codex event")
         check("an unknown agent is not spoken", got: received("pid=42\nagent=zork\n" + event), want: "42 ignored event")
+        func thread(_ json: String) -> String {
+            let parsed = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] ?? [:]
+            return ClaudeVoice.isSubagent(parsed) ? "subagent" : "main"
+        }
+        check("a Codex event with a null agent_id is the main thread", got: thread(#"{"agent_id":null}"#), want: "main")
+        check("a Codex event with an agent_id is a subagent's", got: thread(#"{"agent_id":"a1"}"#), want: "subagent")
         check("an event with no header is Claude's", got: received(event), want: "- claude event")
         check("one session id under two agents is two sessions",
               got: "\(Set([ClaudeVoice.key(.claude, "s"), ClaudeVoice.key(.codex, "s"), ClaudeVoice.key(.claude, "s")]).count)",
