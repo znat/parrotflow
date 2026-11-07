@@ -28,7 +28,7 @@ enum ClaudeSpeakable {
         // A path with a file name at the end: keep the file name.
         rule(#"(?<![\w])(?:~|\.{1,2})?/?(?:[\w@.+-]+/)+([\w@+-]+\.[A-Za-z0-9]{1,8})\b"#, "$1"),
         // An absolute or home path to a folder: keep its last part.
-        rule(#"(?<![\w])(?:~/|/)(?:[\w@.+-]+(?: [\w@.+-]+)*/)*([\w@.+-]+)/?"#, "$1"),
+        rule(#"(?<![\w])(?:~/|/)(?:[\w@.+-]+(?: [A-Z0-9][\w@.+-]*)*/)*([\w@.+-]+)/?"#, "$1"),
         rule(#"\b([\w+-]+\.[A-Za-z]{1,8}):\d+(?:-\d+)?\b"#, "$1"),
         rule(#"\*\*|__|(?<!\w)\*(?=\S)|(?<=\S)\*(?!\w)"#, ""),
         rule(#"\s*(?:→|->|=>)\s*"#, " to "),

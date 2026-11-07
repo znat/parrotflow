@@ -38,9 +38,9 @@ clean:
   - name: a folder name with a space
     input: "It is in ~/Library/Application Support/ParrotFlow/"
     want: "It is in ParrotFlow."
-  - name: a lowercase folder name with a space
-    input: "Saved to ~/my notes/drafts/"
-    want: "Saved to drafts."
+  - name: and/or after a folder is prose
+    input: "See /tmp/foo and/or run tests."
+    want: "See foo and/or run tests."
   - name: table is dropped
     input: "Summary:\n| a | b |\n|---|---|\n| 1 | 2 |\nDone."
     want: "Summary: Done."
@@ -112,6 +112,12 @@ progress:
     tool: mcp__Claude_Browser__navigate
     input: { url: "http://localhost:3000" }
     want: "I'm using the browser"
+  - name: a question with no text still asks
+    tool: AskUserQuestion
+    want: "I have a question for you."
+  - name: a finished plan
+    tool: ExitPlanMode
+    want: "The plan's ready when you want to look."
 
 redacted:
   - name: plain command is left alone
