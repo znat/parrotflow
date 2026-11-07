@@ -1206,6 +1206,25 @@ panel that changes width and crossfades its contents rather than being replaced
 — hot mic, decoding, applied, the offer, gone — and whether that morphs or
 jumps is only visible in motion. It loops for as many seconds as you give it.
 
+## Claude Code's voice
+
+```sh
+$PF --install-claude-hooks [--folder <dir>]...   # claude.folders unless --folder
+$PF --uninstall-claude-hooks [--folder <dir>]...
+$PF --claude-voice-test [cases.yaml]             # text rules; no config, no audio
+$PF --claude-spoken <session.jsonl>              # what the last turn would say
+$PF --claude-explain '<PreToolUse json>' [--context "<text>"]  # one progress line, explained
+$PF --claude-say "<text>" [--tone "<instructions>"] [--voice <name>]  # say it
+$PF --claude-say "<text>" --output <clip.wav>     # the remote voice into a 24 kHz WAV
+scripts/tone-lab.py                              # a page to try tones on recent lines
+```
+
+The app installs and removes the hooks by itself when `claude.enabled`
+changes. These two flags do it by hand. They must run from the installed app,
+not from `.build`. A binary outside an app bundle cannot tell the dev build from the release build,
+so its hook would reach the wrong app. `--speak-event` sends stdin to the
+running app, as the hooks do with `nc`; it is there for testing. See [configuration.md](configuration.md#claude).
+
 ## Updates
 
 ```sh

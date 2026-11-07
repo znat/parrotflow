@@ -20,6 +20,8 @@ final class ClaudeVoice {
     private var config = Config()
     private var listener: SocketListener?
     private var warmedVoice = ""
+    /// Each hook problem is logged once, not on every reload.
+    private var hookProblems: Set<String> = []
     private var lastProgressAt = Date.distantPast
     private var lastKind: ClaudeSpeakable.Kind?
     private var sessions: [String: Session] = [:]
@@ -90,6 +92,23 @@ final class ClaudeVoice {
             speaker.stop()
         }
         warmIfNeeded()
+        syncHooks()
+    }
+
+    /// The hooks follow `claude.enabled`, so nobody runs `--install-claude-hooks`.
+    private func syncHooks() {
+        guard let hook = ClaudeHooksCommand.Hook.current else { return }
+        for (folder, change) in ClaudeHooksCommand.reconcile(
+            enabled: settings.enabled, folders: settings.folderURLs, hook: hook
+        ) {
+            switch change {
+            case .unchanged: break
+            case .written:
+                Log.write("claude hooks: \(settings.enabled ? "installed in" : "removed from") \(ClaudeHooksCommand.shown(folder))")
+            case .failed(let why):
+                if hookProblems.insert(why).inserted { Log.write("claude hooks: \(why)") }
+            }
+        }
     }
 
     /// The local voice is warmed when it will speak first: no remote voice,
