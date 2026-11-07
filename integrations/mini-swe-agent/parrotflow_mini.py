@@ -109,4 +109,8 @@ class ParrotFlowAgent(InteractiveAgent):
         with quiet():
             if kwargs.get("itype") == "UserNewTask" and content.startswith(NEW_TASK):
                 self._prompted(content[len(NEW_TASK):], start=len(self.messages))
+            elif self.parrotflow_answered:
+                # /u at the end of a run goes on in the same task, so its end is said again.
+                self.parrotflow_answered = False
+                self.parrotflow_start = len(self.messages)
         return super()._interrupt(content, *args, **kwargs)

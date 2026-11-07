@@ -266,6 +266,17 @@ class PluginTest(unittest.TestCase):
         self.assertEqual({e["session_id"] for e in events}, {agent.parrotflow_session})
         self.assertEqual({e["cwd"] for e in events}, {"/work/shop"})
 
+    def test_going_on_after_the_answer_says_the_next_answer(self):
+        agent = self.agent(said("Done.", SUBMIT), said("", SUBMIT), said("Now really done.", SUBMIT),
+                           typed=["/u", "/u", ""], mode="yolo")
+        agent.run("fix the cart")
+        self.assertEqual(self.app.events(), [
+            ("UserPromptSubmit", "fix the cart"),
+            ("Stop", "Done."),
+            ("Stop", ""),
+            ("Stop", "Now really done."),
+        ])
+
     def test_a_command_the_user_typed_is_not_said(self):
         agent = self.agent(mode="yolo")
         agent.execute_actions({"role": "user", "content": "User command", "extra": {"actions": [{"command": "ls"}]}})
