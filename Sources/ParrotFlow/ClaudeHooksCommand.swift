@@ -168,6 +168,16 @@ enum ClaudeHooksCommand {
         let cut = ClaudeSpeakable.explainInput(
             tool: "Bash", input: [:], context: "Use token=hunter2 " + String(repeating: "ok ", count: 164)
         )
+        let fallback = ClaudeSpeakable.truncated(ClaudeSpeakable.clean(
+            "Done. I set `OPENROUTER_API_KEY=sk-or-v1-abcdef1234567890` in your shell."
+        ))
+        check("a key in a reply said plain is not said", got: ClaudeSpeakable.spokenRedacted(fallback),
+              want: "Done. I set OPENROUTER_API_KEY=redacted in your shell.")
+        check("a password after a colon is not said", got: ClaudeSpeakable.spokenRedacted("Use password: hunter2 now."),
+              want: "Use password: redacted now.")
+        check("prose about a token is said as it is",
+              got: ClaudeSpeakable.spokenRedacted("The token expired, so I refreshed the skyscrapers page."),
+              want: "The token expired, so I refreshed the skyscrapers page.")
         check("a secret is redacted before the cut", got: cut.contains("unter2") ? "leaks" : "redacted",
               want: "redacted")
         let tail = FileManager.default.temporaryDirectory.appendingPathComponent("claude-voice-tail-\(getpid()).jsonl")

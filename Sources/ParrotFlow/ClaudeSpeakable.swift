@@ -456,8 +456,30 @@ enum ClaudeSpeakable {
     /// What a command or URL looks like with its secrets taken out, before
     /// it is sent to a model that may not be on this Mac.
     static func redacted(_ text: String) -> String {
+        replacing(text, secrets)
+    }
+
+    /// Only shapes that are secrets on their own: prose like "the token
+    /// expired" is kept. A secret becomes a word the voice can say.
+    private static let spokenSecrets: [(NSRegularExpression, String)] = [
+        rule(#"(?i)\bbearer\s+[^\s'"]*[^\s'".,;:!?]"#, "Bearer redacted"),
+        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*=\s*)(['"]?)[^\s'"]*[^\s'".,;:!?]\3"#,
+             "$1$2redacted"),
+        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(:\s*)(['"]?)(?=[^\s'"]*\d)[^\s'"]*[^\s'".,;:!?]\3"#,
+             "$1$2redacted"),
+        rule(#"\b(?:[spr]k[-_]|gh[posu]_|github_pat_|xox[abpr]-|AKIA|AIza)[-_A-Za-z0-9]{8,}"#, "redacted"),
+        rule(#"\b(?=[A-Za-z0-9+/_-]*\d)(?=[A-Za-z0-9+/_-]*[A-Za-z])[A-Za-z0-9+/_-]{32,}={0,2}"#, "redacted"),
+    ].compactMap { $0 }
+
+    /// A line about to be said, and logged, with its secrets taken out. The
+    /// remote voice is not on this Mac either.
+    static func spokenRedacted(_ text: String) -> String {
+        replacing(text, spokenSecrets)
+    }
+
+    private static func replacing(_ text: String, _ rules: [(NSRegularExpression, String)]) -> String {
         var out = text
-        for (expression, template) in secrets {
+        for (expression, template) in rules {
             out = expression.stringByReplacingMatches(
                 in: out, range: NSRange(out.startIndex..., in: out), withTemplate: template
             )

@@ -576,6 +576,8 @@ final class ClaudeVoice {
                 base: settings.speechTone, shift: progress ? "quick, like a passing remark" : nil
             )
         )
+        // Every line passes here: answers said plain when the rewrite fails, progress and notifications.
+        line = ClaudeSpeakable.spokenRedacted(line)
         // Whole, so scripts/tone-play.sh can replay it.
         Log.write("claude voice: said: \(line.prefix(800))")
         speaker.say(line, style: style, session: session, progress: progress,
