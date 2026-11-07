@@ -77,15 +77,17 @@ enum ClaudeHooksCommand {
         var socket: String
         /// `/ParrotFlowDev.app/`: hooks from older builds ran that binary with `marker`.
         var app: String
+        var agent = CodingAgent.claude
 
         /// `nc` to the app's socket, not the app binary. The binary in a hook
         /// blocked Claude once that build was uninstalled, and a build that does
         /// not know `--speak-event` starts a second menu bar app on every tool
         /// call. `nc` exits in about 10 ms either way, and `exit 0` keeps a missing
-        /// app silent. `$PPID` is the Claude process, which `SpeakingFrame` walks
+        /// app silent. `$PPID` is the agent's process, which `SpeakingFrame` walks
         /// up from to find the window to frame.
         var command: String {
-            "[ -S '\(socket)' ] && { echo \"pid=$PPID\"; cat; } | /usr/bin/nc -U -w 1 '\(socket)' >/dev/null 2>&1;"
+            "[ -S '\(socket)' ] && { echo \"pid=$PPID\"; echo agent=\(agent.rawValue); cat; }"
+                + " | /usr/bin/nc -U -w 1 '\(socket)' >/dev/null 2>&1;"
                 + " exit 0 # \(tag)"
         }
 
@@ -539,7 +541,28 @@ enum ClaudeHooksCommand {
               want: "ParrotFlow.app")
         seedSettings("{")
         check("broken JSON is left alone", got: hooks(true, release) + " " + contents(settings), want: "failed {")
+        seedSettings(#"{"hooks":{"Stop":[{"hooks":[{"command":"[ -S '/s/ParrotFlow/claude.sock' ] && "#
+            + #"{ echo \"pid=$PPID\"; cat; } | /usr/bin/nc -U -w 1 '/s/ParrotFlow/claude.sock' >/dev/null 2>&1; "#
+            + #"exit 0 # parrotflow-speak-event","timeout":2,"type":"command"}]}]}}"#)
+        check("a hook without agent= is upgraded", got: hooks(true, release), want: "written")
+        check("the upgraded hooks send agent=claude, one per event",
+              got: hookCount(release) + " " + "\(contents(settings).components(separatedBy: "echo agent=claude;").count - 1)",
+              want: "4 4")
+        check("an upgraded hook is not written again", got: hooks(true, release), want: "none")
         try? FileManager.default.removeItem(at: folder)
+        let event = #"{"hook_event_name":"Stop","session_id":"s"}"#
+        func received(_ payload: String) -> String {
+            let (pid, agent, body) = ClaudeVoice.split(Data(payload.utf8))
+            return [pid.map { "\($0)" } ?? "-", ClaudeVoice.speaksFor(agent)?.rawValue ?? "ignored",
+                    String(bytes: body, encoding: .utf8) == event ? "event" : "broken"].joined(separator: " ")
+        }
+        check("an event with no agent= line is Claude's", got: received("pid=42\n" + event), want: "42 claude event")
+        check("agent=claude is Claude's", got: received("pid=42\nagent=claude\n" + event), want: "42 claude event")
+        check("an unknown agent is not spoken", got: received("pid=42\nagent=zork\n" + event), want: "42 ignored event")
+        check("an event with no header is Claude's", got: received(event), want: "- claude event")
+        check("one session id under two agents is two sessions",
+              got: "\(Set([ClaudeVoice.key(.claude, "s"), ClaudeVoice.key(.codex, "s"), ClaudeVoice.key(.claude, "s")]).count)",
+              want: "2")
         print("\n\(passed)/\(total)")
         return passed == total ? 0 : 1
     }
