@@ -88,9 +88,13 @@ final class SpeakingFrame {
         guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
               var queue = value as? [AXUIElement] else { return nil }
         var depth = 0
+        // 24 children over 6 levels is millions of calls on the main thread in a deep tree.
+        var budget = 400
         while !queue.isEmpty, depth < 6 {
             var next: [AXUIElement] = []
             for element in queue {
+                budget -= 1
+                if budget < 0 { return nil }
                 let kind = role(of: element)
                 if kind == kAXWindowRole || kind == kAXScrollAreaRole, let frame = frame(of: element),
                    close(frame, rect) {
