@@ -191,6 +191,20 @@ enum CodexSpeakable {
         return ClaudeSpeakable.TurnEnd(answer: answer ?? finished ?? "", latestText: latest, prompt: prompt)
     }
 
+    /// The thread's name. It is not in the rollout: Codex appends
+    /// `{"id","thread_name"}` lines to `session_index.jsonl` in its home, and
+    /// the last one wins. A rollout is `<home>/sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`;
+    /// a reverted thread's adds `_<rollout id>` after the thread id.
+    static func title(rollout url: URL) -> String? {
+        let name = url.deletingPathExtension().lastPathComponent
+        let id = String(name.split(separator: "_").first?.suffix(36) ?? "")
+        let sessions = (0..<4).reduce(url) { folder, _ in folder.deletingLastPathComponent() }
+        guard UUID(uuidString: id) != nil, sessions.lastPathComponent == "sessions" else { return nil }
+        let index = sessions.deletingLastPathComponent().appendingPathComponent("session_index.jsonl")
+        let entry = ClaudeSpeakable.lastEntry(in: index, containing: "\"\(id)\"") { $0["id"] as? String == id }
+        return (entry?["thread_name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
     static func latestSummary(transcript url: URL, tailBytes: Int = 512 * 1024) -> String? {
         ClaudeSpeakable.tail(of: url, bytes: tailBytes).flatMap(latestSummary(lines:))
     }

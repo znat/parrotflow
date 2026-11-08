@@ -396,9 +396,11 @@ enum ClaudeSpeakable {
         return first.lowercased() + text.dropFirst()
     }
 
-    /// The request, and the latest result when there is one, for the reminder prompt.
-    static func reminderInput(request: String, latest: String?, language: String = "en") -> String {
-        var lines = ["Language: \(languageName(language))", "Request: \(String(redacted(clean(request)).prefix(1500)))"]
+    /// The request, and the session's title and latest result when known, for the reminder prompt.
+    static func reminderInput(request: String, latest: String?, task: String? = nil, language: String = "en") -> String {
+        var lines = ["Language: \(languageName(language))"]
+        if let task, !task.isEmpty { lines.append("Task: \(String(redacted(clean(task)).prefix(300)))") }
+        lines.append("Request: \(String(redacted(clean(request)).prefix(1500)))")
         if let latest, !latest.isEmpty { lines.append("Latest: \(String(redacted(clean(latest)).prefix(500)))") }
         return lines.joined(separator: "\n")
     }
@@ -505,6 +507,36 @@ enum ClaudeSpeakable {
     /// sent, so the turn it starts has nothing in it yet.
     static func latestSummary(transcript url: URL, tailBytes: Int = 512 * 1024) -> String? {
         tail(of: url, bytes: tailBytes).flatMap(latestSummary(lines:))
+    }
+
+    /// The session's title: the last one the person set, else the last one
+    /// Claude Code wrote. Title lines can sit anywhere in the file.
+    static func title(transcript url: URL) -> String? {
+        func last(_ type: String) -> [String: Any]? {
+            lastEntry(in: url, containing: #""type":"\#(type)""#) { $0["type"] as? String == type }
+        }
+        let named = last("custom-title")?["customTitle"] as? String
+        let made = last("ai-title")?["aiTitle"] as? String
+        return named?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            ?? made?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
+    /// The last line of a `.jsonl` file that holds `marker` and is a JSON
+    /// object, found with a byte search from the end of the mapped file.
+    static func lastEntry(in url: URL, containing marker: String,
+                          where accept: ([String: Any]) -> Bool = { _ in true }) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+        let needle = Data(marker.utf8)
+        var upper = data.endIndex
+        while let hit = data.range(of: needle, options: .backwards, in: data.startIndex..<upper) {
+            let start = data[..<hit.lowerBound].lastIndex(of: 0x0A).map { $0 + 1 } ?? data.startIndex
+            let end = data[hit.upperBound...].firstIndex(of: 0x0A) ?? data.endIndex
+            if let entry = try? JSONSerialization.jsonObject(with: data[start..<end]) as? [String: Any], accept(entry) {
+                return entry
+            }
+            upper = start
+        }
+        return nil
     }
 
     /// The last `bytes` of a `.jsonl` file, as lines.
