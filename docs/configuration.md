@@ -1599,8 +1599,10 @@ URL query strings. An
   ("Update from parrotflow:", "parrotflow here:"), when the line before came
   from another active session. A session that was quiet for two minutes is
   named again when its window is not in front. Coming back to a session not
-  heard for 90 seconds, a one- or two-sentence reminder of what it is about
-  comes first, written by `model` from the session's latest request.
+  heard for 90 seconds, a two-sentence reminder comes first: the session's
+  general task, then the current work. `model` writes it from the session's
+  title (Claude Code's, or Codex's thread name), its latest summary and its
+  latest request.
 - **Which window:** with `frame`, a glow in `feedback.primary_color` sits
   around the speaking session's window and brightens with the voice. The
   window is found from the Claude process: the app it runs in (the Claude

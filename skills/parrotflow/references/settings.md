@@ -170,7 +170,7 @@ voice:
   are always said. The hotkey or a new prompt stops the voice.
 - Cost: none per dictation. With a model, it calls the model for progress
   lines (at most one every 6 s), for answers, and for each session's
-  reminder, written from its latest request. A hosted model gets the user's
+  reminder, written from its title and latest request. A hosted model gets the user's
   requests and what the agent did and said. A `speech` voice gets the text of
   each spoken sentence, one request each, and its provider may charge for each.
 - PocketTTS speaks English only and downloads on first use. For a remote
