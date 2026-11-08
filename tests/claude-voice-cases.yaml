@@ -471,6 +471,57 @@ summary:
       - '{"type":"event_msg","payload":{"type":"agent_message","message":"Checking the build.","phase":"commentary"}}'
     want: "Checking the build."
 
+# The session's title, for the reminder's Task line. Claude lines are the
+# transcript; Codex lines are session_index.jsonl, and the rollout's thread id
+# is 0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b. Values invented.
+titles:
+  - name: the title the person set wins over Claude's
+    lines:
+      - '{"type":"custom-title","customTitle":"Voice summaries for agent answers","sessionId":"s1"}'
+      - '{"type":"user","message":{"role":"user","content":"go"}}'
+      - '{"type":"ai-title","aiTitle":"Prefilled vocab proposals","sessionId":"s1"}'
+    want: "Voice summaries for agent answers"
+  - name: the last title the person set wins
+    lines:
+      - '{"type":"custom-title","customTitle":"First name","sessionId":"s1"}'
+      - '{"type":"ai-title","aiTitle":"Generated","sessionId":"s1"}'
+      - '{"type":"custom-title","customTitle":"Second name","sessionId":"s1"}'
+    want: "Second name"
+  - name: with no title set, Claude's last one
+    lines:
+      - '{"type":"ai-title","aiTitle":"Old guess","sessionId":"s1"}'
+      - '{"type":"user","message":{"role":"user","content":"go"}}'
+      - '{"type":"ai-title","aiTitle":"Glow around the speaking window","sessionId":"s1"}'
+    want: "Glow around the speaking window"
+  - name: a title quoted in a message is not a title
+    lines:
+      - '{"type":"user","message":{"role":"user","content":"read {\"type\":\"custom-title\",\"customTitle\":\"Quoted\"}"}}'
+    want: null
+  - name: a half-written title line is skipped
+    lines:
+      - '{"type":"custom-title","customTitle":"Kept","sessionId":"s1"}'
+      - '{"type":"custom-title","customTitle":"Cut'
+    want: "Kept"
+  - name: Codex, the thread's last name in the index
+    agent: codex
+    lines:
+      - '{"id":"0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Socket reads","updated_at":"2026-11-08T10:00:00Z"}'
+      - '{"id":"0199a3b2-0000-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Another thread","updated_at":"2026-11-08T10:01:00Z"}'
+      - '{"id":"0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Fix dropped socket reads","updated_at":"2026-11-08T10:02:00Z"}'
+      - '{"id":"0199a3b2-0000-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Later, another thread","updated_at":"2026-11-08T10:03:00Z"}'
+    want: "Fix dropped socket reads"
+  - name: Codex, a thread with no name
+    agent: codex
+    lines:
+      - '{"id":"0199a3b2-0000-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Another thread","updated_at":"2026-11-08T10:01:00Z"}'
+    want: null
+  - name: Codex, a cleared name is no title
+    agent: codex
+    lines:
+      - '{"id":"0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Socket reads","updated_at":"2026-11-08T10:00:00Z"}'
+      - '{"id":"0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"","updated_at":"2026-11-08T10:02:00Z"}'
+    want: null
+
 # Codex rollout lines, shaped as Codex 0.167 writes them. Values invented.
 codex_turns:
   - name: Codex answer is the final message, not the commentary

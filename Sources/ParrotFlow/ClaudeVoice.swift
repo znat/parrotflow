@@ -23,6 +23,14 @@ enum CodingAgent: String, CaseIterable {
         }
     }
 
+    func title(transcript: URL) -> String? {
+        switch self {
+        case .claude: ClaudeSpeakable.title(transcript: transcript)
+        case .codex: CodexSpeakable.title(rollout: transcript)
+        case .mini: nil
+        }
+    }
+
     func latestSummary(transcript: URL) -> String? {
         switch self {
         case .claude: ClaudeSpeakable.latestSummary(transcript: transcript)
@@ -286,7 +294,8 @@ final class ClaudeVoice {
             if let prompt = event["prompt"] as? String, !prompt.isEmpty {
                 Task.detached {
                     let latest = transcript.flatMap { agent.latestSummary(transcript: $0) }
-                    await MainActor.run { [weak self] in self?.remind(id, request: prompt, latest: latest) }
+                    let title = transcript.flatMap { agent.title(transcript: $0) }
+                    await MainActor.run { [weak self] in self?.remind(id, request: prompt, latest: latest, title: title) }
                 }
             }
             turns[id, default: 0] += 1
@@ -798,8 +807,8 @@ final class ClaudeVoice {
         return chosen
     }
 
-    /// Makes the session's reminder from its latest request, off the main queue.
-    private func remind(_ id: String, request: String, latest: String? = nil) {
+    /// Makes the session's reminder from its title, latest summary and request, off the main queue.
+    private func remind(_ id: String, request: String, latest: String?, title: String?) {
         sessions[id]?.task = request
         let language = sessions[id]?.language ?? ClaudeSpeakable.language(of: request) ?? "en"
         guard config.llmEnabled, sessions[id]?.reminding != true,
@@ -810,10 +819,10 @@ final class ClaudeVoice {
         Task.detached {
             let raw = try? await LLM.complete(
                 system: prompt.text,
-                user: ClaudeSpeakable.reminderInput(request: request, latest: latest, language: language),
+                user: ClaudeSpeakable.reminderInput(request: request, latest: latest, task: title, language: language),
                 json: false, maxTokens: 80, config: model
             )
-            let said = raw.map { ClaudeSpeakable.capped(ClaudeSpeakable.clean(LLM.stripThinking($0), language: language), limit: 200) }
+            let said = raw.map { ClaudeSpeakable.capped(ClaudeSpeakable.clean(LLM.stripThinking($0), language: language), limit: 240, count: 2) }
             await MainActor.run { [weak self] in
                 self?.sessions[id]?.reminding = false
                 guard let said, !said.isEmpty else { return }
@@ -832,8 +841,9 @@ final class ClaudeVoice {
         Task.detached {
             guard let turn = agent.lastTurn(transcript: transcript),
                   let asked = turn.prompt, !asked.isEmpty else { return }
+            let title = agent.title(transcript: transcript)
             await MainActor.run { [weak self] in
-                self?.remind(id, request: asked, latest: turn.recap ?? turn.latestText)
+                self?.remind(id, request: asked, latest: turn.recap ?? turn.latestText, title: title)
             }
         }
     }

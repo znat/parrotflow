@@ -331,12 +331,13 @@ enum ClaudeHooksCommand {
         var spoken: [Clean] = []
         struct Summary: Decodable { var name: String; var lines: [String]; var want: String?; var agent: String? }
         var summary: [Summary] = []
+        var titles: [Summary] = []
         var waiting: [Progress] = []
         var codexTurns: [CodexTurn] = []
         var sessionNames: [SessionName] = []
 
         enum CodingKeys: String, CodingKey {
-            case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary, waiting
+            case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary, waiting, titles
             case codexTurns = "codex_turns"
             case sessionNames = "session_names"
         }
@@ -354,6 +355,7 @@ enum ClaudeHooksCommand {
             speakable = try c.decodeIfPresent([Clean].self, forKey: .speakable) ?? []
             spoken = try c.decodeIfPresent([Clean].self, forKey: .spoken) ?? []
             summary = try c.decodeIfPresent([Summary].self, forKey: .summary) ?? []
+            titles = try c.decodeIfPresent([Summary].self, forKey: .titles) ?? []
             waiting = try c.decodeIfPresent([Progress].self, forKey: .waiting) ?? []
             codexTurns = try c.decodeIfPresent([CodexTurn].self, forKey: .codexTurns) ?? []
             sessionNames = try c.decodeIfPresent([SessionName].self, forKey: .sessionNames) ?? []
@@ -435,6 +437,31 @@ enum ClaudeHooksCommand {
                 ? CodexSpeakable.latestSummary(lines: item.lines) : ClaudeSpeakable.latestSummary(lines: item.lines)
             check(item.name, got: got, want: item.want)
         }
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("claude-voice-titles-\(getpid())")
+        let session = home.appendingPathComponent(
+            "sessions/2026/11/08/rollout-2026-11-08T10-00-00-0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b.jsonl"
+        )
+        try? FileManager.default.createDirectory(at: session.deletingLastPathComponent(), withIntermediateDirectories: true)
+        for item in cases.titles {
+            let codex = agent(item.agent) == .codex
+            let file = codex ? home.appendingPathComponent("session_index.jsonl") : session
+            try? Data((item.lines.joined(separator: "\n") + "\n").utf8).write(to: file)
+            check(item.name, got: agent(item.agent).title(transcript: session), want: item.want)
+            try? FileManager.default.removeItem(at: file)
+        }
+        let early = [#"{"type":"ai-title","aiTitle":"Early title"}"#, String(repeating: "x", count: 600 * 1024), "{}"]
+        try? Data(early.joined(separator: "\n").utf8).write(to: session)
+        check("a title far from the end of the file is found", got: CodingAgent.claude.title(transcript: session),
+              want: "Early title")
+        try? FileManager.default.removeItem(at: home)
+        check("the reminder gets the session's task, without its secrets",
+              got: ClaudeSpeakable.reminderInput(request: "how big is it?", latest: "Measured what the gate adds.",
+                                                 task: "Vocab gate with token=abc123"),
+              want: "Language: English\nTask: Vocab gate with token=<redacted>\nRequest: how big is it?\n"
+                + "Latest: Measured what the gate adds.")
+        check("an empty task is no Task line",
+              got: ClaudeSpeakable.reminderInput(request: "go on", latest: nil, task: ""),
+              want: "Language: English\nRequest: go on.")
         for item in cases.spoken {
             check(item.name, got: ClaudeSpeakable.clean(item.input), want: item.want)
         }
