@@ -512,8 +512,11 @@ enum ClaudeSpeakable {
     /// The session's title: the last one the person set, else the last one
     /// Claude Code wrote. Title lines can sit anywhere in the file.
     static func title(transcript url: URL) -> String? {
-        let named = lastEntry(in: url, containing: #""type":"custom-title""#)?["customTitle"] as? String
-        let made = lastEntry(in: url, containing: #""type":"ai-title""#)?["aiTitle"] as? String
+        func last(_ type: String) -> [String: Any]? {
+            lastEntry(in: url, containing: #""type":"\#(type)""#) { $0["type"] as? String == type }
+        }
+        let named = last("custom-title")?["customTitle"] as? String
+        let made = last("ai-title")?["aiTitle"] as? String
         return named?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             ?? made?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }

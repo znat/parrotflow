@@ -497,6 +497,11 @@ titles:
     lines:
       - '{"type":"user","message":{"role":"user","content":"read {\"type\":\"custom-title\",\"customTitle\":\"Quoted\"}"}}'
     want: null
+  - name: a title object inside a tool call is not the title
+    lines:
+      - '{"type":"ai-title","aiTitle":"Real title","sessionId":"s1"}'
+      - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"type":"ai-title","aiTitle":"Nested"}}]}}'
+    want: "Real title"
   - name: a half-written title line is skipped
     lines:
       - '{"type":"custom-title","customTitle":"Kept","sessionId":"s1"}'
