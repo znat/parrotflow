@@ -59,7 +59,7 @@ the app.
 
 Without the repository, install the `parrotflow` skill:
 `npx skills add znat/parrotflow --skill parrotflow`. It lets the agent change
-your config and explain what is possible. See [the README](../README.md#bring-your-coding-agent).
+your config and explain what is possible. See [the README](../README.md#5-the-parrotflow-skill).
 
 In the repository, start the agent at [AGENTS.md](../AGENTS.md). Give it a
 concrete behavior and examples, including cases that must not change.
