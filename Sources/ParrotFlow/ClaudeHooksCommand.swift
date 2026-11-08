@@ -862,6 +862,10 @@ enum ClaudeHooksCommand {
             print("✗ not a hook payload")
             return 2
         }
+        guard let prompt = VoicePrompt.explain.current else {
+            print("✗ \(VoicePrompt.explain.builtIn.path) is missing")
+            return 1
+        }
         let input = event["tool_input"] as? [String: Any] ?? [:]
         let named = config.voice.model.trimmingCharacters(in: .whitespaces)
         let model = config.model(named: named) ?? config.model(for: .general)
@@ -870,7 +874,7 @@ enum ClaudeHooksCommand {
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             let raw = try? await LLM.complete(
-                system: ClaudeSpeakable.explainPrompt,
+                system: prompt.text,
                 user: ClaudeSpeakable.explainInput(tool: tool, input: input, context: context),
                 json: false, maxTokens: 60, config: model
             )

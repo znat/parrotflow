@@ -20,6 +20,8 @@ integrations/mini-swe-agent/*.egg-info/
 tests/acoustic/
 tests/pronunciations.yaml
 voice/
+# The agent voice's shipped prompts, not a recording.
+!built-in/voice/
 
 # Where Claude Code puts a git worktree it makes: a checkout of this repository,
 # inside this repository. Untracked it turns every `git status` into a warning

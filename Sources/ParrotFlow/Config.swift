@@ -3748,47 +3748,11 @@ enum ConfigStore {
     static func createIfMissing() throws {
         let fm = FileManager.default
         moveRenamedBuiltInDirectory()
-        let source = builtInTransformsDirectory
-        let shipped = builtInTransformFiles()
-        for relative in shipped {
-            let shippedFile = source.appendingPathComponent(relative)
-            let destination = installedBuiltInDirectory.appendingPathComponent(relative)
-            let isNew = !fm.fileExists(atPath: destination.path)
-            try fm.createDirectory(
-                at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if !isNew { try fm.removeItem(at: destination) }
-            try fm.copyItem(at: shippedFile, to: destination)
-            if destination.pathExtension == "py" {
-                // A shebang does nothing without this.
-                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination.path)
-            }
-            if isNew { Log.write("config: wrote transforms/built-in/\(relative)") }
-        }
-        let stillShipped = Set(shipped)
-        for relative in installedBuiltInFiles() where !stillShipped.contains(relative) {
-            var url = installedBuiltInDirectory.appendingPathComponent(relative)
-            do {
-                try fm.removeItem(at: url)
-            } catch {
-                // Said out loud, because the whole point of the prune is that a
-                // dropped example stops resolving. A failure that logged
-                // "removed" would report the opposite of what happened, and the
-                // stale `built-in/...` path would go on working.
-                Log.write("config: could not remove transforms/built-in/\(relative):"
-                    + " \(error.localizedDescription); it is stale and still resolves")
-                continue
-            }
-            Log.write("config: removed transforms/built-in/\(relative) (no longer shipped)")
-            // A folder a removed example leaves empty — `retired/` once
-            // `retired/retired.py` is gone — is cleaned up too, stopping at
-            // the first one that still has something else in it, and never
-            // above `installedBuiltInDirectory` itself.
-            url.deleteLastPathComponent()
-            while url.path != installedBuiltInDirectory.path,
-                  (try? fm.contentsOfDirectory(atPath: url.path))?.isEmpty == true {
-                try? fm.removeItem(at: url)
-                url.deleteLastPathComponent()
-            }
+        try refresh(installedBuiltInDirectory, from: builtInTransformsDirectory, shown: "transforms/built-in")
+        do {
+            try refresh(VoicePrompt.installedDirectory, from: VoicePrompt.builtInDirectory, shown: "voice/built-in")
+        } catch {
+            Log.write("config: could not refresh voice/built-in: \(error.localizedDescription)")
         }
         // The vocabulary, empty but explained. Written so the file exists to
         // be found and read — a person who never dictates a mangled word
@@ -3837,6 +3801,57 @@ enum ConfigStore {
         guard !fm.fileExists(atPath: fileURL.path) else { return }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         try defaultYAML.write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
+    /// Makes `destination` a copy of `source`: every file replaced, and a
+    /// file `source` no longer has removed. Logged as `shown/<file>`.
+    private static func refresh(_ destination: URL, from source: URL, shown: String) throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: source.path) else {
+            Log.write("config: \(source.path) is missing; \(shown) is left as it is")
+            return
+        }
+        let shipped = filesUnder(source)
+        for relative in shipped {
+            let shippedFile = source.appendingPathComponent(relative)
+            let copy = destination.appendingPathComponent(relative)
+            let isNew = !fm.fileExists(atPath: copy.path)
+            try fm.createDirectory(
+                at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if !isNew { try fm.removeItem(at: copy) }
+            try fm.copyItem(at: shippedFile, to: copy)
+            if copy.pathExtension == "py" {
+                // A shebang does nothing without this.
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: copy.path)
+            }
+            if isNew { Log.write("config: wrote \(shown)/\(relative)") }
+        }
+        let stillShipped = Set(shipped)
+        for relative in filesUnder(destination) where !stillShipped.contains(relative) {
+            var url = destination.appendingPathComponent(relative)
+            do {
+                try fm.removeItem(at: url)
+            } catch {
+                // Said out loud, because the whole point of the prune is that a
+                // dropped example stops resolving. A failure that logged
+                // "removed" would report the opposite of what happened, and the
+                // stale `built-in/...` path would go on working.
+                Log.write("config: could not remove \(shown)/\(relative):"
+                    + " \(error.localizedDescription); it is stale and still resolves")
+                continue
+            }
+            Log.write("config: removed \(shown)/\(relative) (no longer shipped)")
+            // A folder a removed example leaves empty — `retired/` once
+            // `retired/retired.py` is gone — is cleaned up too, stopping at
+            // the first one that still has something else in it, and never
+            // above `destination` itself.
+            url.deleteLastPathComponent()
+            while url.path != destination.path,
+                  (try? fm.contentsOfDirectory(atPath: url.path))?.isEmpty == true {
+                try? fm.removeItem(at: url)
+                url.deleteLastPathComponent()
+            }
+        }
     }
 
     /// `transforms/examples/`, the folder's name before it was `built-in/`.
