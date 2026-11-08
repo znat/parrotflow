@@ -167,8 +167,8 @@ voice:
   `parrotflow_mini.ParrotFlowAgent`. Plain mini sends nothing.
 - Progress lines are said only while the session's app is in front. Answers
   are always said. The hotkey or a new prompt stops the voice.
-- Cost: none per dictation. With a model, one call per progress line (at most
-  one every 6 s), one per answer, and one per prompt sent to the agent, for
+- Cost: none per dictation. With a model, up to one call per progress line
+  (at most one every 6 s), per answer, and per prompt sent to the agent, for
   the reminder. A hosted model gets the user's requests and what the agent did
   and said. A `speech` voice gets the text it speaks.
 - PocketTTS speaks English only and downloads on first use. For a remote
