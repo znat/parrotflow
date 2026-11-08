@@ -3807,6 +3807,10 @@ enum ConfigStore {
     /// file `source` no longer has removed. Logged as `shown/<file>`.
     private static func refresh(_ destination: URL, from source: URL, shown: String) throws {
         let fm = FileManager.default
+        guard fm.fileExists(atPath: source.path) else {
+            Log.write("config: \(source.path) is missing; \(shown) is left as it is")
+            return
+        }
         let shipped = filesUnder(source)
         for relative in shipped {
             let shippedFile = source.appendingPathComponent(relative)

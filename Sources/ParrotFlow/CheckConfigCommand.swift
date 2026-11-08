@@ -376,8 +376,8 @@ enum CheckConfigCommand {
             : agents.isEmpty ? "none" : agents.joined(separator: "; ")))
         for prompt in VoicePrompt.allCases {
             let label = "voice \(prompt.rawValue)".padding(toLength: 18, withPad: " ", startingAt: 0)
-            if prompt.overrideIsEmpty {
-                emit("  ✗ \(label)\(ClaudeHooksCommand.shown(prompt.override)) is empty; the built-in prompt is used")
+            if let problem = prompt.overrideProblem {
+                emit("  ✗ \(label)\(ClaudeHooksCommand.shown(prompt.override)) \(problem); the built-in prompt is used")
                 ok = false
             } else if let source = prompt.current?.source {
                 emit("  · \(label)\(source.shown)")

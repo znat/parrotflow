@@ -60,16 +60,23 @@ enum VoicePrompt: String, CaseIterable {
         return Self.instructions(at: builtIn).map { ($0 + "\n\n" + format, .builtIn) }
     }
 
-    /// An override that is there and has no text.
-    var overrideIsEmpty: Bool {
-        FileManager.default.fileExists(atPath: override.path) && Self.instructions(at: override) == nil
+    /// Why an override that is there is not used, or nil.
+    var overrideProblem: String? {
+        guard FileManager.default.fileExists(atPath: override.path) else { return nil }
+        guard let text = try? String(contentsOf: override, encoding: .utf8) else {
+            return "cannot be read as UTF-8 text"
+        }
+        return Self.instructions(in: text) == nil ? "is empty" : nil
     }
 
-    /// The file without its leading `<!-- -->` note, trimmed. Nil when it is
-    /// missing or has no text.
     static func instructions(at url: URL) -> String? {
-        guard var text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        (try? String(contentsOf: url, encoding: .utf8)).flatMap(instructions(in:))
+    }
+
+    /// The text without its leading `<!-- -->` note, trimmed. Nil when
+    /// nothing is left.
+    static func instructions(in file: String) -> String? {
+        var text = file.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("<!--"), let end = text.range(of: "-->") {
             text = String(text[end.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
         }

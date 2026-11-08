@@ -1640,8 +1640,8 @@ To change a prompt, copy its file one folder up and edit the copy:
 
 The file is read again for each line, so the next line uses it, with no
 restart. Delete it to go back to the built-in prompt. A note at the top
-between `<!--` and `-->` is not sent to the model. An empty file is a `✗` in
-`--check-config`, and the built-in prompt is used. `--check-config` names the
+between `<!--` and `-->` is not sent to the model. An empty file, or one that is
+not UTF-8 text, is a `✗` in `--check-config`, and the built-in prompt is used. `--check-config` names the
 prompt in use for each: `· voice explain built-in`, or the path of your file.
 
 The reply format is not in these files. The app adds it after your text, so

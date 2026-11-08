@@ -12,6 +12,7 @@ cases=$?
 WORK="$(mktemp -d -t parrotflow-voice-prompts)"
 trap 'rm -rf "$WORK"' EXIT
 VOICE="$WORK/voice"
+mkdir -p "$VOICE"
 pass=0; total=0
 
 # check <name> <got> <want glob>
@@ -51,6 +52,9 @@ check "an empty override is a problem, and the built-in is used" "$(prompt_line 
   "✗ voice explain *voice/explain.md is empty; the built-in prompt is used"
 printf '<!--\nonly the note\n-->\n' > "$VOICE/rewrite.md"
 check "an override with only the note is empty" "$(prompt_line rewrite)" "✗ voice rewrite *voice/rewrite.md is empty;*"
+printf '\xff\xfe broken\n' > "$VOICE/rewrite.md"
+check "an override that is not UTF-8 is a problem" "$(prompt_line rewrite)" \
+  "✗ voice rewrite *voice/rewrite.md cannot be read as UTF-8 text; the built-in prompt is used"
 rm "$VOICE/explain.md" "$VOICE/rewrite.md"
 check "deleting the override brings the built-in back" "$(prompt_line explain)" "· voice explain built-in"
 
