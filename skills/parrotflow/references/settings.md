@@ -187,7 +187,9 @@ voice:
   to send one and say what they heard.
 
 The model gets three prompts: `rewrite.md` (the spoken answer), `explain.md`
-(a progress line) and `reminder.md` (what a session is about). At launch the
+(a progress line) and `reminder.md` (what a session is about). Each progress
+line starts the way one of `explain.md`'s numbered openings says, picked at
+random, so editing that list changes how the lines start. At launch the
 app copies them to `voice/built-in/` in the config folder. Never edit that
 folder. To change a prompt, look in `voice/` first. If the user's file is
 there, back it up and edit it. If not, copy the built-in file one folder up,

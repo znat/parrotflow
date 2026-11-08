@@ -164,9 +164,11 @@ enum ClaudeSpeakable {
 
     /// What the model is sent: the request, then the reply and the recap.
     static func rewriteInput(
-        request: String?, reply: String, recap: String?, earlier: Earlier? = nil, language: String = "en"
+        request: String?, reply: String, recap: String?, earlier: Earlier? = nil, language: String = "en",
+        opening: Int? = nil
     ) -> String {
         var parts = ["Language: " + languageName(language)]
+        if let opening { parts.append("Opening: \(opening)") }
         if let earlier {
             if let prompt = earlier.prompt, !prompt.isEmpty {
                 parts.append("Earlier request: " + String(redacted(clean(prompt)).prefix(600)))
