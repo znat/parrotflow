@@ -152,7 +152,8 @@ voice:
   enabled: true      # false stops the voice and takes the hooks out
   agents:            # an agent left out is off, so keep claude:
     claude:          # empty: ~/.claude; or a folder, or a list of them
-    codex:           # empty: $CODEX_HOME, then ~/.codex
+    codex:           # empty: $CODEX_HOME, then ~/.codex; name the folder if
+                     # CODEX_HOME is set only in a shell profile
     mini:            # no folder; needs the parrotflow-mini plugin
   model: ""          # a name under models: that writes what is said; empty: the default
   local_voice: alba  # the voice on this Mac, a PocketTTS voice
@@ -170,11 +171,12 @@ voice:
 - Cost: none per dictation. With a model, it calls the model for progress
   lines (at most one every 6 s), for answers, and for each session's
   reminder, written from its latest request. A hosted model gets the user's
-  requests and what the agent did and said. A `speech` voice gets one request
-  per spoken sentence, and its provider may charge for each.
+  requests and what the agent did and said. A `speech` voice gets the text of
+  each spoken sentence, one request each, and its provider may charge for each.
 - PocketTTS speaks English only and downloads on first use. For a remote
   voice, add a `models:` entry that speaks OpenAI's `/audio/speech` (OpenRouter
-  does), name it in `speech`, and list its voices in `speech_voices`.
+  does), name it in `speech`, and list its voices in `speech_voices`. Do not
+  mark it `default: true`: the default model must write text.
   `local_voices`, when not empty, wins over `local_voice`.
 - `--check-config` prints the agents on its `agents` line. A `voice explain`
   line, and one per other prompt, says `built-in` or the path of the user's
