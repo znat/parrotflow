@@ -162,49 +162,6 @@ enum ClaudeSpeakable {
         sentences(cleaned).prefix(2).joined(separator: " ")
     }
 
-    /// The spoken answer, from the request and what came back. Says the
-    /// result, problems and risks, and leaves the rest on the screen.
-    static let rewritePrompt = """
-        You turn a coding assistant's reply into what it says out loud to the developer \
-        who asked, who is not looking at the screen.
-
-        You get the developer's request ("Request"), and the assistant's reply \
-        ("Reply"), its summary ("Recap"), or both. You may also get the turn before \
-        ("Earlier request", "Earlier reply"). Use it only to understand what the request \
-        refers to. Never repeat it.
-
-        Write opener and say in the language named by "Language". Write tone in English.
-
-        Say only what the request needs:
-        - The result. For an action, confirm in a few words that it was done. For a \
-        question, the answer.
-        - Any problem the assistant found, any risk, and anything the developer has to \
-        do or decide.
-        - Leave out the rest: background, loosely related facts, metrics, counts, timings, \
-        versions, commit hashes, branch positions and file lists, unless the request \
-        asked for them.
-
-        Return JSON: {"opener": "...", "say": "...", "tone": "...", "task": "..."}
-
-        opener: one to four words that say how it went, from what happened: done, good \
-        news, a problem, a question, a warning. Never more positive than the reply.
-
-        say:
-        - Two to four short sentences, at most 70 words.
-        - Lead with the answer. Then the details that make it useful: the reason, what \
-        changed, the names involved, the example that shows it.
-        - Every fact comes from Reply or Recap. Use their names.
-        - First person for what the assistant did: "I <did X>". Anything said about \
-        something else keeps that subject.
-        - Simple past or present. No present perfect ("I've <done X>") and no passive.
-        - Casual, like a colleague. No code, no lists, no markdown, no paths.
-
-        tone: how this moment shifts a relaxed, friendly delivery, in at most 8 words.
-
-        task: two or three lowercase words, in the language of "Language", that name \
-        what the developer is working on, from the request. No punctuation. Like: fixing the glow.
-        """
-
     /// What the model is sent: the request, then the reply and the recap.
     static func rewriteInput(
         request: String?, reply: String, recap: String?, earlier: Earlier? = nil, language: String = "en"
@@ -303,22 +260,22 @@ enum ClaudeSpeakable {
         said.isEmpty || said.count > original.count * 3 / 2 + 20 ? original : said
     }
 
-    /// Reads the model's JSON. A model that answered in plain text still
-    /// gives the words, with no tone.
-    static func parseSpoken(_ raw: String) -> (say: String, tone: String?, opener: String?, task: String?) {
+    /// Reads the model's JSON. A short plain-text answer still gives the
+    /// words, with no tone. Anything else gives an empty `say`.
+    static func parseSpoken(_ raw: String)
+        -> (say: String, tone: String?, opener: String?, task: String?, json: Bool) {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("```") {
             text = text.replacingOccurrences(of: #"^```(?:json)?\s*|\s*```$"#, with: "", options: .regularExpression)
         }
-        if let data = text.data(using: .utf8),
-           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let say = object["say"] as? String {
+        let object = text.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) }
+        if let object = object as? [String: Any], let say = object["say"] as? String {
             let tone = (object["tone"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let opener = (object["opener"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             return (say, tone?.isEmpty == false ? tone : nil, opener?.isEmpty == false ? opener : nil,
-                    taskLabel(object["task"] as? String))
+                    taskLabel(object["task"] as? String), true)
         }
-        return (text, nil, nil, nil)
+        return (object == nil && isShort(text) ? text : "", nil, nil, nil, false)
     }
 
     /// Two or three plain words, lowercased. Anything else is no label.
@@ -439,45 +396,7 @@ enum ClaudeSpeakable {
         return first.lowercased() + text.dropFirst()
     }
 
-    static let explainPrompt = """
-        A coding assistant is about to use a tool. Say out loud, in one short sentence, \
-        what it is working on right now, to the developer it works with.
-
-        - Say what the work moves forward, the feature or fix, not the tool action. \
-        "I'm <reading|writing|running> <a file or command>" is the tool action; \
-        "I'm <doing the task>" is the work.
-        - Take the purpose only from the session's task, the tool's description and what \
-        the assistant just wrote. Never add a goal they do not state. When the purpose \
-        is unclear, say plainly what it is checking or changing, from the description.
-        - Name a file or a command only when it is the point.
-        - First person, present continuous, at most 10 words, casual, like a colleague. \
-        Shorter is better: the line is heard while the work goes on.
-        - No code, no paths, no flags, no quotes.
-        - Write in the language named by "Language".
-
-        Output only the sentence.
-        """
-
-    static let reminderPrompt = """
-        Write a reminder of what this coding session is about, said out loud when the \
-        developer's attention comes back to it from another session.
-
-        You get the session's latest summary ("Latest") and the request just sent \
-        ("Request"). A request alone is often a follow-up, like asking how something is \
-        going, and says little about the work.
-
-        - One or two sentences, at most 30 words in all.
-        - First what the session is working on, from Latest. Then what was just asked, \
-        from Request. Shape: "This is the one where we're <the work>; you're <the request>."
-        - With no Latest, say the goal from the Request alone.
-        - Every word of the work comes from Latest or Request. Not the steps.
-        - Casual, like a colleague. No file names, paths, code, numbers or quotes.
-        - Write in the language named by "Language", with the same shape in that language.
-
-        Output only the reminder.
-        """
-
-    /// The request, and the latest result when there is one, for `reminderPrompt`.
+    /// The request, and the latest result when there is one, for the reminder prompt.
     static func reminderInput(request: String, latest: String?, language: String = "en") -> String {
         var lines = ["Language: \(languageName(language))", "Request: \(String(redacted(clean(request)).prefix(1500)))"]
         if let latest, !latest.isEmpty { lines.append("Latest: \(String(redacted(clean(latest)).prefix(500)))") }
@@ -532,7 +451,7 @@ enum ClaudeSpeakable {
         return out
     }
 
-    /// The tool call, and what Claude wrote just before it, for `explainPrompt`.
+    /// The tool call, and what Claude wrote just before it, for the explain prompt.
     static func explainInput(
         tool: String, input: [String: Any], context: String?, task: String? = nil, language: String = "en"
     ) -> String {

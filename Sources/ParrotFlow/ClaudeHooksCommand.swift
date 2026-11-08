@@ -826,17 +826,6 @@ enum ClaudeHooksCommand {
         check("one session id under two agents is two sessions",
               got: "\(Set([ClaudeVoice.key(.claude, "s"), ClaudeVoice.key(.codex, "s"), ClaudeVoice.key(.claude, "s")]).count)",
               want: "2")
-        func assembled(_ prompt: VoicePrompt) -> String? {
-            VoicePrompt.instructions(at: prompt.builtIn).map { $0 + "\n\n" + prompt.format }
-        }
-        var paragraphs = ClaudeSpeakable.rewritePrompt.components(separatedBy: "\n\n")
-        if let json = paragraphs.firstIndex(where: { $0.hasPrefix("Return JSON:") }) {
-            paragraphs.insert(paragraphs.remove(at: json), at: paragraphs.count - 1)
-        }
-        check("TEMP: rewrite.md + format is rewritePrompt with Return JSON moved",
-              got: assembled(.rewrite), want: paragraphs.joined(separator: "\n\n"))
-        check("TEMP: explain.md + format is explainPrompt", got: assembled(.explain), want: ClaudeSpeakable.explainPrompt)
-        check("TEMP: reminder.md + format is reminderPrompt", got: assembled(.reminder), want: ClaudeSpeakable.reminderPrompt)
         print("\n\(passed)/\(total)")
         return passed == total ? 0 : 1
     }
@@ -873,6 +862,10 @@ enum ClaudeHooksCommand {
             print("✗ not a hook payload")
             return 2
         }
+        guard let prompt = VoicePrompt.explain.current else {
+            print("✗ \(VoicePrompt.explain.builtIn.path) is missing")
+            return 1
+        }
         let input = event["tool_input"] as? [String: Any] ?? [:]
         let named = config.voice.model.trimmingCharacters(in: .whitespaces)
         let model = config.model(named: named) ?? config.model(for: .general)
@@ -881,7 +874,7 @@ enum ClaudeHooksCommand {
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             let raw = try? await LLM.complete(
-                system: ClaudeSpeakable.explainPrompt,
+                system: prompt.text,
                 user: ClaudeSpeakable.explainInput(tool: tool, input: input, context: context),
                 json: false, maxTokens: 60, config: model
             )

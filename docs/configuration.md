@@ -193,6 +193,7 @@ after the same backup. See [cli.md](cli.md#--upgrade-config).
 | Timeline | `~/.config/parrotflow/recordings/spans.jsonl` — one per dictation, rotating at 64 MB; off with `logging.spans: false` |
 | Log | `~/Library/Logs/ParrotFlow.log` — off with `logging.text: false` |
 | The built-in transforms | `~/.config/parrotflow/transforms/built-in/` — refreshed from the app on every launch, not yours to edit in place |
+| Voice prompts | `~/.config/parrotflow/voice/<name>.md` — yours, replacing the built-in; the built-in copies are in `voice/built-in/`. See [Prompts](#prompts) |
 
 The menu bar item shows the current state and offers *Open Recordings
 Folder* — the wavs, if `logging.audio` is on, and `trace.jsonl` — *Settings*,
@@ -1609,6 +1610,52 @@ each sentence, and speaks English only. `voice` and `local` chose Kokoro,
 which is gone; `--check-config` names them so you can delete the lines.
 A local model adds its load time to the answer: 14.5 s was measured cold
 on `gemma`. A fast hosted model suits this job better.
+
+### Prompts
+
+The voice sends `model` three prompts. Each one is a file you can replace:
+
+| File | What the model writes |
+|---|---|
+| `rewrite.md` | the spoken answer at the end of a turn, its opener and its tone |
+| `explain.md` | the progress line while the agent works |
+| `reminder.md` | the reminder of what a session is about |
+
+The built-in text ships with the app. On every launch the app copies it to
+`voice/built-in/` in the config folder, so you can read what it uses. That
+folder is the app's: an edit there is gone at the next launch, as in
+`transforms/built-in/`.
+
+To change a prompt, copy its file one folder up and edit the copy:
+
+```
+~/.config/parrotflow/          # ~/.config/parrotflow-dev/ for the dev app
+  voice/
+    explain.md                 # yours: replaces the built-in explain prompt
+    built-in/                  # the app's, refreshed on every launch
+      rewrite.md
+      explain.md
+      reminder.md
+```
+
+The file is read again for each line, so the next line uses it, with no
+restart. Delete it to go back to the built-in prompt. A note at the top
+between `<!--` and `-->` is not sent to the model. An empty file is a `✗` in
+`--check-config`, and the built-in prompt is used. `--check-config` names the
+prompt in use for each: `· voice explain built-in`, or the path of your file.
+
+The reply format is not in these files. The app adds it after your text, so
+your prompt only changes the instructions, and it cannot break what the code
+reads. For `rewrite`, the app asks for JSON with `opener`, `say`, `tone` and
+`task`, where `task` is two or three lowercase words for the pill. For
+`explain` and `reminder`, it asks for the sentence alone. Do not write a reply
+format of your own. If a reply to `rewrite` is not that JSON anyway, a short
+one (at most 220 characters and three sentences) is said as written. A longer
+one is not: the answer is said plain, its recap or first two sentences. The
+log says `claude voice: rewrite reply is not JSON (prompt: …)`.
+
+`voice/` also holds the recordings of your own voice that the vocabulary keeps
+(`samples/`, `observations.jsonl`). The prompt files sit beside them.
 
 ## `logging`
 

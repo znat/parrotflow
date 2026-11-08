@@ -315,6 +315,15 @@ parse:
     raw: '{"say": "I fixed it.", "task": 3}'
     say: "I fixed it."
     task: null
+  - name: a long plain reply is not said; the answer is said plain
+    raw: "I merged the branch into main after the checks passed. The glow now follows the window when you switch tabs, and the pill names the session. Two tests were flaky on the first run, so I ran them again and they passed. Nothing else changed."
+    say: ""
+  - name: JSON without say is not said
+    raw: '{"answer": "I fixed it."}'
+    say: ""
+  - name: a JSON list is not said
+    raw: '["I fixed it."]'
+    say: ""
 
 capped:
   - name: short answer is left alone

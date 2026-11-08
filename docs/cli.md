@@ -97,6 +97,9 @@ It also names, every time and whether or not anything is wrong:
 - which agents `voice.agents` hooks, and in which folders. A `claude:` section
   is a `✗` that names `--upgrade-config --write`. A name under `agents` other
   than `claude`, `codex` or `mini` is a `✗` too, and so is a folder after `mini`
+- which prompt the voice uses for `rewrite`, `explain` and `reminder`: `built-in`,
+  or the path of your file in `voice/`. An empty file there is a `✗`. See
+  [Prompts](configuration.md#prompts)
 - a key no setting reads, by its full path, with the closest key. This is a
   `⚠` warning: it does not change the exit code
 

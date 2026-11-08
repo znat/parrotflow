@@ -359,7 +359,8 @@ final class ClaudeVoice {
         lastProgressAt = now
         lastKind = line.kind
         progressSeq += 1
-        guard settings.explain, config.llmEnabled, !line.urgent, !tool.isEmpty else {
+        guard settings.explain, config.llmEnabled, !line.urgent, !tool.isEmpty,
+              let prompt = VoicePrompt.explain.current else {
             return whenFree { [weak self] in self?.say(line.text, session: session, progress: true) }
         }
         let mine = progressSeq
@@ -374,7 +375,7 @@ final class ClaudeVoice {
                 .latestText
             let started = Date()
             let raw = try? await LLM.complete(
-                system: ClaudeSpeakable.explainPrompt,
+                system: prompt.text,
                 user: ClaudeSpeakable.explainInput(tool: tool, input: input, context: context, task: task,
                                                   language: language),
                 json: false, maxTokens: 60, config: model
@@ -453,18 +454,27 @@ final class ClaudeVoice {
         let fallback = Spoken(text: plain, tone: base.map { ClaudeSpeakable.instructions(base: $0, shift: nil) },
                                language: language)
         guard config.llmEnabled else { return fallback }
+        guard let prompt = VoicePrompt.rewrite.current else {
+            Log.write("claude voice: \(VoicePrompt.rewrite.builtIn.path) is missing, saying it plain")
+            return fallback
+        }
 
         let named = settings.model.trimmingCharacters(in: .whitespaces)
         let model = config.model(named: named) ?? config.model(for: .general)
         let started = Date()
         do {
             let raw = try await LLM.complete(
-                system: ClaudeSpeakable.rewritePrompt,
+                system: prompt.text,
                 user: ClaudeSpeakable.rewriteInput(request: asked, reply: reply, recap: recap,
                                                    earlier: turn?.earlier, language: language),
                 json: true, maxTokens: 300, config: model
             )
             let parsed = ClaudeSpeakable.parseSpoken(LLM.stripThinking(raw))
+            if !parsed.json {
+                Log.write("claude voice: rewrite reply is not JSON (prompt: \(prompt.source.shown)), "
+                    + (parsed.say.isEmpty ? "saying it plain" : "saying it as written"))
+                if parsed.say.isEmpty { return fallback }
+            }
             let said = ClaudeSpeakable.capped(ClaudeSpeakable.clean(parsed.say, language: language), limit: 480, count: 4)
             let ground = ClaudeSpeakable.grounded(said, in: [reply, recap ?? "", asked ?? ""].joined(separator: " "))
             // Translated, the words cannot overlap, so the check would always say no.
@@ -792,13 +802,14 @@ final class ClaudeVoice {
     private func remind(_ id: String, request: String, latest: String? = nil) {
         sessions[id]?.task = request
         let language = sessions[id]?.language ?? ClaudeSpeakable.language(of: request) ?? "en"
-        guard config.llmEnabled, sessions[id]?.reminding != true else { return }
+        guard config.llmEnabled, sessions[id]?.reminding != true,
+              let prompt = VoicePrompt.reminder.current else { return }
         sessions[id]?.reminding = true
         let named = settings.model.trimmingCharacters(in: .whitespaces)
         let model = config.model(named: named) ?? config.model(for: .general)
         Task.detached {
             let raw = try? await LLM.complete(
-                system: ClaudeSpeakable.reminderPrompt,
+                system: prompt.text,
                 user: ClaudeSpeakable.reminderInput(request: request, latest: latest, language: language),
                 json: false, maxTokens: 80, config: model
             )
