@@ -3749,7 +3749,11 @@ enum ConfigStore {
         let fm = FileManager.default
         moveRenamedBuiltInDirectory()
         try refresh(installedBuiltInDirectory, from: builtInTransformsDirectory, shown: "transforms/built-in")
-        try refresh(VoicePrompt.installedDirectory, from: VoicePrompt.builtInDirectory, shown: "voice/built-in")
+        do {
+            try refresh(VoicePrompt.installedDirectory, from: VoicePrompt.builtInDirectory, shown: "voice/built-in")
+        } catch {
+            Log.write("config: could not refresh voice/built-in: \(error.localizedDescription)")
+        }
         // The vocabulary, empty but explained. Written so the file exists to
         // be found and read — a person who never dictates a mangled word
         // should still be able to see what the app would learn about them, and
