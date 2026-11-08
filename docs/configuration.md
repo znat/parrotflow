@@ -1378,8 +1378,11 @@ they answer.
 ### Quick start
 
 Claude Code needs no setup. The voice is on by default, for Claude Code in
-`~/.claude`. At launch the app writes its hooks into `~/.claude/settings.json`,
-and the log says `claude hooks: installed in ~/.claude`.
+`~/.claude`. At launch, and each time the config changes, the app writes its
+hooks into `~/.claude/settings.json`. When it writes them, the log says
+`claude hooks: installed in ~/.claude`. A folder that does not exist yet gets
+no hooks, and the log says `claude hooks: ~/.claude: no such folder`. Quit and
+open ParrotFlow once Claude Code has created it.
 
 1. Restart open Claude Code sessions. Claude Code reads hooks when a session
    starts.
