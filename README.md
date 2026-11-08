@@ -320,6 +320,26 @@ unwired](docs/pipelines.md#what-ships-unwired).
 
 <br>
 
+## Hear your coding agent
+
+ParrotFlow speaks what Claude Code, Codex and mini-swe-agent do while you
+look at them, and reads you their answer when a turn ends. The default voice
+runs on your Mac. Claude Code is on by default. Restart its sessions once
+after you install. Codex and mini-swe-agent are one line each under
+`voice.agents`.
+
+```yaml
+voice:
+  agents:
+    claude:      # on by default, in ~/.claude
+    codex:       # approve its hooks once, under /hooks
+    mini:        # needs the parrotflow-mini plugin
+```
+
+[Quick start and settings](docs/configuration.md#voice)
+
+<br>
+
 ## Documentation
 
 > [!TIP]
