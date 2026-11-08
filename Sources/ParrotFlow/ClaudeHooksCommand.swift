@@ -826,6 +826,17 @@ enum ClaudeHooksCommand {
         check("one session id under two agents is two sessions",
               got: "\(Set([ClaudeVoice.key(.claude, "s"), ClaudeVoice.key(.codex, "s"), ClaudeVoice.key(.claude, "s")]).count)",
               want: "2")
+        func assembled(_ prompt: VoicePrompt) -> String? {
+            VoicePrompt.instructions(at: prompt.builtIn).map { $0 + "\n\n" + prompt.format }
+        }
+        var paragraphs = ClaudeSpeakable.rewritePrompt.components(separatedBy: "\n\n")
+        if let json = paragraphs.firstIndex(where: { $0.hasPrefix("Return JSON:") }) {
+            paragraphs.insert(paragraphs.remove(at: json), at: paragraphs.count - 1)
+        }
+        check("TEMP: rewrite.md + format is rewritePrompt with Return JSON moved",
+              got: assembled(.rewrite), want: paragraphs.joined(separator: "\n\n"))
+        check("TEMP: explain.md + format is explainPrompt", got: assembled(.explain), want: ClaudeSpeakable.explainPrompt)
+        check("TEMP: reminder.md + format is reminderPrompt", got: assembled(.reminder), want: ClaudeSpeakable.reminderPrompt)
         print("\n\(passed)/\(total)")
         return passed == total ? 0 : 1
     }
