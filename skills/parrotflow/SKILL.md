@@ -62,7 +62,7 @@ Which keys exist:
 
 | The user wants | Read |
 |---|---|
-| A different key, language, microphone, sound, colour, log or update setting | `references/settings.md` |
+| A different key, language, microphone, sound, colour, log or update setting, or the coding-agent voice | `references/settings.md` |
 | Dictation to write something differently: a word, a symbol, a format, a rewrite | `references/rewrites.md` |
 | To talk to it: "hey parrot", commands, undo, spelling a name | `references/spoken-commands.md` |
 | A language model, local or cloud | `references/models.md` |

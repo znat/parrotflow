@@ -145,6 +145,44 @@ The app asks GitHub's release API whether there is a new release. Nothing about
 the user is sent. The cask updates itself, so `brew upgrade` skips it unless
 given `--greedy`; the menu's "Check for Updates" is the usual way.
 
+## Coding agents' voice
+
+```yaml
+voice:
+  enabled: true      # false stops the voice and takes the hooks out
+  agents:            # an agent left out is off, so keep claude:
+    claude:          # empty: ~/.claude; or a folder, or a list of them
+    codex:           # empty: $CODEX_HOME, then ~/.codex
+    mini:            # no folder; needs the parrotflow-mini plugin
+  model: ""          # a name under models: that writes what is said; empty: the default
+  local_voice: alba  # the voice on this Mac, a PocketTTS voice
+  speech: ""         # a name under models: for a remote voice; empty: PocketTTS
+```
+
+- The app writes each agent's hooks itself, at launch and on every config
+  change. Restart open Claude Code sessions once, after the first install.
+  Codex asks to approve its hooks once, under `/hooks` in the CLI or
+  Settings > Hooks in the desktop app. mini needs the `parrotflow-mini` plugin
+  from the ParrotFlow repository.
+- Progress lines are said only while the session's app is in front. Answers
+  are always said. The hotkey or a new prompt stops the voice.
+- Cost: none per dictation. With a model, one call per progress line (at most
+  one every 6 s) and per long answer. A hosted model, or a `speech` voice,
+  sends what the agent did and said off the Mac.
+- PocketTTS speaks English only and downloads on first use. For a remote
+  voice, add a `models:` entry that speaks OpenAI's `/audio/speech` (OpenRouter
+  does), name it in `speech`, and list its voices in `speech_voices`.
+- `--check-config` prints the agents on its `agents` line. A `voice explain`
+  line, and one per other prompt, says `built-in` or the path of the user's
+  file.
+
+The model gets three prompts: `rewrite.md` (the spoken answer), `explain.md`
+(a progress line) and `reminder.md` (what a session is about). At launch the
+app copies them to `voice/built-in/` in the config folder. Never edit that
+folder. To change a prompt, copy its file one folder up, to `voice/`, and edit
+the copy. The next line uses it, with no restart. Delete it to go back. Do not
+write a reply format: the app adds its own.
+
 ## Config version
 
 ```yaml
