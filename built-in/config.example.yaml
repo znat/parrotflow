@@ -154,6 +154,12 @@ transcription:
   #   model: claude-sonnet-5
   #   reasoning: off
 
+  # A remote voice for `voice.speech`, through OpenRouter's /audio/speech.
+  # openrouter-tts:
+  #   api: openai
+  #   model: google/gemini-3.1-flash-tts-preview
+  #   endpoint: https://openrouter.ai/api/v1
+
 # What "hey parrot, …" can reach, and which model runs each part. Each falls
 # back to the default model above.
 commands:
@@ -166,6 +172,20 @@ commands:
 
   # An instruction no capability covers. `false` refuses them.
   # catch_all: gpt
+
+# Speaks what your coding agents do and what they answer. On by default, for
+# Claude Code in ~/.claude: the app writes its hooks at launch, and open
+# sessions need a restart once. An agent left out of `agents` is off. Codex
+# runs its hooks once you approve them, under /hooks. See docs/configuration.md.
+# voice:
+#   enabled: true          # false stops listening and removes the hooks
+#   agents:                # left out: claude alone, in ~/.claude
+#     claude:              # empty: ~/.claude. Or a folder, or a list
+#     codex:               # empty: $CODEX_HOME, then ~/.codex
+#     mini:                # no folder; needs the parrotflow-mini plugin
+#   model: ""              # writes the lines; a name under models:, "" = default
+#   local_voice: alba      # the voice on this Mac, a PocketTTS voice
+#   # speech: openrouter-tts  # a remote voice under models:; "" = PocketTTS
 
 # Word lists, written once and named — `{{fillers_en}}` in a `replace:`, or
 # `ctx["vars"]["lists"]` in a script. Quote every entry: `on`/`no`/`off` are

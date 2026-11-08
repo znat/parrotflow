@@ -21,6 +21,7 @@ complete contract, an edge case, or the implementation details.
 | Change a hotkey, language, model, or logging setting | [Configuration](guides/configuration.md) |
 | Write a replacement, script, or prompt | [Build your first transform](guides/transforms.md) |
 | Choose when transforms run and in what order | [Compose a pipeline](guides/pipelines.md) |
+| Hear Claude Code, Codex or mini-swe-agent speak its progress and answers | [Coding agents' voice](configuration.md#voice) |
 | Test a sentence or diagnose a problem | [Command-line tools](guides/cli.md) |
 | Understand the architecture and find the code | [How it fits together](guides/architecture.md) |
 

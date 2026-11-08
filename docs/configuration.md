@@ -1373,8 +1373,47 @@ evidence something is wrong; a high one is not evidence anything is right.
 ## `voice`
 
 ParrotFlow can speak what Claude Code, Codex and mini-swe-agent do and what
-they answer. `agents` says which agents it listens to, and where each keeps its
-config:
+they answer.
+
+### Quick start
+
+Claude Code needs no setup. The voice is on by default, for Claude Code in
+`~/.claude`. At launch the app writes its hooks into `~/.claude/settings.json`,
+and the log says `claude hooks: installed in ~/.claude`.
+
+1. Restart open Claude Code sessions. Claude Code reads hooks when a session
+   starts.
+2. Send a prompt. While the app that session runs in is in front, you hear a
+   short line on what Claude does. When the turn ends, you hear a short
+   version of the answer. The first line waits for the voice on this Mac,
+   PocketTTS, to download.
+3. `$PF --check-config` says `claude ~/.claude` on its `agents` line.
+
+To add Codex or mini, name them under `agents`. An agent left out is off, so
+keep `claude:` too:
+
+```yaml
+voice:
+  agents:
+    claude:
+    codex:
+    mini:
+```
+
+- **Codex** (the CLI and the desktop app): the app writes four hooks into
+  `hooks.json` in the Codex folder, `~/.codex` unless you moved it. Approve
+  them once in Codex, under `/hooks` in the CLI or Settings > Hooks in the
+  desktop app.
+- **mini-swe-agent**: install the `parrotflow-mini` plugin and run mini with its
+  agent class. See
+  [integrations/mini-swe-agent/README.md](../integrations/mini-swe-agent/README.md).
+
+`enabled: false` turns the voice off and takes the hooks out. The flags that
+install hooks by hand are in [cli.md](cli.md#coding-agents-voice).
+
+### In detail
+
+`agents` says which agents it listens to, and where each keeps its config:
 
 ```yaml
 voice:
@@ -1452,22 +1491,8 @@ with a warning at startup.
 mini-swe-agent has no hooks. It speaks through `parrotflow-mini`, a small
 Python package in this repository (`integrations/mini-swe-agent`). You install
 it once, by hand, into the Python environment mini runs in. The app writes
-nothing for mini. With `uv`:
-
-```sh
-uv tool install mini-swe-agent \
-  --with "parrotflow-mini @ git+https://github.com/znat/parrotflow#subdirectory=integrations/mini-swe-agent"
-```
-
-With `pipx`, after `pipx install mini-swe-agent`:
-
-```sh
-pipx inject mini-swe-agent \
-  "parrotflow-mini @ git+https://github.com/znat/parrotflow#subdirectory=integrations/mini-swe-agent"
-```
-
-From a clone, pass the folder instead: `--with ~/parrotflow/integrations/mini-swe-agent`
-for `uv`, or `pipx inject mini-swe-agent ~/parrotflow/integrations/mini-swe-agent`.
+nothing for mini. The `uv` and `pipx` commands are in
+[integrations/mini-swe-agent/README.md](../integrations/mini-swe-agent/README.md).
 Then run mini with the plugin's agent class:
 
 ```sh
@@ -1488,10 +1513,6 @@ Set `PARROTFLOW_SOCKET` to `~/Library/Application Support/ParrotFlow Dev/claude.
 for the dev app. When the app is not running, mini runs as before: each send
 gives up after 0.2 s and never raises. The plugin is written against mini 2.4.6
 and uses four of its private methods, so a later mini can drop events.
-
-The plugin stays through `uv tool upgrade mini-swe-agent` (uv 0.6.11) and
-`pipx upgrade mini-swe-agent` (pipx 1.8.0); both were tried from 2.4.5 to 2.4.6.
-`uv tool install --upgrade mini-swe-agent` without `--with` takes it out.
 
 ```yaml
 voice:

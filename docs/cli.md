@@ -1214,7 +1214,7 @@ panel that changes width and crossfades its contents rather than being replaced
 — hot mic, decoding, applied, the offer, gone — and whether that morphs or
 jumps is only visible in motion. It loops for as many seconds as you give it.
 
-## Claude Code's voice
+## Coding agents' voice
 
 ```sh
 $PF --install-claude-hooks [--folder <dir>]...   # voice.agents.claude unless --folder
@@ -1236,6 +1236,8 @@ approve the hooks once in Codex afterwards. They must run from the installed app
 not from `.build`. A binary outside an app bundle cannot tell the dev build from the release build,
 so its hook would reach the wrong app. `--speak-event` sends stdin to the
 running app, as the hooks do with `nc`; it is there for testing. See [configuration.md](configuration.md#voice).
+mini-swe-agent has no hooks to install. It speaks through a plugin. See
+[integrations/mini-swe-agent/README.md](../integrations/mini-swe-agent/README.md).
 
 ## Updates
 
