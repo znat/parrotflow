@@ -120,6 +120,8 @@ final class ClaudeVoice {
     private var pillDismissed: String?
     private var pillCheck: Timer?
     private var pillLinger: DispatchWorkItem?
+    /// The opening the last answer used, across sessions: answers are heard in a row.
+    private var lastAnswerOpening: Int?
     /// Bumped per progress line, so a slow explanation of an older call is dropped.
     private var progressSeq = 0
     /// Past this, the call being explained is likely over.
@@ -137,6 +139,9 @@ final class ClaudeVoice {
         var task: String?
         var reminder: String?
         var reminding = false
+        /// The last explained progress lines, oldest first, and the opening the last one used.
+        var progress: [String] = []
+        var opening: Int?
         var heard: Date?
         var hostPid: pid_t?
         /// The pane, or else the window, this session lives in, kept once known.
@@ -379,6 +384,9 @@ final class ClaudeVoice {
         let task = sessions[session]?.task
         let language = sessions[session]?.language ?? "en"
         let agent = sessions[session]?.agent
+        let opening = VoicePrompt.opening(from: VoicePrompt.openings(in: prompt.text),
+                                          after: sessions[session]?.opening)
+        let saidBefore = sessions[session]?.progress ?? []
         Task.detached {
             let context = transcript.flatMap { agent?.lastTurn(transcript: $0, tailBytes: 128 * 1024) }?
                 .latestText
@@ -386,7 +394,7 @@ final class ClaudeVoice {
             let raw = try? await LLM.complete(
                 system: prompt.text,
                 user: ClaudeSpeakable.explainInput(tool: tool, input: input, context: context, task: task,
-                                                  language: language),
+                                                  language: language, opening: opening, said: saidBefore),
                 json: false, maxTokens: 60, config: model
             )
             let elapsed = Date().timeIntervalSince(started)
@@ -399,6 +407,8 @@ final class ClaudeVoice {
                 }
                 if !said.isEmpty {
                     Log.write(String(format: "claude voice: %@ explained %@ in %.1fs", model.name, tool, elapsed))
+                    self.sessions[session]?.progress = Array((saidBefore + [said]).suffix(3))
+                    self.sessions[session]?.opening = opening
                 }
                 self.say(said.isEmpty ? line.text : said, session: session, progress: true)
             }
@@ -417,17 +427,20 @@ final class ClaudeVoice {
         let request = sessions[session]?.task
         let language = sessions[session]?.language
         let agent = sessions[session]?.agent
+        let opening = VoicePrompt.opening(from: VoicePrompt.openings(in: VoicePrompt.rewrite.current?.text ?? ""),
+                                          after: lastAnswerOpening)
         Task.detached {
             if settle > 0 { try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000)) }
             let turn = ended ?? transcript.flatMap { agent?.lastTurn(transcript: $0) }
             let spoken = await Self.spoken(turn: turn, written: written, request: request, language: language,
-                                           settings: settings, config: config, toned: toned)
+                                           settings: settings, config: config, toned: toned, opening: opening)
             await MainActor.run { [weak self] in
                 guard let self, let spoken else { return }
                 guard asked == self.turns[session, default: 0] else {
                     Log.write("claude voice: dropped an answer — a new prompt came first in that session")
                     return
                 }
+                self.lastAnswerOpening = opening
                 self.lastKind = nil
                 if self.sessions[session]?.language == nil { self.sessions[session]?.language = spoken.language }
                 if let task = spoken.task { self.sessions[session]?.label = task }
@@ -447,7 +460,7 @@ final class ClaudeVoice {
     /// need no rewrite.
     static func spoken(
         turn: ClaudeSpeakable.TurnEnd?, written: String?, request: String? = nil, language: String? = nil,
-        settings: Config.Voice, config: Config, toned: Bool
+        settings: Config.Voice, config: Config, toned: Bool, opening: Int? = nil
     ) async -> Spoken? {
         let asked = request ?? turn?.prompt
         let written = turn.flatMap { $0.answer.isEmpty ? nil : $0.answer } ?? written ?? ""
@@ -475,7 +488,8 @@ final class ClaudeVoice {
             let raw = try await LLM.complete(
                 system: prompt.text,
                 user: ClaudeSpeakable.rewriteInput(request: asked, reply: reply, recap: recap,
-                                                   earlier: turn?.earlier, language: language),
+                                                   earlier: turn?.earlier, language: language,
+                                                   opening: opening),
                 json: true, maxTokens: 300, config: model
             )
             let parsed = ClaudeSpeakable.parseSpoken(LLM.stripThinking(raw))

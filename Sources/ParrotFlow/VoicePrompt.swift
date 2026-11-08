@@ -47,6 +47,20 @@ enum VoicePrompt: String, CaseIterable {
         ConfigStore.builtInDirectory.appendingPathComponent("voice", isDirectory: true)
     }
 
+    /// The numbers of a prompt's numbered list items: the openings the explain
+    /// prompt offers, picked by number so lines in a row start differently.
+    static func openings(in text: String) -> [Int] {
+        text.split(separator: "\n").compactMap { line in
+            line.firstMatch(of: #/^\s*(\d+)\.\s/#).flatMap { Int($0.1) }
+        }
+    }
+
+    /// A random opening other than `last`, or nil when there are none.
+    static func opening(from numbers: [Int], after last: Int?) -> Int? {
+        let others = Set(numbers).subtracting([last].compactMap { $0 })
+        return others.randomElement() ?? numbers.first
+    }
+
     var override: URL { Self.directory.appendingPathComponent(rawValue + ".md") }
     var builtIn: URL { Self.builtInDirectory.appendingPathComponent(rawValue + ".md") }
 

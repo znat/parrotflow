@@ -1644,7 +1644,7 @@ The voice sends `model` three prompts. Each one is a file you can replace:
 | File | What the model writes |
 |---|---|
 | `rewrite.md` | the spoken answer at the end of a turn, its opener and its tone |
-| `explain.md` | the progress line while the agent works |
+| `explain.md` | the progress line while the agent works. The app picks one of its numbered openings at random for each line, never the same twice in a row |
 | `reminder.md` | the reminder of what a session is about |
 
 The built-in text ships with the app. On every launch the app copies it to

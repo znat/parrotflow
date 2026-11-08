@@ -164,9 +164,11 @@ enum ClaudeSpeakable {
 
     /// What the model is sent: the request, then the reply and the recap.
     static func rewriteInput(
-        request: String?, reply: String, recap: String?, earlier: Earlier? = nil, language: String = "en"
+        request: String?, reply: String, recap: String?, earlier: Earlier? = nil, language: String = "en",
+        opening: Int? = nil
     ) -> String {
         var parts = ["Language: " + languageName(language)]
+        if let opening { parts.append("Opening: \(opening)") }
         if let earlier {
             if let prompt = earlier.prompt, !prompt.isEmpty {
                 parts.append("Earlier request: " + String(redacted(clean(prompt)).prefix(600)))
@@ -455,9 +457,11 @@ enum ClaudeSpeakable {
 
     /// The tool call, and what Claude wrote just before it, for the explain prompt.
     static func explainInput(
-        tool: String, input: [String: Any], context: String?, task: String? = nil, language: String = "en"
+        tool: String, input: [String: Any], context: String?, task: String? = nil, language: String = "en",
+        opening: Int? = nil, said: [String] = []
     ) -> String {
         var lines = ["Language: \(languageName(language))", "Tool: \(tool)"]
+        if let opening { lines.append("Opening: \(opening)") }
         if let task, !task.isEmpty { lines.insert("Session task: \(String(redacted(clean(task)).prefix(400)))", at: 1) }
         for key in ["description", "command", "file_path", "pattern", "query", "url"] {
             guard var value = input[key] as? String, !value.isEmpty else { continue }
@@ -467,6 +471,7 @@ enum ClaudeSpeakable {
         if let context, !context.isEmpty {
             lines.append("What the assistant just wrote: \(String(redacted(clean(context)).suffix(500)))")
         }
+        if !said.isEmpty { lines.append((["Already said:"] + said.map { "- " + $0 }).joined(separator: "\n")) }
         return lines.joined(separator: "\n")
     }
 
