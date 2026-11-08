@@ -167,25 +167,30 @@ voice:
   `parrotflow_mini.ParrotFlowAgent`. Plain mini sends nothing.
 - Progress lines are said only while the session's app is in front. Answers
   are always said. The hotkey or a new prompt stops the voice.
-- Cost: none per dictation. With a model, up to one call per progress line
-  (at most one every 6 s), per answer, and per prompt sent to the agent, for
-  the reminder. A hosted model gets the user's requests and what the agent did
-  and said. A `speech` voice gets the text it speaks.
+- Cost: none per dictation. With a model, it calls the model for progress
+  lines (at most one every 6 s), for answers, and for each session's
+  reminder, written from its latest request. A hosted model gets the user's
+  requests and what the agent did and said. A `speech` voice gets one request
+  per spoken sentence, and its provider may charge for each.
 - PocketTTS speaks English only and downloads on first use. For a remote
   voice, add a `models:` entry that speaks OpenAI's `/audio/speech` (OpenRouter
   does), name it in `speech`, and list its voices in `speech_voices`.
+  `local_voices`, when not empty, wins over `local_voice`.
 - `--check-config` prints the agents on its `agents` line. A `voice explain`
   line, and one per other prompt, says `built-in` or the path of the user's
   file. It prints no line for `model`, `local_voice` or `speech`. For those,
   read the file back and check there is no new `✗` or `⚠`. A `model` or
   `speech` that is not under `models:` is a `✗`.
+- The real test is a prompt sent to the agent, not a dictation. Ask the user
+  to send one and say what they heard.
 
 The model gets three prompts: `rewrite.md` (the spoken answer), `explain.md`
 (a progress line) and `reminder.md` (what a session is about). At launch the
 app copies them to `voice/built-in/` in the config folder. Never edit that
-folder. To change a prompt, copy its file one folder up, to `voice/`, and edit
-the copy. Back up an override that is already there before editing it. The
-next progress line or answer uses the edit, with no restart. A reminder is
+folder. To change a prompt, look in `voice/` first. If the user's file is
+there, back it up and edit it. If not, copy the built-in file one folder up,
+to `voice/`, and edit the copy. The next progress line or answer uses the
+edit, with no restart. A reminder is
 written when a prompt is sent, so a `reminder.md` edit shows after the next
 prompt. Delete the file to go back. Do not write a reply format: the app adds
 its own.
