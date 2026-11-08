@@ -59,7 +59,7 @@ in the last column.
 
 | Area | What it does | Key | Cost | Default | A user might ask | More |
 |---|---|---|---|---|---|---|
-| Agent voice | Speaks what Claude Code, Codex and mini-swe-agent do, and a short version of each answer. Its three prompts are files in `voice/` you can replace | `voice.enabled`, `voice.agents`, `voice.local_voice`, `voice.speech` | none per dictation; with a model, a call per progress line and per long answer | on, Claude Code only, voice `alba` on this Mac | "Read me Codex's answers too" | settings |
+| Agent voice | Speaks what Claude Code, Codex and mini-swe-agent do, and a short version of each answer. Its three prompts are files in `voice/` you can replace | `voice.enabled`, `voice.agents`, `voice.local_voice`, `voice.speech` | none per dictation; with a model, a call per progress line, per answer and per prompt | on, Claude Code only, voice `alba` on this Mac | "Read me Codex's answers too" | settings |
 
 ## Models
 

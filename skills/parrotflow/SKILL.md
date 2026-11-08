@@ -110,7 +110,8 @@ This is the default when the request has no clear target.
 3. **Use the cheapest tool.** A table first, then a script, then a prompt. See
    `references/rewrites.md`.
 4. **Check it.** Run `"$PF" --check-config` again and compare with step 2:
-   - the new value appears on its line;
+   - the new value appears on its line, for a key that has one
+     (`references/settings.md` names voice keys that have none);
    - there is no new `✗`;
    - no `⚠` names a key you wrote.
 
