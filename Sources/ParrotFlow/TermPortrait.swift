@@ -153,6 +153,7 @@ actor TermPortrait {
     /// One. The three that stood here was measured on the floor path, before
     /// counter-examples existed; the comparison was never measured at a low
     /// count.
+    /// With a floor, the comparison still waits for `floorMinimum` of them.
     static let counterMinimum = 1
 
     /// How far apart the two scores have to be before either side wins.
@@ -244,8 +245,12 @@ actor TermPortrait {
         let vector = try await WordVectors.shared.vector(.around, of: span, in: near)
         let own = WordVectors.cosine(vector, summary.centre) / summary.tightness
 
+        // A counter centre built from fewer than `floorMinimum` rows replaces
+        // the floor only when there is no floor. One row has tightness 1.0, and
+        // against it the term's own sentences always looked closer.
+        let counterRows = summary.floor == nil ? 1 : Self.floorMinimum
         guard let centre = summary.counterCentre, let tightness = summary.counterTightness,
-              tightness > 0
+              tightness > 0, summary.counters >= counterRows
         else {
             guard let floor = summary.floor else { return nil }
             let verdict: Verdict
@@ -783,7 +788,7 @@ actor TermPortrait {
         // its portrait even though it never enters one. The three minimums are
         // in it too: changing one changes what a stored summary means, and the
         // sentences it was built from do not move.
-        let rule = "\(minimum)/\(counterMinimum)/\(floorMinimum)/cut1"
+        let rule = "\(minimum)/\(counterMinimum)/\(floorMinimum)/cut1/gate1"
         let joined = uses
             .map { "\($0.counter ? "-" : "+")\($0.span)\u{1}\($0.said)\u{1}\($0.heard ?? "")" }
             .joined(separator: "\u{2}")
