@@ -137,6 +137,9 @@ final class ClaudeVoice {
         var task: String?
         var reminder: String?
         var reminding = false
+        /// The last explained progress lines, oldest first, and the opening the last one used.
+        var progress: [String] = []
+        var opening: Int?
         var heard: Date?
         var hostPid: pid_t?
         /// The pane, or else the window, this session lives in, kept once known.
@@ -379,6 +382,10 @@ final class ClaudeVoice {
         let task = sessions[session]?.task
         let language = sessions[session]?.language ?? "en"
         let agent = sessions[session]?.agent
+        let opening = VoicePrompt.opening(count: VoicePrompt.openings(in: prompt.text),
+                                          after: sessions[session]?.opening)
+        sessions[session]?.opening = opening
+        let saidBefore = sessions[session]?.progress ?? []
         Task.detached {
             let context = transcript.flatMap { agent?.lastTurn(transcript: $0, tailBytes: 128 * 1024) }?
                 .latestText
@@ -386,7 +393,7 @@ final class ClaudeVoice {
             let raw = try? await LLM.complete(
                 system: prompt.text,
                 user: ClaudeSpeakable.explainInput(tool: tool, input: input, context: context, task: task,
-                                                  language: language),
+                                                  language: language, opening: opening, said: saidBefore),
                 json: false, maxTokens: 60, config: model
             )
             let elapsed = Date().timeIntervalSince(started)
@@ -399,6 +406,7 @@ final class ClaudeVoice {
                 }
                 if !said.isEmpty {
                     Log.write(String(format: "claude voice: %@ explained %@ in %.1fs", model.name, tool, elapsed))
+                    self.sessions[session]?.progress = Array((saidBefore + [said]).suffix(3))
                 }
                 self.say(said.isEmpty ? line.text : said, session: session, progress: true)
             }

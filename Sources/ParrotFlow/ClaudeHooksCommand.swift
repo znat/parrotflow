@@ -516,6 +516,14 @@ enum ClaudeHooksCommand {
         check("what the assistant wrote loses its secrets",
               got: ClaudeSpeakable.explainInput(tool: "Bash", input: [:], context: "Use password: hunter2 now"),
               want: "Language: English\nTool: Bash\nWhat the assistant just wrote: Use password: <redacted> now.")
+        check("the opening and the lines already said",
+              got: ClaudeSpeakable.explainInput(tool: "Bash", input: [:], context: nil, opening: 3,
+                                                said: ["Now the tests.", "Counting proposals."]),
+              want: "Language: English\nTool: Bash\nOpening: 3\nAlready said:\n- Now the tests.\n- Counting proposals.")
+        check("a prompt's numbered openings", got: String(VoicePrompt.openings(in: "- a\n  1. Now\n  2. Next\n10. Ten\n3 no")),
+              want: "3")
+        check("an opening is never the last one twice", got: VoicePrompt.opening(count: 2, after: 1).map(String.init), want: "2")
+        check("no openings, no opening", got: VoicePrompt.opening(count: 0, after: nil).map(String.init), want: nil)
         let cut = ClaudeSpeakable.explainInput(
             tool: "Bash", input: [:], context: "Use token=hunter2 " + String(repeating: "ok ", count: 164)
         )
@@ -904,12 +912,13 @@ enum ClaudeHooksCommand {
         let named = config.voice.model.trimmingCharacters(in: .whitespaces)
         let model = config.model(named: named) ?? config.model(for: .general)
         var said = ""
+        let opening = VoicePrompt.opening(count: VoicePrompt.openings(in: prompt.text), after: nil)
         let started = Date()
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             let raw = try? await LLM.complete(
                 system: prompt.text,
-                user: ClaudeSpeakable.explainInput(tool: tool, input: input, context: context),
+                user: ClaudeSpeakable.explainInput(tool: tool, input: input, context: context, opening: opening),
                 json: false, maxTokens: 60, config: model
             )
             said = raw.map { ClaudeSpeakable.spokenRedacted(ClaudeSpeakable.clean(LLM.stripThinking($0))) } ?? ""
