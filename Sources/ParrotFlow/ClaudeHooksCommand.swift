@@ -453,6 +453,13 @@ enum ClaudeHooksCommand {
         try? Data(early.joined(separator: "\n").utf8).write(to: session)
         check("a title far from the end of the file is found", got: CodingAgent.claude.title(transcript: session),
               want: "Early title")
+        let index = #"{"id":"0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Reverted thread"}"#
+        try? Data(index.utf8).write(to: home.appendingPathComponent("session_index.jsonl"))
+        let reverted = session.deletingLastPathComponent().appendingPathComponent(
+            "rollout-2026-11-08T10-00-00-0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b_0199a3b2-9999-7e8f-9a0b-1c2d3e4f5a6b.jsonl"
+        )
+        check("a reverted Codex rollout is named by its thread id", got: CodingAgent.codex.title(transcript: reverted),
+              want: "Reverted thread")
         try? FileManager.default.removeItem(at: home)
         check("the reminder gets the session's task, without its secrets",
               got: ClaudeSpeakable.reminderInput(request: "how big is it?", latest: "Measured what the gate adds.",

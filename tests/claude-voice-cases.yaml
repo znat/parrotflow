@@ -502,6 +502,10 @@ titles:
       - '{"type":"ai-title","aiTitle":"Real title","sessionId":"s1"}'
       - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"type":"ai-title","aiTitle":"Nested"}}]}}'
     want: "Real title"
+  - name: a file whose only title-like line is a tool call has no title
+    lines:
+      - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"type":"ai-title","aiTitle":"Nested"}}]}}'
+    want: null
   - name: a half-written title line is skipped
     lines:
       - '{"type":"custom-title","customTitle":"Kept","sessionId":"s1"}'
