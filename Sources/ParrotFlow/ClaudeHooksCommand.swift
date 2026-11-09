@@ -23,6 +23,9 @@ enum ClaudeHooksCommand {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return 0 }
         defer { close(fd) }
+        // A stalled app must not hold up every tool call.
+        var limit = timeval(tv_sec: 0, tv_usec: 200_000)
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &limit, socklen_t(MemoryLayout<timeval>.size))
         var address = sockaddr_un()
         address.sun_family = sa_family_t(AF_UNIX)
         let path = ClaudeVoice.socketURL.path

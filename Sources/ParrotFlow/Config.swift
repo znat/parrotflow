@@ -3248,6 +3248,10 @@ struct Config: Decodable, Equatable {
             } else {
                 found.append("voice.speech: \"\(speech)\" is not under models: — using PocketTTS")
             }
+            if speech == defaultModelName, model(named: speech)?.api == .openai {
+                found.append("voice.speech: \"\(speech)\" is also the default model, so jobs that name no"
+                    + " model send it text — mark a text model `default: true`")
+            }
         }
         for key in transcription.retired {
             let said = key == "replacements"
