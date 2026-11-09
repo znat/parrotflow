@@ -291,16 +291,18 @@ final class ClaudeVoice {
 
         switch name {
         case "UserPromptSubmit":
-            findByTitle(id, prompted: true)
-            pinWindow(id)
-            if let prompt = event["prompt"] as? String, let language = ClaudeSpeakable.language(of: prompt) {
-                sessions[id]?.language = language
-            }
-            if let prompt = event["prompt"] as? String, !prompt.isEmpty {
-                Task.detached {
-                    let latest = transcript.flatMap { agent.latestSummary(transcript: $0) }
-                    let title = transcript.flatMap { agent.title(transcript: $0) }
-                    await MainActor.run { [weak self] in self?.remind(id, request: prompt, latest: latest, title: title) }
+            let prompt = event["prompt"] as? String ?? ""
+            // Not typed: the focused pane may be another session's.
+            if ClaudeSpeakable.typed(prompt) {
+                findByTitle(id, prompted: true)
+                pinWindow(id)
+                if let language = ClaudeSpeakable.language(of: prompt) { sessions[id]?.language = language }
+                if !prompt.isEmpty {
+                    Task.detached {
+                        let latest = transcript.flatMap { agent.latestSummary(transcript: $0) }
+                        let title = transcript.flatMap { agent.title(transcript: $0) }
+                        await MainActor.run { [weak self] in self?.remind(id, request: prompt, latest: latest, title: title) }
+                    }
                 }
             }
             turns[id, default: 0] += 1
