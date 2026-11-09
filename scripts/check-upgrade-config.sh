@@ -101,6 +101,8 @@ check "no voice: section: off" "$(agents_line current)" "off — voice.enabled i
 check "a voice: without enabled: stays on" "$(agents_line voice-unindented)" "claude ~/.claude, ~/.claude-work"
 check "the old example upgrades to the shipped one" \
   "$(cmp -s "$WORK/example-v3/config.yaml" "$ROOT/built-in/config.example.yaml" && echo same)" "same"
+check "the version 4 example upgrades to the shipped one" \
+  "$(cmp -s "$WORK/example-v4/config.yaml" "$ROOT/built-in/config.example.yaml" && echo same)" "same"
 
 dir="$WORK/told-voice"
 mkdir -p "$dir"
@@ -116,7 +118,7 @@ mkdir -p "$dir"
 cp "$CASES/block-enabled.yaml" "$dir/config.yaml"
 out="$(pf "$dir" --check-config)"
 check "an old config fails --check-config" "$?" "1"
-check "it says an upgrade is pending" "$(printf '%s\n' "$out" | grep -c 'version *0 — 4 upgrade(s) pending.*--upgrade-config --write')" "1"
+check "it says an upgrade is pending" "$(printf '%s\n' "$out" | grep -c 'version *0 — 5 upgrade(s) pending.*--upgrade-config --write')" "1"
 check "the retired block names the command" \
   "$(printf '%s\n' "$out" | grep -c '✗ transcription.sentence_repair no longer does anything — it is the `sentence_repair` transform now.*--upgrade-config --write')" "1"
 

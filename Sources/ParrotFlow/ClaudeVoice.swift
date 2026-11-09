@@ -805,7 +805,8 @@ final class ClaudeVoice {
     /// A session keeps its voice. A new one takes the first voice no active
     /// session holds, or shares one when there are more sessions than voices.
     private func voice(for id: String) -> String {
-        Self.pick(for: id, from: settings.speechVoices, held: &voices, active: Set(activeSessions.keys))
+        Self.pick(for: id, from: settings.remoteVoices(model: speaker.remote?.model ?? ""),
+                  held: &voices, active: Set(activeSessions.keys))
     }
 
     private func localVoice(for id: String) -> String? {
@@ -877,8 +878,7 @@ final class ClaudeVoice {
         lastSpokenAt = Date()
         // The local voices speak English only.
         let english = (sessions[session]?.language ?? "en") == "en"
-        let local = speaker.remote == nil || settings.speechVoices.isEmpty
-            || (progress && settings.progressLocal && english)
+        let local = speaker.remote == nil || (progress && settings.progressLocal && english)
         let style = local ? nil : Speaker.Style(
             voice: voice(for: session),
             tone: tone ?? ClaudeSpeakable.instructions(

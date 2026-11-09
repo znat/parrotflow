@@ -807,6 +807,22 @@ enum ClaudeHooksCommand {
         func on(_ yaml: String) -> String { yaml.contains("enabled:") ? yaml : "enabled: true\n" + yaml }
         check("no enabled: the voice is off", got: (try? YAMLDecoder().decode(Config.Voice.self, from: "agents: {claude: }"))
                 .map { $0.enabled ? "on" : "off" }, want: "off")
+        func voices(_ yaml: String, model: String = "") -> String {
+            guard let v = try? YAMLDecoder().decode(Config.Voice.self, from: on(yaml)) else { return "unreadable" }
+            return v.localVoices.joined(separator: ",") + " | " + v.remoteVoices(model: model).joined(separator: ",")
+        }
+        check("six local voices by default", got: voices("progress: true"),
+              want: "alba,george,jane,michael,eve,paul | ")
+        check("a local_voice goes first", got: voices("local_voice: eve"),
+              want: "eve,alba,george,jane,michael,paul | ")
+        check("an empty local_voices: local_voice for all", got: voices("local_voice: eve\nlocal_voices: []"),
+              want: " | ")
+        check("a Gemini model gets Gemini's voices", got: voices("progress: true", model: "google/gemini-3.8-flash-lite-tts"),
+              want: "alba,george,jane,michael,eve,paul | Achird,Sulafat,Zubenelgenubi,Callirrhoe,Umbriel,Aoede")
+        check("another model gets no voice name", got: voices("progress: true", model: "openai/gpt-4o-mini-tts"),
+              want: "alba,george,jane,michael,eve,paul | ")
+        check("written speech_voices win", got: voices("speech_voices: [alloy, nova]", model: "openai/gpt-4o-mini-tts"),
+              want: "alba,george,jane,michael,eve,paul | alloy,nova")
         func sync(_ yaml: String) -> String {
             let decoded = try? YAMLDecoder().decode(Config.Voice.self, from: on(yaml).replacingOccurrences(of: "CODEX", with: codexFolder.path))
             guard let settings = decoded,
@@ -956,7 +972,8 @@ enum ClaudeHooksCommand {
                 print("✗ --output needs a remote voice: set voice.speech to a model under models:")
                 exit(1)
             }
-            save(text, to: output, remote: remote, tone: tone, voice: voice ?? config.voice.speechVoices.first ?? "")
+            save(text, to: output, remote: remote, tone: tone,
+                 voice: voice ?? config.voice.remoteVoices(model: remote.model).first ?? "")
         }
         Task { @MainActor in
             let speaker = Speaker()
@@ -965,7 +982,7 @@ enum ClaudeHooksCommand {
             speaker.speed = config.voice.speed
             speaker.remote = ClaudeVoice.remote(config.voice, config)
             let started = Date()
-            let style = (voice ?? config.voice.speechVoices.first).map {
+            let style = (voice ?? speaker.remote.flatMap { config.voice.remoteVoices(model: $0.model).first }).map {
                 Speaker.Style(voice: $0, tone: tone ?? ClaudeSpeakable.instructions(base: config.voice.speechTone, shift: nil))
             }
             print("tone:  \(style?.tone ?? "(PocketTTS has none)")")

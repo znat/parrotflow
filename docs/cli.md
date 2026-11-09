@@ -73,7 +73,7 @@ An older config, before the app has upgraded it:
 
 It also names, every time and whether or not anything is wrong:
 
-- the config's `version:`. `✓ version 4` is current. An older file gets a `·`
+- the config's `version:`. `✓ version 5` is current. An older file gets a `·`
   line that counts the upgrades pending and gives the
   `--upgrade-config --write` command, then one line per pending upgrade (shown
   above). A file newer than the app says so and is read as it is. See
@@ -176,12 +176,12 @@ beside it (`-2`, `-3` when that name is taken), writes the new one, writes the
 same lines to the log and prints the launch notice after a `✓`:
 
 ```
-✓ config.yaml upgraded to version 4: voice: is written out, off; a voice: section without enabled: stays on. The old file is config.yaml.bak-v3-2026-11-09
+✓ config.yaml upgraded to version 5: the example's voice lines show six local voices and the remote voice's model. The old file is config.yaml.bak-v4-2026-11-09
 ```
 
 A failure prints the notice after a `✗` and writes nothing.
 
-A second run is a no-op: `✓ <path> is version 4. Nothing to upgrade`. A file
+A second run is a no-op: `✓ <path> is version 5. Nothing to upgrade`. A file
 newer than the app is left as it is, with a `·` line.
 
 Exit 0 when it did what it says, including a no-op. Exit 1 when the file

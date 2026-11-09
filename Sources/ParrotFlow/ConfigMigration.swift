@@ -28,7 +28,8 @@ enum ConfigMigration {
         var byHand: String?
     }
 
-    static let steps: [Step] = [sentenceRepairTransform, scriptsDeclareNeeds, voiceSection, voiceWritten]
+    static let steps: [Step] = [sentenceRepairTransform, scriptsDeclareNeeds, voiceSection, voiceWritten,
+                               voiceChoices]
 
     static var current: Int { steps.last?.version ?? 0 }
 
@@ -696,9 +697,60 @@ enum ConfigMigration {
         "    claude:              # empty: ~/.claude. Or a folder, or a list",
         "    # codex:             # empty: $CODEX_HOME, then ~/.codex. Approve its hooks under /hooks",
         "    # mini:              # no folder; needs the parrotflow-mini plugin",
+    ] + oldVoiceChoices
+
+    static let oldVoiceChoices = [
         "  local_voice: alba      # a PocketTTS voice",
         "  # speech: openrouter-tts  # a remote voice under models: instead of PocketTTS",
     ]
+
+    static let voiceChoicesLines = [
+        "  local_voices: [alba, george, jane, michael, eve, paul]  # PocketTTS, one per session",
+        "  # A remote voice instead of PocketTTS: a name under models:, such as",
+        "  # remote-voice there. Voice names come from its provider.",
+        "  # speech: remote-voice",
+        "  # speech_voices: [Achird, Sulafat, Zubenelgenubi, Callirrhoe, Umbriel, Aoede]",
+    ]
+
+    static let oldRemoteModel = [
+        "  # A remote voice for `voice.speech`, through OpenRouter's /audio/speech.",
+        "  # openrouter-tts:",
+        "  #   api: openai",
+        "  #   model: google/gemini-3.1-flash-tts-preview",
+        "  #   endpoint: https://openrouter.ai/api/v1",
+    ]
+
+    static let remoteModel = [
+        "  # A remote voice for `voice.speech`: any model behind an OpenAI-style",
+        "  # /audio/speech endpoint. Gemini 3.8 Flash-Lite through OpenRouter here.",
+        "  # remote-voice:",
+        "  #   api: openai",
+        "  #   model: google/gemini-3.8-flash-lite-tts",
+        "  #   endpoint: https://openrouter.ai/api/v1",
+    ]
+
+    /// The example's voice lines as shipped in version 4 become the new ones:
+    /// six local voices, and a remote voice with its model in view. Lines a
+    /// person changed stay as they are.
+    static let voiceChoices = Step(
+        version: 5,
+        summary: "the example's voice lines show six local voices and the remote voice's model",
+        apply: { lines in
+            var out = replacing(oldRemoteModel, with: remoteModel, in: lines)
+            out = replacing(oldVoiceChoices, with: voiceChoicesLines, in: out)
+            return out
+        },
+        holds: { _ in true }
+    )
+
+    private static func replacing(_ old: [String], with new: [String], in lines: [String]) -> [String] {
+        guard old.count <= lines.count,
+              let start = (0...(lines.count - old.count)).first(where: { Array(lines[$0..<$0 + old.count]) == old })
+        else { return lines }
+        var out = lines
+        out.replaceSubrange(start..<start + old.count, with: new)
+        return out
+    }
 
     /// The voice went from on to off by default. A file with no `voice:`
     /// gets the example's section, off, in place of the commented one the

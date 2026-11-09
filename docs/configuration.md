@@ -77,7 +77,7 @@ existing file or
 [built-in/config.example.yaml](../built-in/config.example.yaml).
 
 ```yaml
-version: 4              # which upgrade the file was written for; see below
+version: 5              # which upgrade the file was written for; see below
 
 hotkey:
   key: right_command    # a bare modifier, or a character key + modifiers
@@ -137,11 +137,11 @@ logging:
 ## `version` and the upgrade at launch
 
 ```yaml
-version: 4
+version: 5
 ```
 
 `version:` says which upgrade the file was written for. A file without it is
-version 0. This build writes version 4, and `built-in/config.example.yaml`
+version 0. This build writes version 5, and `built-in/config.example.yaml`
 starts with it.
 
 **At launch, before it reads the config,** the app applies every upgrade above
@@ -154,7 +154,7 @@ stay. Then it:
    `-2`, then `-3`;
 3. writes the new file, with the new `version:` line;
 4. writes the diff to the log and shows one notice: `config.yaml upgraded to
-   version 4: … The old file is config.yaml.bak-v3-2026-11-09`.
+   version 5: … The old file is config.yaml.bak-v4-2026-11-09`.
 
 An empty `config.yaml` is upgraded too.
 
@@ -165,7 +165,7 @@ still pending.
 
 **A newer file is left alone.** A `version:` higher than the app knows is read
 as it is and never rewritten. The notice then reads `config.yaml was not
-upgraded — config.yaml is version 4, and this app knows up to 3. Read as it
+upgraded — config.yaml is version 6, and this app knows up to 5. Read as it
 is`.
 
 **See the change first.** `--upgrade-config` prints the version change, what
@@ -183,6 +183,7 @@ after the same backup. See [cli.md](cli.md#--upgrade-config).
 | 2 | A built-in script declares what its envelope needs on its own `parrotflow:` line. In each transform whose `command:` is a built-in script, a `returns:`, `parse:` or `readings:` line that holds the value an older example wrote for that script goes, and the script's line applies. So `disfluency` moves from `parse: true` to `parse: vectors`, which also runs the tree cutter. Any other value stays, since you chose it. A trailing comment on a removed line stays on its own line. See [pipelines.md](pipelines.md#what-a-script-declares). |
 | 3 | `claude:` becomes `voice:`. Its `folders:` become `agents.claude`, and `codex: true` becomes `agents.codex`, holding the old `codex_folder`. `codex:`, `codex_folder:` and the comments above them go. Every other key moves across as it is. A file with both `claude:` and `voice:`, or with `folders` or `codex` in a one-line `{…}`, is not upgraded: rename it by hand. See [`voice`](#voice). |
 | 4 | The voice is off by default and the config says so. A file with no `voice:` section gets the example's one, with `enabled: false`, in place of the commented `# voice:` block the example used to carry, or at the end. A `voice:` section without `enabled:` was on, so it gets `enabled: true`. See [`voice`](#voice). |
+| 5 | The voice lines the example shipped in version 4 are replaced, where they are unchanged. `local_voice: alba` and `# speech: openrouter-tts` become `local_voices:` with six PocketTTS voices, and commented `speech:` and `speech_voices:` lines. The commented `openrouter-tts` model becomes `remote-voice`, with Gemini 3.8 Flash-Lite. Nothing else changes: a `local_voice` you kept still goes first. See [`voice`](#voice). |
 
 ## Where things live
 
@@ -1535,12 +1536,12 @@ voice:
   frame: true            # a glow around the speaking session's window
   model: ""              # a name under models:; empty means the default
   speed: 1.0             # the remote voice's speed, above 0; PocketTTS has none
-  local_voice: alba      # the voice on this Mac, a PocketTTS voice
-  local_voices: []       # one per session, like speech_voices; PocketTTS has 27
+  local_voice: alba      # the first session's PocketTTS voice
+  local_voices: [alba, george, jane, michael, eve, paul]  # one per session; PocketTTS has 27
   local_placement: gpu   # where PocketTTS runs: gpu, ane or ane-state (Neural Engine)
   progress_local: false  # progress lines on the local voice, answers on `speech`
   speech: ""             # a name under models: for a remote voice; empty = PocketTTS
-  speech_voices: [Achird, Sulafat, Zubenelgenubi, Callirrhoe, Umbriel, Aoede]
+  speech_voices: []      # the provider's voice names; empty: six for a Gemini model
   # speech_voice: Achird # one remote voice for every session; speech_voices wins
   speech_tone: >-
     Speak in a relaxed, friendly, natural tone, like a software engineer colleague
@@ -1548,24 +1549,34 @@ voice:
     not performative.
 ```
 
+Each session takes the first voice no active session holds, and keeps it.
+On this Mac, that is one of six PocketTTS voices. A `local_voice` you write
+goes first in that list. `local_voices: []` gives every session `local_voice`.
+
 `speech` sends each sentence to an OpenAI-style `/audio/speech` endpoint and
-plays the 24 kHz 16-bit PCM it returns. OpenRouter has one, for many voice
-models. The entry under `models:` takes its key like any other model:
+plays the 24 kHz 16-bit PCM it returns. It names an entry under `models:`,
+and that entry's `model:` is the voice model: any model the endpoint serves.
+OpenRouter has many. The shipped config has Gemini 3.8 Flash-Lite there,
+commented out. The entry takes its key like any other model:
 
 ```yaml
 models:
-  openrouter-tts:
+  remote-voice:
     api: openai
-    model: google/gemini-3.1-flash-tts-preview
+    model: google/gemini-3.8-flash-lite-tts
     endpoint: https://openrouter.ai/api/v1
 voice:
-  speech: openrouter-tts
+  speech: remote-voice
   speech_voices: [Achird, Sulafat]   # Gemini has 30; any of them
 ```
 
-Each session takes the first voice no active session holds, and keeps it.
-The default list is Gemini's friendly, warm, casual and easy-going voices.
-The firm and informative ones (`Kore`, `Charon`) sounded like announcements.
+Voice names belong to the provider. With no `speech_voices`, a Gemini model
+gets six of Gemini's friendly, warm, casual and easy-going voices. The firm
+and informative ones (`Kore`, `Charon`) sounded like announcements. Any other
+model needs its provider's names in `speech_voices`. Without them no voice
+name is sent, and most providers refuse that: on OpenRouter only Fish Audio
+takes it. A refused sentence is said by PocketTTS. `--check-config` prints a
+`·` line for it.
 With a remote voice, the `model` call that shortens an answer also returns a
 tone: `speech_tone`, shifted for what happened (pleased, a little sorry,
 curious). It goes out as `instructions`. A recap or a short answer keeps its

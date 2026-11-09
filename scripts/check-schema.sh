@@ -137,6 +137,17 @@ check "mini takes no folder: said, and mini is still on" "$code $(printf '%s\n' 
   | grep -cxF '  ✗ voice.agents.mini: takes no folder — mini has no hooks file, so the value is ignored')" "1 1"
 check "mini is listed with no folder" "$(printf '%s\n' "$out" | sed -n 's/^  · agents  *//p')" "claude ~/.claude; mini"
 
+# --- voice.speech: a model that is not Gemini needs voice names --------------------
+
+speech_config() {
+  printf 'models:\n  gpt:\n    api: openai\n    model: gpt-x\n    api_key: k\n    default: true\n  tts:\n    api: openai\n    model: %s\n    endpoint: https://openrouter.ai/api/v1\n    api_key: k\nvoice:\n  enabled: false\n  speech: tts\n%s' "$1" "$2" > "$WORK/agents/config.yaml"
+  run_config agents
+  printf '%s\n' "$out" | grep -c 'has no speech_voices, so no voice name is sent'
+}
+check "another provider with no speech_voices is told" "$(speech_config elevenlabs/eleven-v3 '')" "1"
+check "a Gemini model is not" "$(speech_config google/gemini-3.8-flash-lite-tts '')" "0"
+check "nor a model with speech_voices" "$(speech_config elevenlabs/eleven-v3 $'  speech_voices: [Rachel]\n')" "0"
+
 # --- typos in lists and either-of keys, beside sections that take any key ---------
 
 mkdir -p "$WORK/nested"
