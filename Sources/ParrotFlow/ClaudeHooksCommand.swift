@@ -803,8 +803,12 @@ enum ClaudeHooksCommand {
                 + (FileManager.default.fileExists(atPath: noCodex.path) ? "made" : "absent"),
               want: "none absent")
         check("a missing Claude folder is still an error", got: hooks(true, release, in: noCodex), want: "failed")
+        /// The voice is off unless written on.
+        func on(_ yaml: String) -> String { yaml.contains("enabled:") ? yaml : "enabled: true\n" + yaml }
+        check("no enabled: the voice is off", got: (try? YAMLDecoder().decode(Config.Voice.self, from: "agents: {claude: }"))
+                .map { $0.enabled ? "on" : "off" }, want: "off")
         func sync(_ yaml: String) -> String {
-            let decoded = try? YAMLDecoder().decode(Config.Voice.self, from: yaml.replacingOccurrences(of: "CODEX", with: codexFolder.path))
+            let decoded = try? YAMLDecoder().decode(Config.Voice.self, from: on(yaml).replacingOccurrences(of: "CODEX", with: codexFolder.path))
             guard let settings = decoded,
                   let target = targets(settings, hook: release).first(where: { $0.hook.agent == .codex }) else { return "-" }
             return reconcile(enabled: target.enabled, folders: target.folders, hook: target.hook).first?.change == .written
@@ -819,7 +823,7 @@ enum ClaudeHooksCommand {
         check("removing the codex key uninstalls", got: sync("agents: {claude: }"), want: "written 0")
         if let codexHome { setenv("CODEX_HOME", codexHome, 1) } else { unsetenv("CODEX_HOME") }
         func agents(_ yaml: String) -> String {
-            guard let settings = try? YAMLDecoder().decode(Config.Voice.self, from: yaml) else { return "unreadable" }
+            guard let settings = try? YAMLDecoder().decode(Config.Voice.self, from: on(yaml)) else { return "unreadable" }
             let on = targets(settings, hook: release).filter(\.enabled)
             return on.map { "\($0.hook.agent.rawValue) " + $0.folders.map(shown).joined(separator: ",") }
                 .joined(separator: "; ") + (settings.unknownAgents.isEmpty ? "" : " ?" + settings.unknownAgents.joined(separator: ","))
@@ -834,7 +838,7 @@ enum ClaudeHooksCommand {
         check("an unknown agent is set aside, and mini hooks nothing",
               got: agents("agents: {claude: , zork: ~/z, mini: }"), want: "claude ~/.claude ?zork")
         func spokenFor(_ yaml: String) -> String {
-            guard let settings = try? YAMLDecoder().decode(Config.Voice.self, from: yaml) else { return "unreadable" }
+            guard let settings = try? YAMLDecoder().decode(Config.Voice.self, from: on(yaml)) else { return "unreadable" }
             return CodingAgent.allCases.filter { settings.folders(of: $0) != nil }.map(\.rawValue).joined(separator: ",")
                 + (settings.folderless.isEmpty ? "" : " ?" + settings.folderless.joined(separator: ","))
         }

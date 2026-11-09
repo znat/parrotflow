@@ -1,0 +1,2 @@
+version: 4
+voice: {enabled: true, progress: false}  # enabled by default

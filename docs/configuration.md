@@ -77,7 +77,7 @@ existing file or
 [built-in/config.example.yaml](../built-in/config.example.yaml).
 
 ```yaml
-version: 3              # which upgrade the file was written for; see below
+version: 4              # which upgrade the file was written for; see below
 
 hotkey:
   key: right_command    # a bare modifier, or a character key + modifiers
@@ -137,11 +137,11 @@ logging:
 ## `version` and the upgrade at launch
 
 ```yaml
-version: 3
+version: 4
 ```
 
 `version:` says which upgrade the file was written for. A file without it is
-version 0. This build writes version 3, and `built-in/config.example.yaml`
+version 0. This build writes version 4, and `built-in/config.example.yaml`
 starts with it.
 
 **At launch, before it reads the config,** the app applies every upgrade above
@@ -154,7 +154,7 @@ stay. Then it:
    `-2`, then `-3`;
 3. writes the new file, with the new `version:` line;
 4. writes the diff to the log and shows one notice: `config.yaml upgraded to
-   version 3: … The old file is config.yaml.bak-v2-2026-11-07`.
+   version 4: … The old file is config.yaml.bak-v3-2026-11-09`.
 
 An empty `config.yaml` is upgraded too.
 
@@ -182,6 +182,7 @@ after the same backup. See [cli.md](cli.md#--upgrade-config).
 | 1 | Sentence repair becomes the `sentence_repair` transform. The `transcription.sentence_repair:` block goes, or `transcription.interpret:`, with its comment paragraph and its commented option lines. So does every step that names either, written `- sentence_repair`, `- stage: sentence_repair` or `- {stage: sentence_repair, …}`. The transform is added to `transforms:` if it is missing, and `- transform: sentence_repair` becomes the first step of `pipeline:`, unless the list already has it. A config with no `pipeline:` gets one with this one step. A block that said `enabled: false` still gets the step: delete the line to turn it off. Two comments the shipped config carried about the old order are reworded, where they still read as shipped. See [pipelines.md](pipelines.md#sentence-marks-a-pause-put-there). |
 | 2 | A built-in script declares what its envelope needs on its own `parrotflow:` line. In each transform whose `command:` is a built-in script, a `returns:`, `parse:` or `readings:` line that holds the value an older example wrote for that script goes, and the script's line applies. So `disfluency` moves from `parse: true` to `parse: vectors`, which also runs the tree cutter. Any other value stays, since you chose it. A trailing comment on a removed line stays on its own line. See [pipelines.md](pipelines.md#what-a-script-declares). |
 | 3 | `claude:` becomes `voice:`. Its `folders:` become `agents.claude`, and `codex: true` becomes `agents.codex`, holding the old `codex_folder`. `codex:`, `codex_folder:` and the comments above them go. Every other key moves across as it is. A file with both `claude:` and `voice:`, or with `folders` or `codex` in a one-line `{…}`, is not upgraded: rename it by hand. See [`voice`](#voice). |
+| 4 | The voice is off by default and the config says so. A file with no `voice:` section gets the example's one, with `enabled: false`, in place of the commented `# voice:` block the example used to carry, or at the end. A `voice:` section without `enabled:` was on, so it gets `enabled: true`. See [`voice`](#voice). |
 
 ## Where things live
 
@@ -1378,9 +1379,10 @@ they answer.
 
 ### Quick start
 
-Claude Code needs no setup. The voice is on by default, for Claude Code in
-`~/.claude`. At launch, and each time the config changes, the app writes its
-hooks into `~/.claude/settings.json`. When it writes them, the log says
+The voice is off by default. The config has its section, so turning it on is
+one word: set `enabled: false` to `true`. It then speaks Claude Code in
+`~/.claude`, with PocketTTS on this Mac. At launch, and each time the config
+changes, the app writes its hooks into `~/.claude/settings.json`. When it writes them, the log says
 `claude hooks: installed in ~/.claude`. A folder that does not exist yet gets
 no hooks, and the log says `claude hooks: ~/.claude: no such folder`. Quit and
 open ParrotFlow once Claude Code has created it.
@@ -1412,7 +1414,8 @@ voice:
   agent class. See
   [integrations/mini-swe-agent/README.md](../integrations/mini-swe-agent/README.md).
 
-`enabled: false` turns the voice off and takes the hooks out. The flags that
+`enabled: false` turns the voice off and takes the hooks out. A config with
+no `voice:` section is off too. The flags that
 install hooks by hand are in [cli.md](cli.md#coding-agents-voice).
 
 ### In detail
