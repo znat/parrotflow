@@ -3248,10 +3248,6 @@ struct Config: Decodable, Equatable {
             } else {
                 found.append("voice.speech: \"\(speech)\" is not under models: — using PocketTTS")
             }
-            if speech == defaultModelName, model(named: speech)?.api == .openai {
-                found.append("voice.speech: \"\(speech)\" is also the default model, so jobs that name no"
-                    + " model send it text — mark a text model `default: true`")
-            }
         }
         for key in transcription.retired {
             let said = key == "replacements"
@@ -3360,6 +3356,11 @@ struct Config: Decodable, Equatable {
         var said: [String] = transforms.compactMap { transform in
             guard case .command(let command) = transform.body else { return nil }
             return "transforms: \"\(transform.name)\" runs a program — \(command)"
+        }
+        let speech = voice.speech.trimmingCharacters(in: .whitespaces)
+        if !speech.isEmpty, speech == defaultModelName, model(named: speech)?.api == .openai {
+            said.append("voice.speech: \"\(speech)\" is also the default model, so jobs that name no"
+                + " model send it text. Fine if it writes text too; if not, mark a text model `default: true`")
         }
         for transform in transforms {
             for short in transform.written.shortfalls(against: transform.declared) {
