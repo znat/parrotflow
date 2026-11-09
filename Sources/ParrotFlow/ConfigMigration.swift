@@ -721,7 +721,9 @@ enum ConfigMigration {
             var out = lines
             let rest = lines[at].dropFirst("voice:".count)
             if let brace = rest.firstIndex(of: "{") {
-                guard !rest.contains("enabled") else { return lines }
+                guard rest.prefix(while: { $0 != "#" }).firstMatch(of: #/[{,]\s*enabled\s*:/#) == nil else {
+                    return lines
+                }
                 let after = rest[rest.index(after: brace)...]
                 let empty = after.drop { $0 == " " }.first == "}"
                 out[at] = "voice:" + rest[...brace] + (empty ? "enabled: true" : "enabled: true, ") + after
