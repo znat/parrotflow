@@ -156,8 +156,9 @@ voice:
                      # CODEX_HOME is set only in a shell profile
     mini:            # no folder; needs the parrotflow-mini plugin
   model: ""          # a name under models: that writes what is said; empty: the default
-  local_voice: alba  # the voice on this Mac, a PocketTTS voice
+  local_voices: [alba, george, jane, michael, eve, paul]  # PocketTTS, one per session
   speech: ""         # a name under models: for a remote voice; empty: PocketTTS
+  speech_voices: []  # that provider's voice names; empty: six for a Gemini model
 ```
 
 - Off by default. The shipped config has this section with `enabled: false`,
@@ -176,12 +177,18 @@ voice:
   each spoken sentence, one request each, and its provider may charge for each.
 - PocketTTS speaks English only and downloads on first use. For a remote
   voice, add a `models:` entry that speaks OpenAI's `/audio/speech` (OpenRouter
-  does), name it in `speech`, and list its voices in `speech_voices`. Do not
-  mark it `default: true`: the default model must write text.
-  `local_voices`, when not empty, wins over `local_voice`.
+  does), with the voice model in its `model:`. The shipped config has
+  `remote-voice` commented out, with `google/gemini-3.8-flash-lite-tts`. Name
+  the entry in `speech`. A Gemini model needs no `speech_voices`; another
+  provider needs its own voice names there, or most refuse each sentence and
+  PocketTTS says it. `--check-config` prints a `·` line for that.
+  Do not mark it `default: true`: the default model must write text.
+- Each session gets its own voice: six PocketTTS voices by default. A
+  `local_voice` goes first in that list; `local_voices: []` gives every
+  session `local_voice`.
 - `--check-config` prints the agents on its `agents` line. A `voice explain`
   line, and one per other prompt, says `built-in` or the path of the user's
-  file. It prints no line for `model`, `local_voice` or `speech`. For those,
+  file. It prints no line for `model`, `local_voices` or `speech`. For those,
   read the file back and check there is no new `✗` or `⚠`. A `model` or
   `speech` that is not under `models:` is a `✗`.
 - The real test is a prompt sent to the agent, not a dictation. Ask the user

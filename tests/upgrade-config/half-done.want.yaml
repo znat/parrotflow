@@ -1,5 +1,5 @@
 # Invented. Somebody tried the transform by hand and left the block in.
-version: 4
+version: 5
 
 transcription:
   pipeline:
@@ -25,5 +25,8 @@ voice:
     claude:              # empty: ~/.claude. Or a folder, or a list
     # codex:             # empty: $CODEX_HOME, then ~/.codex. Approve its hooks under /hooks
     # mini:              # no folder; needs the parrotflow-mini plugin
-  local_voice: alba      # a PocketTTS voice
-  # speech: openrouter-tts  # a remote voice under models: instead of PocketTTS
+  local_voices: [alba, george, jane, michael, eve, paul]  # PocketTTS, one per session
+  # A remote voice instead of PocketTTS: a name under models:, such as
+  # remote-voice there. Voice names come from its provider.
+  # speech: remote-voice
+  # speech_voices: [Achird, Sulafat, Zubenelgenubi, Callirrhoe, Umbriel, Aoede]

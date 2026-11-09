@@ -2880,10 +2880,11 @@ struct Config: Decodable, Equatable {
         var retired: [String] = []
         static let retiredAdvice = "no longer does anything — it chose Kokoro, and the voice on this Mac"
             + " is PocketTTS, set by `local_voice`. Delete the line"
-        /// A PocketTTS voice, the voice on this Mac.
+        /// A PocketTTS voice: the first session's, and the one warmed at launch.
         var localVoice = "alba"
         /// One per session on the local voice, like `speech_voices`. Empty: `local_voice` for all.
-        var localVoices: [String] = []
+        var localVoices = Self.pocketVoices
+        static let pocketVoices = ["alba", "george", "jane", "michael", "eve", "paul"]
         /// Progress lines on the local voice even when `speech` names a remote
         /// one: they are short and should come at once.
         var progressLocal = false
@@ -2893,12 +2894,21 @@ struct Config: Decodable, Equatable {
         /// as OpenRouter. Empty means PocketTTS, on this Mac.
         var speech = ""
         /// One per session, in order. A session keeps its voice while it is active.
+        /// Empty: `remoteVoices(model:)` picks.
+        var speechVoices: [String] = []
         /// Gemini's conversational voices: friendly, warm, casual, easy-going, breezy.
         /// Kore and Charon, firm and informative, sounded like announcements.
-        var speechVoices = ["Achird", "Sulafat", "Zubenelgenubi", "Callirrhoe", "Umbriel", "Aoede"]
+        static let geminiVoices = ["Achird", "Sulafat", "Zubenelgenubi", "Callirrhoe", "Umbriel", "Aoede"]
         /// Always in the voice. The model adds a shift for what happened.
         var speechTone = "Speak in a relaxed, friendly, natural tone, like a software engineer colleague "
             + "collaborating with a teammate, speaking face to face. Clear and conversational, not performative."
+
+        /// Never empty. Gemini's names mean nothing to another provider, so it
+        /// gets "": no voice in the request. Only some providers accept that.
+        func remoteVoices(model: String) -> [String] {
+            if !speechVoices.isEmpty { return speechVoices }
+            return model.localizedCaseInsensitiveContains("gemini") ? Self.geminiVoices : [""]
+        }
 
         enum CodingKeys: String, CodingKey, CaseIterable {
             case enabled, agents, progress, explain, frame, model, voice, speed, speech
@@ -2932,7 +2942,10 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(String.self, forKey: .speechVoice), !v.isEmpty { speechVoices = [v] }
             if let v = try c.decodeIfPresent([String].self, forKey: .speechVoices), !v.isEmpty { speechVoices = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .speechTone) { speechTone = v }
-            if let v = try c.decodeIfPresent(String.self, forKey: .localVoice), !v.isEmpty { localVoice = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .localVoice), !v.isEmpty {
+                localVoice = v
+                localVoices = [v] + Self.pocketVoices.filter { $0 != v }
+            }
             if let v = try c.decodeIfPresent([String].self, forKey: .localVoices) { localVoices = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .progressLocal) { progressLocal = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .localPlacement) { localPlacement = v }
@@ -3361,6 +3374,14 @@ struct Config: Decodable, Equatable {
         if !speech.isEmpty, speech == defaultModelName, model(named: speech)?.api == .openai {
             said.append("voice.speech: \"\(speech)\" is also the default model, so jobs that name no"
                 + " model send it text. Fine if it writes text too; if not, mark a text model `default: true`")
+        }
+        // OpenRouter, 2026-11-09: ElevenLabs, Mistral, Deepgram, Microsoft and Gemini
+        // refuse a request with no voice: "An explicit voice is required". Fish Audio takes it.
+        if !speech.isEmpty, let spec = model(named: speech), spec.api == .openai,
+           voice.remoteVoices(model: spec.model) == [""] {
+            said.append("voice.speech: \"\(speech)\" (\(spec.model)) has no speech_voices, so no voice"
+                + " name is sent. Most providers refuse that, and PocketTTS then says the line."
+                + " List that provider's voice names in speech_voices")
         }
         for transform in transforms {
             for short in transform.written.shortfalls(against: transform.declared) {
