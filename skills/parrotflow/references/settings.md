@@ -149,7 +149,7 @@ given `--greedy`; the menu's "Check for Updates" is the usual way.
 
 ```yaml
 voice:
-  enabled: true      # false stops the voice and takes the hooks out
+  enabled: false     # the default; true turns it on, false takes the hooks out
   agents:            # an agent left out is off, so keep claude:
     claude:          # empty: ~/.claude; or a folder, or a list of them
     codex:           # empty: $CODEX_HOME, then ~/.codex; name the folder if
@@ -160,8 +160,9 @@ voice:
   speech: ""         # a name under models: for a remote voice; empty: PocketTTS
 ```
 
-- The app writes each agent's hooks itself, at launch and on every config
-  change. Restart open Claude Code sessions once, after the first install.
+- Off by default. The shipped config has this section with `enabled: false`,
+  so turning it on is that one word. The app writes each agent's hooks itself,
+  at launch and on every config change. Restart open Claude Code sessions once, after the first install.
   Codex asks to approve its hooks once, under `/hooks` in the CLI or
   Settings > Hooks in the desktop app. mini needs the `parrotflow-mini` plugin
   from the ParrotFlow repository, and runs with its agent class,

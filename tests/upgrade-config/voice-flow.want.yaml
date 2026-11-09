@@ -1,5 +1,6 @@
-version: 3
+version: 4
 voice:
+  enabled: true
   agents:
     claude: [~/.claude, ~/work/.claude]  # two accounts
   progress: false

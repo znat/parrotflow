@@ -28,7 +28,7 @@ enum ConfigMigration {
         var byHand: String?
     }
 
-    static let steps: [Step] = [sentenceRepairTransform, scriptsDeclareNeeds, voiceSection]
+    static let steps: [Step] = [sentenceRepairTransform, scriptsDeclareNeeds, voiceSection, voiceWritten]
 
     static var current: Int { steps.last?.version ?? 0 }
 
@@ -680,6 +680,65 @@ enum ConfigMigration {
         }
         return out
     }
+
+    // MARK: - 4: the voice is written out, off
+
+    /// The `voice:` section of `built-in/config.example.yaml`, with the
+    /// paragraph above it. `scripts/check-upgrade-config.sh` checks they match.
+    static let voiceBlock = [
+        "# Speaks what your coding agents do and what they answer, with PocketTTS on",
+        "# this Mac. true turns it on: the app writes Claude Code's hooks at launch,",
+        "# and open sessions need one restart. false removes them. See",
+        "# docs/configuration.md.",
+        "voice:",
+        "  enabled: false",
+        "  agents:                # an agent left out is off",
+        "    claude:              # empty: ~/.claude. Or a folder, or a list",
+        "    # codex:             # empty: $CODEX_HOME, then ~/.codex. Approve its hooks under /hooks",
+        "    # mini:              # no folder; needs the parrotflow-mini plugin",
+        "  local_voice: alba      # a PocketTTS voice",
+        "  # speech: openrouter-tts  # a remote voice under models: instead of PocketTTS",
+    ]
+
+    /// The voice went from on to off by default. A file with no `voice:`
+    /// gets the example's section, off, in place of the commented one the
+    /// example used to carry. A `voice:` without `enabled:` was on, and stays
+    /// on.
+    static let voiceWritten = Step(
+        version: 4,
+        summary: "voice: is written out, off; a voice: section without enabled: stays on",
+        apply: { lines in
+            guard let at = keyLine("voice", depth: 0, in: lines, within: lines.indices) else {
+                guard let commented = lines.firstIndex(of: "# voice:"),
+                      lines[paragraph(above: commented, in: lines)].hasPrefix("# Speaks what your coding agents do")
+                else { return appending(voiceBlock, to: lines) }
+                var end = commented + 1
+                while end < lines.count, lines[end].hasPrefix("#   ") { end += 1 }
+                var out = lines
+                out.replaceSubrange(paragraph(above: commented, in: lines)..<end, with: voiceBlock)
+                return out
+            }
+            var out = lines
+            let rest = lines[at].dropFirst("voice:".count)
+            if let brace = rest.firstIndex(of: "{") {
+                guard !rest.contains("enabled") else { return lines }
+                let after = rest[rest.index(after: brace)...]
+                let empty = after.drop { $0 == " " }.first == "}"
+                out[at] = "voice:" + rest[...brace] + (empty ? "enabled: true" : "enabled: true, ") + after
+                return out
+            }
+            guard let depth = childDepth(of: at, in: lines) else {
+                out.insert("  enabled: true", at: at + 1)
+                return out
+            }
+            guard keyLine("enabled", depth: depth, in: lines, within: body(of: at, in: lines)) == nil else {
+                return lines
+            }
+            out.insert(String(repeating: " ", count: depth) + "enabled: true", at: at + 1)
+            return out
+        },
+        holds: { _ in true }
+    )
 
     // MARK: - Diff
 

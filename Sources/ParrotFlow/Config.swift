@@ -2853,7 +2853,7 @@ struct Config: Decodable, Equatable {
     }
 
     struct Voice: Decodable, Equatable {
-        var enabled = true
+        var enabled = false
         /// Each agent the app speaks for, with the config folders that get its
         /// hooks. No folders: the agent's default. No `agents:` key: Claude
         /// Code alone, as before agents had a choice.

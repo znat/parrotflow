@@ -97,7 +97,10 @@ check "the dev config: voice off" "$(agents_line voice-dev)" "off — voice.enab
 check "folders and codex: both agents" "$(agents_line voice-full)" "claude ~/.claude, ~/.claude-personal; codex ~/.codex"
 check "codex: false: claude alone" "$(agents_line voice-flow)" "claude ~/.claude, ~/work/.claude"
 check "codex alone: claude in its default folder" "$(agents_line voice-codex)" "claude ~/.claude; codex ~/codex-home"
-check "no claude: section: claude alone" "$(agents_line current)" "claude ~/.claude"
+check "no voice: section: off" "$(agents_line current)" "off — voice.enabled is false"
+check "a voice: without enabled: stays on" "$(agents_line voice-unindented)" "claude ~/.claude, ~/.claude-work"
+check "the old example upgrades to the shipped one" \
+  "$(cmp -s "$WORK/example-v3/config.yaml" "$ROOT/built-in/config.example.yaml" && echo same)" "same"
 
 dir="$WORK/told-voice"
 mkdir -p "$dir"
@@ -113,7 +116,7 @@ mkdir -p "$dir"
 cp "$CASES/block-enabled.yaml" "$dir/config.yaml"
 out="$(pf "$dir" --check-config)"
 check "an old config fails --check-config" "$?" "1"
-check "it says an upgrade is pending" "$(printf '%s\n' "$out" | grep -c 'version *0 — 3 upgrade(s) pending.*--upgrade-config --write')" "1"
+check "it says an upgrade is pending" "$(printf '%s\n' "$out" | grep -c 'version *0 — 4 upgrade(s) pending.*--upgrade-config --write')" "1"
 check "the retired block names the command" \
   "$(printf '%s\n' "$out" | grep -c '✗ transcription.sentence_repair no longer does anything — it is the `sentence_repair` transform now.*--upgrade-config --write')" "1"
 

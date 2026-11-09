@@ -323,15 +323,16 @@ unwired](docs/pipelines.md#what-ships-unwired).
 ## Hear your coding agent
 
 ParrotFlow speaks what Claude Code, Codex and mini-swe-agent do while you
-look at them, and reads you their answer when a turn ends. The default voice
-runs on your Mac. Claude Code is on by default. Restart its sessions once
-after you install. Codex and mini-swe-agent are one line each under
-`voice.agents`.
+look at them, and reads you their answer when a turn ends. The default voice,
+PocketTTS, runs on your Mac. It is off until you turn it on in the config.
+Then restart Claude Code sessions once. Codex and mini-swe-agent are one line
+each under `voice.agents`.
 
 ```yaml
 voice:
+  enabled: true  # off by default
   agents:
-    claude:      # on by default, in ~/.claude
+    claude:      # in ~/.claude
     codex:       # approve its hooks once, under /hooks
     mini:        # needs the parrotflow-mini plugin
 ```

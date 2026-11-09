@@ -1,4 +1,4 @@
-version: 3
+version: 4
 
 hotkey:
   key: right_option
@@ -13,3 +13,16 @@ transforms:
 transcription:
   pipeline:
     - transform: sentence_repair
+
+# Speaks what your coding agents do and what they answer, with PocketTTS on
+# this Mac. true turns it on: the app writes Claude Code's hooks at launch,
+# and open sessions need one restart. false removes them. See
+# docs/configuration.md.
+voice:
+  enabled: false
+  agents:                # an agent left out is off
+    claude:              # empty: ~/.claude. Or a folder, or a list
+    # codex:             # empty: $CODEX_HOME, then ~/.codex. Approve its hooks under /hooks
+    # mini:              # no folder; needs the parrotflow-mini plugin
+  local_voice: alba      # a PocketTTS voice
+  # speech: openrouter-tts  # a remote voice under models: instead of PocketTTS

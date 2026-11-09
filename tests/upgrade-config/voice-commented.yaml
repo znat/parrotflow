@@ -1,0 +1,17 @@
+version: 3
+
+hotkey:
+  key: fn
+
+# Speaks what your coding agents do and what they answer. On by default, for
+# Claude Code in ~/.claude: the app writes its hooks at launch, and open
+# sessions need a restart once. An agent left out of `agents` is off. Codex
+# runs its hooks once you approve them, under /hooks. See docs/configuration.md.
+# voice:
+#   enabled: true          # false stops listening and removes the hooks
+#   agents:                # left out: claude alone, in ~/.claude
+#     claude:              # empty: ~/.claude. Or a folder, or a list
+#   local_voice: alba      # the voice on this Mac, a PocketTTS voice
+
+# My own note stays.
+lists: {}

@@ -1,5 +1,6 @@
-version: 3
+version: 4
 voice:
+    enabled: true
     frame: false
     agents:
       claude:
