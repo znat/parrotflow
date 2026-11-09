@@ -1,0 +1,18 @@
+version: 3
+voice:                  # speaks Claude Code
+  enabled: true
+  # One per Claude Code account.
+  agents:
+    claude:
+      - ~/.claude
+      - ~/.claude-personal
+    codex: ""       # empty: $CODEX_HOME, then ~/.codex
+  speech: openrouter-tts
+  speech_voices: [Achird, Sulafat]
+
+models:
+  openrouter-tts:
+    api: openai
+    model: google/gemini-3.1-flash-tts-preview
+    endpoint: https://openrouter.ai/api/v1
+    api_key: file:~/.config/example/openrouter.key

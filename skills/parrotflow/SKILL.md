@@ -1,6 +1,6 @@
 ---
 name: parrotflow
-description: Customize ParrotFlow, the local dictation app for macOS, and explain what it can do. Changes its hotkey, languages, microphone, sounds, rewrites (replacements, scripts, prompts), spoken commands and models in config.yaml, then checks the change with the app's own binary. Use when someone asks to customize, configure, set up or change ParrotFlow, asks what ParrotFlow can do, or wants their dictation to write something differently.
+description: Customize ParrotFlow, the local dictation app for macOS, and explain what it can do. Changes its hotkey, languages, microphone, sounds, rewrites (replacements, scripts, prompts), spoken commands, models and the coding-agent voice (it speaks what Claude Code, Codex and mini-swe-agent do) in config.yaml, then checks the change with the app's own binary. Use when someone asks to customize, configure, set up or change ParrotFlow, asks what ParrotFlow can do, wants their dictation to write something differently, or wants their coding agent to talk, stop talking, or say things differently.
 metadata:
   app_version: 0.18.0 # x-release-please-version
 ---
@@ -62,7 +62,7 @@ Which keys exist:
 
 | The user wants | Read |
 |---|---|
-| A different key, language, microphone, sound, colour, log or update setting | `references/settings.md` |
+| A different key, language, microphone, sound, colour, log or update setting, or the coding-agent voice | `references/settings.md` |
 | Dictation to write something differently: a word, a symbol, a format, a rewrite | `references/rewrites.md` |
 | To talk to it: "hey parrot", commands, undo, spelling a name | `references/spoken-commands.md` |
 | A language model, local or cloud | `references/models.md` |
@@ -110,7 +110,8 @@ This is the default when the request has no clear target.
 3. **Use the cheapest tool.** A table first, then a script, then a prompt. See
    `references/rewrites.md`.
 4. **Check it.** Run `"$PF" --check-config` again and compare with step 2:
-   - the new value appears on its line;
+   - the new value appears on its line, for a key that has one
+     (`references/settings.md` names voice keys that have none);
    - there is no new `✗`;
    - no `⚠` names a key you wrote.
 

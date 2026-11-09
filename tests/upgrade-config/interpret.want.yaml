@@ -1,5 +1,5 @@
 # Invented config from the `interpret:` days.
-version: 2
+version: 3
 
 transcription:
   languages: [en, fr]

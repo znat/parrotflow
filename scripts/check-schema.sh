@@ -117,6 +117,26 @@ check "a nested typo is named, with the key meant" \
 check "and nothing else is" "$(warnings)" "2"
 check "a warning does not change the exit code" "$code" "$example_code"
 
+# --- voice.agents: a folder, a list, or nothing; an agent the app cannot hook ------
+
+mkdir -p "$WORK/agents"
+printf 'voice:\n  agents:\n    claude: [~/.claude, ~/.claude-work]\n    codex:\n' > "$WORK/agents/config.yaml"
+run_config agents
+check "voice.agents with a list and an empty value loads, with no unknown key" "$code, $(warnings)" "0, 0"
+check "and hooks both" "$(printf '%s\n' "$out" | grep -c '^  · agents  *claude ~/.claude, ~/.claude-work; codex ')" "1"
+printf 'voice:\n  agent:\n    claude: ~/.claude\n  agents:\n    codex: ~/c\n    zork: ~/z\n' > "$WORK/agents/config.yaml"
+run_config agents
+check "a typo in voice is named" \
+  "$(printf '%s\n' "$out" | grep -cxF '  ⚠ voice.agent: not a setting. Did you mean "agents"?')" "1"
+check "an unknown agent fails, and says which agents there are" "$code $(printf '%s\n' "$out" \
+  | grep -cxF '  ✗ voice.agents: zork is not an agent the app speaks for — expected claude, codex or mini')" "1 1"
+check "a known one still hooks, alone" "$(printf '%s\n' "$out" | sed -n 's/^  · agents  *//p')" "codex ~/c"
+printf 'voice:\n  agents:\n    claude:\n    mini: ~/m\n' > "$WORK/agents/config.yaml"
+run_config agents
+check "mini takes no folder: said, and mini is still on" "$code $(printf '%s\n' "$out" \
+  | grep -cxF '  ✗ voice.agents.mini: takes no folder — mini has no hooks file, so the value is ignored')" "1 1"
+check "mini is listed with no folder" "$(printf '%s\n' "$out" | sed -n 's/^  · agents  *//p')" "claude ~/.claude; mini"
+
 # --- typos in lists and either-of keys, beside sections that take any key ---------
 
 mkdir -p "$WORK/nested"

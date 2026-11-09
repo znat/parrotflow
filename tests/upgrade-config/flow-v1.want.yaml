@@ -1,7 +1,7 @@
 # Invented. Two transforms written as one-line flow mappings, the key to drop
 # first in one of them, and one under the old `prompts:` key. All three lose
 # the values the example wrote.
-version: 2
+version: 3
 transcription:
   pipeline: [{transform: sentence_repair}, {transform: disfluency}, {transform: dates}]
 

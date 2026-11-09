@@ -9,6 +9,11 @@ import AppKit
 //
 let arguments = CommandLine.arguments
 
+// A write to a closed pipe or socket must fail with EPIPE, not kill the app:
+// a `command:` script that exits before reading its stdin did that, with no
+// crash report (launchd: "exited due to SIGPIPE").
+signal(SIGPIPE, SIG_IGN)
+
 // Log writes are asynchronous, which is right for a menu bar app and wrong for
 // a command that exits the moment it has printed: the process is gone before
 // the queue drains and the lines are silently lost. Two commands remembered to
@@ -22,6 +27,16 @@ atexit { Log.flush(); Trace.flush(); NeuralPhonemes.flushCache() }
 if arguments.contains("--version") {
     print(AppVariant.buildStamp)
     exit(0)
+}
+
+// Runs on every Claude Code tool call, so above the log and the config.
+if arguments.contains(ClaudeHooksCommand.marker) {
+    exit(ClaudeHooksCommand.speakEvent())
+}
+// Text rules only; no config, so it is safe to run from `make test`.
+if let index = arguments.firstIndex(of: "--claude-voice-test") {
+    let path = arguments.indices.contains(index + 1) ? arguments[index + 1] : "tests/claude-voice-cases.yaml"
+    exit(ClaudeHooksCommand.test(cases: path))
 }
 
 // Above the log and the config: it reads only the code, and writes nothing.
@@ -121,6 +136,30 @@ if let at = arguments.firstIndex(of: "--upgrade-config") {
 // write before any of that has run. Silent when the config will not load —
 // a trace is a debug artefact and must not be the reason a command fails.
 Trace.directory = (try? ConfigStore.load())?.resolvedOutputDir
+
+if arguments.contains("--install-claude-hooks") || arguments.contains("--uninstall-claude-hooks") {
+    exit(ClaudeHooksCommand.hooks(arguments, config: try? ConfigStore.load()))
+}
+if let index = arguments.firstIndex(of: "--claude-spoken"), arguments.indices.contains(index + 1) {
+    exit(ClaudeHooksCommand.spoken(transcript: arguments[index + 1], config: (try? ConfigStore.load()) ?? Config()))
+}
+if let index = arguments.firstIndex(of: "--claude-explain"), arguments.indices.contains(index + 1) {
+    let context = arguments.firstIndex(of: "--context").flatMap {
+        arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+    }
+    exit(ClaudeHooksCommand.explain(
+        event: arguments[index + 1], context: context, config: (try? ConfigStore.load()) ?? Config()
+    ))
+}
+if let index = arguments.firstIndex(of: "--claude-say"), arguments.indices.contains(index + 1) {
+    func value(_ flag: String) -> String? {
+        arguments.firstIndex(of: flag).flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+    }
+    ClaudeHooksCommand.say(
+        arguments[index + 1], config: (try? ConfigStore.load()) ?? Config(),
+        tone: value("--tone"), voice: value("--voice"), output: value("--output")
+    )
+}
 
 /// `--lang fr` or `--lang en,fr`. One entry pins a grammar; several stand in
 /// for the configured list, so a case file can state the environment it assumes
@@ -977,7 +1016,7 @@ if let index = arguments.firstIndex(of: "--phonemes") {
 
 if let index = arguments.firstIndex(of: "--panels") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --panels <notice|caution|failure|alert|thinking|offer|confidence|learn|learn-long|selector|selector-long|selector-two|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|update|models|setup|launch|sequence|tutorial|names|slack|hack|downloads|ready> [seconds]")
+        print("usage: ParrotFlow --panels <notice|caution|failure|session|alert|thinking|offer|confidence|learn|learn-long|selector|selector-long|selector-two|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|update|models|setup|launch|sequence|tutorial|names|slack|hack|downloads|ready> [seconds]")
         exit(2)
     }
     let seconds = arguments.indices.contains(index + 2) ? Double(arguments[index + 2]) : nil

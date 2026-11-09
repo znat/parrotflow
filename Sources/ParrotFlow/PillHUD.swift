@@ -83,6 +83,9 @@ enum PillState: Equatable {
     /// have to carry the same three values to be able to open into this one,
     /// and every switch in the file would have to handle both.
     case offer([OfferedCommand], Headline?, Confidence.Reading, open: Bool)
+    /// A coding session speaks while its window is not in front: its name, and
+    /// a click to go to it. Shown only while nothing else has the pill.
+    case session(String)
 
 }
 
@@ -405,6 +408,8 @@ final class PillModel: ObservableObject {
     /// alert and an offer cannot take each other's closure.
     var onAlertHover: ((Bool) -> Void)?
     var onAlertClose: (() -> Void)?
+    /// A click on a speaking session's name.
+    var onGoToSession: (() -> Void)?
 
     /// How much of the alert's clock is left, 1 down to 0. Published, because
     /// a `withAnimation` over 15s does not give the value back.
@@ -534,6 +539,19 @@ final class PillHUD {
         guard let panel, panel.isVisible, !isFading else { return false }
         if case .clipboard = model.state { return true }
         return false
+    }
+
+    /// Names a speaking session, only on a pill that is free or already naming
+    /// one. Nil takes away only that state, never a dictation's.
+    func session(_ name: String?) {
+        let showing: Bool
+        if case .session = model.state, panel?.isVisible == true, !isFading { showing = true } else { showing = false }
+        guard let name else {
+            if showing { fadeOut() }
+            return
+        }
+        if showing ? model.state == .session(name) : panel?.isVisible == true { return }
+        set(.session(name))
     }
 
     /// Several lines about something that could not run, as markdown. A
@@ -903,15 +921,13 @@ final class PillHUD {
             // is opened by the pointer resting on it, and a window that ignores
             // the mouse is never rested on.
             panel.ignoresMouseEvents = false
-        } else if case .alert = state {
-            // The pointer holds the clock and a click copies a code block.
-            panel.ignoresMouseEvents = false
-            offerFor = nil
-            pointerHolds = false
-            openedByPointer = false
-            pendingOpen?.cancel(); pendingOpen = nil
         } else {
-            panel.ignoresMouseEvents = true
+            // On an alert the pointer holds the clock and a click copies a code
+            // block. A session's name is a click.
+            switch state {
+            case .alert, .session: panel.ignoresMouseEvents = false
+            default: panel.ignoresMouseEvents = true
+            }
             // No offer, nothing for the pointer to hold: `hovering` reads these
             // and must not act on a duration left behind by the last one.
             offerFor = nil
@@ -1627,6 +1643,7 @@ enum PillMetrics {
             // sentence needs the height it has always had.
             if case .notice = state { return height }
             if case .clipboard = state { return height }
+            if case .session = state { return height }
             return tabHeight
         }
         guard open else { return tabHeight }
@@ -1739,6 +1756,7 @@ enum PillMetrics {
             return tabWidth(label: message, icon: icon)
         case .notice(let message, _), .clipboard(let message): return text(message)
         case .alert: return alertWidth
+        case .session(let name): return text(name + "    " + goToSession)
         case .offer(let commands, let headline, let reading, let open):
             guard open else { return tabWidth(hotkey: hotkey) }
             return offer(commands, headline: headline, reading: reading, hotkey: hotkey)
@@ -1751,6 +1769,8 @@ enum PillMetrics {
     static func text(_ message: String) -> CGFloat {
         min(540, max(270, CGFloat(message.count) * 7.5 + 78))
     }
+
+    static let goToSession = "Go to session ›"
 
     /// A row of chips, and no minimum.
     ///
@@ -2145,6 +2165,11 @@ struct PillView: View {
                 case .clipboard(let message):
                     MessageContent(message: message, tone: .plain, symbol: "doc.on.clipboard")
                         .transition(.opacity)
+                case .session(let name):
+                    MessageContent(message: name, tone: .plain, symbol: "waveform", action: PillMetrics.goToSession)
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.onGoToSession?() }
+                        .transition(.opacity)
                 case .alert(let markdown, let tone):
                     AlertContent(
                         markdown: markdown, tone: tone, fraction: model.alertRemaining,
@@ -2169,10 +2194,10 @@ struct PillView: View {
         // whoever raised the offer — see `PillModel.onHover`.
         .onHover { inside in
             // `onHover` belongs to whoever raised the offer.
-            if case .alert = model.state {
-                model.onAlertHover?(inside)
-            } else {
-                model.onHover?(inside)
+            switch model.state {
+            case .alert: model.onAlertHover?(inside)
+            case .session: break
+            default: model.onHover?(inside)
             }
         }
         // One quiet platinum/charcoal surface in every state. Warning offers
@@ -2415,6 +2440,11 @@ private struct MessageContent: View {
     let tone: NoticeTone
     /// Drawn in place of the dot.
     var symbol: String?
+    /// A link at the end, kept whole when the message is cut.
+    var action: String?
+
+    @Environment(\.contextPrimaryColor) private var primaryColor
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: PillMetrics.gap) {
@@ -2430,6 +2460,21 @@ private struct MessageContent: View {
                 .lineLimit(1)
 
             Spacer(minLength: 0)
+
+            if let action {
+                let theme = ContextTheme(scheme: colorScheme, primaryHex: primaryColor)
+                Text(action)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .background {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(theme.accent.opacity(0.17))
+                            .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(theme.accent, lineWidth: 1) }
+                    }
+            }
         }
         .padding(.horizontal, PillMetrics.padding)
         .frame(maxWidth: .infinity, alignment: .leading)

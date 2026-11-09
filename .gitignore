@@ -7,6 +7,9 @@ dist/
 
 # The runner imports built-in/code_identifiers.py, which leaves this behind.
 __pycache__/
+# A pip install of the mini-swe-agent plugin from a local path leaves these.
+integrations/mini-swe-agent/build/
+integrations/mini-swe-agent/*.egg-info/
 
 # One person's voice, and the table mined out of it. It lives in `voice/`
 # beside the config now — see Sources/ParrotFlow/VoiceStore.swift — and these
@@ -17,6 +20,8 @@ __pycache__/
 tests/acoustic/
 tests/pronunciations.yaml
 voice/
+# The agent voice's shipped prompts, not a recording.
+!built-in/voice/
 
 # Where Claude Code puts a git worktree it makes: a checkout of this repository,
 # inside this repository. Untracked it turns every `git status` into a warning

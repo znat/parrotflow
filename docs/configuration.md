@@ -77,7 +77,7 @@ existing file or
 [built-in/config.example.yaml](../built-in/config.example.yaml).
 
 ```yaml
-version: 2              # which upgrade the file was written for; see below
+version: 3              # which upgrade the file was written for; see below
 
 hotkey:
   key: right_command    # a bare modifier, or a character key + modifiers
@@ -137,11 +137,11 @@ logging:
 ## `version` and the upgrade at launch
 
 ```yaml
-version: 2
+version: 3
 ```
 
 `version:` says which upgrade the file was written for. A file without it is
-version 0. This build writes version 2, and `built-in/config.example.yaml`
+version 0. This build writes version 3, and `built-in/config.example.yaml`
 starts with it.
 
 **At launch, before it reads the config,** the app applies every upgrade above
@@ -154,7 +154,7 @@ stay. Then it:
    `-2`, then `-3`;
 3. writes the new file, with the new `version:` line;
 4. writes the diff to the log and shows one notice: `config.yaml upgraded to
-   version 2: … The old file is config.yaml.bak-v1-2026-11-05`.
+   version 3: … The old file is config.yaml.bak-v2-2026-11-07`.
 
 An empty `config.yaml` is upgraded too.
 
@@ -165,7 +165,7 @@ still pending.
 
 **A newer file is left alone.** A `version:` higher than the app knows is read
 as it is and never rewritten. The notice then reads `config.yaml was not
-upgraded — config.yaml is version 3, and this app knows up to 2. Read as it
+upgraded — config.yaml is version 4, and this app knows up to 3. Read as it
 is`.
 
 **See the change first.** `--upgrade-config` prints the version change, what
@@ -181,6 +181,7 @@ after the same backup. See [cli.md](cli.md#--upgrade-config).
 |---|---|
 | 1 | Sentence repair becomes the `sentence_repair` transform. The `transcription.sentence_repair:` block goes, or `transcription.interpret:`, with its comment paragraph and its commented option lines. So does every step that names either, written `- sentence_repair`, `- stage: sentence_repair` or `- {stage: sentence_repair, …}`. The transform is added to `transforms:` if it is missing, and `- transform: sentence_repair` becomes the first step of `pipeline:`, unless the list already has it. A config with no `pipeline:` gets one with this one step. A block that said `enabled: false` still gets the step: delete the line to turn it off. Two comments the shipped config carried about the old order are reworded, where they still read as shipped. See [pipelines.md](pipelines.md#sentence-marks-a-pause-put-there). |
 | 2 | A built-in script declares what its envelope needs on its own `parrotflow:` line. In each transform whose `command:` is a built-in script, a `returns:`, `parse:` or `readings:` line that holds the value an older example wrote for that script goes, and the script's line applies. So `disfluency` moves from `parse: true` to `parse: vectors`, which also runs the tree cutter. Any other value stays, since you chose it. A trailing comment on a removed line stays on its own line. See [pipelines.md](pipelines.md#what-a-script-declares). |
+| 3 | `claude:` becomes `voice:`. Its `folders:` become `agents.claude`, and `codex: true` becomes `agents.codex`, holding the old `codex_folder`. `codex:`, `codex_folder:` and the comments above them go. Every other key moves across as it is. A file with both `claude:` and `voice:`, or with `folders` or `codex` in a one-line `{…}`, is not upgraded: rename it by hand. See [`voice`](#voice). |
 
 ## Where things live
 
@@ -193,6 +194,7 @@ after the same backup. See [cli.md](cli.md#--upgrade-config).
 | Timeline | `~/.config/parrotflow/recordings/spans.jsonl` — one per dictation, rotating at 64 MB; off with `logging.spans: false` |
 | Log | `~/Library/Logs/ParrotFlow.log` — off with `logging.text: false` |
 | The built-in transforms | `~/.config/parrotflow/transforms/built-in/` — refreshed from the app on every launch, not yours to edit in place |
+| Voice prompts | `~/.config/parrotflow/voice/<name>.md` — yours, replacing the built-in; the built-in copies are in `voice/built-in/`. See [Prompts](#prompts) |
 
 The menu bar item shows the current state and offers *Open Recordings
 Folder* — the wavs, if `logging.audio` is on, and `trace.jsonl` — *Settings*,
@@ -1368,6 +1370,319 @@ to 0.90 and it starts to matter — 117 warnings suppressed there.
 was, not whether it was right. The same archive has the vocabulary pass
 correcting words the decoder scored 0.987 and 1.000. A low score is good
 evidence something is wrong; a high one is not evidence anything is right.
+
+## `voice`
+
+ParrotFlow can speak what Claude Code, Codex and mini-swe-agent do and what
+they answer.
+
+### Quick start
+
+Claude Code needs no setup. The voice is on by default, for Claude Code in
+`~/.claude`. At launch, and each time the config changes, the app writes its
+hooks into `~/.claude/settings.json`. When it writes them, the log says
+`claude hooks: installed in ~/.claude`. A folder that does not exist yet gets
+no hooks, and the log says `claude hooks: ~/.claude: no such folder`. Quit and
+open ParrotFlow once Claude Code has created it.
+
+1. Restart open Claude Code sessions. Claude Code reads hooks when a session
+   starts.
+2. Send a prompt. While the app that session runs in is in front, you hear a
+   short line on what Claude does. When the turn ends, you hear a short
+   version of the answer. The first line waits for the voice on this Mac,
+   PocketTTS, to download.
+3. `$PF --check-config` says `claude ~/.claude` on its `agents` line.
+
+To add Codex or mini, name them under `agents`. An agent left out is off, so
+keep `claude:` too:
+
+```yaml
+voice:
+  agents:
+    claude:
+    codex:
+    mini:
+```
+
+- **Codex** (the CLI and the desktop app): the app writes four hooks into
+  `hooks.json` in the Codex folder, `~/.codex` unless you moved it. Approve
+  them once in Codex, under `/hooks` in the CLI or Settings > Hooks in the
+  desktop app.
+- **mini-swe-agent**: install the `parrotflow-mini` plugin and run mini with its
+  agent class. See
+  [integrations/mini-swe-agent/README.md](../integrations/mini-swe-agent/README.md).
+
+`enabled: false` turns the voice off and takes the hooks out. The flags that
+install hooks by hand are in [cli.md](cli.md#coding-agents-voice).
+
+### In detail
+
+`agents` says which agents it listens to, and where each keeps its config:
+
+```yaml
+voice:
+  enabled: true
+  agents:
+    claude: [~/.claude, ~/.claude-personal]   # one folder, or a list
+    codex:                                    # empty: its default folder
+    mini:                                     # no folder: mini speaks through a plugin
+```
+
+An agent named under `agents` is on. Its value is its config folder, or a list
+of them. An empty value means its default folder: `~/.claude` for `claude`, and
+`$CODEX_HOME`, then `~/.codex` for `codex`. An agent left out is off, and its
+hooks are taken out of its default folder. Hooks in a folder you no longer
+list stay; `--uninstall-claude-hooks --folder <dir>` takes them out. An agent
+left out is not spoken, even from such a hook. Without an
+`agents` key, `claude` alone is on, in `~/.claude`, as before agents had a
+choice. `agents: {}` turns every agent off. Another name under `agents` fails
+`--check-config`. So does a value that is not a folder or a list of folders;
+that agent then uses its default folder, and the rest of the config loads.
+`mini` takes no folder. A folder after `mini:` fails `--check-config`, is
+ignored, and mini stays on.
+
+This section was `claude:` before version 3. The upgrade at launch renames it:
+`folders` becomes `agents.claude`, and `codex: true` becomes `agents.codex`,
+with the old `codex_folder` as its value.
+
+The app installs the hooks by itself while `enabled` is true, and takes them
+out when it is false. It checks at launch and each time the config changes,
+and writes nothing when the hooks are already right. The log says
+`claude hooks: installed in ~/.claude` or `claude hooks: removed from ~/.claude`.
+
+The Claude Code hooks are four entries in `settings.json` in each of its folders:
+`PreToolUse`, `Stop`, `Notification` and `UserPromptSubmit`. Each one sends
+a `pid=` line, an `agent=claude` line and the event to the app's socket with
+`nc`, and exits in about 10 ms. It never
+runs the app binary, so Claude is not held up when the app is not running,
+is uninstalled, or is a build without this feature. Restart open Claude Code
+sessions after the hooks are installed. A hook from an older build sends no
+`agent=` line. It still works, and the app rewrites it once.
+
+Only the entries that name this app's socket change. The dev and release apps
+each keep their own, and your own hooks and other keys stay as they were. The
+file keeps its permissions, and is 0600 when the app creates it. A
+`settings.json` that is not a JSON object is left alone, with one line in the
+log. The first copy the app changes is kept as `settings.json.parrotflow-backup`.
+`$PF --install-claude-hooks` and `$PF --uninstall-claude-hooks` do the same by
+hand, from the installed app.
+
+Codex (the CLI and the Codex desktop app) is opt-in. With `codex` under
+`agents` and `enabled: true`, the app writes four entries in `hooks.json` in the
+Codex folder: `UserPromptSubmit`, `PreToolUse`, `PermissionRequest` and `Stop`.
+Each sends an `agent=codex` line. No `codex` line takes them out. An app
+opened from the Finder does not see a `CODEX_HOME` set in a shell profile, so
+write the folder after `codex:` when you moved it. No folder means no Codex: the app does
+nothing and does not create it. It never touches `config.toml` or `notify`.
+The same rules as for Claude apply: your hooks and keys stay, the mode is
+kept, a broken file is left alone, and `hooks.json.parrotflow-backup` is the
+first copy.
+
+Codex runs a new hook only once you approve it. After the app writes the
+hooks, the log says `codex hooks: installed in ~/.codex; approve them once in
+Codex, under /hooks or Settings > Hooks`. Open `/hooks` in the CLI, or
+Settings > Hooks in the desktop app, and trust the four entries. The app never
+approves them for you. Codex asks again when an entry changes: the command,
+which holds the socket path (`~/Library/Application Support/ParrotFlow/claude.sock`,
+or `ParrotFlow Dev/` for the dev app), its timeout or its matcher. It also asks
+again when the entry moves, because Codex keys the approval by its place in the
+list. A new entry goes last, so it never moves yours, but removing an entry
+above it moves it. The dev and release apps are approved apart. Hooks are on by
+default since Codex 0.124; `[features] hooks = false` in `config.toml` turns
+them off. A `[hooks]` table in `config.toml` beside `hooks.json` runs both,
+with a warning at startup.
+
+mini-swe-agent has no hooks. It speaks through `parrotflow-mini`, a small
+Python package in this repository (`integrations/mini-swe-agent`). You install
+it once, by hand, into the Python environment mini runs in. The app writes
+nothing for mini. The `uv` and `pipx` commands are in
+[integrations/mini-swe-agent/README.md](../integrations/mini-swe-agent/README.md).
+Then run mini with the plugin's agent class:
+
+```sh
+mini --agent-class parrotflow_mini.ParrotFlowAgent
+# or, from a config: -c mini.yaml -c agent.agent_class=parrotflow_mini.ParrotFlowAgent
+```
+
+Add `mini:` under `voice.agents`. Without that key the app ignores mini's
+events. The plugin sends four events, in the same shape as the hooks:
+the task as `UserPromptSubmit`, each command before it runs as `PreToolUse`
+(with the model's text before it), the wait for your approval in confirm mode
+as `PermissionRequest`, and the end of the task as `Stop`, with the model's
+last text as the answer. A task you type at the end of a run is a new prompt in
+the same session. Each `mini` process is one session. A run that stops on its
+step, cost or time limit, or on an error, is not spoken. The plugin sends to
+the release app's socket, `~/Library/Application Support/ParrotFlow/claude.sock`.
+Set `PARROTFLOW_SOCKET` to `~/Library/Application Support/ParrotFlow Dev/claude.sock`
+for the dev app. When the app is not running, mini runs as before: each send
+gives up after 0.2 s and never raises. The plugin is written against mini 2.4.6
+and uses four of its private methods, so a later mini can drop events.
+
+```yaml
+voice:
+  enabled: true          # false stops listening and removes the hooks
+  agents:                # left out: claude alone, in ~/.claude
+    claude:              # one folder per Claude Code account
+      - ~/.claude
+      - ~/.claude-personal
+    codex:               # empty: $CODEX_HOME, then ~/.codex
+    mini:                # no folder: needs the parrotflow-mini plugin
+  progress: true         # short lines while an agent works
+  explain: true          # those lines in the model's words, with the reason
+  frame: true            # a glow around the speaking session's window
+  model: ""              # a name under models:; empty means the default
+  speed: 1.0             # the remote voice's speed, above 0; PocketTTS has none
+  local_voice: alba      # the voice on this Mac, a PocketTTS voice
+  local_voices: []       # one per session, like speech_voices; PocketTTS has 27
+  local_placement: gpu   # where PocketTTS runs: gpu, ane or ane-state (Neural Engine)
+  progress_local: false  # progress lines on the local voice, answers on `speech`
+  speech: ""             # a name under models: for a remote voice; empty = PocketTTS
+  speech_voices: [Achird, Sulafat, Zubenelgenubi, Callirrhoe, Umbriel, Aoede]
+  # speech_voice: Achird # one remote voice for every session; speech_voices wins
+  speech_tone: >-
+    Speak in a relaxed, friendly, natural tone, like a software engineer colleague
+    collaborating with a teammate, speaking face to face. Clear and conversational,
+    not performative.
+```
+
+`speech` sends each sentence to an OpenAI-style `/audio/speech` endpoint and
+plays the 24 kHz 16-bit PCM it returns. OpenRouter has one, for many voice
+models. The entry under `models:` takes its key like any other model:
+
+```yaml
+models:
+  openrouter-tts:
+    api: openai
+    model: google/gemini-3.1-flash-tts-preview
+    endpoint: https://openrouter.ai/api/v1
+voice:
+  speech: openrouter-tts
+  speech_voices: [Achird, Sulafat]   # Gemini has 30; any of them
+```
+
+Each session takes the first voice no active session holds, and keeps it.
+The default list is Gemini's friendly, warm, casual and easy-going voices.
+The firm and informative ones (`Kore`, `Charon`) sounded like announcements.
+With a remote voice, the `model` call that shortens an answer also returns a
+tone: `speech_tone`, shifted for what happened (pleased, a little sorry,
+curious). It goes out as `instructions`. A recap or a short answer keeps its
+own words; only the tone is asked for. A model that refuses `instructions` is
+asked again without them.
+
+A sentence the remote voice fails on is said by PocketTTS, which loads then.
+The spoken text leaves your Mac, as it already does for a hosted `model`.
+
+What it says:
+
+- **Only while you watch:** progress lines are said only when the app that
+  session runs in is in front. Away from it, you hear only answers, questions,
+  plans to approve and permission prompts.
+- **While Claude works:** with `explain` and a model, one sentence on what
+  the work achieves ("I'm building the glow around the speaking window"),
+  not the tool action on a file. The model gets the tool call and the last thing
+  Claude wrote before it, and the command text leaves your Mac with them,
+with anything that looks like a secret replaced by `<redacted>`: bearer
+tokens, `*_KEY=` and `--token` values, provider keys, long opaque strings and
+URL query strings. An
+  explanation that takes over 5 s is dropped, since the call is likely done.
+  Without a model, or when the call fails: the Bash description in the first
+  person ("I'm checking the dev app"), "I'm editing Config.swift", or "I'm
+  looking through the code". At most one line every 6 seconds, and
+  none while you dictate or while it is already speaking.
+- **When Claude asks:** a question or a plan to approve is said at once.
+- **When the turn ends:** in the desktop app, the turn's recap. It is said
+  as soon as Claude sends it, before the closing message is written. Elsewhere the
+  answer is cleaned (code, tables, paths and links removed, `owner/repo#12`
+  said as "PR 12 in repo"). A short one is said as it is. A long one is
+  rewritten into one to three sentences by `model`. With no model, or when the
+  call fails, the first two sentences are said.
+- **Which session:** a line starts with its project, in a varied way
+  ("Update from parrotflow:", "parrotflow here:"), when the line before came
+  from another active session. A session that was quiet for two minutes is
+  named again when its window is not in front. Coming back to a session not
+  heard for 90 seconds, a two-sentence reminder comes first: the session's
+  general task, then the current work. `model` writes it from the session's
+  title (Claude Code's, or Codex's thread name), its latest summary and its
+  latest request.
+- **Which window:** with `frame`, a glow in `feedback.primary_color` sits
+  around the speaking session's window and brightens with the voice. The
+  window is found from the Claude process: the app it runs in (the Claude
+  app, Terminal, Ghostty, VS Code…), then that app's only window, the one
+  whose title names the project, or its main window. The desktop app shows
+  every session in one window, so the glow goes around all of it. Under tmux
+  there is no app above Claude, and no glow.
+  Codex in its desktop app (ChatGPT.app) is framed the same way. Codex 0.157
+  and later run terminal sessions through one shared app server, so the
+  process no longer tells which terminal a session is in. Then the window is
+  the terminal window in front when you send a prompt, if its title names the
+  project folder. Else it is the only terminal window whose title names it.
+  Two such windows, or none, mean no glow and no pill. Codex writes the
+  project's root folder into the title, so a session started in a subfolder
+  is not found. mini runs in the foreground of its terminal, so it is framed
+  like Claude, from its own process.
+- **Which session, on screen:** while a session speaks and its
+  window is not in front, the pill names it: the project folder and two or
+  three words about the task, like "parrotflow · fixing the glow". The words
+  come from the same model call that writes the answer; before the first
+  answer, they are the first words of the request. "Go to session" brings its
+  app to the front and raises its window; tabs in one window cannot be told
+  apart, so the window comes up. The pill goes away a moment after the voice
+  stops. A dictation always takes the pill; it comes back while the session
+  still speaks. Under tmux there is no app to go to, and no pill.
+
+Pressing the hotkey or sending a new prompt in that session stops the voice.
+An answer that arrives while you dictate waits until you stop. The voice on
+this Mac is PocketTTS, through FluidAudio. It downloads on first use, streams
+each sentence, and speaks English only. `voice` and `local` chose Kokoro,
+which is gone; `--check-config` names them so you can delete the lines.
+A local model adds its load time to the answer: 14.5 s was measured cold
+on `gemma`. A fast hosted model suits this job better.
+
+### Prompts
+
+The voice sends `model` three prompts. Each one is a file you can replace:
+
+| File | What the model writes |
+|---|---|
+| `rewrite.md` | the spoken answer at the end of a turn, its opener and its tone |
+| `explain.md` | the progress line while the agent works. The app picks one of its numbered openings at random for each line, never the same twice in a row |
+| `reminder.md` | the reminder of what a session is about |
+
+The built-in text ships with the app. On every launch the app copies it to
+`voice/built-in/` in the config folder, so you can read what it uses. That
+folder is the app's: an edit there is gone at the next launch, as in
+`transforms/built-in/`.
+
+To change a prompt, copy its file one folder up and edit the copy:
+
+```
+~/.config/parrotflow/          # ~/.config/parrotflow-dev/ for the dev app
+  voice/
+    explain.md                 # yours: replaces the built-in explain prompt
+    built-in/                  # the app's, refreshed on every launch
+      rewrite.md
+      explain.md
+      reminder.md
+```
+
+The file is read again for each line, so the next line uses it, with no
+restart. Delete it to go back to the built-in prompt. A note at the top
+between `<!--` and `-->` is not sent to the model. An empty file, or one that is
+not UTF-8 text, is a `✗` in `--check-config`, and the built-in prompt is used. `--check-config` names the
+prompt in use for each: `· voice explain built-in`, or the path of your file.
+
+The reply format is not in these files. The app adds it after your text, so
+your prompt only changes the instructions, and it cannot break what the code
+reads. For `rewrite`, the app asks for JSON with `opener`, `say`, `tone` and
+`task`, where `task` is two or three lowercase words for the pill. For
+`explain` and `reminder`, it asks for the sentence alone. Do not write a reply
+format of your own. If a reply to `rewrite` is not that JSON anyway, a short
+one (at most 220 characters and three sentences) is said as written. A longer
+one is not: the answer is said plain, its recap or first two sentences. The
+log says `claude voice: rewrite reply is not JSON (prompt: …)`.
+
+`voice/` also holds the recordings of your own voice that the vocabulary keeps
+(`samples/`, `observations.jsonl`). The prompt files sit beside them.
 
 ## `logging`
 

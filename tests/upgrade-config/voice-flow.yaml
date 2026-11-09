@@ -1,0 +1,6 @@
+version: 2
+claude:
+  folders: [~/.claude, ~/work/.claude]  # two accounts
+  codex: false
+  codex_folder: ~/elsewhere
+  progress: false

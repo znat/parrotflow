@@ -279,8 +279,10 @@ PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config >/dev/null 2>&1
 # spelled out here, so a folder gaining a file — or the tree gaining a
 # folder — does not make this check stale.
 expected_built_in="$(cd "$ROOT/built-in/transforms" && find . -type f | sed 's|^\./|transforms/built-in/|')"
+expected_voice="$(cd "$ROOT/built-in/voice" && find . -type f | sed 's|^\./|voice/built-in/|')"
 # Plus the one script written once into the person's own folder.
-expected="$(printf 'config.yaml\nvocabulary.yaml\ntransforms/slack_mentions/slack_mentions.py\n%s\n' "$expected_built_in" | sort | tr '\n' ' ')"
+expected="$(printf 'config.yaml\nvocabulary.yaml\ntransforms/slack_mentions/slack_mentions.py\n%s\n%s\n' \
+  "$expected_built_in" "$expected_voice" | sort | tr '\n' ' ')"
 
 check "a first launch copies the whole built-in/ tree" \
   "$(cd "$FRESH" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' ')" \

@@ -31,6 +31,8 @@ enum ConfigSchema {
         case open(Kind)
         case anything
         case either([Kind])
+        /// A key written with no value.
+        case empty
     }
 
     struct Field {
@@ -86,6 +88,8 @@ enum ConfigSchema {
                 "Word lists, written once and named. A pattern refers to one as {{name}}."),
             key("updates", .object(updates), "When a new release is offered."),
             key("logging", .object(logging), "What is written to disk about a dictation."),
+            key("voice", .object(voice), "Speaking what Claude Code and Codex do and answer."),
+            key("claude", .anything, "Renamed voice.", deprecated: Config.movedKeys["claude"]),
             key("prompts", .list(.object(transform)),
                 "The older name for transforms.",
                 deprecated: "the older name for `transforms:`. Still read; move the entries"
@@ -507,6 +511,58 @@ enum ConfigSchema {
         ])
     }
 
+    static var voice: Section {
+        let defaults = Config.Voice()
+        let kokoro = Config.Voice.retiredAdvice
+        return Section(source: "Config.Voice",
+                       keys: Config.Voice.CodingKeys.allCases.map(\.stringValue), fields: [
+            key("enabled", .bool,
+                "Listen for the agents' hooks and keep them installed. false removes them.",
+                default: defaults.enabled),
+            key("agents", .open(.either([.empty, .text, .list(.text)])),
+                "Each agent the app speaks for: claude, codex, mini. The value is its config folder"
+                    + " or a list of them. Empty means ~/.claude for claude, and $CODEX_HOME, then"
+                    + " ~/.codex for codex. mini takes no folder: it speaks through a plugin."
+                    + " An agent left out is off. No agents key means claude alone.",
+                default: ["claude": NSNull()]),
+            key("progress", .bool, "Short lines while an agent works.", default: defaults.progress),
+            key("explain", .bool, "Progress lines in the model's words, with the reason.",
+                default: defaults.explain),
+            key("frame", .bool, "A glow around the window of the session that is speaking.",
+                default: defaults.frame),
+            key("model", .text,
+                "A name under models: that writes what is said. Empty means the default model.",
+                default: defaults.model),
+            key("voice", .text, "Retired.", deprecated: kokoro),
+            key("speed", .range(Bounds(min: 0, aboveMin: true)),
+                "How fast the remote voice speaks. 1 is normal. PocketTTS has no speed.",
+                default: Double(defaults.speed)),
+            key("local", .text, "Retired.", deprecated: kokoro),
+            key("local_voice", .text, "A PocketTTS voice, the voice on this Mac.", default: defaults.localVoice),
+            key("local_voices", .list(.text),
+                "PocketTTS voices, one per session. Empty means local_voice for all.",
+                default: defaults.localVoices),
+            key("local_placement", .text,
+                "Where PocketTTS runs: gpu, ane or ane-state (the Neural Engine).",
+                default: defaults.localPlacement),
+            key("progress_local", .bool,
+                "Progress lines on the local voice even when speech names a remote one.",
+                default: defaults.progressLocal),
+            key("speech", .text,
+                "A name under models: that speaks OpenAI's /audio/speech, such as OpenRouter."
+                    + " Empty means the voice on this Mac.",
+                default: defaults.speech),
+            key("speech_voice", .text,
+                "One remote voice for every session. speech_voices wins when both are set."),
+            key("speech_voices", .list(.text),
+                "Remote voices, one per session, in order. A session keeps its voice while it is active.",
+                default: defaults.speechVoices),
+            key("speech_tone", .text,
+                "Sent with every line to the remote voice. The model adds a shift for what happened.",
+                default: defaults.speechTone),
+        ])
+    }
+
     static var llm: Section {
         let retired = "part of the retired `llm:` block"
         return Section(source: "Config.LLM",
@@ -599,6 +655,7 @@ enum ConfigSchema {
         case .open(let inner): return ["type": "object", "additionalProperties": json(inner)]
         case .anything: return [:]
         case .either(let kinds): return ["anyOf": kinds.map(json)]
+        case .empty: return ["type": "null"]
         }
     }
 

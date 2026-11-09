@@ -1,0 +1,632 @@
+# Cases for ClaudeSpeakable: what Claude Code's text and hook events sound like.
+# Run with scripts/check-claude-voice.sh. No model, no audio.
+
+clean:
+  - name: file link keeps the file name
+    input: "Fixed in [Config.swift:42](Sources/ParrotFlow/Config.swift:42)."
+    want: "Fixed in Config.swift."
+  - name: owner/repo#number is a PR
+    input: "Opened znat/parrotflow#327."
+    want: "Opened PR 327 in parrotflow."
+  - name: GitHub PR URL
+    input: "See https://github.com/znat/parrotflow/pull/327 for details"
+    want: "See PR 327 in parrotflow for details."
+  - name: GitHub issue URL
+    input: "Filed https://github.com/znat/parrotflow/issues/12."
+    want: "Filed issue 12 in parrotflow."
+  - name: bare number
+    input: "Merged #42."
+    want: "Merged number 42."
+  - name: code block is dropped
+    input: "Run this:\n```bash\nmake test\n```\nThen restart."
+    want: "Run this: Then restart."
+  - name: bullets become sentences
+    input: "Two changes:\n- **Speaker**: plays audio\n- `ClaudeVoice` listens"
+    want: "Two changes: Speaker: plays audio. ClaudeVoice listens."
+  - name: heading becomes a sentence
+    input: "## What changed\nThe hook is faster."
+    want: "What changed. The hook is faster."
+  - name: home path keeps the file name
+    input: "The log is ~/Library/Logs/ParrotFlow.log now"
+    want: "The log is ParrotFlow.log now."
+  - name: absolute folder keeps its last part
+    input: "Evidence is in /Users/me/Documents/parrotflow-scratch/verify/"
+    want: "Evidence is in verify."
+  - name: two folders separated by prose stay two
+    input: "Moved /Users/me/old to /Users/me/new today"
+    want: "Moved old to new today."
+  - name: a folder name with a space
+    input: "It is in ~/Library/Application Support/ParrotFlow/"
+    want: "It is in ParrotFlow."
+  - name: and/or after a folder is prose
+    input: "See /tmp/foo and/or run tests."
+    want: "See foo and/or run tests."
+  - name: table is dropped
+    input: "Summary:\n| a | b |\n|---|---|\n| 1 | 2 |\nDone."
+    want: "Summary: Done."
+  - name: other URL says the site
+    input: "Docs are at https://code.claude.com/docs/en/hooks"
+    want: "Docs are at a link on code.claude.com."
+  - name: arrow
+    input: "Latency went 7s → 1.5s"
+    want: "Latency went 7 seconds to 1.5 seconds."
+  - name: plain prose is left alone
+    input: "Nothing is built yet."
+    want: "Nothing is built yet."
+  - name: snake_case is left alone
+    input: "Set voice.agents and last_assistant_message."
+    want: "Set voice.agents and last_assistant_message."
+
+progress:
+  - name: Bash says its description
+    tool: Bash
+    input: { command: "swift build", description: "Build the release binary." }
+    want: "I'm building the release binary"
+  - name: Bash without a description
+    tool: Bash
+    input: { command: "ls" }
+    want: "I'm running a command"
+  - name: edit names the file
+    tool: Edit
+    input: { file_path: "/Users/me/parrotflow/Sources/ParrotFlow/Config.swift" }
+    want: "I'm editing Config.swift"
+  - name: write names the file
+    tool: Write
+    input: { file_path: "/tmp/notes.md" }
+    want: "I'm writing notes.md"
+  - name: reads collapse into one line
+    tool: Grep
+    input: { pattern: "foo" }
+    want: "I'm looking through the code"
+  - name: agent
+    tool: Agent
+    input: { description: "Find the socket code" }
+    want: "I'm asking an agent to find the socket code"
+  - name: task list is bookkeeping
+    tool: mcp__ccd_turn__update_plan
+    want: null
+  - name: todo list is bookkeeping
+    tool: TodoWrite
+    want: null
+  - name: run doubles its consonant
+    tool: Bash
+    input: { description: "Run the voice cases" }
+    want: "I'm running the voice cases"
+  - name: verb ending in e
+    tool: Bash
+    input: { description: "Remove the scratch folder" }
+    want: "I'm removing the scratch folder"
+  - name: verb ending in ie
+    tool: Bash
+    input: { description: "Tie the hooks together" }
+    want: "I'm tying the hooks together"
+  - name: already a gerund
+    tool: Bash
+    input: { description: "Checking the log" }
+    want: "I'm checking the log"
+  - name: first word is not a plain word
+    tool: Bash
+    input: { description: "npm-install deps" }
+    want: "npm-install deps"
+  - name: browser
+    tool: mcp__Claude_Browser__navigate
+    input: { url: "http://localhost:3000" }
+    want: "I'm using the browser"
+  - name: a question with no text still asks
+    tool: AskUserQuestion
+    want: "I have a question for you."
+  - name: a finished plan
+    tool: ExitPlanMode
+    want: "The plan's ready when you want to look."
+  # Codex sends the command alone, or the patch text. The command is never said.
+  - name: Codex search reads the code
+    agent: codex
+    tool: Bash
+    input: { command: "rg -n speaksFor Sources" }
+    want: "I'm looking through the code"
+  - name: Codex tests after cd and a variable
+    agent: codex
+    tool: Bash
+    input: { command: "cd /Users/me/proj && FOO=1 timeout 60 swift test --filter Voice" }
+    want: "I'm running the tests"
+  - name: Codex pytest through python
+    agent: codex
+    tool: Bash
+    input: { command: "python -m pytest -q tests" }
+    want: "I'm running the tests"
+  - name: Codex build
+    agent: codex
+    tool: Bash
+    input: { command: "npm run build" }
+    want: "I'm building"
+  - name: Codex listing a tests folder is reading
+    agent: codex
+    tool: Bash
+    input: { command: "ls tests" }
+    want: "I'm looking through the code"
+  - name: Codex git diff
+    agent: codex
+    tool: Bash
+    input: { command: "git diff --stat | tail -3" }
+    want: "I'm looking at the changes"
+  - name: Codex commit keeps its message out
+    agent: codex
+    tool: Bash
+    input: { command: "git commit -m 'rename foo'" }
+    want: "I'm committing"
+  - name: Codex unknown command
+    agent: codex
+    tool: Bash
+    input: { command: "./scripts/deploy.sh --token abc123" }
+    want: "I'm running a command"
+  - name: Codex patch names its file
+    agent: codex
+    tool: apply_patch
+    input:
+      command: "*** Begin Patch\n*** Update File: Sources/ParrotFlow/ClaudeVoice.swift\n@@\n-old\n+new\n*** End Patch"
+    want: "I'm editing ClaudeVoice.swift"
+  - name: Codex patch adding two files
+    agent: codex
+    tool: apply_patch
+    input:
+      command: "*** Begin Patch\n*** Add File: a/Codex.swift\n+x\n*** Add File: b/README.md\n+y\n*** End Patch"
+    want: "I'm writing Codex.swift and README.md"
+  - name: Codex patch with mixed changes to three files
+    agent: codex
+    tool: apply_patch
+    input:
+      command: "*** Begin Patch\n*** Add File: a.swift\n*** Update File: b.swift\n*** Delete File: c.swift\n*** End Patch"
+    want: "I'm editing 3 files"
+  - name: Codex patch deleting a file
+    agent: codex
+    tool: apply_patch
+    input: { command: "*** Begin Patch\n*** Delete File: old/Legacy.swift\n*** End Patch" }
+    want: "I'm deleting Legacy.swift"
+  - name: Codex subagent
+    agent: codex
+    tool: spawn_agent
+    input: { message: "look at the socket code" }
+    want: "I'm starting an agent"
+  - name: Codex plan is bookkeeping
+    agent: codex
+    tool: update_plan
+    want: null
+  - name: Codex question
+    agent: codex
+    tool: request_user_input
+    want: "I have a question for you."
+  - name: Codex browser through MCP
+    agent: codex
+    tool: mcp__chrome__navigate
+    input: { url: "http://localhost:3000" }
+    want: "I'm using the browser"
+
+# Codex PermissionRequest: the approval it waits for.
+waiting:
+  - name: a command waits for an OK
+    tool: Bash
+    input: { command: "rm -rf build" }
+    want: "I need your OK to run a command."
+  - name: an edit waits for an OK, with its file
+    tool: apply_patch
+    input: { command: "*** Begin Patch\n*** Update File: src/main.rs\n*** End Patch" }
+    want: "I need your OK to edit main.rs."
+  - name: another tool waits for an OK
+    tool: mcp__github__create_issue
+    want: "I need your OK to go on."
+
+turns:
+  - name: answer is the text after the last tool call
+    lines:
+      - '{"type":"user","message":{"role":"user","content":"fix it"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Checking the build."}]}}'
+      - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"make"}}]}}'
+      - '{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}'
+      - '{"type":"assistant","message":{"content":[{"type":"thinking","thinking":""}]}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Done. Tests pass."}]}}'
+    answer: "Done. Tests pass."
+    recap: null
+  - name: wrap-up recap is kept
+    lines:
+      - '{"type":"user","message":{"role":"user","content":"go"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{}}]}}'
+      - '{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}'
+      - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__ccd_turn__wrap_up","input":{"recap":"The fix is in. Not committed."}}]}}'
+      - '{"type":"user","message":{"content":[{"type":"tool_result","content":"shown"}]}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Fixed the crash."}]}}'
+    answer: "Fixed the crash."
+    recap: "The fix is in. Not committed."
+  - name: the previous turn does not leak in
+    lines:
+      - '{"type":"user","message":{"role":"user","content":"first"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Old answer."}]}}'
+      - '{"type":"user","message":{"role":"user","content":"second"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"New answer."}]}}'
+    answer: "New answer."
+    recap: null
+    earlier: "Old answer."
+  - name: a background task notice does not start a turn
+    lines:
+      - '{"type":"user","message":{"role":"user","content":"first"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Old answer."}]}}'
+      - '{"type":"user","message":{"role":"user","content":"second"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Waiting on CI."}]}}'
+      - '{"type":"user","message":{"role":"user","content":"[SYSTEM NOTIFICATION - NOT USER INPUT]\n<task-notification>done</task-notification>"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"CI passed."}]}}'
+    answer: "Waiting on CI.\n\nCI passed."
+    recap: null
+    earlier: "Old answer."
+  - name: a reminder line is not a prompt
+    lines:
+      - '{"type":"user","message":{"role":"user","content":"first"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Part one."}]}}'
+      - '{"type":"user","isMeta":true,"message":{"role":"user","content":"<system-reminder>x</system-reminder>"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Part two."}]}}'
+    answer: "Part one.\n\nPart two."
+    recap: null
+
+parse:
+  - name: opener is read beside say and tone
+    raw: '{"opener": "Done", "say": "I switched to main.", "tone": "easy"}'
+    say: "I switched to main."
+    tone: "easy"
+    opener: "Done"
+  - name: JSON with say and tone
+    raw: '{"say": "The build passes.", "tone": "Relaxed and pleased, smiling."}'
+    say: "The build passes."
+    tone: "Relaxed and pleased, smiling."
+  - name: JSON in a code fence
+    raw: "```json\n{\"say\": \"Two tests fail.\", \"tone\": \"Calm, a little sorry.\"}\n```"
+    say: "Two tests fail."
+    tone: "Calm, a little sorry."
+  - name: plain text still gives the words
+    raw: "The build passes."
+    say: "The build passes."
+    tone: null
+  - name: empty tone is no tone
+    raw: '{"say": "Done.", "tone": ""}'
+    say: "Done."
+    tone: null
+  - name: task label is read beside say
+    raw: '{"say": "I fixed it.", "task": "fixing the glow"}'
+    say: "I fixed it."
+    task: "fixing the glow"
+  - name: task label is lowercased, its period dropped
+    raw: '{"say": "I fixed it.", "task": "Fixing The Glow."}'
+    say: "I fixed it."
+    task: "fixing the glow"
+  - name: a French task label keeps its accents
+    raw: '{"say": "J''ai réparé le halo.", "task": "réparer le halo"}'
+    say: "J'ai réparé le halo."
+    task: "réparer le halo"
+  - name: a long task label is no label, and the words stay
+    raw: '{"say": "I fixed it.", "task": "fixing the glow around the ghostty window"}'
+    say: "I fixed it."
+    task: null
+  - name: a one-word task label is no label
+    raw: '{"say": "I fixed it.", "task": "refactoring"}'
+    say: "I fixed it."
+    task: null
+  - name: a task label with a path is no label
+    raw: '{"say": "I fixed it.", "task": "editing Sources/ParrotFlow"}'
+    say: "I fixed it."
+    task: null
+  - name: a task label that is not text is no label
+    raw: '{"say": "I fixed it.", "task": 3}'
+    say: "I fixed it."
+    task: null
+  - name: a long plain reply is not said; the answer is said plain
+    raw: "I merged the branch into main after the checks passed. The glow now follows the window when you switch tabs, and the pill names the session. Two tests were flaky on the first run, so I ran them again and they passed. Nothing else changed."
+    say: ""
+  - name: JSON without say is not said
+    raw: '{"answer": "I fixed it."}'
+    say: ""
+  - name: a JSON list is not said
+    raw: '["I fixed it."]'
+    say: ""
+
+capped:
+  - name: short answer is left alone
+    input: "I merged it. CI is green."
+    want: "I merged it. CI is green."
+  - name: a fourth sentence is dropped
+    input: "One. Two. Three. Four."
+    want: "One. Two. Three."
+  - name: a semicolon ends a sentence
+    input: "I merged it; CI is green."
+    want: "I merged it. CI is green."
+  - name: long sentences stop near 300 characters
+    input: "I merged number 403 into main and the spoken digits now become identifiers the way they should, which closes the bug you saw on Monday with the server names and the ports. CI is green across all of the checks, and the branch passes twelve of twelve of the invented cases against eight of twelve on main today. One test run wrote a few lines to the release log."
+    want: "I merged number 403 into main and the spoken digits now become identifiers the way they should, which closes the bug you saw on Monday with the server names and the ports."
+
+redacted:
+  - name: plain command is left alone
+    input: "swift build -c release && scripts/check-claude-voice.sh"
+    want: "swift build -c release && scripts/check-claude-voice.sh"
+  - name: bearer token
+    input: "curl -H 'Authorization: Bearer abc123def' https://api.example.com/v1"
+    want: "curl -H 'Authorization: Bearer <redacted>' https://api.example.com/v1"
+  - name: key in an environment variable
+    input: "OPENAI_API_KEY=sk-live-0123456789 python3 run.py"
+    want: "OPENAI_API_KEY=<redacted> python3 run.py"
+  - name: token flag
+    input: "gh api --token ghp_abcdefghijklmnop repos"
+    want: "gh api --token <redacted> repos"
+  - name: bare provider key
+    input: "echo sk-or-v1-abcdefghijklmnopqrstuvwxyz"
+    want: "echo <redacted>"
+  - name: URL query string
+    input: "curl https://example.com/hook?sig=abc&user=me"
+    want: "curl https://example.com/hook"
+  - name: long opaque string
+    input: "export X=Zm9vYmFyYmF6cXV4cXV1eHF1dXhmb29iYXJiYXo"
+    want: "export X=<redacted>"
+
+naming:
+  - name: another session spoke last
+    other_spoke_last: true
+    quiet_for: 5
+    in_front: true
+    named: true
+  - name: same session, a moment ago
+    other_spoke_last: false
+    quiet_for: 20
+    in_front: false
+    named: false
+  - name: same session, quiet, window in front
+    other_spoke_last: false
+    quiet_for: 300
+    in_front: true
+    named: false
+  - name: same session, quiet, window not in front
+    other_spoke_last: false
+    quiet_for: 300
+    in_front: false
+    named: true
+  - name: exactly two minutes counts
+    other_spoke_last: false
+    quiet_for: 120
+    in_front: false
+    named: true
+
+grounded:
+  - name: a faithful summary is kept
+    said: "I merged PR 403 into main. CI is green, and the spoken digits work now."
+    source: "Merged PR 403 into main as 8c15cf77. Spoken digits, separators and learning all work. CI is green on the branch."
+    kept: true
+  - name: the prompt's own example is refused
+    said: "I fixed the crash."
+    source: "I merged PR 403 into main. The branch passes 12 of 12 invented cases against 8 of 12 on main."
+    kept: false
+  - name: an invented result is refused
+    said: "I deployed the release and the dashboard shows zero errors."
+    source: "I merged PR 403 into main. The branch passes 12 of 12 invented cases against 8 of 12 on main."
+    kept: false
+  - name: short plain words still count as grounded
+    said: "Done."
+    source: "Done. Tests pass."
+    kept: true
+  - name: a word before a period matches the same word
+    said: "Merged. Released. Deployed."
+    source: "I merged, released and deployed it"
+    kept: true
+
+speakable:
+  - name: curly apostrophes become straight
+    input: "I’m checking whether it’s done."
+    want: "I'm checking whether it's done."
+  - name: curly quotes and a dash
+    input: "It said “done” — then stopped…"
+    want: "It said \"done\" ,  then stopped..."
+
+spoken:
+  - name: commit phrase is dropped
+    input: "It's installed at commit a8532fd1 and listening."
+    want: "It's installed and listening."
+  - name: hash after as is dropped
+    input: "Merged PR 403 into main as 8c15cf77."
+    want: "Merged PR 403 into main."
+  - name: hash in brackets is dropped
+    input: "The fix (5727371a) is in."
+    want: "The fix is in."
+  - name: a word made of hex letters stays
+    input: "The decade was added."
+    want: "The decade was added."
+  - name: seconds are dropped from a time
+    input: "Listening since 11:42:19."
+    want: "Listening since 11:42."
+  - name: leading zero is dropped
+    input: "It ran at 09:05."
+    want: "It ran at 9:05."
+  - name: units in words
+    input: "Ready in 14.2 s, first sound 340 ms, 509 MB, 1.3 GB, 86% full."
+    want: "Ready in 14.2 seconds, first sound 340 milliseconds, 509 megabytes, 1.3 gigabytes, 86 percent full."
+  - name: a date in another year keeps its year
+    input: "Released 2025-06-03."
+    want: "Released June 3, 2025."
+
+summary:
+  - name: the last recap wins over later text
+    lines:
+      - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__ccd_turn__wrap_up","input":{"recap":"Chatterbox is downloading."}}]}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Waiting for the test."}]}}'
+    want: "Chatterbox is downloading."
+  - name: with no recap, the last text
+    lines:
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Old text."}]}}'
+      - '{"type":"user","message":{"role":"user","content":"next"}}'
+      - '{"type":"assistant","message":{"content":[{"type":"text","text":"Newest text."}]}}'
+    want: "Newest text."
+  - name: Codex, the last final answer across turns
+    agent: codex
+    lines:
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a1","phase":"final_answer","content":[{"type":"Text","text":"Renamed foo to bar."}]}}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u2","content":[{"type":"text","text":"now the docs"}]}}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a2","phase":"commentary","content":[{"type":"Text","text":"Reading the docs."}]}}}'
+    want: "Renamed foo to bar."
+  - name: Codex, only commentary so far
+    agent: codex
+    lines:
+      - '{"type":"event_msg","payload":{"type":"user_message","message":"go"}}'
+      - '{"type":"event_msg","payload":{"type":"agent_message","message":"Checking the build.","phase":"commentary"}}'
+    want: "Checking the build."
+
+# The session's title, for the reminder's Task line. Claude lines are the
+# transcript; Codex lines are session_index.jsonl, and the rollout's thread id
+# is 0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b. Values invented.
+titles:
+  - name: the title the person set wins over Claude's
+    lines:
+      - '{"type":"custom-title","customTitle":"Voice summaries for agent answers","sessionId":"s1"}'
+      - '{"type":"user","message":{"role":"user","content":"go"}}'
+      - '{"type":"ai-title","aiTitle":"Prefilled vocab proposals","sessionId":"s1"}'
+    want: "Voice summaries for agent answers"
+  - name: the last title the person set wins
+    lines:
+      - '{"type":"custom-title","customTitle":"First name","sessionId":"s1"}'
+      - '{"type":"ai-title","aiTitle":"Generated","sessionId":"s1"}'
+      - '{"type":"custom-title","customTitle":"Second name","sessionId":"s1"}'
+    want: "Second name"
+  - name: with no title set, Claude's last one
+    lines:
+      - '{"type":"ai-title","aiTitle":"Old guess","sessionId":"s1"}'
+      - '{"type":"user","message":{"role":"user","content":"go"}}'
+      - '{"type":"ai-title","aiTitle":"Glow around the speaking window","sessionId":"s1"}'
+    want: "Glow around the speaking window"
+  - name: a title quoted in a message is not a title
+    lines:
+      - '{"type":"user","message":{"role":"user","content":"read {\"type\":\"custom-title\",\"customTitle\":\"Quoted\"}"}}'
+    want: null
+  - name: a title object inside a tool call is not the title
+    lines:
+      - '{"type":"ai-title","aiTitle":"Real title","sessionId":"s1"}'
+      - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"type":"ai-title","aiTitle":"Nested"}}]}}'
+    want: "Real title"
+  - name: a file whose only title-like line is a tool call has no title
+    lines:
+      - '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"type":"ai-title","aiTitle":"Nested"}}]}}'
+    want: null
+  - name: a half-written title line is skipped
+    lines:
+      - '{"type":"custom-title","customTitle":"Kept","sessionId":"s1"}'
+      - '{"type":"custom-title","customTitle":"Cut'
+    want: "Kept"
+  - name: Codex, the thread's last name in the index
+    agent: codex
+    lines:
+      - '{"id":"0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Socket reads","updated_at":"2026-11-08T10:00:00Z"}'
+      - '{"id":"0199a3b2-0000-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Another thread","updated_at":"2026-11-08T10:01:00Z"}'
+      - '{"id":"0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Fix dropped socket reads","updated_at":"2026-11-08T10:02:00Z"}'
+      - '{"id":"0199a3b2-0000-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Later, another thread","updated_at":"2026-11-08T10:03:00Z"}'
+    want: "Fix dropped socket reads"
+  - name: Codex, a thread with no name
+    agent: codex
+    lines:
+      - '{"id":"0199a3b2-0000-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Another thread","updated_at":"2026-11-08T10:01:00Z"}'
+    want: null
+  - name: Codex, a cleared name is no title
+    agent: codex
+    lines:
+      - '{"id":"0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"Socket reads","updated_at":"2026-11-08T10:00:00Z"}'
+      - '{"id":"0199a3b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b","thread_name":"","updated_at":"2026-11-08T10:02:00Z"}'
+    want: null
+
+# Codex rollout lines, shaped as Codex 0.167 writes them. Values invented.
+codex_turns:
+  - name: Codex answer is the final message, not the commentary
+    lines:
+      - '{"type":"session_meta","payload":{"id":"t1","cwd":"/Users/me/proj","cli_version":"0.167.0"}}'
+      - '{"type":"event_msg","payload":{"type":"task_started","turn_id":"7"}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u1","content":[{"type":"text","text":"rename foo to bar"}]}}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a1","phase":"commentary","content":[{"type":"Text","text":"Looking for foo first."}]}}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"CommandExecution","id":"c1","command":"rg foo","exit_code":0}}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a2","phase":"final_answer","content":[{"type":"Text","text":"Renamed foo to bar. cargo build passes."}]}}}'
+      - '{"type":"event_msg","payload":{"type":"task_complete","turn_id":"7","last_agent_message":"Renamed foo to bar. cargo build passes."}}'
+    prompt: "rename foo to bar"
+    answer: "Renamed foo to bar. cargo build passes."
+    latest: "Renamed foo to bar. cargo build passes."
+    earlier: null
+  - name: Codex mid-turn has commentary and no answer yet
+    lines:
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u1","content":[{"type":"text","text":"fix the socket"}]}}}'
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a1","phase":"commentary","content":[{"type":"Text","text":"Reading SocketListener to see why reads drop."}]}}}'
+    prompt: "fix the socket"
+    answer: ""
+    latest: "Reading SocketListener to see why reads drop."
+    earlier: null
+  - name: Codex legacy rollout
+    lines:
+      - '{"type":"event_msg","payload":{"type":"user_message","message":"add a test"}}'
+      - '{"type":"event_msg","payload":{"type":"agent_message","message":"Adding it to the YAML.","phase":"commentary"}}'
+      - '{"type":"event_msg","payload":{"type":"agent_message","message":"Added one case.","phase":"final_answer"}}'
+    prompt: "add a test"
+    answer: "Added one case."
+    latest: "Added one case."
+    earlier: null
+  - name: Codex earlier turn
+    lines:
+      - '{"type":"event_msg","payload":{"type":"user_message","message":"first"}}'
+      - '{"type":"event_msg","payload":{"type":"agent_message","message":"Old answer.","phase":"final_answer"}}'
+      - '{"type":"event_msg","payload":{"type":"user_message","message":"second"}}'
+      - '{"type":"event_msg","payload":{"type":"agent_message","message":"New answer.","phase":"final_answer"}}'
+    prompt: "second"
+    answer: "New answer."
+    latest: "New answer."
+    earlier: "Old answer."
+  - name: Codex injected context is not the prompt
+    lines:
+      - '{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u1","content":[{"type":"text","text":"what changed?"}]}}}'
+      - '{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>cwd</environment_context>"}]}}'
+      - '{"type":"event_msg","payload":{"type":"task_complete","turn_id":"8","last_agent_message":"Two files changed."}}'
+    prompt: "what changed?"
+    answer: "Two files changed."
+    latest: null
+    earlier: null
+  - name: Codex tail with no prompt in it
+    lines:
+      - '{"type":"event_msg","payload":{"type":"agent_message","message":"Still building.","phase":"commentary"}}'
+    prompt: null
+    answer: ""
+    latest: "Still building."
+    earlier: null
+
+session_names:
+  - name: the label wins over the request
+    project: parrotflow
+    label: fixing the glow
+    prompt: "Can you look at the build"
+    want: "parrotflow · fixing the glow"
+  - name: before the first answer, the request's first words
+    project: parrotflow
+    prompt: "Can you fix the glow on the Ghostty window please?"
+    want: "parrotflow · glow ghostty window"
+  - name: the project is not a task word
+    project: parrotflow
+    prompt: "Run the parrotflow checks on main"
+    want: "parrotflow · checks main"
+  - name: paths and tokens are not task words
+    project: parrotflow
+    prompt: "Open Sources/ParrotFlow/PillHUD.swift and set OPENAI_KEY=sk-123 for the glow"
+    want: "parrotflow · open glow"
+  - name: a long folder keeps its start
+    project: parrotflow-claude-voice-session-pill
+    label: fixing the glow
+    want: "parrotflow-claude-voice… · fixing the glow"
+  - name: a folder of 24 characters is whole
+    project: abcdefghijklmnopqrstuvwx
+    label: fixing the glow
+    want: "abcdefghijklmnopqrstuvwx · fixing the glow"
+  - name: a request with no content words names the folder only
+    project: parrotflow
+    prompt: "ok go"
+    want: "parrotflow"
+  - name: no request names the folder only
+    project: parrotflow
+    want: "parrotflow"
+  - name: no folder names the task only
+    project: ""
+    label: fixing the glow
+    want: "fixing the glow"
+  - name: nothing to name shows nothing
+    project: ""
+    prompt: "ok"

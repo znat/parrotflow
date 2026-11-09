@@ -1,5 +1,5 @@
 # Invented config, written before version 1.
-version: 2
+version: 3
 
 hotkey:
   key: right_option

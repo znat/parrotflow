@@ -24,9 +24,11 @@ enum ConfigMigration {
         let apply: ([String]) -> [String]
         /// What the edited file must hold. Asked of the decoded result.
         let holds: (Config) -> Bool
+        /// What to edit by hand when `holds` fails.
+        var byHand: String?
     }
 
-    static let steps: [Step] = [sentenceRepairTransform, scriptsDeclareNeeds]
+    static let steps: [Step] = [sentenceRepairTransform, scriptsDeclareNeeds, voiceSection]
 
     static var current: Int { steps.last?.version ?? 0 }
 
@@ -55,6 +57,7 @@ enum ConfigMigration {
                 return "the upgraded config would not load — \(why)"
             case .notDone(let version):
                 return "step \(version) did not do what it is for"
+                    + (ConfigMigration.steps.first { $0.version == version }?.byHand.map { ". " + $0 } ?? "")
             }
         }
     }
@@ -608,6 +611,74 @@ enum ConfigMigration {
             return (i, value, match.comment.map(String.init))
         }
         return nil
+    }
+
+    // MARK: - 3: `claude:` is `voice:`
+
+    /// `claude:` is `voice:`. Its `folders:` are `agents.claude`, and
+    /// `codex: true` is `agents.codex`, holding `codex_folder`. Every other
+    /// key moves across as it is. A file with both sections, or with
+    /// `folders` or `codex` in a one-line `{…}`, is left for a person.
+    static let voiceSection = Step(
+        version: 3,
+        summary: "claude: is voice:, and its folders and codex keys are voice.agents",
+        apply: { lines in
+            guard let at = keyLine("claude", depth: 0, in: lines, within: lines.indices),
+                  keyLine("voice", depth: 0, in: lines, within: lines.indices) == nil else { return lines }
+            let rest = lines[at].dropFirst("claude:".count)
+            if rest.contains("{"), rest.contains("folders") || rest.contains("codex") { return lines }
+            var out = withAgents(lines, under: at)
+            out[at] = "voice:" + rest
+            return out
+        },
+        holds: { !$0.retiredKeys.contains("claude") },
+        byHand: "Rename `claude:` to `voice:` by hand, with `folders` and `codex` under"
+            + " `voice.agents`, and keep only one of `claude:` and `voice:`"
+    )
+
+    /// `folders:` becomes `agents:` with `claude:` under it, in its place.
+    /// `codex:` and `codex_folder:` go, with the comments above them.
+    static func withAgents(_ lines: [String], under at: Int) -> [String] {
+        let span = body(of: at, in: lines)
+        guard let depth = childDepth(of: at, in: lines) else { return lines }
+        func find(_ key: String) -> Int? { keyLine(key, depth: depth, in: lines, within: span) }
+        func rest(_ line: Int, _ key: String) -> Substring { lines[line].dropFirst(depth + key.count + 1) }
+        let folders = find("folders"), codex = find("codex"), codexFolder = find("codex_folder")
+        var dropped = Set<Int>()
+        for line in [codex, codexFolder].compactMap({ $0 }) {
+            dropped.formUnion(paragraph(above: line, in: lines)...line)
+        }
+        let codexOn = codex.map { line in
+            let said = rest(line, "codex").prefix { $0 != "#" }.trimmingCharacters(in: .whitespaces)
+            return ["true", "yes", "on", "y"].contains(said.lowercased())
+        } ?? false
+        let pad = String(repeating: " ", count: depth)
+        var agents = [pad + "agents:", pad + "  claude:" + (folders.map { rest($0, "folders") } ?? "")]
+        if let folders {
+            // Block items may sit at the key's own depth.
+            var end = body(of: folders, in: lines).upperBound
+            while true {
+                guard let item = (end..<span.upperBound).first(where: { isContent(lines[$0]) }),
+                      indent(lines[item]) == depth, lines[item].dropFirst(depth).hasPrefix("-") else { break }
+                end = body(of: item, in: lines).upperBound
+            }
+            let value = (folders + 1)..<end
+            let shift = depth + 4 - (value.filter { isContent(lines[$0]) }.map { indent(lines[$0]) }.min() ?? 0)
+            agents += value.map { i in
+                isBlank(lines[i]) ? lines[i]
+                    : shift >= 0 ? String(repeating: " ", count: shift) + lines[i]
+                    : String(lines[i].dropFirst(min(-shift, indent(lines[i]))))
+            }
+            dropped.formUnion(folders..<end)
+        }
+        if codexOn { agents.append(pad + "  codex:" + (codexFolder.map { rest($0, "codex_folder") } ?? "")) }
+        let place = folders ?? (codexOn ? dropped.min() : nil)
+        var out: [String] = []
+        for i in lines.indices {
+            if i == place { out += agents }
+            if !dropped.contains(i) { out.append(lines[i]) }
+        }
+        return out
     }
 
     // MARK: - Diff

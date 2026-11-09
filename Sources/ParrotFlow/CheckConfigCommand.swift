@@ -366,6 +366,27 @@ enum CheckConfigCommand {
             emit("  · models            none — nothing calls a model")
         }
 
+        let agents = CodingAgent.allCases.compactMap { agent in
+            config.voice.folders(of: agent).map { folders in
+                folders.isEmpty ? agent.rawValue
+                    : agent.rawValue + " " + folders.map(ClaudeHooksCommand.shown).joined(separator: ", ")
+            }
+        }
+        emit("  · agents            " + (!config.voice.enabled ? "off — voice.enabled is false"
+            : agents.isEmpty ? "none" : agents.joined(separator: "; ")))
+        for prompt in VoicePrompt.allCases {
+            let label = "voice \(prompt.rawValue)".padding(toLength: 18, withPad: " ", startingAt: 0)
+            if let problem = prompt.overrideProblem {
+                emit("  ✗ \(label)\(ClaudeHooksCommand.shown(prompt.override)) \(problem); the built-in prompt is used")
+                ok = false
+            } else if let source = prompt.current?.source {
+                emit("  · \(label)\(source.shown)")
+            } else {
+                emit("  ✗ \(label)\(prompt.builtIn.path) is missing; the voice says it plain")
+                ok = false
+            }
+        }
+
         switch config.updates.afterDays {
         case ..<0:
             emit("  · updates           never checked")

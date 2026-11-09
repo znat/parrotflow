@@ -1,3 +1,4 @@
+import FluidAudio
 import Foundation
 import Yams
 
@@ -45,6 +46,8 @@ struct Config: Decodable, Equatable {
     var retiredKeys: [String] = []
     var updates: UpdatePolicy = UpdatePolicy()
     var logging: Logging = Logging()
+    /// Speaking what coding agents do and answer. See `ClaudeVoice`.
+    var voice = Voice()
     /// Everything nameable: `transforms:`, plus anything still written under
     /// the older `prompts:`.
     var transforms: [Transform] = []
@@ -127,7 +130,7 @@ struct Config: Decodable, Equatable {
         case version, hotkey, audio, feedback, transcription, llm, models, commands
         case transforms, prompts, updates, logging
         case freeForm = "free_form"
-        case lists
+        case lists, voice, claude
     }
 
     private static let listReference = try? NSRegularExpression(pattern: #"\{\{(\w+)\}\}"#)
@@ -2849,6 +2852,142 @@ struct Config: Decodable, Equatable {
         }
     }
 
+    struct Voice: Decodable, Equatable {
+        var enabled = true
+        /// Each agent the app speaks for, with the config folders that get its
+        /// hooks. No folders: the agent's default. No `agents:` key: Claude
+        /// Code alone, as before agents had a choice.
+        var agents: [CodingAgent: [String]] = [.claude: []]
+        /// Names under `agents:` that are no agent the app speaks for.
+        var unknownAgents: [String] = []
+        /// Agents with no hooks file that were given a folder anyway.
+        var folderless: [String] = []
+        /// What `problems()` says about an `agents:` it could not read.
+        var refusedAgents: String?
+        var progress = true
+        /// Progress lines in the model's words, with the reason when there is one.
+        var explain = true
+        /// A glow around the window of the session that is speaking.
+        var frame = true
+        /// A name under `models:`. Empty means the default model.
+        var model = ""
+        /// The remote voice's speed. PocketTTS has none.
+        var speed: Float = 1.0
+        /// A `speed` of 0 or below, kept for `problems()`; `speed` stays 1.
+        var refusedSpeed: Float?
+        /// `voice` and `local` chose Kokoro and its voice. Read only so
+        /// `notices()` can say they do nothing.
+        var retired: [String] = []
+        static let retiredAdvice = "no longer does anything — it chose Kokoro, and the voice on this Mac"
+            + " is PocketTTS, set by `local_voice`. Delete the line"
+        /// A PocketTTS voice, the voice on this Mac.
+        var localVoice = "alba"
+        /// One per session on the local voice, like `speech_voices`. Empty: `local_voice` for all.
+        var localVoices: [String] = []
+        /// Progress lines on the local voice even when `speech` names a remote
+        /// one: they are short and should come at once.
+        var progressLocal = false
+        /// Where PocketTTS runs: `gpu`, `ane` or `ane-state` (the Neural Engine).
+        var localPlacement = "gpu"
+        /// A name under `models:` that speaks OpenAI's `/audio/speech`, such
+        /// as OpenRouter. Empty means PocketTTS, on this Mac.
+        var speech = ""
+        /// One per session, in order. A session keeps its voice while it is active.
+        /// Gemini's conversational voices: friendly, warm, casual, easy-going, breezy.
+        /// Kore and Charon, firm and informative, sounded like announcements.
+        var speechVoices = ["Achird", "Sulafat", "Zubenelgenubi", "Callirrhoe", "Umbriel", "Aoede"]
+        /// Always in the voice. The model adds a shift for what happened.
+        var speechTone = "Speak in a relaxed, friendly, natural tone, like a software engineer colleague "
+            + "collaborating with a teammate, speaking face to face. Clear and conversational, not performative."
+
+        enum CodingKeys: String, CodingKey, CaseIterable {
+            case enabled, agents, progress, explain, frame, model, voice, speed, speech
+            case speechVoice = "speech_voice"
+            case local
+            case localVoice = "local_voice"
+            case localVoices = "local_voices"
+            case progressLocal = "progress_local"
+            case localPlacement = "local_placement"
+            case speechVoices = "speech_voices"
+            case speechTone = "speech_tone"
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
+            if c.contains(.agents), try !c.decodeNil(forKey: .agents) {
+                readAgents(c)
+            }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .progress) { progress = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .explain) { explain = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .frame) { frame = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .model) { model = v }
+            retired = [CodingKeys.voice, .local].filter { c.contains($0) }.map(\.stringValue)
+            if let v = try c.decodeIfPresent(Float.self, forKey: .speed) {
+                if v > 0 { speed = v } else { refusedSpeed = v }
+            }
+            if let v = try c.decodeIfPresent(String.self, forKey: .speech) { speech = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .speechVoice), !v.isEmpty { speechVoices = [v] }
+            if let v = try c.decodeIfPresent([String].self, forKey: .speechVoices), !v.isEmpty { speechVoices = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .speechTone) { speechTone = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .localVoice), !v.isEmpty { localVoice = v }
+            if let v = try c.decodeIfPresent([String].self, forKey: .localVoices) { localVoices = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .progressLocal) { progressLocal = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .localPlacement) { localPlacement = v }
+        }
+
+        /// A value it cannot read is said by `problems()`, and the rest of the
+        /// config still loads.
+        private mutating func readAgents(_ c: KeyedDecodingContainer<CodingKeys>) {
+            guard let written = try? c.nestedContainer(keyedBy: AgentKey.self, forKey: .agents) else {
+                refusedAgents = "not a map of agents to folders — using claude alone"
+                return
+            }
+            agents = [:]
+            var refused: [String] = []
+            for key in written.allKeys {
+                guard let agent = CodingAgent(rawValue: key.stringValue) else {
+                    unknownAgents.append(key.stringValue)
+                    continue
+                }
+                let folders = (try? written.decodeNil(forKey: key)) == true ? []
+                    : (try? written.decode(String.self, forKey: key)).map { [$0] }
+                    ?? (try? written.decode([String].self, forKey: key))
+                let kept = (folders ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                if agent.hookEvents.isEmpty {
+                    if folders == nil || !kept.isEmpty { folderless.append(key.stringValue) }
+                    agents[agent] = []
+                    continue
+                }
+                if folders == nil { refused.append(key.stringValue) }
+                agents[agent] = kept
+            }
+            unknownAgents.sort()
+            if !refused.isEmpty {
+                refusedAgents = refused.sorted().joined(separator: ", ")
+                    + (refused.count == 1 ? " takes" : " take") + " a folder or a list of folders — using the default folder"
+            }
+        }
+
+        private struct AgentKey: CodingKey {
+            let stringValue: String
+            var intValue: Int? { nil }
+            init(stringValue: String) { self.stringValue = stringValue }
+            init?(intValue: Int) { nil }
+        }
+
+        /// Where the agent's hooks go, or nil when it is off.
+        func folders(of agent: CodingAgent) -> [URL]? {
+            agents[agent].map { Self.urls($0.isEmpty ? agent.defaultFolders : $0) }
+        }
+
+        static func urls(_ folders: [String]) -> [URL] {
+            folders.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
+        }
+    }
+
     /// What gets written to disk about a dictation, apart from the transcript
     /// itself.
     ///
@@ -2920,6 +3059,7 @@ struct Config: Decodable, Equatable {
             self.updates = updates
         }
         if let logging = try c.decodeIfPresent(Logging.self, forKey: .logging) { self.logging = logging }
+        if let voice = try c.decodeIfPresent(Voice.self, forKey: .voice) { self.voice = voice }
         // `transforms:` first, then anything still under `prompts:`. Both are
         // read: `prompts:` is what every config written before this existed
         // says, and a rename that silently empties the section is the one
@@ -2937,6 +3077,7 @@ struct Config: Decodable, Equatable {
         if ((try? c.decodeIfPresent(LLM.self, forKey: .llm)) ?? nil) != nil {
             retiredKeys.append("llm")
         }
+        if c.contains(.claude) { retiredKeys.append("claude") }
         // Decoded here because this initialiser is hand-rolled. A property and
         // a CodingKey are not enough: miss this line and the lists work in a
         // `--pipeline` fixture and are empty in the app.
@@ -3022,6 +3163,8 @@ struct Config: Decodable, Equatable {
             + " are an entry in `models:`",
         "free_form": "now `commands.catch_all`, which also takes the model it"
             + " runs on: `catch_all: gpt`, or `false` to refuse them",
+        "claude": "now `voice:`, with `folders` and `codex` under `voice.agents`."
+            + " \(ConfigMigration.runIt)",
     ]
 
     /// What to write instead of a pipeline stage that is no longer built in.
@@ -3073,6 +3216,38 @@ struct Config: Decodable, Equatable {
         }
         for key in retiredKeys.sorted() {
             found.append("\(key): \(Self.movedKeys[key] ?? "no longer does anything")")
+        }
+        let voiceModel = voice.model.trimmingCharacters(in: .whitespaces)
+        if !voiceModel.isEmpty, model(named: voiceModel) == nil {
+            found.append("voice.model: \"\(voiceModel)\" is not under models: — using the default model")
+        }
+        if PocketTtsModelPlacement(rawValue: voice.localPlacement) == nil {
+            found.append("voice.local_placement: \"\(voice.localPlacement)\" is not valid"
+                + " — expected gpu, ane or ane-state; using gpu")
+        }
+        if let refused = voice.refusedSpeed {
+            found.append("voice.speed: \(refused) is not valid — expected a number above 0; using 1")
+        }
+        if !voice.unknownAgents.isEmpty {
+            let one = voice.unknownAgents.count == 1
+            let names = CodingAgent.allCases.map(\.rawValue)
+            found.append("voice.agents: \(voice.unknownAgents.joined(separator: ", "))"
+                + (one ? " is not an agent" : " are not agents") + " the app speaks for — expected "
+                + names.dropLast().joined(separator: ", ") + " or " + (names.last ?? ""))
+        }
+        for agent in voice.folderless {
+            found.append("voice.agents.\(agent): takes no folder — \(agent) has no hooks file, so the value is ignored")
+        }
+        if let refused = voice.refusedAgents { found.append("voice.agents: \(refused)") }
+        let speech = voice.speech.trimmingCharacters(in: .whitespaces)
+        if !speech.isEmpty {
+            if let spec = model(named: speech) {
+                if spec.api != .openai {
+                    found.append("voice.speech: \"\(speech)\" needs api: openai — using PocketTTS")
+                }
+            } else {
+                found.append("voice.speech: \"\(speech)\" is not under models: — using PocketTTS")
+            }
         }
         for key in transcription.retired {
             let said = key == "replacements"
@@ -3182,6 +3357,11 @@ struct Config: Decodable, Equatable {
             guard case .command(let command) = transform.body else { return nil }
             return "transforms: \"\(transform.name)\" runs a program — \(command)"
         }
+        let speech = voice.speech.trimmingCharacters(in: .whitespaces)
+        if !speech.isEmpty, speech == defaultModelName, model(named: speech)?.api == .openai {
+            said.append("voice.speech: \"\(speech)\" is also the default model, so jobs that name no"
+                + " model send it text. Fine if it writes text too; if not, mark a text model `default: true`")
+        }
         for transform in transforms {
             for short in transform.written.shortfalls(against: transform.declared) {
                 said.append("transforms: \"\(transform.name)\" writes `\(short.written)` and its"
@@ -3219,6 +3399,9 @@ struct Config: Decodable, Equatable {
         if legacyJudge {
             said.append("pipeline: `- transform: verify_names` is the old name judge."
                 + " The app does this itself now — delete the line")
+        }
+        for key in voice.retired {
+            said.append("voice.\(key) \(Voice.retiredAdvice)")
         }
 
         // The pass left the list. A config that still names it is read as
@@ -3570,47 +3753,11 @@ enum ConfigStore {
     static func createIfMissing() throws {
         let fm = FileManager.default
         moveRenamedBuiltInDirectory()
-        let source = builtInTransformsDirectory
-        let shipped = builtInTransformFiles()
-        for relative in shipped {
-            let shippedFile = source.appendingPathComponent(relative)
-            let destination = installedBuiltInDirectory.appendingPathComponent(relative)
-            let isNew = !fm.fileExists(atPath: destination.path)
-            try fm.createDirectory(
-                at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if !isNew { try fm.removeItem(at: destination) }
-            try fm.copyItem(at: shippedFile, to: destination)
-            if destination.pathExtension == "py" {
-                // A shebang does nothing without this.
-                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination.path)
-            }
-            if isNew { Log.write("config: wrote transforms/built-in/\(relative)") }
-        }
-        let stillShipped = Set(shipped)
-        for relative in installedBuiltInFiles() where !stillShipped.contains(relative) {
-            var url = installedBuiltInDirectory.appendingPathComponent(relative)
-            do {
-                try fm.removeItem(at: url)
-            } catch {
-                // Said out loud, because the whole point of the prune is that a
-                // dropped example stops resolving. A failure that logged
-                // "removed" would report the opposite of what happened, and the
-                // stale `built-in/...` path would go on working.
-                Log.write("config: could not remove transforms/built-in/\(relative):"
-                    + " \(error.localizedDescription); it is stale and still resolves")
-                continue
-            }
-            Log.write("config: removed transforms/built-in/\(relative) (no longer shipped)")
-            // A folder a removed example leaves empty — `retired/` once
-            // `retired/retired.py` is gone — is cleaned up too, stopping at
-            // the first one that still has something else in it, and never
-            // above `installedBuiltInDirectory` itself.
-            url.deleteLastPathComponent()
-            while url.path != installedBuiltInDirectory.path,
-                  (try? fm.contentsOfDirectory(atPath: url.path))?.isEmpty == true {
-                try? fm.removeItem(at: url)
-                url.deleteLastPathComponent()
-            }
+        try refresh(installedBuiltInDirectory, from: builtInTransformsDirectory, shown: "transforms/built-in")
+        do {
+            try refresh(VoicePrompt.installedDirectory, from: VoicePrompt.builtInDirectory, shown: "voice/built-in")
+        } catch {
+            Log.write("config: could not refresh voice/built-in: \(error.localizedDescription)")
         }
         // The vocabulary, empty but explained. Written so the file exists to
         // be found and read — a person who never dictates a mangled word
@@ -3659,6 +3806,57 @@ enum ConfigStore {
         guard !fm.fileExists(atPath: fileURL.path) else { return }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         try defaultYAML.write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
+    /// Makes `destination` a copy of `source`: every file replaced, and a
+    /// file `source` no longer has removed. Logged as `shown/<file>`.
+    private static func refresh(_ destination: URL, from source: URL, shown: String) throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: source.path) else {
+            Log.write("config: \(source.path) is missing; \(shown) is left as it is")
+            return
+        }
+        let shipped = filesUnder(source)
+        for relative in shipped {
+            let shippedFile = source.appendingPathComponent(relative)
+            let copy = destination.appendingPathComponent(relative)
+            let isNew = !fm.fileExists(atPath: copy.path)
+            try fm.createDirectory(
+                at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if !isNew { try fm.removeItem(at: copy) }
+            try fm.copyItem(at: shippedFile, to: copy)
+            if copy.pathExtension == "py" {
+                // A shebang does nothing without this.
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: copy.path)
+            }
+            if isNew { Log.write("config: wrote \(shown)/\(relative)") }
+        }
+        let stillShipped = Set(shipped)
+        for relative in filesUnder(destination) where !stillShipped.contains(relative) {
+            var url = destination.appendingPathComponent(relative)
+            do {
+                try fm.removeItem(at: url)
+            } catch {
+                // Said out loud, because the whole point of the prune is that a
+                // dropped example stops resolving. A failure that logged
+                // "removed" would report the opposite of what happened, and the
+                // stale `built-in/...` path would go on working.
+                Log.write("config: could not remove \(shown)/\(relative):"
+                    + " \(error.localizedDescription); it is stale and still resolves")
+                continue
+            }
+            Log.write("config: removed \(shown)/\(relative) (no longer shipped)")
+            // A folder a removed example leaves empty — `retired/` once
+            // `retired/retired.py` is gone — is cleaned up too, stopping at
+            // the first one that still has something else in it, and never
+            // above `destination` itself.
+            url.deleteLastPathComponent()
+            while url.path != destination.path,
+                  (try? fm.contentsOfDirectory(atPath: url.path))?.isEmpty == true {
+                try? fm.removeItem(at: url)
+                url.deleteLastPathComponent()
+            }
+        }
     }
 
     /// `transforms/examples/`, the folder's name before it was `built-in/`.
