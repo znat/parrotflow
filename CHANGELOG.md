@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.19.0](https://github.com/znat/parrotflow/compare/v0.18.0...v0.19.0) (2026-11-09)
+
+### Highlights
+
+* **Hear what your coding agent does.** ParrotFlow can speak what Claude Code, Codex and mini-swe-agent are doing, and read you a short version of each answer, with a voice that runs on your Mac. It is off by default: set `voice.enabled: true` in config.yaml. ([#430](https://github.com/znat/parrotflow/pull/430), [#432](https://github.com/znat/parrotflow/pull/432))
+* **Fewer wrong names learned.** A corrected name is offered only when it sounds like what you said, and an ordinary word you keep no longer becomes a person. ([#407](https://github.com/znat/parrotflow/pull/407), [#408](https://github.com/znat/parrotflow/pull/408), [#423](https://github.com/znat/parrotflow/pull/423))
+* **Cleaner corrections.** Restarts and "I mean…" corrections are cut more reliably, and full stops a pause put mid-sentence are repaired. ([#396](https://github.com/znat/parrotflow/pull/396), [#398](https://github.com/znat/parrotflow/pull/398), [#399](https://github.com/znat/parrotflow/pull/399), [#406](https://github.com/znat/parrotflow/pull/406))
+* **Names with numbers come out right.** With `serve1` on screen, "serve one is down" is written "serve1 is down". ([#403](https://github.com/znat/parrotflow/pull/403))
+* **Smaller and lighter.** The first download is 84 MB smaller, the next launch frees about 617 MB of old caches, and the vocabulary uses 125 MB of memory instead of 497 MB. ([#386](https://github.com/znat/parrotflow/pull/386))
+
+### Upgrading
+
+* Nothing to do. config.yaml is upgraded to version 4 at launch, and the old file is kept beside it as `config.yaml.bak-v<N>-<date>`. `--upgrade-config` shows the change first. ([#400](https://github.com/znat/parrotflow/pull/400), [#432](https://github.com/znat/parrotflow/pull/432))
+* ⚠ **Breaking:** `clause_decider`, `slot_gate`, `portrait` and `slot_floor` are no longer read. A config that has them still loads, and `--check-config` names them so you can delete them. ([#386](https://github.com/znat/parrotflow/pull/386))
+
+### For transform authors
+
+* A transform can ask for the parse, the parser's word vectors and Qwen's sentence readings, and a script declares what it needs. ([#393](https://github.com/znat/parrotflow/pull/393), [#394](https://github.com/znat/parrotflow/pull/394), [#397](https://github.com/znat/parrotflow/pull/397), [#401](https://github.com/znat/parrotflow/pull/401))
+* The envelope has a JSON Schema and Python types, and opted-in transforms run in a warm Python worker. ([#402](https://github.com/znat/parrotflow/pull/402), [#404](https://github.com/znat/parrotflow/pull/404), [#405](https://github.com/znat/parrotflow/pull/405))
+* `github_refs` ships as a script, for split numbers and lists. ([#370](https://github.com/znat/parrotflow/pull/370))
+
+[Every change since 0.18.0](https://github.com/znat/parrotflow/compare/v0.18.0...v0.19.0)
+
 ## [0.18.0](https://github.com/znat/parrotflow/compare/v0.17.0...v0.18.0) (2026-10-12)
 
 

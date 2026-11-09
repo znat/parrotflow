@@ -2,7 +2,7 @@
 name: parrotflow
 description: Customize ParrotFlow, the local dictation app for macOS, and explain what it can do. Changes its hotkey, languages, microphone, sounds, rewrites (replacements, scripts, prompts), spoken commands, models and the coding-agent voice (it speaks what Claude Code, Codex and mini-swe-agent do) in config.yaml, then checks the change with the app's own binary. Use when someone asks to customize, configure, set up or change ParrotFlow, asks what ParrotFlow can do, wants their dictation to write something differently, or wants their coding agent to talk, stop talking, or say things differently.
 metadata:
-  app_version: 0.18.0 # x-release-please-version
+  app_version: 0.19.0 # x-release-please-version
 ---
 
 # Customizing ParrotFlow
