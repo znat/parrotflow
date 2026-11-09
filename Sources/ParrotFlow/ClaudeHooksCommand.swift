@@ -823,6 +823,14 @@ enum ClaudeHooksCommand {
               want: "alba,george,jane,michael,eve,paul | ")
         check("written speech_voices win", got: voices("speech_voices: [alloy, nova]", model: "openai/gpt-4o-mini-tts"),
               want: "alba,george,jane,michael,eve,paul | alloy,nova")
+        for (name, prompt, want) in [
+            ("a typed prompt pins the focused pane", "fix the glow", "typed"),
+            ("a background task's notice does not pin", "<task-notification>\n<task-id>a1</task-id>", "not typed"),
+            ("another session's message does not pin", "Another Claude session sent a message:\n<agent-message from=\"x\">", "not typed"),
+            ("a bare message envelope does not pin", "<cross-session-message from=\"x\">", "not typed"),
+        ] {
+            check(name, got: ClaudeSpeakable.typed(prompt) ? "typed" : "not typed", want: want)
+        }
         func sync(_ yaml: String) -> String {
             let decoded = try? YAMLDecoder().decode(Config.Voice.self, from: on(yaml).replacingOccurrences(of: "CODEX", with: codexFolder.path))
             guard let settings = decoded,

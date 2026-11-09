@@ -643,15 +643,20 @@ enum ClaudeSpeakable {
                                prompt: asked))
     }
 
+    /// Whether a prompt came from the person. A finished background task and a
+    /// message from another session arrive as prompts too, and fire
+    /// `UserPromptSubmit` while the person works in another pane.
+    static func typed(_ prompt: String) -> Bool {
+        !["[SYSTEM NOTIFICATION", "<task-notification>", "Another Claude session sent a message:",
+          "<agent-message", "<cross-session-message"].contains { prompt.hasPrefix($0) }
+    }
+
     /// A line the person typed, as opposed to a tool result or a reminder the
     /// harness slipped in.
     private static func isPrompt(_ entry: [String: Any]) -> Bool {
         guard entry["type"] as? String == "user", entry["isMeta"] as? Bool != true,
               let message = entry["message"] as? [String: Any] else { return false }
-        // A finished background task arrives as a user line.
-        if let text = message["content"] as? String {
-            return !text.hasPrefix("[SYSTEM NOTIFICATION") && !text.hasPrefix("<task-notification>")
-        }
+        if let text = message["content"] as? String { return typed(text) }
         let blocks = message["content"] as? [[String: Any]] ?? []
         return !blocks.contains { $0["type"] as? String == "tool_result" }
             && blocks.contains { $0["type"] as? String == "text" }
