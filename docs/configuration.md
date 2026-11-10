@@ -1548,6 +1548,7 @@ voice:
     collaborating with a teammate, speaking face to face. Clear and conversational,
     not performative.
   pause_key: { key: p, modifiers: [control, option] }  # pause and resume; none turns it off
+  pause_during_calls: true  # hold the voice while another app uses the mic
 ```
 
 Each session takes the first voice no active session holds, and keeps it.
@@ -1675,6 +1676,23 @@ and the menu still works. macOS does not refuse a combo another app already
 holds, so pick one no other app uses. The dev and release builds share ⌃⌥P.
 The log says each change: `claude voice: paused until 16:42 (menu)`,
 `claude voice: resumed (shortcut)`, `claude voice: pause ended at 16:42`.
+
+`pause_during_calls` holds the voice while another app uses the mic, as Zoom,
+Teams, FaceTime or a call in the browser do. The app must keep the mic open
+for 2 seconds; the call is over once the mic has been closed for 5 seconds.
+The answer that was playing goes back to the front at its sentence, and new
+answers wait. While answers wait, the pill says "Voice paused · Zoom is using
+the mic"; the menu says it too. **Resume** plays them during the call, and
+that call does not hold the voice again. When the call ends with answers
+waiting, the voice stays paused, and the pill says "Call over · 3 waiting"
+with **Resume** and **Not now**. Not now takes the pill away; the menu and the
+shortcut still resume, and the menu bar icon still counts. When nothing
+waits, the voice simply goes on. A pause of your own
+from before the call is left as it was. ParrotFlow's own recording does not
+count, and neither does the other build's. Some apps keep the mic open
+between calls; set `pause_during_calls: false` if one does. The log says
+`claude voice: call started (Zoom), held` and `claude voice: call over (Zoom),
+3 waiting`.
 
 Pressing the hotkey holds the voice. The answer it was saying goes back to
 the front of the list, and answers that arrive while you dictate join the

@@ -93,5 +93,18 @@ check "a bare modifier is a problem" "$(pause_key '{ key: right_option }')" \
 check "a word that is not none is a problem" "$(pause_key ctrl-p)" \
   "✗ voice.pause_key: \"ctrl-p\" is not a shortcut — expected { key: p, modifiers: \[control, option\] } or none; the shortcut is off"$'\n'"· pause key none"
 
+# during_calls [value]: the check-config line for voice.pause_during_calls.
+during_calls() {
+  printf 'voice:\n  enabled: false\n' > "$WORK/config.yaml"
+  [ $# -gt 0 ] && printf '  pause_during_calls: %s\n' "$1" >> "$WORK/config.yaml"
+  PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config </dev/null 2>/dev/null \
+    | grep "during calls" | sed 's/^ *//; s/  */ /g'
+}
+
+echo
+echo "voice.pause_during_calls"
+check "on by default" "$(during_calls)" "· during calls paused"
+check "false keeps the voice speaking" "$(during_calls false)" "· during calls keeps speaking"
+
 printf '\n%d/%d\n' "$pass" "$total"
 [ "$cases" -eq 0 ] && [ "$pass" -eq "$total" ]

@@ -2903,6 +2903,8 @@ struct Config: Decodable, Equatable {
         var pauseKey: Shortcut? = Shortcut(key: "p", modifiers: ["control", "option"])
         /// What `problems()` says about a `pause_key` it could not read.
         var refusedPauseKey: String?
+        /// Holds the voice while another app uses the mic.
+        var pauseDuringCalls = true
 
         struct Shortcut: Decodable, Equatable {
             var key: String
@@ -2944,6 +2946,7 @@ struct Config: Decodable, Equatable {
             case speechVoices = "speech_voices"
             case speechTone = "speech_tone"
             case pauseKey = "pause_key"
+            case pauseDuringCalls = "pause_during_calls"
         }
 
         init() {}
@@ -2974,6 +2977,7 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(Bool.self, forKey: .progressLocal) { progressLocal = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .localPlacement) { localPlacement = v }
             if c.contains(.pauseKey) { readPauseKey(c) }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .pauseDuringCalls) { pauseDuringCalls = v }
         }
 
         private mutating func readPauseKey(_ c: KeyedDecodingContainer<CodingKeys>) {

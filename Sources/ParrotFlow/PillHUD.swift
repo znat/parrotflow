@@ -412,6 +412,7 @@ final class PillModel: ObservableObject {
     var onGoToSession: (() -> Void)?
     var onPauseVoice: (() -> Void)?
     var onResumeVoice: (() -> Void)?
+    var onNotNowVoice: (() -> Void)?
 
     /// How much of the alert's clock is left, 1 down to 0. Published, because
     /// a `withAnimation` over 15s does not give the value back.
@@ -1776,6 +1777,9 @@ enum PillMetrics {
     static let pauseVoice = "Pause"
     static let resumeVoice = "Resume"
     static let voicePaused = "Voice paused"
+    static let notNow = "Not now"
+    static func usingTheMic(_ app: String) -> String { "\(app) is using the mic" }
+    static func callOver(_ waiting: Int) -> String { "Call over · \(waiting) waiting" }
 
     static let voiceChipFont: NSFont = rounded(11, .semibold)
     static let voiceButtonFont: NSFont = rounded(12, .semibold)
@@ -1812,6 +1816,14 @@ enum PillMetrics {
             parts.append(measure(voicePaused, sentenceFont))
             status = VoicePill.waiting(count)
             parts.append(rule + button(resumeVoice, true))
+        case .call(let app):
+            parts += [measure(voicePaused, sentenceFont), measure(usingTheMic(app), sentenceFont)]
+            status = nil
+            parts.append(rule + button(resumeVoice, true))
+        case .callOver(let count):
+            parts.append(measure(callOver(count), sentenceFont))
+            status = nil
+            parts += [rule + button(resumeVoice, true), button(notNow, false)]
         }
         if let status { parts.append(measure(status, voiceChipFont) + voiceChipPad * 2) }
         // One more gap for the spacer before the buttons, which sit closer to the edge than the symbol.
@@ -2506,8 +2518,9 @@ private struct MessageContent: View {
     }
 }
 
-/// `[waveform] name  2 waiting | [Pause] | [Go to session ›]`, or
-/// `[pause] Voice paused  3 waiting | [Resume]`. Measured by `PillMetrics.voice`.
+/// `[waveform] name  2 waiting | [Pause] | [Go to session ›]`,
+/// `[pause] Voice paused  3 waiting | [Resume]`, `[muted] Voice paused  Zoom is using the mic | [Resume]`,
+/// or `[waveform] Call over · 3 waiting | [Resume] [Not now]`. Measured by `PillMetrics.voice`.
 private struct VoiceContent: View {
     let pill: VoicePill
 
@@ -2544,11 +2557,33 @@ private struct VoiceContent: View {
                 Spacer(minLength: 0)
                 rule
                 button(PillMetrics.resumeVoice, symbol: "play.fill", accent: true) { model.onResumeVoice?() }
+            case .call(let app):
+                symbol("speaker.slash.fill", color: theme.accent)
+                Text(PillMetrics.voicePaused).font(Font(PillMetrics.sentenceFont)).lineLimit(1).fixedSize()
+                Text(PillMetrics.usingTheMic(app)).font(Font(PillMetrics.sentenceFont)).foregroundStyle(theme.muted)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                rule
+                button(PillMetrics.resumeVoice, symbol: "play.fill", accent: false) { model.onResumeVoice?() }
+            case .callOver(let waiting):
+                symbol("waveform", color: theme.accent)
+                Text(PillMetrics.callOver(waiting)).font(Font(PillMetrics.sentenceFont)).lineLimit(1).fixedSize()
+                Spacer(minLength: 0)
+                rule
+                button(PillMetrics.resumeVoice, symbol: "play.fill", accent: true) { model.onResumeVoice?() }
+                button(PillMetrics.notNow, symbol: nil, accent: false) { model.onNotNowVoice?() }
             }
         }
         .padding(.leading, PillMetrics.padding)
         .padding(.trailing, PillMetrics.voiceButtonPad)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func symbol(_ name: String, color: Color) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(color)
+            .frame(width: PillMetrics.voiceSymbol)
     }
 
     @ViewBuilder private func chip(_ text: String?) -> some View {

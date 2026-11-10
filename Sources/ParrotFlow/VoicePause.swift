@@ -89,24 +89,28 @@ enum VoiceMenu {
         var shortcut = false
     }
 
-    /// The pause shortcut: resume when paused, else pause until resumed.
-    static func toggle(_ pause: VoicePause?) -> Action {
-        pause == nil ? .pause(.untilResumed) : .resume
+    /// The pause shortcut: resume when paused or held by a call, else pause until resumed.
+    static func toggle(_ pause: VoicePause?, call: String? = nil) -> Action {
+        pause == nil && call == nil ? .pause(.untilResumed) : .resume
     }
 
+    /// `call`: the app holding the voice, "Zoom".
     static func rows(
-        _ pause: VoicePause?, waiting: Int, now: Date, calendar: Calendar = .current, locale: Locale = .current
+        _ pause: VoicePause?, call: String? = nil, waiting: Int, now: Date, calendar: Calendar = .current,
+        locale: Locale = .current
     ) -> [Row] {
         let rows: [Row]
-        if let pause {
-            let said = pause == .untilResumed ? "Paused" : "Paused " + pause.phrase(now: now, calendar: calendar, locale: locale)
+        if pause != nil || call != nil {
+            let said = pause.map {
+                $0 == .untilResumed ? "Paused" : "Paused " + $0.phrase(now: now, calendar: calendar, locale: locale)
+            } ?? "Paused · \(call ?? "") is using the mic"
             rows = [Row(title: ([said] + [VoicePill.waiting(waiting)]).compactMap { $0 }.joined(separator: " · "),
                         action: nil),
                     Row(title: "Resume", action: .resume)]
         } else {
             rows = VoicePause.Choice.allCases.map { Row(title: $0.title, action: .pause($0)) }
         }
-        let toggle = toggle(pause)
+        let toggle = toggle(pause, call: call)
         return rows.map { row in
             var row = row
             row.shortcut = row.action == toggle
