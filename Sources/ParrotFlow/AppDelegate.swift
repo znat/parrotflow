@@ -7740,11 +7740,13 @@ extension AppDelegate: NSMenuDelegate {
             if row.separated { menu.addItem(.separator()) }
             let entry = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
             entry.subtitle = row.said
+            Self.hideAutomaticImage(entry)
             entry.submenu = NSMenu()
             for (title, action) in row.actions {
                 let choice = NSMenuItem(title: title, action: #selector(voiceMenuAction(_:)), keyEquivalent: "")
                 choice.target = self
                 choice.representedObject = action
+                Self.hideAutomaticImage(choice)
                 entry.submenu?.addItem(choice)
             }
             menu.addItem(entry)
