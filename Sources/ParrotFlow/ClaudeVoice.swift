@@ -84,12 +84,17 @@ final class ClaudeVoice {
 
     static var socketURL: URL { AppVariant.supportDirectory.appendingPathComponent("claude.sock") }
 
-    /// Set by the app; a line is never said over a dictation.
+    /// Set by the app: the voice is held from hotkey down until this is false.
     var isRecording: () -> Bool = { false }
     /// Set by the app: the name of the session speaking out of sight, or nil to take it away.
     var onPill: (String?) -> Void = { _ in }
 
     private let speaker = Speaker()
+    /// Answers, notifications and questions. Progress lines are said or dropped, never queued.
+    private var queue = VoiceQueue()
+    /// The Speaker line saying `queue.playing`.
+    private var answerLine: Int?
+    private var dictationWatch: Timer?
     private let frame = SpeakingFrame()
     private var settings = Config.Voice()
     private var config = Config()
@@ -183,12 +188,17 @@ final class ClaudeVoice {
             self?.pillFor(id)
         }
         speaker.onLevel = { [weak self] rms in self?.frame.level(rms) }
+        speaker.onLineDone = { [weak self] line in self?.lineDone(line) }
         if settings.enabled, listener == nil {
             listener = SocketListener(path: Self.socketURL.path) { [weak self] data in
                 Task { @MainActor in self?.receive(data) }
             }
         } else if !settings.enabled, listener != nil {
             listener = nil
+            queue = VoiceQueue()
+            answerLine = nil
+            dictationWatch?.invalidate()
+            dictationWatch = nil
             speaker.stop()
         }
         warmIfNeeded()
@@ -231,11 +241,93 @@ final class ClaudeVoice {
         return spec
     }
 
-    /// The hotkey went down: stop talking, now. Answers still on their way
-    /// wait for the dictation to end.
+    /// The hotkey went down: the voice stops now and picks up where it
+    /// stopped once the dictation is over.
     func silence() {
-        if speaker.isSpeaking { Log.write("claude voice: stopped by the hotkey") }
-        speaker.stop()
+        guard settings.enabled else { return }
+        hold(.dictation)
+        guard dictationWatch == nil else { return }
+        // Called before the microphone opens, so the first look is half a second on.
+        let watch = Timer(timeInterval: 0.5, repeats: true) { [weak self] timer in
+            guard let self else { return timer.invalidate() }
+            guard !self.isRecording() else { return }
+            timer.invalidate()
+            self.dictationWatch = nil
+            self.release(.dictation)
+        }
+        // Common modes: an open menu would stall a default-mode timer until it closes.
+        RunLoop.main.add(watch, forMode: .common)
+        dictationWatch = watch
+    }
+
+    /// The Pause button: every session waits until `resume`.
+    func pause() {
+        hold(.user)
+    }
+
+    func resume() {
+        release(.user)
+    }
+
+    private func hold(_ cause: VoiceQueue.Hold) {
+        let stopped = speaker.pause()
+        let playing = queue.playing
+        queue.hold(cause, stoppedAt: stopped?.line == answerLine ? stopped?.sentence : nil)
+        answerLine = nil
+        if let playing, let held = queue.waiting.first {
+            Log.write("claude voice: held (\(cause.rawValue)), \(project(of: playing.session)) back in front "
+                + "at sentence \(held.resume + 1) of \(held.sentences.count)")
+        } else if !queue.waiting.isEmpty {
+            Log.write("claude voice: held (\(cause.rawValue)), \(queue.waiting.count) waiting")
+        }
+    }
+
+    private func release(_ cause: VoiceQueue.Hold) {
+        guard queue.holds.contains(cause) else { return }
+        queue.release(cause)
+        if !queue.waiting.isEmpty {
+            let still = queue.holds.map(\.rawValue).sorted().joined(separator: ", ")
+            Log.write("claude voice: released (\(cause.rawValue)), \(queue.waiting.count) waiting"
+                + (still.isEmpty ? "" : ", still held (\(still))"))
+        }
+        playNext()
+    }
+
+    private func enqueue(_ text: String, session: String, progress: Bool = false, tone: String? = nil) {
+        let voice = style(for: session, progress: progress, tone: tone)
+        queue.add(session: session, text: ClaudeSpeakable.spokenRedacted(text), style: voice.style,
+                  localVoice: voice.local)
+        playNext()
+    }
+
+    /// Says the next answer when none plays and nothing holds the voice. The
+    /// session's name goes on a line of its own, so it never shifts the
+    /// sentence a held answer resumes from.
+    private func playNext() {
+        guard let entry = queue.startNext() else { return }
+        // Progress lines give way; another session's answer keeps its place.
+        speaker.dropProgress()
+        let lead = opening(for: entry.session)
+        if entry.resume > 0 {
+            Log.write("claude voice: resumed \(project(of: entry.session)) at sentence \(entry.resume + 1) "
+                + "of \(entry.sentences.count)")
+        }
+        // Whole, so scripts/tone-play.sh can replay it.
+        Log.write("claude voice: said: \((lead + entry.remaining.joined(separator: " ")).prefix(800))")
+        speaker.say(lead, style: entry.style, session: entry.session, localVoice: entry.localVoice)
+        answerLine = speaker.say(sentences: entry.remaining, style: entry.style, session: entry.session,
+                                 localVoice: entry.localVoice)
+    }
+
+    private func lineDone(_ line: Int) {
+        guard line == answerLine else { return }
+        answerLine = nil
+        if let id = queue.playing?.id { queue.finish(id) }
+        playNext()
+    }
+
+    private func project(of session: String) -> String {
+        sessions[session]?.project ?? session
     }
 
     // MARK: - Events
@@ -307,7 +399,10 @@ final class ClaudeVoice {
             }
             turns[id, default: 0] += 1
             if speaker.speakingSession == id { Log.write("claude voice: stopped by a new prompt") }
+            let dropped = queue.drop(session: id)
+            if dropped > 0 { Log.write("claude voice: a new prompt dropped \(dropped) of \(project(of: id))'s lines") }
             speaker.stop(session: id)
+            playNext()
         case "PreToolUse":
             let tool = event["tool_name"] as? String ?? ""
             let input = event["tool_input"] as? [String: Any] ?? [:]
@@ -324,11 +419,11 @@ final class ClaudeVoice {
         case "Notification":
             guard let message = event["message"] as? String,
                   let said = ClaudeSpeakable.notification(message) else { return }
-            whenFree { [weak self] in self?.say(said, session: id) }
+            enqueue(said, session: id)
         case "PermissionRequest":
             let said = CodexSpeakable.waiting(tool: event["tool_name"] as? String ?? "",
                                               input: event["tool_input"] as? [String: Any] ?? [:])
-            whenFree { [weak self] in self?.say(said, session: id) }
+            enqueue(said, session: id)
         case "Stop":
             guard event["stop_hook_active"] as? Bool != true else { return }
             if recapTurns[id] == turns[id, default: 0] {
@@ -367,7 +462,7 @@ final class ClaudeVoice {
         if !line.urgent {
             // Progress is for someone watching; away, only answers and asks are said.
             if !watching(session) { return }
-            if isRecording() || speaker.isSpeaking { return }
+            if !queue.takesProgress || speaker.isSpeaking { return }
             if now.timeIntervalSince(lastProgressAt) < progressInterval { return }
             if line.kind == .read, lastKind == .read,
                now.timeIntervalSince(lastProgressAt) < readingInterval { return }
@@ -377,7 +472,9 @@ final class ClaudeVoice {
         progressSeq += 1
         guard settings.explain, config.llmEnabled, !line.urgent, !tool.isEmpty,
               let prompt = VoicePrompt.explain.current else {
-            return whenFree { [weak self] in self?.say(line.text, session: session, progress: true) }
+            // A question is worth hearing after a dictation, so it waits its turn.
+            if line.urgent { return enqueue(line.text, session: session, progress: true) }
+            return sayProgress(line.text, session: session)
         }
         let mine = progressSeq
         let named = settings.model.trimmingCharacters(in: .whitespaces)
@@ -402,7 +499,8 @@ final class ClaudeVoice {
             let elapsed = Date().timeIntervalSince(started)
             let said = raw.map { ClaudeSpeakable.clean(LLM.stripThinking($0), language: language) } ?? ""
             await MainActor.run { [weak self] in
-                guard let self, mine == self.progressSeq, !self.isRecording(), !self.speaker.isSpeaking else { return }
+                guard let self, mine == self.progressSeq, self.queue.takesProgress, !self.speaker.isSpeaking
+                else { return }
                 guard elapsed < limit else {
                     Log.write(String(format: "claude voice: explanation took %.1fs, dropped", elapsed))
                     return
@@ -412,7 +510,7 @@ final class ClaudeVoice {
                     self.sessions[session]?.progress = Array((saidBefore + [said]).suffix(3))
                     self.sessions[session]?.opening = opening
                 }
-                self.say(said.isEmpty ? line.text : said, session: session, progress: true)
+                self.sayProgress(said.isEmpty ? line.text : said, session: session)
             }
         }
     }
@@ -446,12 +544,7 @@ final class ClaudeVoice {
                 self.lastKind = nil
                 if self.sessions[session]?.language == nil { self.sessions[session]?.language = spoken.language }
                 if let task = spoken.task { self.sessions[session]?.label = task }
-                self.whenFree { [weak self] in
-                    guard let self else { return }
-                    // Progress lines give way; another session's answer keeps its place.
-                    self.speaker.dropProgress()
-                    self.say(spoken.text, session: session, tone: spoken.tone)
-                }
+                self.enqueue(spoken.text, session: session, tone: spoken.tone)
             }
         }
     }
@@ -523,18 +616,6 @@ final class ClaudeVoice {
         } catch {
             Log.write("claude voice: rewrite failed, saying it plain — \(error.localizedDescription)")
             return fallback
-        }
-    }
-
-    /// Holds a line until the dictation in progress is over.
-    private func whenFree(_ action: @escaping () -> Void, waited: TimeInterval = 0) {
-        guard isRecording() else { return action() }
-        guard waited < 600 else {
-            Log.write("claude voice: dropped an answer — still dictating after 10 minutes")
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.whenFree(action, waited: waited + 0.5)
         }
     }
 
@@ -865,34 +946,40 @@ final class ClaudeVoice {
         }
     }
 
-    private func say(_ text: String, session: String, progress: Bool = false, tone: String? = nil) {
+    /// What goes before a line: the session's name when it needs one, and
+    /// what the session is about after a while away.
+    private func opening(for session: String) -> String {
         let introduced = prefix(for: session)
-        var line = introduced + text
-        // Coming back to a session after a while: what it is about, first.
+        var lead = introduced
         let away = sessions[session]?.heard.map { Date().timeIntervalSince($0) } ?? .infinity
         if !introduced.isEmpty, lastSpokenSession != session, away >= 90,
            let reminder = sessions[session]?.reminder {
-            line = introduced + reminder + " " + text
+            lead = introduced + reminder + " "
         }
         if sessions[session]?.reminder == nil { remindFromTranscript(session) }
         sessions[session]?.heard = Date()
         lastSpokenSession = session
         lastSpokenAt = Date()
+        return ClaudeSpeakable.spokenRedacted(lead)
+    }
+
+    private func style(for session: String, progress: Bool, tone: String?) -> (style: Speaker.Style?, local: String?) {
         // The local voices speak English only.
         let english = (sessions[session]?.language ?? "en") == "en"
-        let local = speaker.remote == nil || (progress && settings.progressLocal && english)
-        let style = local ? nil : Speaker.Style(
-            voice: voice(for: session),
-            tone: tone ?? ClaudeSpeakable.instructions(
-                base: settings.speechTone, shift: progress ? "quick, like a passing remark" : nil
-            )
-        )
-        // Every line passes here: answers said plain when the rewrite fails, progress and notifications.
-        line = ClaudeSpeakable.spokenRedacted(line)
+        guard speaker.remote != nil, !(progress && settings.progressLocal && english) else {
+            return (nil, localVoice(for: session))
+        }
+        let shift = progress ? "quick, like a passing remark" : nil
+        return (Speaker.Style(voice: voice(for: session),
+                              tone: tone ?? ClaudeSpeakable.instructions(base: settings.speechTone, shift: shift)), nil)
+    }
+
+    private func sayProgress(_ text: String, session: String) {
+        let line = opening(for: session) + ClaudeSpeakable.spokenRedacted(text)
         // Whole, so scripts/tone-play.sh can replay it.
         Log.write("claude voice: said: \(line.prefix(800))")
-        speaker.say(line, style: style, session: session, progress: progress,
-                    localVoice: local ? localVoice(for: session) : nil)
+        let voice = style(for: session, progress: true, tone: nil)
+        speaker.say(line, style: voice.style, session: session, progress: true, localVoice: voice.local)
     }
 }
 

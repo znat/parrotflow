@@ -1858,6 +1858,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // from the original key-down would put a minute of reading
                     // into a measurement of the microphone.
                     self.pressedAt = Date()
+                    // The hold from the press ended while the dialog was open.
+                    self.claudeVoice.silence()
                     self.startRecording()
                     self.startPushToTalkPollIfHeld()
                 } else {

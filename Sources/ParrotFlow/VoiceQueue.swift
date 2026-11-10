@@ -65,13 +65,16 @@ struct VoiceQueue {
         return playing
     }
 
-    /// `stoppedAt`: the sentence that was playing, an index into `sentences`.
-    /// Nil when no sound had started, so the answer resumes where it last began.
+    /// Progress lines are said only when no answer plays and nothing holds the voice.
+    var takesProgress: Bool { holds.isEmpty && playing == nil }
+
+    /// `stoppedAt`: the sentence that was playing, counted in `remaining`, as Speaker
+    /// counts the line it was given. Nil when no sound had started.
     mutating func hold(_ cause: Hold, stoppedAt sentence: Int? = nil) {
         holds.insert(cause)
         played = 0
         guard var entry = playing else { return }
-        if let sentence { entry.resume = min(max(sentence, 0), entry.sentences.count - 1) }
+        if let sentence { entry.resume = min(entry.resume + max(sentence, 0), entry.sentences.count - 1) }
         waiting.insert(entry, at: 0)
         playing = nil
     }
@@ -90,10 +93,17 @@ struct VoiceQueue {
         played = waiting.isEmpty ? 0 : played + 1
     }
 
-    /// A new prompt in `session`: its answers, waiting or playing, are stale.
-    mutating func drop(session: String) {
+    /// A new prompt in `session`: its answers, waiting or playing, are stale. Returns how many.
+    @discardableResult
+    mutating func drop(session: String) -> Int {
+        let before = waiting.count
         waiting.removeAll { $0.session == session }
-        if playing?.session == session { playing = nil }
+        var dropped = before - waiting.count
+        if playing?.session == session {
+            playing = nil
+            dropped += 1
+        }
         if playing == nil, waiting.isEmpty { played = 0 }
+        return dropped
     }
 }
