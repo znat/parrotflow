@@ -34,6 +34,8 @@ final class Speaker {
     var onSpeakingSession: ((String?) -> Void)?
     /// The output's loudness (RMS), on the main queue, about 45 times a second.
     var onLevel: ((Float) -> Void)?
+    /// A line that `say` returned has left: played, dropped, or none of it could be made. Not called after `stop`.
+    var onLineDone: ((Int) -> Void)?
 
     var isSpeaking: Bool { !scheduled.isEmpty || !ready.isEmpty || !lines.isEmpty || synthesizing }
     private(set) var speakingSession: String? {
@@ -55,10 +57,13 @@ final class Speaker {
         /// The local voice for this line, when the session has its own.
         var localVoice: String?
         var sentences: [String]
+        /// The next sentence to make.
+        var next = 0
     }
     private struct Chunk {
         var seq: Int
         var line: Int
+        var sentence: Int
         var session: String
         var progress: Bool
         var samples: [Float]
@@ -71,10 +76,12 @@ final class Speaker {
     private var scheduled: [Chunk] = []
     private var nextChunk = 0
     /// The sentence being made, so a drop that lands meanwhile still applies.
-    private var inFlight: (line: Int, session: String, progress: Bool)?
+    private var inFlight: (line: Int, sentence: Int, session: String, progress: Bool)?
     private var inFlightDropped = false
     private var lastPlayed: (session: String, ended: Date)?
     private var nextLine = 0
+    /// Lines said and not yet reported to `onLineDone`.
+    private var open: Set<Int> = []
     /// Bumped by `stop()`, so work started before it drops its result.
     private var generation = 0
     private var synthesizing = false
@@ -95,20 +102,44 @@ final class Speaker {
         }
     }
 
+    @discardableResult
     func say(
         _ text: String, style: Style? = nil, session: String = "", progress: Bool = false, localVoice: String? = nil
-    ) {
-        let parts = ClaudeSpeakable.sentences(ClaudeSpeakable.speakable(text))
-        guard !parts.isEmpty else { return }
-        nextLine += 1
-        lines.append(Line(id: nextLine, session: session, progress: progress, style: style, localVoice: localVoice,
-                          sentences: parts))
-        if !synthesizing { synthesize(generation) }
+    ) -> Int? {
+        say(sentences: ClaudeSpeakable.sentences(ClaudeSpeakable.speakable(text)), style: style, session: session,
+            progress: progress, localVoice: localVoice)
     }
 
-    /// Everything, now: the hotkey.
+    /// Already split, so a sentence index means the same to the caller.
+    @discardableResult
+    func say(
+        sentences: [String], style: Style? = nil, session: String = "", progress: Bool = false,
+        localVoice: String? = nil
+    ) -> Int? {
+        guard !sentences.isEmpty else { return nil }
+        nextLine += 1
+        lines.append(Line(id: nextLine, session: session, progress: progress, style: style, localVoice: localVoice,
+                          sentences: sentences))
+        open.insert(nextLine)
+        if !synthesizing { synthesize(generation) }
+        return nextLine
+    }
+
+    /// Stops everything, now. Returns the line that was playing and the first
+    /// of its sentences not heard in full: the one playing, else the one being
+    /// made. Nil when nothing was said.
+    func pause() -> (line: Int, sentence: Int)? {
+        let at = scheduled.first.map { ($0.line, $0.sentence) }
+            ?? inFlight.flatMap { inFlightDropped ? nil : ($0.line, $0.sentence) }
+            ?? lines.first.map { ($0.id, $0.next) }
+        stop()
+        return at
+    }
+
+    /// Everything, now.
     func stop() {
         generation += 1
+        open.removeAll()
         lines.removeAll()
         ready.removeAll()
         synthesizing = false
@@ -183,17 +214,18 @@ final class Speaker {
         synthesizing = true
         Task { @MainActor in
             while started == generation, let line = lines.first {
-                let sentence = line.sentences[0]
-                if lines[0].sentences.count > 1 { lines[0].sentences.removeFirst() } else { lines.removeFirst() }
-                inFlight = (line.id, line.session, line.progress)
+                let index = line.next
+                let sentence = line.sentences[index]
+                if index + 1 < line.sentences.count { lines[0].next += 1 } else { lines.removeFirst() }
+                inFlight = (line.id, index, line.session, line.progress)
                 inFlightDropped = false
                 await make(sentence, style: line.style, localVoice: line.localVoice) { [weak self] samples in
                     guard let self, started == self.generation, !self.inFlightDropped, !samples.isEmpty else {
                         return false
                     }
                     self.nextChunk += 1
-                    self.ready.append(Chunk(seq: self.nextChunk, line: line.id, session: line.session,
-                                            progress: line.progress, samples: samples))
+                    self.ready.append(Chunk(seq: self.nextChunk, line: line.id, sentence: index,
+                                            session: line.session, progress: line.progress, samples: samples))
                     self.pump()
                     return true
                 }
@@ -341,6 +373,12 @@ final class Speaker {
     }
 
     private func finishIfIdle() {
+        // Before the idle check, so a line said from `onLineDone` keeps the voice busy.
+        let live = Set(lines.map(\.id) + ready.map(\.line) + scheduled.map(\.line)
+                       + (inFlightDropped ? [] : [inFlight?.line].compactMap { $0 }))
+        let done = open.subtracting(live)
+        open.formIntersection(live)
+        done.sorted().forEach { onLineDone?($0) }
         guard !isSpeaking else {
             // Silent while another session's line is made: nobody is heard, so the glow goes.
             if scheduled.isEmpty, let session = speakingSession, !hasMore(session) { speakingSession = nil }
