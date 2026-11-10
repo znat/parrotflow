@@ -86,12 +86,13 @@ final class ClaudeVoice {
 
     /// Set by the app: the voice is held from hotkey down until this is false.
     var isRecording: () -> Bool = { false }
-    /// Set by the app: the name of the session speaking out of sight, or nil to take it away.
-    var onPill: (String?) -> Void = { _ in }
+    /// Set by the app: what the pill says about the voice, or nil to take it away. Sent on
+    /// every change, and each second while there is something to say.
+    var onVoicePill: (VoicePill?) -> Void = { _ in }
 
     private let speaker = Speaker()
     /// Answers, notifications and questions. Progress lines are said or dropped, never queued.
-    private var queue = VoiceQueue()
+    private var queue = VoiceQueue() { didSet { pillSoon() } }
     /// The Speaker line saying `queue.playing`.
     private var answerLine: Int?
     private var dictationWatch: Timer?
@@ -121,8 +122,10 @@ final class ClaudeVoice {
     private var lastIntroduction: Int?
     /// The session the pill names.
     private var pillSession: String?
-    /// Clicked: not named again until it stops speaking.
+    /// Gone to: no "Go to session" for it until it stops speaking.
     private var pillDismissed: String?
+    private var pill: VoicePill?
+    private var pillQueued = false
     private var pillCheck: Timer?
     private var pillLinger: DispatchWorkItem?
     /// The opening the last answer used, across sessions: answers are heard in a row.
@@ -183,10 +186,7 @@ final class ClaudeVoice {
         speaker.localPlacement = PocketTtsModelPlacement(rawValue: settings.localPlacement) ?? .gpu
         frame.color = ContextIdentity.nsColor(config.feedback.primaryColor)
         if !settings.frame { frame.hide(now: true) }
-        speaker.onSpeakingSession = { [weak self] id in
-            self?.frameSession(id)
-            self?.pillFor(id)
-        }
+        speaker.onSpeakingSession = { [weak self] id in self?.frameSession(id) }
         speaker.onLevel = { [weak self] rms in self?.frame.level(rms) }
         speaker.onLineDone = { [weak self] line in self?.lineDone(line) }
         if settings.enabled, listener == nil {
@@ -263,9 +263,12 @@ final class ClaudeVoice {
     /// The Pause button: every session waits until `resume`.
     func pause() {
         hold(.user)
+        Log.write("claude voice: paused, \(queue.waiting.count) waiting")
     }
 
     func resume() {
+        guard queue.holds.contains(.user) else { return }
+        Log.write("claude voice: resumed, \(queue.waiting.count) waiting")
         release(.user)
     }
 
@@ -738,37 +741,59 @@ final class ClaudeVoice {
         frame.show(window: guess, host: host, rect: sessions[id]?.rect)
     }
 
-    /// The pill names a session that speaks out of sight. Checked each second, so a
-    /// window brought to the front takes it away, and it comes back after a dictation.
-    private func pillFor(_ id: String?) {
-        pillCheck?.invalidate()
-        pillCheck = nil
-        pillLinger?.cancel()
-        guard let id else {
-            pillDismissed = nil
-            let work = DispatchWorkItem { [weak self] in self?.showPill(nil) }
+    /// Once the queue settles: finishing one answer and starting the next is one change.
+    private func pillSoon() {
+        guard !pillQueued else { return }
+        pillQueued = true
+        DispatchQueue.main.async { [weak self] in
+            self?.pillQueued = false
+            self?.updatePill()
+        }
+    }
+
+    /// Also each second, so "Go to session" follows the window, and the pill comes back
+    /// after a dictation took it.
+    private func updatePill() {
+        let id = queue.playing?.session
+        if id == nil || id != pillSession { pillDismissed = nil }
+        if let id { pillSession = id }
+        let state = VoicePill.of(
+            queue, name: id.flatMap(pillName),
+            goToSession: id.map { $0 != pillDismissed && host(of: $0) != nil && !watching($0) } ?? false
+        )
+        if state == nil, case .speaking = pill {
+            // Between two answers it stays.
+            guard pillLinger == nil else { return }
+            let work = DispatchWorkItem { [weak self] in
+                self?.pillLinger = nil
+                self?.showPill(nil)
+            }
             pillLinger = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: work)
             return
         }
-        if id != pillDismissed { pillDismissed = nil }
-        checkPill(id)
-        pillCheck = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.checkPill(id) }
+        pillLinger?.cancel()
+        pillLinger = nil
+        showPill(state)
     }
 
-    private func checkPill(_ id: String) {
-        guard id != pillDismissed, host(of: id) != nil, !watching(id), let session = sessions[id],
-              let name = ClaudeSpeakable.sessionName(
-                  project: session.project,
-                  task: session.label ?? ClaudeSpeakable.taskWords(session.task, skipping: session.project))
-        else { return showPill(nil) }
-        showPill(id, name: name)
+    private func pillName(_ id: String) -> String? {
+        guard let session = sessions[id] else { return nil }
+        return ClaudeSpeakable.sessionName(
+            project: session.project,
+            task: session.label ?? ClaudeSpeakable.taskWords(session.task, skipping: session.project))
     }
 
-    private func showPill(_ id: String?, name: String? = nil) {
-        if let id, id != pillSession, let name { Log.write("claude voice: pill names \(name)") }
-        pillSession = id
-        onPill(id == nil ? nil : name)
+    private func showPill(_ state: VoicePill?) {
+        if state != pill { Log.write("claude voice: pill \(state?.summary ?? "gone")") }
+        pill = state
+        onVoicePill(state)
+        if state == nil {
+            pillCheck?.invalidate()
+            pillCheck = nil
+        } else if pillCheck == nil {
+            pillCheck = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.updatePill() }
+        }
     }
 
     /// A click on the pill: the session's app comes to the front with its window
@@ -776,7 +801,7 @@ final class ClaudeVoice {
     func goToPillSession() {
         guard let id = pillSession else { return }
         pillDismissed = id
-        showPill(nil)
+        updatePill()
         guard let host = host(of: id), let app = NSRunningApplication(processIdentifier: host) else { return }
         if let element = sessions[id]?.window, let window = SpeakingFrame.window(of: element) {
             AXUIElementPerformAction(window, kAXRaiseAction as CFString)

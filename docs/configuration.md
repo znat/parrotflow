@@ -1634,15 +1634,21 @@ URL query strings. An
   project's root folder into the title, so a session started in a subfolder
   is not found. mini runs in the foreground of its terminal, so it is framed
   like Claude, from its own process.
-- **Which session, on screen:** while a session speaks and its
-  window is not in front, the pill names it: the project folder and two or
+- **Which session, on screen:** while an answer, a notification or a
+  question plays, the pill names its session: the project folder and two or
   three words about the task, like "parrotflow · fixing the glow". The words
   come from the same model call that writes the answer; before the first
-  answer, they are the first words of the request. "Go to session" brings its
-  app to the front and raises its window; tabs in one window cannot be told
-  apart, so the window comes up. The pill goes away a moment after the voice
-  stops. A dictation always takes the pill; it comes back while the session
-  still speaks. Under tmux there is no app to go to, and no pill.
+  answer, they are the first words of the request. Progress lines do not
+  raise the pill. Next to the name, "2 waiting" counts the lines queued
+  behind it. After a pause or a dictation, the list plays as a run and the
+  pill says "1 of 3" instead. **Pause** holds the voice for every session;
+  the pill then says "Voice paused", counts what waits, and stays until you
+  press **Resume**. "Go to session" shows only while the session's window is
+  not in front. It brings its app to the front and raises its window; tabs in
+  one window cannot be told apart, so the window comes up. The pill goes away
+  a moment after the voice stops. A dictation always takes the pill; it comes
+  back when the dictation is over. Under tmux there is no app to go to, so
+  there is no "Go to session".
 
 Pressing the hotkey holds the voice. The answer it was saying goes back to
 the front of the list, and answers that arrive while you dictate join the
