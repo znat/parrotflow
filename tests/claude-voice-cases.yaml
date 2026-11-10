@@ -630,3 +630,160 @@ session_names:
   - name: nothing to name shows nothing
     project: ""
     prompt: "ok"
+
+# VoiceQueue: each case runs its steps on an empty queue and reads the state
+# after. An entry shows as session:sentence it starts from.
+queue:
+  - name: a pause mid-answer puts it in front, at the sentence it stopped on
+    steps:
+      - {op: add, session: a, text: "One. Two. Three."}
+      - {op: add, session: b, text: "Four."}
+      - {op: next}
+      - {op: hold, hold: user, at: 1}
+    want: "waiting a:Two., b:Four. | held user"
+  - name: new answers go last, while one plays and while paused
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: add, session: b, text: "Two."}
+      - {op: hold, hold: user, at: 0}
+      - {op: add, session: c, text: "Three."}
+    want: "waiting a:One., b:Two., c:Three. | held user"
+  - name: the end of a dictation resumes the answer it held
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: next}
+      - {op: hold, hold: dictation, at: 1}
+      - {op: next}
+      - {op: release, hold: dictation}
+      - {op: next}
+    want: "playing a:Two. 1 of 1"
+  - name: the end of a dictation while paused stays paused
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: next}
+      - {op: hold, hold: user, at: 1}
+      - {op: hold, hold: dictation}
+      - {op: release, hold: dictation}
+      - {op: next}
+    want: "waiting a:Two. | held user"
+  - name: pausing twice is one pause
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: hold, hold: user}
+      - {op: hold, hold: user}
+      - {op: release, hold: user}
+      - {op: next}
+    want: "playing a:One. 1 of 1"
+  - name: a hold before any sound keeps the sentence it resumed from
+    steps:
+      - {op: add, session: a, text: "One. Two. Three."}
+      - {op: next}
+      - {op: hold, hold: user, at: 1}
+      - {op: release, hold: user}
+      - {op: next}
+      - {op: hold, hold: dictation}
+    want: "waiting a:Two. | held dictation"
+  - name: a sentence past the end resumes at the last one
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: next}
+      - {op: hold, hold: user, at: 5}
+    want: "waiting a:Two. | held user"
+  - name: a new prompt drops only its own session's answers
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: add, session: a, text: "Three."}
+      - {op: add, session: c, text: "Four."}
+      - {op: next}
+      - {op: hold, hold: user, at: 0}
+      - {op: drop, session: a}
+    want: "waiting b:Two., c:Four. | held user"
+  - name: a new prompt stops its session's answer playing, the next one starts
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: drop, session: a}
+      - {op: next}
+    want: "playing b:Two. 1 of 1"
+  - name: another session's new prompt leaves the playing answer alone
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: drop, session: b}
+    want: "playing a:One. 1 of 1"
+  - name: resume plays the list oldest first, across sessions
+    steps:
+      - {op: add, session: a, text: "A one. A two."}
+      - {op: add, session: b, text: "B one."}
+      - {op: next}
+      - {op: hold, hold: user, at: 1}
+      - {op: add, session: c, text: "C one."}
+      - {op: release, hold: user}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+    want: "playing b:B one. 2 of 3 | waiting c:C one. | heard a:A one."
+  - name: an answer added while the list plays makes the run longer
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+      - {op: add, session: c, text: "Three."}
+      - {op: next}
+    want: "playing b:Two. 2 of 3 | waiting c:Three. | heard a:One."
+  - name: after a pause, the run counts from one again
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+      - {op: hold, hold: user, at: 0}
+      - {op: release, hold: user}
+      - {op: next}
+    want: "playing b:Two. 1 of 1 | heard a:One."
+  - name: a new answer after the list ran out counts from one
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: finish}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+    want: "playing b:Two. 1 of 1 | heard a:One."
+  - name: a late finish for an answer that was held is ignored
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: next}
+      - {op: hold, hold: dictation, at: 1}
+      - {op: finish, id: 1}
+    want: "waiting a:Two. | held dictation"
+  - name: a late finish for a dropped answer leaves the next one playing
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: drop, session: a}
+      - {op: next}
+      - {op: finish, id: 1}
+    want: "playing b:Two. 1 of 1"
+  - name: an answer with nothing to say is not queued
+    steps:
+      - {op: add, session: a, text: "  "}
+      - {op: next}
+    want: "empty"
+  - name: the last 10 answers heard are kept, newest first
+    steps: [
+      {op: add, session: a, text: One.}, {op: add, session: a, text: Two.}, {op: add, session: a, text: Three.},
+      {op: add, session: a, text: Four.}, {op: add, session: a, text: Five.}, {op: add, session: a, text: Six.},
+      {op: add, session: a, text: Seven.}, {op: add, session: a, text: Eight.}, {op: add, session: a, text: Nine.},
+      {op: add, session: a, text: Ten.}, {op: add, session: b, text: Eleven.},
+      {op: next}, {op: finish}, {op: next}, {op: finish}, {op: next}, {op: finish}, {op: next}, {op: finish},
+      {op: next}, {op: finish}, {op: next}, {op: finish}, {op: next}, {op: finish}, {op: next}, {op: finish},
+      {op: next}, {op: finish}, {op: next}, {op: finish}, {op: next}, {op: finish}]
+    want: "heard b:Eleven., a:Ten., a:Nine., a:Eight., a:Seven., a:Six., a:Five., a:Four., a:Three., a:Two."

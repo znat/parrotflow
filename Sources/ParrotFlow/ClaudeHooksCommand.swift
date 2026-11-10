@@ -338,9 +338,17 @@ enum ClaudeHooksCommand {
         var waiting: [Progress] = []
         var codexTurns: [CodexTurn] = []
         var sessionNames: [SessionName] = []
+        struct Queue: Decodable { var name: String; var steps: [QueueStep]; var want: String }
+        struct QueueStep: Decodable {
+            enum Operation: String, Decodable { case add, next, hold, release, finish, drop }
+            var op: Operation; var session: String?; var text: String?; var hold: VoiceQueue.Hold?; var at: Int?
+            var id: Int?
+        }
+        var queue: [Queue] = []
 
         enum CodingKeys: String, CodingKey {
             case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary, waiting, titles
+            case queue
             case codexTurns = "codex_turns"
             case sessionNames = "session_names"
         }
@@ -362,7 +370,34 @@ enum ClaudeHooksCommand {
             waiting = try c.decodeIfPresent([Progress].self, forKey: .waiting) ?? []
             codexTurns = try c.decodeIfPresent([CodexTurn].self, forKey: .codexTurns) ?? []
             sessionNames = try c.decodeIfPresent([SessionName].self, forKey: .sessionNames) ?? []
+            queue = try c.decodeIfPresent([Queue].self, forKey: .queue) ?? []
         }
+    }
+
+    /// The queue after `steps`, in one line: "playing a:Two. 1 of 2 | waiting b:One. | held user | heard c:One.".
+    /// An entry shows its session and the sentence it starts from.
+    static func replay(_ steps: [Cases.QueueStep]) -> String {
+        var queue = VoiceQueue()
+        for step in steps {
+            switch step.op {
+            case .add: queue.add(session: step.session ?? "", text: step.text ?? "")
+            case .next: _ = queue.startNext()
+            case .hold, .release:
+                guard let cause = step.hold else { return "a \(step.op.rawValue) step needs hold:" }
+                if step.op == .hold { queue.hold(cause, stoppedAt: step.at) } else { queue.release(cause) }
+            case .finish: if let id = step.id ?? queue.playing?.id { queue.finish(id) }
+            case .drop: queue.drop(session: step.session ?? "")
+            }
+        }
+        func entry(_ entry: VoiceQueue.Entry) -> String { entry.session + ":" + (entry.remaining.first ?? "") }
+        var parts: [String] = []
+        if let playing = queue.playing, let place = queue.place {
+            parts.append("playing \(entry(playing)) \(place.position) of \(place.count)")
+        }
+        if !queue.waiting.isEmpty { parts.append("waiting " + queue.waiting.map(entry).joined(separator: ", ")) }
+        if !queue.holds.isEmpty { parts.append("held " + queue.holds.map(\.rawValue).sorted().joined(separator: ", ")) }
+        if !queue.heard.isEmpty { parts.append("heard " + queue.heard.map(entry).joined(separator: ", ")) }
+        return parts.isEmpty ? "empty" : parts.joined(separator: " | ")
     }
 
     static func test(cases path: String) -> Int32 {
@@ -425,6 +460,9 @@ enum ClaudeHooksCommand {
         }
         for item in cases.capped {
             check(item.name, got: ClaudeSpeakable.capped(item.input), want: item.want)
+        }
+        for item in cases.queue {
+            check(item.name, got: replay(item.steps), want: item.want)
         }
         for item in cases.redacted {
             check(item.name, got: ClaudeSpeakable.redacted(item.input), want: item.want)
@@ -1049,3 +1087,5 @@ enum ClaudeHooksCommand {
         return data
     }
 }
+
+extension VoiceQueue.Hold: Decodable {}
