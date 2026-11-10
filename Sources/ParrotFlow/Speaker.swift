@@ -36,6 +36,8 @@ final class Speaker {
     var onLevel: ((Float) -> Void)?
     /// A line that `say` returned has left: played, dropped, or none of it could be made. Not called after `stop`.
     var onLineDone: ((Int) -> Void)?
+    /// A sentence made whole for a line `say` returned: the line, the sentence's index in it, its samples.
+    var onSentence: ((Int, Int, [Float]) -> Void)?
 
     var isSpeaking: Bool { !scheduled.isEmpty || !ready.isEmpty || !lines.isEmpty || synthesizing }
     private(set) var speakingSession: String? {
@@ -57,6 +59,8 @@ final class Speaker {
         /// The local voice for this line, when the session has its own.
         var localVoice: String?
         var sentences: [String]
+        /// Made before, one per sentence: played as it is, no voice called.
+        var audio: [[Float]]?
         /// The next sentence to make.
         var next = 0
     }
@@ -110,16 +114,17 @@ final class Speaker {
             progress: progress, localVoice: localVoice)
     }
 
-    /// Already split, so a sentence index means the same to the caller.
+    /// Already split, so a sentence index means the same to the caller. `audio`, one per sentence, plays
+    /// instead of making them.
     @discardableResult
     func say(
         sentences: [String], style: Style? = nil, session: String = "", progress: Bool = false,
-        localVoice: String? = nil
+        localVoice: String? = nil, audio: [[Float]]? = nil
     ) -> Int? {
         guard !sentences.isEmpty else { return nil }
         nextLine += 1
         lines.append(Line(id: nextLine, session: session, progress: progress, style: style, localVoice: localVoice,
-                          sentences: sentences))
+                          sentences: sentences, audio: audio?.count == sentences.count ? audio : nil))
         open.insert(nextLine)
         if !synthesizing { synthesize(generation) }
         return nextLine
@@ -219,15 +224,21 @@ final class Speaker {
                 if index + 1 < line.sentences.count { lines[0].next += 1 } else { lines.removeFirst() }
                 inFlight = (line.id, index, line.session, line.progress)
                 inFlightDropped = false
-                await make(sentence, style: line.style, localVoice: line.localVoice) { [weak self] samples in
-                    guard let self, started == self.generation, !self.inFlightDropped, !samples.isEmpty else {
-                        return false
-                    }
+                var made: [Float] = []
+                let emit: @MainActor ([Float]) -> Bool = { samples in
+                    guard started == self.generation, !self.inFlightDropped, !samples.isEmpty else { return false }
+                    made += samples
                     self.nextChunk += 1
                     self.ready.append(Chunk(seq: self.nextChunk, line: line.id, sentence: index,
                                             session: line.session, progress: line.progress, samples: samples))
                     self.pump()
                     return true
+                }
+                if let audio = line.audio {
+                    _ = emit(audio[index])
+                } else if await make(sentence, style: line.style, localVoice: line.localVoice, emit: emit),
+                          started == generation, !inFlightDropped, !made.isEmpty {
+                    onSentence?(line.id, index, made)
                 }
                 guard started == generation else { return }
                 inFlight = nil
@@ -240,10 +251,10 @@ final class Speaker {
     }
 
     /// Hands the sentence's audio to `emit`, in pieces as they are made.
-    /// `emit` says false once the line is dropped.
+    /// `emit` says false once the line is dropped. False when the sentence was not made whole.
     @MainActor private func make(
         _ sentence: String, style: Style?, localVoice lineVoice: String?, emit: @escaping @MainActor ([Float]) -> Bool
-    ) async {
+    ) async -> Bool {
         if let remote, let style {
             // A stream that breaks after its first piece would be said twice
             // if PocketTTS took the whole sentence.
@@ -259,11 +270,11 @@ final class Speaker {
                 Log.write(String(format: "claude voice: %@ (%@) first sound %.2fs, %d chars in %.2fs, %@ at %d Hz",
                                  remote.name, style.voice, timing.firstAudio, sentence.count, timing.total,
                                  timing.contentType, timing.rate))
-                return
+                return true
             } catch where started {
                 Log.write("claude voice: \(remote.name) stopped part way, the rest is skipped — "
                     + error.localizedDescription)
-                return
+                return false
             } catch {
                 Log.write("claude voice: \(remote.name) failed, PocketTTS takes this one — "
                     + error.localizedDescription)
@@ -306,14 +317,16 @@ final class Speaker {
                 Log.write(String(format: "claude voice: PocketTTS (%@, %@) did not finish \"%@\" in %.0fs, skipped",
                                  speaking, localPlacement.rawValue, String(sentence.prefix(60)), limit))
                 pocket = nil
-                return
+                return false
             }
             Log.write(String(format: "claude voice: PocketTTS (%@, %@) first sound %.2fs, %d chars in %.2fs",
                              speaking, localPlacement.rawValue, first ?? Date().timeIntervalSince(begun),
                              sentence.count,
                              Date().timeIntervalSince(begun)))
+            return true
         } catch {
             Log.write("claude voice: PocketTTS failed on \"\(sentence.prefix(60))\" — \(error.localizedDescription)")
+            return false
         }
     }
 

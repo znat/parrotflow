@@ -1077,6 +1077,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch action {
         case .pause(let choice): claudeVoice.pause(VoicePause(choice, now: Date()), by: cause)
         case .resume: claudeVoice.resume(by: cause)
+        case .play(let id): claudeVoice.play(id)
+        case .goTo(let session): claudeVoice.goTo(session)
         }
     }
 
@@ -7722,8 +7724,33 @@ extension AppDelegate: NSMenuDelegate {
             Self.hideAutomaticImage(item)
             voiceItems.append(item)
         }
+        voiceItems.append(answersItem())
         let at = menu.index(of: voiceSeparator)
         for (offset, item) in voiceItems.enumerated() { menu.insertItem(item, at: at + offset) }
+    }
+
+    /// Each row's actions in a submenu of its own: a row with a submenu cannot be clicked.
+    private func answersItem() -> NSMenuItem {
+        let (title, rows) = claudeVoice.answersMenu()
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        Self.hideAutomaticImage(item)
+        guard !rows.isEmpty else { return item }
+        let menu = NSMenu()
+        for row in rows {
+            if row.separated { menu.addItem(.separator()) }
+            let entry = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
+            entry.subtitle = row.said
+            entry.submenu = NSMenu()
+            for (title, action) in row.actions {
+                let choice = NSMenuItem(title: title, action: #selector(voiceMenuAction(_:)), keyEquivalent: "")
+                choice.target = self
+                choice.representedObject = action
+                entry.submenu?.addItem(choice)
+            }
+            menu.addItem(entry)
+        }
+        item.submenu = menu
+        return item
     }
 
     /// Display only: the global hotkey does the work, and swallows the key before the menu sees it.

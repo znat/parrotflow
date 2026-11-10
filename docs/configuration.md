@@ -1694,6 +1694,31 @@ between calls; set `pause_during_calls: false` if one does. The log says
 `claude voice: call started (Zoom), held` and `claude voice: call over (Zoom),
 3 waiting`.
 
+### Answers
+
+The Voice section's **Answers** submenu lists the answers waiting, in the
+order they will play, then the last 10 heard, newest first. Its title counts
+the waiting ones: "Answers · 3 waiting". Each row says the session, how long
+ago the answer came, and how it starts. The answer playing now is in neither
+list.
+
+A row's own submenu has **Play now** for a waiting answer, **Play again** for
+a heard one, and **Go to session** when its window is known. Either one plays
+at once, in the voice and tone it had, without the session's name first. The
+answer it cuts off goes back to the front at its sentence and goes on after.
+It plays through a pause or a call, and the pause stays on after. A dictation
+holds it like any answer; it goes on after the dictation. Pause, or a call
+starting, stops it, and it waits at the front like any held answer. A replay
+leaves the heard list as it was.
+
+ParrotFlow keeps the audio of each answer it said in one go, up to about
+30 MB in all, in memory only. A replay of one plays that audio: no new call to
+the remote voice. Past 30 MB, the oldest answers lose their audio. An answer
+that was held part way, or one a voice failed on, has none; its replay is made
+again, and that new audio is kept. The log says `claude voice: replay
+parrotflow (cached)`, `claude voice: replay parrotflow (made again)` or
+`claude voice: play now parrotflow`.
+
 Pressing the hotkey holds the voice. The answer it was saying goes back to
 the front of the list, and answers that arrive while you dictate join the
 end. When the dictation is over, the list plays in order, and the held answer

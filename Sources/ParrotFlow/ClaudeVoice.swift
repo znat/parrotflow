@@ -108,6 +108,8 @@ final class ClaudeVoice {
     var heldCount: Int { queue.holds.isDisjoint(with: [.user, .call]) ? 0 : queue.waiting.count }
     /// The Speaker line saying `queue.playing`.
     private var answerLine: Int?
+    /// Its sentences as they are made, when it is said from the start with no audio kept.
+    private var take: [[Float]?]?
     private var dictationWatch: Timer?
     private let frame = SpeakingFrame()
     private var settings = Config.Voice()
@@ -202,6 +204,10 @@ final class ClaudeVoice {
         speaker.onSpeakingSession = { [weak self] id in self?.frameSession(id) }
         speaker.onLevel = { [weak self] rms in self?.frame.level(rms) }
         speaker.onLineDone = { [weak self] line in self?.lineDone(line) }
+        speaker.onSentence = { [weak self] line, sentence, samples in
+            guard let self, line == self.answerLine, self.take?.indices.contains(sentence) == true else { return }
+            self.take?[sentence] = samples
+        }
         if settings.enabled, listener == nil {
             listener = SocketListener(path: Self.socketURL.path) { [weak self] data in
                 Task { @MainActor in self?.receive(data) }
@@ -334,7 +340,7 @@ final class ClaudeVoice {
         paused = pause
         if callApp == nil { call = nil }
         UserDefaults.standard.set(pause.stored, forKey: Self.pausedKey)
-        if !queue.holds.contains(.user) { hold(.user) }
+        if !queue.holds.contains(.user) || queue.playing != nil { hold(.user) }
         armPauseEnd()
         Log.write("claude voice: paused \(pause.phrase(now: Date())) (\(cause)), \(queue.waiting.count) waiting")
     }
@@ -384,6 +390,7 @@ final class ClaudeVoice {
         let playing = queue.playing
         queue.hold(cause, stoppedAt: stopped?.line == answerLine ? stopped?.sentence : nil)
         answerLine = nil
+        take = nil
         if let playing, let held = queue.waiting.first {
             Log.write("claude voice: held (\(cause.rawValue)), \(project(of: playing.session)) back in front "
                 + "at sentence \(held.resume + 1) of \(held.sentences.count)")
@@ -412,12 +419,12 @@ final class ClaudeVoice {
 
     /// Says the next answer when none plays and nothing holds the voice. The
     /// session's name goes on a line of its own, so it never shifts the
-    /// sentence a held answer resumes from.
+    /// sentence a held answer resumes from. An answer asked for from the menu has none.
     private func playNext() {
         guard let entry = queue.startNext() else { return }
         // Progress lines give way; another session's answer keeps its place.
         speaker.dropProgress()
-        let lead = opening(for: entry.session)
+        let lead = entry.asked ? "" : opening(for: entry.session)
         if entry.resume > 0 {
             Log.write("claude voice: resumed \(project(of: entry.session)) at sentence \(entry.resume + 1) "
                 + "of \(entry.sentences.count)")
@@ -425,15 +432,38 @@ final class ClaudeVoice {
         // Whole, so scripts/tone-play.sh can replay it.
         Log.write("claude voice: said: \((lead + entry.remaining.joined(separator: " ")).prefix(800))")
         speaker.say(lead, style: entry.style, session: entry.session, localVoice: entry.localVoice)
+        take = entry.audio == nil && entry.resume == 0 ? Array(repeating: nil, count: entry.sentences.count) : nil
         answerLine = speaker.say(sentences: entry.remaining, style: entry.style, session: entry.session,
-                                 localVoice: entry.localVoice)
+                                 localVoice: entry.localVoice, audio: entry.audio.map { Array($0[entry.resume...]) })
     }
 
     private func lineDone(_ line: Int) {
         guard line == answerLine else { return }
         answerLine = nil
-        if let id = queue.playing?.id { queue.finish(id) }
+        let audio = take?.allSatisfy { $0 != nil } == true ? take?.compactMap { $0 } : nil
+        take = nil
+        if let id = queue.playing?.id { queue.finish(id, audio: audio) }
         playNext()
+    }
+
+    /// The menu's Play again and Play now: says `id` at once, then what was playing goes on.
+    func play(_ id: Int) {
+        guard settings.enabled, let entry = queue.entry(id) else { return }
+        let heard = queue.heard.contains { $0.id == id }
+        let stopped = speaker.pause()
+        queue.ask(id, stoppedAt: stopped?.line == answerLine ? stopped?.sentence : nil)
+        answerLine = nil
+        take = nil
+        Log.write("claude voice: " + (heard ? "replay \(project(of: entry.session)) "
+            + (entry.audio == nil ? "(made again)" : "(cached)") : "play now \(project(of: entry.session))"))
+        playNext()
+    }
+
+    /// Go to session only where a window is known.
+    func answersMenu(now: Date = Date()) -> (title: String, rows: [AnswersMenu.Row]) {
+        (AnswersMenu.title(queue),
+         AnswersMenu.rows(queue, name: { self.pillName($0) ?? self.project(of: $0) },
+                          known: { self.host(of: $0) != nil }, now: now))
     }
 
     private func project(of session: String) -> String {
@@ -911,6 +941,10 @@ final class ClaudeVoice {
         guard let id = pillSession else { return }
         pillDismissed = id
         updatePill()
+        goTo(id)
+    }
+
+    func goTo(_ id: String) {
         guard let host = host(of: id), let app = NSRunningApplication(processIdentifier: host) else { return }
         if let element = sessions[id]?.window, let window = SpeakingFrame.window(of: element) {
             AXUIElementPerformAction(window, kAXRaiseAction as CFString)
