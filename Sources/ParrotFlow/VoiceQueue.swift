@@ -39,6 +39,8 @@ struct VoiceQueue {
     private var lastID = 0
     /// Answers finished since the list started playing, for "2 of 3".
     private var played = 0
+    /// The run playing now began when a hold let go of a list.
+    private(set) var resumed = false
 
     /// The playing answer's place in the run, and the run's length so far.
     var place: (position: Int, count: Int)? {
@@ -73,6 +75,7 @@ struct VoiceQueue {
     mutating func hold(_ cause: Hold, stoppedAt sentence: Int? = nil) {
         holds.insert(cause)
         played = 0
+        resumed = false
         guard var entry = playing else { return }
         if let sentence { entry.resume = min(entry.resume + max(sentence, 0), entry.sentences.count - 1) }
         waiting.insert(entry, at: 0)
@@ -81,6 +84,7 @@ struct VoiceQueue {
 
     mutating func release(_ cause: Hold) {
         holds.remove(cause)
+        if !waiting.isEmpty { resumed = true }
     }
 
     /// Ignored unless `id` is the one playing: a late callback for a held answer.
@@ -91,6 +95,7 @@ struct VoiceQueue {
         if heard.count > Self.heardLimit { heard.removeLast(heard.count - Self.heardLimit) }
         playing = nil
         played = waiting.isEmpty ? 0 : played + 1
+        if waiting.isEmpty { resumed = false }
     }
 
     /// A new prompt in `session`: its answers, waiting or playing, are stale. Returns how many.
@@ -103,7 +108,44 @@ struct VoiceQueue {
             playing = nil
             dropped += 1
         }
-        if playing == nil, waiting.isEmpty { played = 0 }
+        if playing == nil, waiting.isEmpty {
+            played = 0
+            resumed = false
+        }
         return dropped
+    }
+}
+
+/// What the pill says about the voice.
+enum VoicePill: Equatable {
+    /// `status` is "2 waiting", "1 of 3" or nil.
+    case speaking(name: String, status: String?, goToSession: Bool)
+    case paused(waiting: Int)
+
+    /// A dictation hold alone shows nothing: the recording pill has the screen.
+    /// `name` is the playing session's; nil shows nothing.
+    static func of(_ queue: VoiceQueue, name: String?, goToSession: Bool) -> VoicePill? {
+        if queue.holds.contains(.user) { return .paused(waiting: queue.waiting.count) }
+        guard queue.holds.isEmpty, queue.playing != nil, let name else { return nil }
+        let status: String?
+        if queue.resumed, let place = queue.place, place.count > 1 {
+            status = "\(place.position) of \(place.count)"
+        } else {
+            status = waiting(queue.waiting.count)
+        }
+        return .speaking(name: name, status: status, goToSession: goToSession)
+    }
+
+    /// None when nothing waits.
+    static func waiting(_ count: Int) -> String? { count > 0 ? "\(count) waiting" : nil }
+
+    /// For the log and the test cases: "speaking a · 2 waiting · go to session", "paused · 3 waiting".
+    var summary: String {
+        switch self {
+        case .speaking(let name, let status, let goTo):
+            return (["speaking " + name, status] + [goTo ? "go to session" : nil]).compactMap { $0 }.joined(separator: " · ")
+        case .paused(let waiting):
+            return "paused · \(waiting) waiting"
+        }
     }
 }

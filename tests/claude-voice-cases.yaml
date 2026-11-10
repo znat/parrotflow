@@ -831,3 +831,112 @@ queue:
       {op: next}, {op: finish}, {op: next}, {op: finish}, {op: next}, {op: finish}, {op: next}, {op: finish},
       {op: next}, {op: finish}, {op: next}, {op: finish}, {op: next}, {op: finish}]
     want: "heard b:Eleven., a:Ten., a:Nine., a:Eight., a:Seven., a:Six., a:Five., a:Four., a:Three., a:Two."
+
+# What the pill says after the steps. The playing session's key stands for its name.
+pill:
+  - name: nothing plays, nothing shows
+    steps:
+      - {op: add, session: a, text: "One."}
+    want: "nothing"
+  - name: one answer alone has no status
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+    want: "speaking a"
+  - name: answers behind it are counted as waiting
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: add, session: c, text: "Three."}
+      - {op: next}
+    want: "speaking a · 2 waiting"
+  - name: out of sight, it offers to go to the session
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+    out_of_sight: true
+    want: "speaking a · go to session"
+  - name: after a resume, the list counts its place
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: add, session: b, text: "Three."}
+      - {op: add, session: c, text: "Four."}
+      - {op: next}
+      - {op: hold, hold: user, at: 1}
+      - {op: release, hold: user}
+      - {op: next}
+    want: "speaking a · 1 of 3"
+  - name: the place moves on as the list plays
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: add, session: c, text: "Three."}
+      - {op: next}
+      - {op: hold, hold: user, at: 0}
+      - {op: release, hold: user}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+    out_of_sight: true
+    want: "speaking b · 2 of 3 · go to session"
+  - name: after a dictation, the list counts its place too
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: hold, hold: dictation, at: 0}
+      - {op: add, session: b, text: "Two."}
+      - {op: release, hold: dictation}
+      - {op: next}
+    want: "speaking a · 1 of 2"
+  - name: a held answer that plays alone after a dictation has no status
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: next}
+      - {op: hold, hold: dictation, at: 1}
+      - {op: release, hold: dictation}
+      - {op: next}
+    want: "speaking a"
+  - name: once the resumed list ran out, a new answer counts as waiting again
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: hold, hold: user, at: 0}
+      - {op: release, hold: user}
+      - {op: next}
+      - {op: finish}
+      - {op: add, session: b, text: "Two."}
+      - {op: add, session: c, text: "Three."}
+      - {op: next}
+    want: "speaking b · 1 waiting"
+  - name: a dictation alone shows nothing
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: hold, hold: dictation, at: 0}
+    want: "nothing"
+  - name: pause shows how many wait, the held answer among them
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: add, session: b, text: "Three."}
+      - {op: next}
+      - {op: hold, hold: user, at: 1}
+      - {op: add, session: c, text: "Four."}
+    want: "paused · 3 waiting"
+  - name: pause with nothing waiting
+    steps:
+      - {op: hold, hold: user}
+    want: "paused · 0 waiting"
+  - name: pause wins over a dictation
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: hold, hold: user}
+      - {op: hold, hold: dictation}
+      - {op: release, hold: dictation}
+    want: "paused · 1 waiting"
+  - name: a new prompt while paused takes its answers off the count
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: hold, hold: user}
+      - {op: drop, session: a}
+    want: "paused · 1 waiting"
