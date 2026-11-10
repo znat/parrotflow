@@ -511,6 +511,7 @@ final class ClaudeVoice {
             if speaker.speakingSession == id { Log.write("claude voice: stopped by a new prompt") }
             let dropped = queue.drop(session: id)
             if dropped > 0 { Log.write("claude voice: a new prompt dropped \(dropped) of \(project(of: id))'s lines") }
+            if call == .over, queue.waiting.isEmpty { resume(by: "call over, nothing left") }
             speaker.stop(session: id)
             playNext()
         case "PreToolUse":

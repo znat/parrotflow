@@ -5,8 +5,8 @@ import CoreAudio
 struct MicUser: Equatable {
     var pid: pid_t
     var bundle: String
-    /// The app it belongs to: "Zoom is using the mic".
-    var name: String
+    /// The app it belongs to: "Zoom is using the mic". Nil for a system service.
+    var name: String?
 }
 
 /// Whether another app is on a call, from the processes with the microphone open.
@@ -35,9 +35,14 @@ enum CallState: Equatable {
         }
     }
 
-    /// Another copy of ParrotFlow dictating is not a call.
+    /// Services with no app that carry calls.
+    static let callServices = ["com.apple.avconferenced": "FaceTime"]
+
+    /// Another copy of ParrotFlow dictating is not a call. Nor is a system service, like Siri
+    /// or dictation listening in com.apple.CoreSpeech.
     static func caller(_ users: [MicUser], ourPid: pid_t) -> String? {
-        users.first { $0.pid != ourPid && !$0.bundle.hasPrefix("com.parrotflow.") }?.name
+        users.lazy.filter { $0.pid != ourPid && !$0.bundle.hasPrefix("com.parrotflow.") }
+            .compactMap { $0.name ?? callServices[$0.bundle] }.first
     }
 
     func step(_ users: [MicUser], ourPid: pid_t, now: Date) -> (CallState, Event?) {
@@ -122,7 +127,7 @@ final class CallWatch {
                  Self.read("" as CFString, id, kAudioProcessPropertyBundleID) as String)
             }
             DispatchQueue.main.async {
-                self.decide(found.map { MicUser(pid: $0, bundle: $1, name: Self.name(pid: $0, bundle: $1)) })
+                self.decide(found.map { MicUser(pid: $0, bundle: $1, name: Self.name(pid: $0)) })
             }
         }
     }
@@ -144,8 +149,9 @@ final class CallWatch {
 
     /// The app a process belongs to: the first ancestor with a Dock icon. Chrome and
     /// Teams take the mic in a helper. WebKit's GPU process, Safari's, is a child of
-    /// launchd and calls itself "Safari Graphics and Media".
-    static func name(pid: pid_t, bundle: String) -> String {
+    /// launchd and calls itself "Safari Graphics and Media". Nil for a daemon, or a
+    /// background-only app like SiriNCService.
+    static func name(pid: pid_t) -> String? {
         var ancestor = pid
         for _ in 0..<8 where ancestor > 1 {
             if let app = NSRunningApplication(processIdentifier: ancestor), app.activationPolicy == .regular,
@@ -155,12 +161,9 @@ final class CallWatch {
             guard proc_pidinfo(ancestor, PROC_PIDTBSDINFO, 0, &info, size) == size else { break }
             ancestor = pid_t(info.pbi_ppid)
         }
-        if let name = NSRunningApplication(processIdentifier: pid)?.localizedName {
-            return name.replacingOccurrences(of: " Graphics and Media", with: "")
-        }
-        // FaceTime's calls run in this daemon.
-        if bundle == "com.apple.avconferenced" { return "FaceTime" }
-        return bundle.isEmpty ? "another app" : bundle
+        guard let app = NSRunningApplication(processIdentifier: pid), app.activationPolicy != .prohibited,
+              let name = app.localizedName else { return nil }
+        return name.replacingOccurrences(of: " Graphics and Media", with: "")
     }
 
     private static func address(_ selector: AudioObjectPropertySelector) -> AudioObjectPropertyAddress {

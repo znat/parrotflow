@@ -141,6 +141,7 @@ enum VoicePill: Equatable {
     static func of(_ queue: VoiceQueue, name: String?, goToSession: Bool, call: VoiceCall? = nil) -> VoicePill? {
         if queue.holds.contains(.user) {
             switch call {
+            case .over? where queue.waiting.isEmpty: return nil
             case .over?: return .callOver(waiting: queue.waiting.count)
             case .dismissed?: return nil
             case .on?, nil: return .paused(waiting: queue.waiting.count)

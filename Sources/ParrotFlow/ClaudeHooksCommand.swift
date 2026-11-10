@@ -447,7 +447,7 @@ enum ClaudeHooksCommand {
         var state = CallState.idle
         var said: [String] = []
         for look in item.steps {
-            let users = look.mic.map { MicUser(pid: $0.pid ?? 100, bundle: $0.bundle ?? "", name: $0.name ?? "") }
+            let users = look.mic.map { MicUser(pid: $0.pid ?? 100, bundle: $0.bundle ?? "", name: $0.name) }
             let (next, event) = state.step(users, ourPid: 1, now: start + look.at)
             state = next
             let at = String(format: "%gs ", look.at)

@@ -957,7 +957,6 @@ pill:
       - {op: hold, hold: user}
       - {op: drop, session: a}
     want: "paused · 1 waiting"
-# The Voice menu's pauses. Times are local to America/Toronto; labels in en_GB unless `locale:` says.
   - name: held by a call, the pill names the app
     steps:
       - {op: add, session: a, text: "One."}
@@ -992,7 +991,15 @@ pill:
       - {op: hold, hold: user}
     call: dismissed
     want: "nothing"
+  - name: after the call, a new prompt dropped the only line, no pill
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: hold, hold: user}
+      - {op: drop, session: a}
+    call: over
+    want: "nothing"
 
+# The Voice menu's pauses. Times are local to America/Toronto; labels in en_GB unless `locale:` says.
 pause_until:
   - name: until tomorrow, after 8:00, is tomorrow 8:00
     now: "2026-11-10 15:42"
@@ -1150,3 +1157,18 @@ calls:
       - {at: 0, mic: [{pid: 1, bundle: com.parrotflow.app, name: ParrotFlow}, {name: Microsoft Teams}]}
       - {at: 3, mic: [{pid: 1, bundle: com.parrotflow.app, name: ParrotFlow}, {name: Microsoft Teams}]}
     want: "3s call started (Microsoft Teams)"
+  - name: Siri or dictation listening is not a call
+    steps:
+      - {at: 0, mic: [{bundle: com.apple.CoreSpeech}]}
+      - {at: 30, mic: [{bundle: com.apple.CoreSpeech}]}
+    want: "nothing"
+  - name: FaceTime's call service is a call
+    steps:
+      - {at: 0, mic: [{bundle: com.apple.avconferenced}]}
+      - {at: 2, mic: [{bundle: com.apple.avconferenced}]}
+    want: "2s call started (FaceTime)"
+  - name: a system service beside a call app names the app
+    steps:
+      - {at: 0, mic: [{bundle: com.apple.CoreSpeech, pid: 200}, {name: Zoom}]}
+      - {at: 2, mic: [{bundle: com.apple.CoreSpeech, pid: 200}, {name: Zoom}]}
+    want: "2s call started (Zoom)"
