@@ -586,12 +586,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the pill's own window, which costs as much again.
         pill.warm()
         claudeVoice.isRecording = { [weak self] in self?.recorder.isRecording ?? false }
-        claudeVoice.onPill = { [weak self] name in
-            guard let self, name == nil || !(self.recorder.isRecording || self.runsInFlight > 0 || self.offerIsUp)
+        claudeVoice.onVoicePill = { [weak self] state in
+            guard let self, state == nil || !(self.recorder.isRecording || self.runsInFlight > 0 || self.offerIsUp)
             else { return }
-            self.pill.session(name)
+            self.pill.voice(state)
         }
         pill.model.onGoToSession = { [weak self] in self?.claudeVoice.goToPillSession() }
+        pill.model.onPauseVoice = { [weak self] in self?.claudeVoice.pause() }
+        pill.model.onResumeVoice = { [weak self] in self?.claudeVoice.resume() }
         recorder.onLevel = { [weak self] level in
             self?.pill.model.level = level
         }

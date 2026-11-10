@@ -345,10 +345,16 @@ enum ClaudeHooksCommand {
             var id: Int?
         }
         var queue: [Queue] = []
+        /// The pill after `steps`. The playing session's key is its name.
+        struct Pill: Decodable {
+            var name: String; var steps: [QueueStep]; var outOfSight: Bool?; var want: String
+            enum CodingKeys: String, CodingKey { case name, steps, want, outOfSight = "out_of_sight" }
+        }
+        var pill: [Pill] = []
 
         enum CodingKeys: String, CodingKey {
             case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary, waiting, titles
-            case queue
+            case queue, pill
             case codexTurns = "codex_turns"
             case sessionNames = "session_names"
         }
@@ -371,6 +377,7 @@ enum ClaudeHooksCommand {
             codexTurns = try c.decodeIfPresent([CodexTurn].self, forKey: .codexTurns) ?? []
             sessionNames = try c.decodeIfPresent([SessionName].self, forKey: .sessionNames) ?? []
             queue = try c.decodeIfPresent([Queue].self, forKey: .queue) ?? []
+            pill = try c.decodeIfPresent([Pill].self, forKey: .pill) ?? []
         }
     }
 
@@ -378,20 +385,8 @@ enum ClaudeHooksCommand {
     /// An entry shows its session and the sentence it starts from. A `progress` step adds "progress said" or
     /// "progress dropped", for a progress line that came then.
     static func replay(_ steps: [Cases.QueueStep]) -> String {
-        var queue = VoiceQueue()
-        var progress: [String] = []
-        for step in steps {
-            switch step.op {
-            case .add: queue.add(session: step.session ?? "", text: step.text ?? "")
-            case .next: _ = queue.startNext()
-            case .hold, .release:
-                guard let cause = step.hold else { return "a \(step.op.rawValue) step needs hold:" }
-                if step.op == .hold { queue.hold(cause, stoppedAt: step.at) } else { queue.release(cause) }
-            case .finish: if let id = step.id ?? queue.playing?.id { queue.finish(id) }
-            case .drop: queue.drop(session: step.session ?? "")
-            case .progress: progress.append(queue.takesProgress ? "progress said" : "progress dropped")
-            }
-        }
+        let (queue, progress, problem) = play(steps)
+        if let problem { return problem }
         func entry(_ entry: VoiceQueue.Entry) -> String { entry.session + ":" + (entry.remaining.first ?? "") }
         var parts: [String] = []
         if let playing = queue.playing, let place = queue.place {
@@ -402,6 +397,32 @@ enum ClaudeHooksCommand {
         if !queue.heard.isEmpty { parts.append("heard " + queue.heard.map(entry).joined(separator: ", ")) }
         parts += progress
         return parts.isEmpty ? "empty" : parts.joined(separator: " | ")
+    }
+
+    /// What the pill says after `steps`, as `VoicePill.summary`, or "nothing".
+    static func pill(_ item: Cases.Pill) -> String {
+        let (queue, _, problem) = play(item.steps)
+        if let problem { return problem }
+        let pill = VoicePill.of(queue, name: queue.playing?.session, goToSession: item.outOfSight ?? false)
+        return pill?.summary ?? "nothing"
+    }
+
+    private static func play(_ steps: [Cases.QueueStep]) -> (VoiceQueue, [String], String?) {
+        var queue = VoiceQueue()
+        var progress: [String] = []
+        for step in steps {
+            switch step.op {
+            case .add: queue.add(session: step.session ?? "", text: step.text ?? "")
+            case .next: _ = queue.startNext()
+            case .hold, .release:
+                guard let cause = step.hold else { return (queue, progress, "a \(step.op.rawValue) step needs hold:") }
+                if step.op == .hold { queue.hold(cause, stoppedAt: step.at) } else { queue.release(cause) }
+            case .finish: if let id = step.id ?? queue.playing?.id { queue.finish(id) }
+            case .drop: queue.drop(session: step.session ?? "")
+            case .progress: progress.append(queue.takesProgress ? "progress said" : "progress dropped")
+            }
+        }
+        return (queue, progress, nil)
     }
 
     static func test(cases path: String) -> Int32 {
@@ -467,6 +488,9 @@ enum ClaudeHooksCommand {
         }
         for item in cases.queue {
             check(item.name, got: replay(item.steps), want: item.want)
+        }
+        for item in cases.pill {
+            check(item.name, got: pill(item), want: item.want)
         }
         for item in cases.redacted {
             check(item.name, got: ClaudeSpeakable.redacted(item.input), want: item.want)
