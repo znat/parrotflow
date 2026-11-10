@@ -690,6 +690,50 @@ queue:
       - {op: next}
       - {op: hold, hold: user, at: 5}
     want: "waiting a:Two. | held user"
+  - name: a second hold counts from the sentence the answer resumed at
+    steps:
+      - {op: add, session: a, text: "One. Two. Three. Four."}
+      - {op: next}
+      - {op: hold, hold: dictation, at: 1}
+      - {op: release, hold: dictation}
+      - {op: next}
+      - {op: hold, hold: dictation, at: 1}
+    want: "waiting a:Three. | held dictation"
+  - name: an answer that comes during a dictation plays when it ends
+    steps:
+      - {op: hold, hold: dictation}
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: release, hold: dictation}
+      - {op: next}
+    want: "playing a:One. 1 of 1"
+  - name: a progress line is said when the voice is free
+    steps:
+      - {op: progress}
+    want: "progress said"
+  - name: a progress line during a dictation is dropped, not kept for later
+    steps:
+      - {op: hold, hold: dictation}
+      - {op: progress}
+      - {op: release, hold: dictation}
+    want: "progress dropped"
+  - name: a progress line while an answer plays is dropped
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: progress}
+    want: "playing a:One. 1 of 1 | progress dropped"
+  - name: a progress line is said again once the held list has played
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: hold, hold: user, at: 0}
+      - {op: progress}
+      - {op: release, hold: user}
+      - {op: next}
+      - {op: finish}
+      - {op: progress}
+    want: "heard a:One. | progress dropped | progress said"
   - name: a new prompt drops only its own session's answers
     steps:
       - {op: add, session: a, text: "One."}

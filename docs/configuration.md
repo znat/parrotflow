@@ -1644,8 +1644,12 @@ URL query strings. An
   stops. A dictation always takes the pill; it comes back while the session
   still speaks. Under tmux there is no app to go to, and no pill.
 
-Pressing the hotkey or sending a new prompt in that session stops the voice.
-An answer that arrives while you dictate waits until you stop. The voice on
+Pressing the hotkey holds the voice. The answer it was saying goes back to
+the front of the list, and answers that arrive while you dictate join the
+end. When the dictation is over, the list plays in order, and the held answer
+picks up at the sentence it stopped on. Progress lines that come during a
+dictation are dropped. A new prompt in a session drops that session's
+answers and stops its voice; other sessions keep their place. The voice on
 this Mac is PocketTTS, through FluidAudio. It downloads on first use, streams
 each sentence, and speaks English only. `voice` and `local` chose Kokoro,
 which is gone; `--check-config` names them so you can delete the lines.

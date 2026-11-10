@@ -340,7 +340,7 @@ enum ClaudeHooksCommand {
         var sessionNames: [SessionName] = []
         struct Queue: Decodable { var name: String; var steps: [QueueStep]; var want: String }
         struct QueueStep: Decodable {
-            enum Operation: String, Decodable { case add, next, hold, release, finish, drop }
+            enum Operation: String, Decodable { case add, next, hold, release, finish, drop, progress }
             var op: Operation; var session: String?; var text: String?; var hold: VoiceQueue.Hold?; var at: Int?
             var id: Int?
         }
@@ -375,9 +375,11 @@ enum ClaudeHooksCommand {
     }
 
     /// The queue after `steps`, in one line: "playing a:Two. 1 of 2 | waiting b:One. | held user | heard c:One.".
-    /// An entry shows its session and the sentence it starts from.
+    /// An entry shows its session and the sentence it starts from. A `progress` step adds "progress said" or
+    /// "progress dropped", for a progress line that came then.
     static func replay(_ steps: [Cases.QueueStep]) -> String {
         var queue = VoiceQueue()
+        var progress: [String] = []
         for step in steps {
             switch step.op {
             case .add: queue.add(session: step.session ?? "", text: step.text ?? "")
@@ -387,6 +389,7 @@ enum ClaudeHooksCommand {
                 if step.op == .hold { queue.hold(cause, stoppedAt: step.at) } else { queue.release(cause) }
             case .finish: if let id = step.id ?? queue.playing?.id { queue.finish(id) }
             case .drop: queue.drop(session: step.session ?? "")
+            case .progress: progress.append(queue.takesProgress ? "progress said" : "progress dropped")
             }
         }
         func entry(_ entry: VoiceQueue.Entry) -> String { entry.session + ":" + (entry.remaining.first ?? "") }
@@ -397,6 +400,7 @@ enum ClaudeHooksCommand {
         if !queue.waiting.isEmpty { parts.append("waiting " + queue.waiting.map(entry).joined(separator: ", ")) }
         if !queue.holds.isEmpty { parts.append("held " + queue.holds.map(\.rawValue).sorted().joined(separator: ", ")) }
         if !queue.heard.isEmpty { parts.append("heard " + queue.heard.map(entry).joined(separator: ", ")) }
+        parts += progress
         return parts.isEmpty ? "empty" : parts.joined(separator: " | ")
     }
 
