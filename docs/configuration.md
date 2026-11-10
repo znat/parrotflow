@@ -1670,8 +1670,9 @@ was closed is over at launch. Turning the voice off and on again keeps it too.
 default. It takes the same `key` and `modifiers` as `hotkey`, with at least
 one modifier and no bare modifier key. `none` turns it off. The menu shows it
 beside the item it does. Registered only while the voice is on. When macOS
-refuses it, because another app holds that combo, the log says
-`claude voice: pause shortcut ⌃⌥P not registered` and the menu still works.
+refuses it, the log says `claude voice: pause shortcut ⌃⌥P not registered`
+and the menu still works. macOS does not refuse a combo another app already
+holds, so pick one no other app uses. The dev and release builds share ⌃⌥P.
 The log says each change: `claude voice: paused until 16:42 (menu)`,
 `claude voice: resumed (shortcut)`, `claude voice: pause ended at 16:42`.
 
