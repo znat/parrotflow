@@ -351,10 +351,23 @@ enum ClaudeHooksCommand {
             enum CodingKeys: String, CodingKey { case name, steps, want, outOfSight = "out_of_sight" }
         }
         var pill: [Pill] = []
+        /// Times are "yyyy-MM-dd HH:mm" in `Pause.zone`. `paused` and `saved` take a time or "until resumed";
+        /// left out, not paused.
+        struct Pause: Decodable {
+            static let zone = "America/Toronto"
+            var name: String; var now: String; var choose: VoicePause.Choice?; var paused: String?; var saved: String?
+            var waiting: Int?; var locale: String?; var want: String
+        }
+        var pauseUntil: [Pause] = []
+        var pauseRestored: [Pause] = []
+        var pauseMenu: [Pause] = []
 
         enum CodingKeys: String, CodingKey {
             case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary, waiting, titles
             case queue, pill
+            case pauseUntil = "pause_until"
+            case pauseRestored = "pause_restored"
+            case pauseMenu = "pause_menu"
             case codexTurns = "codex_turns"
             case sessionNames = "session_names"
         }
@@ -378,6 +391,42 @@ enum ClaudeHooksCommand {
             sessionNames = try c.decodeIfPresent([SessionName].self, forKey: .sessionNames) ?? []
             queue = try c.decodeIfPresent([Queue].self, forKey: .queue) ?? []
             pill = try c.decodeIfPresent([Pill].self, forKey: .pill) ?? []
+            pauseUntil = try c.decodeIfPresent([Pause].self, forKey: .pauseUntil) ?? []
+            pauseRestored = try c.decodeIfPresent([Pause].self, forKey: .pauseRestored) ?? []
+            pauseMenu = try c.decodeIfPresent([Pause].self, forKey: .pauseMenu) ?? []
+        }
+    }
+
+    /// `pause_until`: the deadline a choice sets. `pause_restored`: what a launch starts with.
+    /// `pause_menu`: the Voice rows, a line in parentheses, the shortcut's row marked "[shortcut]".
+    enum PauseCase { case until, restored, menu }
+
+    static func pause(_ item: Cases.Pause, _ kind: PauseCase) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: Cases.Pause.zone) ?? .current
+        let locale = Locale(identifier: item.locale ?? "en_GB")
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.timeZone = calendar.timeZone
+        format.dateFormat = "yyyy-MM-dd HH:mm"
+        guard let now = format.date(from: item.now) else { return "bad now: \(item.now)" }
+        func read(_ text: String?) -> Date? {
+            text.map { $0 == "until resumed" ? .distantFuture : format.date(from: $0) ?? .distantPast }
+        }
+        switch kind {
+        case .until:
+            guard let choice = item.choose else { return "a pause_until case needs choose:" }
+            return VoicePause(choice, now: now, calendar: calendar).deadline.map(format.string) ?? "until resumed"
+        case .restored:
+            let pause = VoicePause.restored(read(item.saved), now: now)
+            return pause.map { "paused " + $0.phrase(now: now, calendar: calendar, locale: locale) } ?? "not paused"
+        case .menu:
+            let pause = read(item.paused).flatMap { VoicePause.restored($0, now: .distantPast) }
+            return VoiceMenu.rows(pause, waiting: item.waiting ?? 0, now: now, calendar: calendar, locale: locale)
+                .map { row in
+                    (row.action == nil ? "(\(row.title))" : row.title) + (row.shortcut ? " [shortcut]" : "")
+                }
+                .joined(separator: " | ")
         }
     }
 
@@ -492,6 +541,9 @@ enum ClaudeHooksCommand {
         for item in cases.pill {
             check(item.name, got: pill(item), want: item.want)
         }
+        for item in cases.pauseUntil { check(item.name, got: pause(item, .until), want: item.want) }
+        for item in cases.pauseRestored { check(item.name, got: pause(item, .restored), want: item.want) }
+        for item in cases.pauseMenu { check(item.name, got: pause(item, .menu), want: item.want) }
         for item in cases.redacted {
             check(item.name, got: ClaudeSpeakable.redacted(item.input), want: item.want)
         }

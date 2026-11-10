@@ -940,3 +940,89 @@ pill:
       - {op: hold, hold: user}
       - {op: drop, session: a}
     want: "paused · 1 waiting"
+# The Voice menu's pauses. Times are local to America/Toronto; labels in en_GB unless `locale:` says.
+pause_until:
+  - name: until tomorrow, after 8:00, is tomorrow 8:00
+    now: "2026-11-10 15:42"
+    choose: tomorrow
+    want: "2026-11-11 08:00"
+  - name: until tomorrow, before 8:00, is today 8:00
+    now: "2026-11-10 06:30"
+    choose: tomorrow
+    want: "2026-11-10 08:00"
+  - name: until tomorrow at 8:00 sharp is the next day
+    now: "2026-11-10 08:00"
+    choose: tomorrow
+    want: "2026-11-11 08:00"
+  - name: until tomorrow, a minute before 8:00, is that 8:00
+    now: "2026-11-10 07:59"
+    choose: tomorrow
+    want: "2026-11-10 08:00"
+  - name: until tomorrow over a clock change is 8:00 on the clock
+    now: "2026-03-07 22:00"
+    choose: tomorrow
+    want: "2026-03-08 08:00"
+  - name: until tomorrow on the last day of the month
+    now: "2026-12-31 23:30"
+    choose: tomorrow
+    want: "2027-01-01 08:00"
+  - name: for 1 hour
+    now: "2026-11-10 15:42"
+    choose: hour
+    want: "2026-11-10 16:42"
+  - name: until I resume has no deadline
+    now: "2026-11-10 15:42"
+    choose: until_resumed
+    want: "until resumed"
+pause_restored:
+  - name: a launch before the deadline starts paused
+    now: "2026-11-10 15:00"
+    saved: "2026-11-10 16:42"
+    want: "paused until 16:42"
+  - name: a launch the next morning, before 8:00, is still paused
+    now: "2026-11-11 07:10"
+    saved: "2026-11-11 08:00"
+    want: "paused until 08:00"
+  - name: a launch the evening before says tomorrow
+    now: "2026-11-10 23:00"
+    saved: "2026-11-11 08:00"
+    want: "paused until tomorrow 08:00"
+  - name: a launch past the deadline starts playing
+    now: "2026-11-10 17:00"
+    saved: "2026-11-10 16:42"
+    want: "not paused"
+  - name: a launch at the deadline starts playing
+    now: "2026-11-10 16:42"
+    saved: "2026-11-10 16:42"
+    want: "not paused"
+  - name: until I resume survives a launch
+    now: "2026-11-20 09:00"
+    saved: "until resumed"
+    want: "paused until I resume"
+  - name: nothing saved, not paused
+    now: "2026-11-10 15:00"
+    want: "not paused"
+pause_menu:
+  - name: not paused, the three pauses, the shortcut on the first
+    now: "2026-11-10 15:42"
+    waiting: 2
+    want: "Pause until I resume [shortcut] | Pause for 1 hour | Pause until tomorrow"
+  - name: paused for an hour says until when and how many wait
+    now: "2026-11-10 15:42"
+    paused: "2026-11-10 16:42"
+    waiting: 3
+    want: "(Paused until 16:42 · 3 waiting) | Resume [shortcut]"
+  - name: paused until tomorrow says tomorrow
+    now: "2026-11-10 15:42"
+    paused: "2026-11-11 08:00"
+    waiting: 1
+    want: "(Paused until tomorrow 08:00 · 1 waiting) | Resume [shortcut]"
+  - name: paused until I resume, with nothing waiting
+    now: "2026-11-10 15:42"
+    paused: "until resumed"
+    want: "(Paused) | Resume [shortcut]"
+  - name: the time follows the locale
+    now: "2026-11-10 15:42"
+    paused: "2026-11-10 16:42"
+    locale: en_US
+    want: "(Paused until 4:42\u202FPM) | Resume [shortcut]"  # a narrow no-break space, as macOS writes it

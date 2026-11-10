@@ -1547,6 +1547,7 @@ voice:
     Speak in a relaxed, friendly, natural tone, like a software engineer colleague
     collaborating with a teammate, speaking face to face. Clear and conversational,
     not performative.
+  pause_key: { key: p, modifiers: [control, option] }  # pause and resume; none turns it off
 ```
 
 Each session takes the first voice no active session holds, and keeps it.
@@ -1649,6 +1650,31 @@ URL query strings. An
   a moment after the voice stops. A dictation always takes the pill; it comes
   back when the dictation is over. Under tmux there is no app to go to, so
   there is no "Go to session".
+
+### Pausing the voice
+
+While the voice is on, the menu bar menu has a **Voice** section with three
+ways to pause it: **Pause until I resume**, **Pause for 1 hour** and **Pause
+until tomorrow**. Tomorrow means the next 8:00, local time: before 8:00, that
+is today's. While paused, the section says until when and how many answers
+wait, like "Paused until 15:42 · 3 waiting", and offers **Resume**. The menu
+bar icon shows the same count next to it. Answers that arrive while paused
+join the list, and the list plays in order on resume.
+
+The pill's **Pause** is the same as Pause until I resume. Resume from the
+menu, the pill or the shortcut ends any pause. Pausing again replaces the
+deadline. A pause survives a relaunch: one whose deadline passed while the app
+was closed is over at launch. Turning the voice off and on again keeps it too.
+
+`pause_key` pauses the voice until you resume, or resumes it. It is ⌃⌥P by
+default. It takes the same `key` and `modifiers` as `hotkey`, with at least
+one modifier and no bare modifier key. `none` turns it off. The menu shows it
+beside the item it does. Registered only while the voice is on. When macOS
+refuses it, the log says `claude voice: pause shortcut ⌃⌥P not registered`
+and the menu still works. macOS does not refuse a combo another app already
+holds, so pick one no other app uses. The dev and release builds share ⌃⌥P.
+The log says each change: `claude voice: paused until 16:42 (menu)`,
+`claude voice: resumed (shortcut)`, `claude voice: pause ended at 16:42`.
 
 Pressing the hotkey holds the voice. The answer it was saying goes back to
 the front of the list, and answers that arrive while you dictate join the

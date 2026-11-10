@@ -67,5 +67,31 @@ check "a reference copy no longer shipped is removed" "$([ -e "$VOICE/built-in/r
 check "the refresh leaves the rest of voice/ alone" "$(cat "$VOICE/observations.jsonl" "$VOICE/reminder.md")" \
   '{"term": "Mira"}'$'\n'"Say it in one sentence."
 
+# pause_key <value>: the check-config lines about it. No value: the key left out.
+pause_key() {
+  printf 'voice:\n  enabled: false\n' > "$WORK/config.yaml"
+  [ $# -gt 0 ] && printf '  pause_key: %s\n' "$1" >> "$WORK/config.yaml"
+  PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config </dev/null 2>/dev/null \
+    | grep -E "pause key|voice.pause_key" | sed 's/^ *//; s/  */ /g'
+}
+
+echo
+echo "voice.pause_key"
+check "the default is ⌃⌥P" "$(pause_key)" "· pause key ⌃⌥P"
+check "a key and modifiers" "$(pause_key '{ key: f13, modifiers: [cmd, shift] }')" "· pause key ⇧⌘F13"
+check "none turns it off" "$(pause_key none)" "· pause key none"
+check "an empty value turns it off" "$(pause_key '')" "· pause key none"
+check "off turns it off" "$(pause_key off)" "· pause key none"
+check "an unknown key is a problem" "$(pause_key '{ key: pp, modifiers: [control] }')" \
+  "✗ voice.pause_key: \"pp\" is not a known key name; the shortcut is off"$'\n'"· pause key none"
+check "a key with no modifier is a problem" "$(pause_key '{ key: p }')" \
+  "✗ voice.pause_key: it needs one or more of command, control, option, shift; the shortcut is off"$'\n'"· pause key none"
+check "an unknown modifier is named" "$(pause_key '{ key: p, modifiers: [control, hyper] }')" \
+  "✗ voice.pause_key: hyper is not a modifier — it needs one or more of command, control, option, shift; the shortcut is off"$'\n'"· pause key none"
+check "a bare modifier is a problem" "$(pause_key '{ key: right_option }')" \
+  "✗ voice.pause_key: \"right_option\" is a modifier alone — it needs a key; the shortcut is off"$'\n'"· pause key none"
+check "a word that is not none is a problem" "$(pause_key ctrl-p)" \
+  "✗ voice.pause_key: \"ctrl-p\" is not a shortcut — expected { key: p, modifiers: \[control, option\] } or none; the shortcut is off"$'\n'"· pause key none"
+
 printf '\n%d/%d\n' "$pass" "$total"
 [ "$cases" -eq 0 ] && [ "$pass" -eq "$total" ]

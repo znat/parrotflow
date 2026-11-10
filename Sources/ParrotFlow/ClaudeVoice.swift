@@ -93,6 +93,12 @@ final class ClaudeVoice {
     private let speaker = Speaker()
     /// Answers, notifications and questions. Progress lines are said or dropped, never queued.
     private var queue = VoiceQueue() { didSet { pillSoon() } }
+    /// Your pause. Set and cleared together with the `.user` hold.
+    private(set) var paused: VoicePause?
+    private var pauseEnd: Timer?
+    private var wakeWatch: NSObjectProtocol?
+    static let pausedKey = "voice.pausedUntil"
+    var waitingCount: Int { queue.waiting.count }
     /// The Speaker line saying `queue.playing`.
     private var answerLine: Int?
     private var dictationWatch: Timer?
@@ -193,8 +199,18 @@ final class ClaudeVoice {
             listener = SocketListener(path: Self.socketURL.path) { [weak self] data in
                 Task { @MainActor in self?.receive(data) }
             }
+            let stored = UserDefaults.standard.object(forKey: Self.pausedKey) as? Date
+            if let restored = VoicePause.restored(stored, now: Date()) {
+                pause(restored, by: "restored")
+            } else if stored != nil {
+                UserDefaults.standard.removeObject(forKey: Self.pausedKey)
+            }
         } else if !settings.enabled, listener != nil {
             listener = nil
+            // The saved pause stays: turning the voice back on restores it.
+            paused = nil
+            pauseEnd?.invalidate()
+            pauseEnd = nil
             queue = VoiceQueue()
             answerLine = nil
             dictationWatch?.invalidate()
@@ -260,16 +276,49 @@ final class ClaudeVoice {
         dictationWatch = watch
     }
 
-    /// The Pause button: every session waits until `resume`.
-    func pause() {
-        hold(.user)
-        Log.write("claude voice: paused, \(queue.waiting.count) waiting")
+    /// Every session waits until `resume` or the deadline. Pausing again replaces the deadline.
+    func pause(_ pause: VoicePause = .untilResumed, by cause: String = "pill") {
+        guard settings.enabled else { return }
+        paused = pause
+        UserDefaults.standard.set(pause.stored, forKey: Self.pausedKey)
+        if !queue.holds.contains(.user) { hold(.user) }
+        armPauseEnd()
+        Log.write("claude voice: paused \(pause.phrase(now: Date())) (\(cause)), \(queue.waiting.count) waiting")
     }
 
-    func resume() {
-        guard queue.holds.contains(.user) else { return }
-        Log.write("claude voice: resumed, \(queue.waiting.count) waiting")
+    func resume(by cause: String = "pill") {
+        guard paused != nil else { return }
+        Log.write("claude voice: resumed (\(cause)), \(queue.waiting.count) waiting")
+        endPause()
+    }
+
+    private func endPause() {
+        paused = nil
+        pauseEnd?.invalidate()
+        pauseEnd = nil
+        UserDefaults.standard.removeObject(forKey: Self.pausedKey)
         release(.user)
+    }
+
+    /// One timer to the deadline, and a look on wake: a timer does not count the time asleep.
+    private func armPauseEnd() {
+        pauseEnd?.invalidate()
+        pauseEnd = nil
+        guard let deadline = paused?.deadline else { return }
+        let timer = Timer(fire: deadline, interval: 0, repeats: false) { [weak self] _ in self?.checkPauseEnd() }
+        RunLoop.main.add(timer, forMode: .common)
+        pauseEnd = timer
+        guard wakeWatch == nil else { return }
+        wakeWatch = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.checkPauseEnd() }
+    }
+
+    private func checkPauseEnd() {
+        guard let deadline = paused?.deadline else { return }
+        guard deadline <= Date() else { return armPauseEnd() }
+        Log.write("claude voice: pause ended at \(VoicePause.time(deadline)), \(queue.waiting.count) waiting")
+        endPause()
     }
 
     private func hold(_ cause: VoiceQueue.Hold) {

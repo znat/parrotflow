@@ -70,8 +70,11 @@ final class HotKeyManager {
     private var handlerRef: EventHandlerRef?
     private let modifierMonitor = ModifierKeyMonitor()
     private let signature: OSType = 0x50_46_4C_57  // 'PFLW'
+    /// Each manager's hotkey has its own id, so two managers can share the app's event target.
+    private let id: UInt32
 
-    init() {
+    init(id: UInt32 = 1) {
+        self.id = id
         modifierMonitor.onPress = { [weak self] downAt in self?.onPress?(downAt) }
         modifierMonitor.onRelease = { [weak self] in self?.onRelease?() }
         modifierMonitor.onAbort = { [weak self] in self?.onAbort?() }
@@ -103,7 +106,7 @@ final class HotKeyManager {
 
         installHandlerIfNeeded()
 
-        let hotKeyID = EventHotKeyID(signature: signature, id: 1)
+        let hotKeyID = EventHotKeyID(signature: signature, id: id)
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(
             keyCode,
@@ -152,6 +155,15 @@ final class HotKeyManager {
             { _, event, userData -> OSStatus in
                 guard let event, let userData else { return noErr }
                 let manager = Unmanaged<HotKeyManager>.fromOpaque(userData).takeUnretainedValue()
+                var pressed = EventHotKeyID()
+                GetEventParameter(
+                    event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                    nil, MemoryLayout<EventHotKeyID>.size, nil, &pressed
+                )
+                // Not handled: the event goes on to the other manager's handler.
+                guard pressed.signature == manager.signature, pressed.id == manager.id else {
+                    return OSStatus(eventNotHandledErr)
+                }
                 let kind = GetEventKind(event)
                 let age = GetCurrentEventTime() - GetEventTime(event)
                 let downAt = (0..<1).contains(age) ? Date().addingTimeInterval(-age) : Date()
