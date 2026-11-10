@@ -26,6 +26,10 @@ struct VoiceQueue {
         let added: Date
         /// The sentence to start from: the one that was playing when it was held.
         fileprivate(set) var resume = 0
+        /// Asked for from the menu: it plays through a pause or a call, not through a dictation.
+        fileprivate(set) var asked = false
+        /// Each sentence's samples, kept for a replay. Nil when not made in one go.
+        fileprivate(set) var audio: [[Float]]?
 
         var remaining: [String] { Array(sentences[resume...]) }
     }
@@ -37,6 +41,8 @@ struct VoiceQueue {
     private(set) var heard: [Entry] = []
     private(set) var holds: Set<Hold> = []
     static let heardLimit = 10
+    /// Samples of `heard` audio kept in all: about 30 MB of Float. Past it, the oldest lose theirs.
+    var audioLimit = 7_500_000
 
     private var lastID = 0
     /// Answers finished since the list started playing, for "2 of 3".
@@ -64,9 +70,29 @@ struct VoiceQueue {
 
     /// The answer to say now: nil while held, while one plays, or when none waits.
     mutating func startNext() -> Entry? {
-        guard holds.isEmpty, playing == nil, !waiting.isEmpty else { return nil }
+        guard playing == nil, let next = waiting.first,
+              holds.isEmpty || next.asked && holds.isSubset(of: [.user, .call]) else { return nil }
         playing = waiting.removeFirst()
         return playing
+    }
+
+    func entry(_ id: Int) -> Entry? {
+        ([playing].compactMap { $0 } + waiting + heard).first { $0.id == id }
+    }
+
+    /// `id` goes first and is asked: a heard answer again from its start, or a waiting one now.
+    /// The one playing goes back in front of the rest, at `stoppedAt`. False when `id` is gone.
+    @discardableResult
+    mutating func ask(_ id: Int, stoppedAt sentence: Int? = nil) -> Bool {
+        guard entry(id) != nil else { return false }
+        putBack(stoppedAt: sentence)
+        guard var asked = waiting.first(where: { $0.id == id }) ?? heard.first(where: { $0.id == id }) else {
+            return false
+        }
+        waiting.removeAll { $0.id == id }
+        asked.asked = true
+        waiting.insert(asked, at: 0)
+        return true
     }
 
     /// Progress lines are said only when no answer plays and nothing holds the voice.
@@ -74,8 +100,14 @@ struct VoiceQueue {
 
     /// `stoppedAt`: the sentence that was playing, counted in `remaining`, as Speaker
     /// counts the line it was given. Nil when no sound had started.
+    /// A pause or a call takes back every ask: those answers wait like the others.
     mutating func hold(_ cause: Hold, stoppedAt sentence: Int? = nil) {
         holds.insert(cause)
+        putBack(stoppedAt: sentence)
+        if cause != .dictation { waiting.indices.forEach { waiting[$0].asked = false } }
+    }
+
+    private mutating func putBack(stoppedAt sentence: Int?) {
         played = 0
         resumed = false
         guard var entry = playing else { return }
@@ -89,12 +121,24 @@ struct VoiceQueue {
         if !waiting.isEmpty { resumed = true }
     }
 
-    /// Ignored unless `id` is the one playing: a late callback for a held answer.
-    mutating func finish(_ id: Int) {
+    /// Ignored unless `id` is the one playing: a late callback for a held answer. `audio`: every
+    /// sentence, made in this one go. An answer heard before keeps its place in `heard`.
+    mutating func finish(_ id: Int, audio: [[Float]]? = nil) {
         guard var entry = playing, entry.id == id else { return }
         entry.resume = 0
-        heard.insert(entry, at: 0)
-        if heard.count > Self.heardLimit { heard.removeLast(heard.count - Self.heardLimit) }
+        entry.asked = false
+        if let index = heard.firstIndex(where: { $0.id == id }) {
+            heard[index].audio = heard[index].audio ?? audio
+        } else {
+            entry.audio = entry.audio ?? audio
+            heard.insert(entry, at: 0)
+            if heard.count > Self.heardLimit { heard.removeLast(heard.count - Self.heardLimit) }
+        }
+        var kept = 0
+        for index in heard.indices {
+            let size = heard[index].audio?.reduce(0) { $0 + $1.count } ?? 0
+            if kept + size > audioLimit { heard[index].audio = nil } else { kept += size }
+        }
         playing = nil
         played = waiting.isEmpty ? 0 : played + 1
         if waiting.isEmpty { resumed = false }
@@ -138,7 +182,11 @@ enum VoicePill: Equatable {
 
     /// A dictation hold alone shows nothing: the recording pill has the screen.
     /// `name` is the playing session's; nil shows nothing. A call shows only while answers wait.
+    /// An answer asked for from the menu shows as speaking, even through a pause.
     static func of(_ queue: VoiceQueue, name: String?, goToSession: Bool, call: VoiceCall? = nil) -> VoicePill? {
+        if queue.playing?.asked == true, let name {
+            return .speaking(name: name, status: nil, goToSession: goToSession)
+        }
         if queue.holds.contains(.user) {
             switch call {
             case .over? where queue.waiting.isEmpty: return nil

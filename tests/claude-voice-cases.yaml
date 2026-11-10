@@ -849,6 +849,193 @@ queue:
       - {op: next}
     want: "waiting a:One. | held user"
 
+  - name: play again says a heard answer now, and the one playing goes back in front at its sentence
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two. Three."}
+      - {op: add, session: c, text: "Four."}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+      - {op: ask, id: 1, at: 1}
+      - {op: next}
+    want: "playing a:One. asked 1 of 3 | waiting b:Three., c:Four. | heard a:One."
+  - name: after the replay the held answer goes on, and the replayed one is not heard twice
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two. Three."}
+      - {op: add, session: c, text: "Four."}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+      - {op: ask, id: 1, at: 1}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+    want: "playing b:Three. 2 of 3 | waiting c:Four. | heard a:One."
+  - name: a replay plays through a pause
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: finish}
+      - {op: hold, hold: user}
+      - {op: ask, id: 1}
+      - {op: next}
+    want: "playing a:One. asked 1 of 2 | waiting b:Two. | held user | heard a:One."
+  - name: after a replay the pause is still on
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: finish}
+      - {op: hold, hold: user}
+      - {op: ask, id: 1}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+    want: "waiting b:Two. | held user | heard a:One."
+  - name: a replay plays through a call
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: finish}
+      - {op: hold, hold: call}
+      - {op: ask, id: 1}
+      - {op: next}
+    want: "playing a:One. asked 1 of 1 | held call | heard a:One."
+  - name: a dictation holds a replay at its sentence, and it goes on after, even paused
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: next}
+      - {op: finish}
+      - {op: hold, hold: user}
+      - {op: ask, id: 1}
+      - {op: next}
+      - {op: hold, hold: dictation, at: 1}
+      - {op: next}
+      - {op: release, hold: dictation}
+      - {op: next}
+    want: "playing a:Two. asked 1 of 1 | held user | heard a:One."
+  - name: a pause during a replay takes the ask back, and it waits like the others
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: next}
+      - {op: finish}
+      - {op: ask, id: 1}
+      - {op: next}
+      - {op: hold, hold: user, at: 1}
+      - {op: next}
+    want: "waiting a:Two. | held user | heard a:One."
+  - name: a pause while a dictation holds a replay takes the ask back too
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: finish}
+      - {op: ask, id: 1}
+      - {op: next}
+      - {op: hold, hold: dictation, at: 0}
+      - {op: hold, hold: user}
+      - {op: release, hold: dictation}
+      - {op: next}
+    want: "waiting a:One. | held user | heard a:One."
+  - name: asked again while held, it is still there once
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: next}
+      - {op: finish}
+      - {op: ask, id: 1}
+      - {op: next}
+      - {op: hold, hold: dictation, at: 1}
+      - {op: ask, id: 1}
+    want: "waiting a:Two. asked | held dictation | heard a:One."
+  - name: play now takes a waiting answer out of its place and says it first
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: add, session: c, text: "Three."}
+      - {op: next}
+      - {op: ask, id: 3, at: 0}
+      - {op: next}
+    want: "playing c:Three. asked 1 of 3 | waiting a:One., b:Two."
+  - name: once said, a waiting answer played now is heard like any other
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: add, session: c, text: "Three."}
+      - {op: next}
+      - {op: ask, id: 3, at: 0}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+    want: "playing a:One. 2 of 3 | waiting b:Two. | heard c:Three."
+  - name: play now while paused says that one only
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: hold, hold: user}
+      - {op: ask, id: 2}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+    want: "waiting a:One. | held user | heard b:Two."
+  - name: an answer no longer listed changes nothing
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: ask, id: 9, at: 0}
+    want: "playing a:One. 1 of 1"
+  - name: an answer made whole keeps its audio
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: next}
+      - {op: finish, samples: 10}
+    want: "heard a:One. audio"
+  - name: past the cap, the oldest lose their audio
+    audio_limit: 50
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: add, session: b, text: "Three."}
+      - {op: add, session: c, text: "Four."}
+      - {op: next}
+      - {op: finish, samples: 10}
+      - {op: next}
+      - {op: finish, samples: 20}
+      - {op: next}
+      - {op: finish, samples: 20}
+    want: "heard c:Four. audio, b:Three. audio, a:One."
+  - name: one answer bigger than the cap keeps none, and the older ones keep theirs
+    audio_limit: 50
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: finish, samples: 30}
+      - {op: next}
+      - {op: finish, samples: 60}
+    want: "heard b:Two., a:One. audio"
+  - name: a replay made again keeps its audio for the next one
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: finish}
+      - {op: ask, id: 1}
+      - {op: next}
+      - {op: finish, samples: 5}
+    want: "heard a:One. audio"
+  - name: a replay leaves the heard order as it was
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: finish, samples: 5}
+      - {op: next}
+      - {op: finish, samples: 5}
+      - {op: ask, id: 1}
+      - {op: next}
+      - {op: finish}
+    want: "heard b:Two. audio, a:One. audio"
+
 # What the pill says after the steps. The playing session's key stands for its name.
 pill:
   - name: nothing plays, nothing shows
@@ -998,6 +1185,80 @@ pill:
       - {op: drop, session: a}
     call: over
     want: "nothing"
+  - name: a replay under a pause shows as speaking, with no count
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: finish}
+      - {op: hold, hold: user}
+      - {op: ask, id: 1}
+      - {op: next}
+    want: "speaking a"
+  - name: once the replay is over, the pill is paused again
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: finish}
+      - {op: hold, hold: user}
+      - {op: ask, id: 1}
+      - {op: next}
+      - {op: finish}
+    want: "paused · 1 waiting"
+
+# The Answers submenu: its title, then each row as name · when · what was said [its actions].
+# Times are counted back from the steps' now; `known` are the sessions with a window.
+answers_menu:
+  - name: nothing heard, nothing waiting
+    steps: []
+    want: "Answers"
+  - name: waiting on top in play order, then heard, newest first
+    steps:
+      - {op: add, session: a, text: "One.", ago: 600}
+      - {op: next}
+      - {op: finish}
+      - {op: add, session: b, text: "Two.", ago: 300}
+      - {op: next}
+      - {op: finish}
+      - {op: hold, hold: user}
+      - {op: add, session: c, text: "Three.", ago: 120}
+      - {op: add, session: d, text: "Four.", ago: 30}
+    want: "Answers · 2 waiting > c · 2 min ago · Three. [Play now] | d · just now · Four. [Play now] | --- | b · 5 min ago · Two. [Play again] | a · 10 min ago · One. [Play again]"
+  - name: go to session only where a window is known
+    known: [a]
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+      - {op: finish}
+    want: "Answers > b · just now · Two. [Play again] | a · just now · One. [Play again, Go to session]"
+  - name: older answers say hours, yesterday, days
+    steps:
+      - {op: add, session: a, text: "One.", ago: 259200}
+      - {op: add, session: b, text: "Two.", ago: 90000}
+      - {op: add, session: c, text: "Three.", ago: 7200}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+      - {op: finish}
+      - {op: next}
+      - {op: finish}
+    want: "Answers > c · 2 h ago · Three. [Play again] | b · yesterday · Two. [Play again] | a · 3 days ago · One. [Play again]"
+  - name: a long answer is cut at a word, on one line
+    steps:
+      - {op: add, session: a, text: "The tests are green on both branches,\nand the two English cuts still fail on question marks."}
+      - {op: next}
+      - {op: finish}
+    want: "Answers > a · just now · The tests are green on both branches, and the two English… [Play again]"
+  - name: the answer playing now is in neither list
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+    want: "Answers · 1 waiting > b · just now · Two. [Play now]"
 
 # The Voice menu's pauses. Times are local to America/Toronto; labels in en_GB unless `locale:` says.
 pause_until:
