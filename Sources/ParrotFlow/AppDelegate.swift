@@ -591,7 +591,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pill.warm()
         claudeVoice.isRecording = { [weak self] in self?.recorder.isRecording ?? false }
         claudeVoice.onVoicePill = { [weak self] state in
-            self?.showWaitingCount(state)
+            self?.showWaitingCount()
             guard let self, state == nil || !(self.recorder.isRecording || self.runsInFlight > 0 || self.offerIsUp)
             else { return }
             self.pill.voice(state)
@@ -599,6 +599,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pill.model.onGoToSession = { [weak self] in self?.claudeVoice.goToPillSession() }
         pill.model.onPauseVoice = { [weak self] in self?.claudeVoice.pause() }
         pill.model.onResumeVoice = { [weak self] in self?.claudeVoice.resume() }
+        pill.model.onNotNowVoice = { [weak self] in self?.claudeVoice.notNow() }
         recorder.onLevel = { [weak self] level in
             self?.pill.model.level = level
         }
@@ -1057,7 +1058,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func registerPauseKey() {
         pauseKey.onPress = { [weak self] _ in
             guard let self else { return }
-            self.voice(VoiceMenu.toggle(self.claudeVoice.paused, call: self.claudeVoice.call), by: "shortcut")
+            self.voice(VoiceMenu.toggle(self.claudeVoice.paused, call: self.claudeVoice.callApp), by: "shortcut")
         }
         guard config.voice.enabled, let key = config.voice.pauseKey else { return pauseKey.unregister() }
         do {
@@ -1079,11 +1080,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Beside the menu bar icon, while the voice is paused and answers wait.
-    private func showWaitingCount(_ state: VoicePill?) {
+    /// Beside the menu bar icon, while a pause or a call keeps answers waiting.
+    private func showWaitingCount() {
         guard let button = statusItem?.button else { return }
-        var count = 0
-        if case .paused(let waiting) = state { count = waiting }
+        let count = claudeVoice.heldCount
         let title = count > 0 ? "\(count)" : ""
         if button.title != title { button.title = title }
     }
@@ -7709,7 +7709,7 @@ extension AppDelegate: NSMenuDelegate {
         guard config.voice.enabled else { return }
         voiceItems.append(.sectionHeader(title: "Voice"))
         let shortcut = pauseKey.binding == nil ? nil : config.voice.pauseKey
-        for row in VoiceMenu.rows(claudeVoice.paused, call: claudeVoice.call, waiting: claudeVoice.waitingCount,
+        for row in VoiceMenu.rows(claudeVoice.paused, call: claudeVoice.callApp, waiting: claudeVoice.waitingCount,
                                   now: Date()) {
             let item = NSMenuItem(title: row.title, action: row.action.map { _ in #selector(voiceMenuAction(_:)) },
                                   keyEquivalent: "")

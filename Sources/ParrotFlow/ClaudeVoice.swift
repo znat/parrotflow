@@ -100,9 +100,12 @@ final class ClaudeVoice {
     static let pausedKey = "voice.pausedUntil"
     /// While `voice.pause_during_calls` is on.
     private var callWatch: CallWatch?
-    /// The app on a call, while the `.call` hold is on.
-    private(set) var call: String?
+    private var call: VoiceCall? { didSet { pillSoon() } }
+    /// The app holding the voice, for the menu.
+    var callApp: String? { if case .on(let app)? = call { app } else { nil } }
     var waitingCount: Int { queue.waiting.count }
+    /// For the menu bar icon: answers kept by a pause or a call.
+    var heldCount: Int { queue.holds.isDisjoint(with: [.user, .call]) ? 0 : queue.waiting.count }
     /// The Speaker line saying `queue.playing`.
     private var answerLine: Int?
     private var dictationWatch: Timer?
@@ -236,7 +239,7 @@ final class ClaudeVoice {
         } else if !wanted, let watch = callWatch {
             watch.stop()
             callWatch = nil
-            if call != nil {
+            if callApp != nil {
                 call = nil
                 release(.call)
             }
@@ -249,15 +252,25 @@ final class ClaudeVoice {
         switch event {
         case .started(let app):
             Log.write("claude voice: call started (\(app)), held" + (paused == nil ? "" : ", already paused"))
-            call = app
+            call = .on(app)
             hold(.call)
         case .ended(let app):
-            guard call != nil else { return Log.write("claude voice: call over (\(app)), not held") }
+            guard callApp != nil else { return Log.write("claude voice: call over (\(app)), not held") }
             Log.write("claude voice: call over (\(app)), \(queue.waiting.count) waiting")
             call = nil
-            if paused == nil, !queue.waiting.isEmpty { pause(.untilResumed, by: "call over") }
+            if paused == nil, !queue.waiting.isEmpty {
+                pause(.untilResumed, by: "call over")
+                call = .over
+            }
             release(.call)
         }
+    }
+
+    /// The call-over pill's Not now: the voice stays paused, the pill goes.
+    func notNow() {
+        guard call == .over else { return }
+        call = .dismissed
+        Log.write("claude voice: call over, not now, \(queue.waiting.count) waiting")
     }
 
     /// The hooks follow `voice.enabled` and `voice.agents`, so nobody runs `--install-claude-hooks`.
@@ -319,6 +332,7 @@ final class ClaudeVoice {
     func pause(_ pause: VoicePause = .untilResumed, by cause: String = "pill") {
         guard settings.enabled else { return }
         paused = pause
+        if callApp == nil { call = nil }
         UserDefaults.standard.set(pause.stored, forKey: Self.pausedKey)
         if !queue.holds.contains(.user) { hold(.user) }
         armPauseEnd()
@@ -327,17 +341,17 @@ final class ClaudeVoice {
 
     /// Also lets a call's hold go: the voice plays during the call.
     func resume(by cause: String = "pill") {
-        guard paused != nil || call != nil else { return }
+        guard paused != nil || callApp != nil else { return }
         Log.write("claude voice: resumed (\(cause)), \(queue.waiting.count) waiting")
-        if call != nil {
-            call = nil
-            release(.call)
-        }
+        let held = callApp != nil
+        call = nil
+        if held { release(.call) }
         if paused != nil { endPause() }
     }
 
     private func endPause() {
         paused = nil
+        if callApp == nil { call = nil }
         pauseEnd?.invalidate()
         pauseEnd = nil
         UserDefaults.standard.removeObject(forKey: Self.pausedKey)
@@ -852,7 +866,8 @@ final class ClaudeVoice {
         if let id { pillSession = id }
         let state = VoicePill.of(
             queue, name: id.flatMap(pillName),
-            goToSession: id.map { $0 != pillDismissed && host(of: $0) != nil && !watching($0) } ?? false
+            goToSession: id.map { $0 != pillDismissed && host(of: $0) != nil && !watching($0) } ?? false,
+            call: call
         )
         if state == nil, case .speaking = pill {
             // Between two answers it stays.

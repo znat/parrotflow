@@ -958,13 +958,40 @@ pill:
       - {op: drop, session: a}
     want: "paused · 1 waiting"
 # The Voice menu's pauses. Times are local to America/Toronto; labels in en_GB unless `locale:` says.
-  - name: held by a call, the pill says paused
+  - name: held by a call, the pill names the app
     steps:
       - {op: add, session: a, text: "One."}
       - {op: next}
       - {op: hold, hold: call, at: 0}
       - {op: add, session: b, text: "Two."}
-    want: "paused · 2 waiting"
+    call: Zoom
+    want: "paused · Zoom is using the mic"
+  - name: held by a call with nothing waiting, no pill
+    steps:
+      - {op: hold, hold: call}
+    call: Zoom
+    want: "nothing"
+  - name: your own pause during a call says your pause
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: hold, hold: call}
+      - {op: hold, hold: user}
+    call: Zoom
+    want: "paused · 1 waiting"
+  - name: after the call, it asks
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: add, session: c, text: "Three."}
+      - {op: hold, hold: user}
+    call: over
+    want: "call over · 3 waiting"
+  - name: not now takes the pill away, still paused
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: hold, hold: user}
+    call: dismissed
+    want: "nothing"
 
 pause_until:
   - name: until tomorrow, after 8:00, is tomorrow 8:00

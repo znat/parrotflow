@@ -1681,10 +1681,13 @@ The log says each change: `claude voice: paused until 16:42 (menu)`,
 Teams, FaceTime or a call in the browser do. The app must keep the mic open
 for 2 seconds; the call is over once the mic has been closed for 5 seconds.
 The answer that was playing goes back to the front at its sentence, and new
-answers wait. The menu says "Paused · Zoom is using the mic" and offers
-**Resume**, which plays them during the call; that call does not hold the
-voice again. When the call ends with answers waiting, the voice stays paused
-until you resume. When nothing waits, it simply goes on. A pause of your own
+answers wait. While answers wait, the pill says "Voice paused · Zoom is using
+the mic"; the menu says it too. **Resume** plays them during the call, and
+that call does not hold the voice again. When the call ends with answers
+waiting, the voice stays paused, and the pill says "Call over · 3 waiting"
+with **Resume** and **Not now**. Not now takes the pill away; the menu and the
+shortcut still resume, and the menu bar icon still counts. When nothing
+waits, the voice simply goes on. A pause of your own
 from before the call is left as it was. ParrotFlow's own recording does not
 count, and neither does the other build's. Some apps keep the mic open
 between calls; set `pause_during_calls: false` if one does. The log says

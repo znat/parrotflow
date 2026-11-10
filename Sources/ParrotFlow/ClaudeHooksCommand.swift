@@ -345,10 +345,11 @@ enum ClaudeHooksCommand {
             var id: Int?
         }
         var queue: [Queue] = []
-        /// The pill after `steps`. The playing session's key is its name.
+        /// The pill after `steps`. The playing session's key is its name. `call`: an app on a call,
+        /// `over` or `dismissed`.
         struct Pill: Decodable {
-            var name: String; var steps: [QueueStep]; var outOfSight: Bool?; var want: String
-            enum CodingKeys: String, CodingKey { case name, steps, want, outOfSight = "out_of_sight" }
+            var name: String; var steps: [QueueStep]; var outOfSight: Bool?; var call: String?; var want: String
+            enum CodingKeys: String, CodingKey { case name, steps, call, want, outOfSight = "out_of_sight" }
         }
         var pill: [Pill] = []
         /// Times are "yyyy-MM-dd HH:mm" in `Pause.zone`. `paused` and `saved` take a time or "until resumed";
@@ -481,7 +482,8 @@ enum ClaudeHooksCommand {
     static func pill(_ item: Cases.Pill) -> String {
         let (queue, _, problem) = play(item.steps)
         if let problem { return problem }
-        let pill = VoicePill.of(queue, name: queue.playing?.session, goToSession: item.outOfSight ?? false)
+        let call: VoiceCall? = item.call.map { ["over": .over, "dismissed": .dismissed][$0] ?? .on($0) }
+        let pill = VoicePill.of(queue, name: queue.playing?.session, goToSession: item.outOfSight ?? false, call: call)
         return pill?.summary ?? "nothing"
     }
 

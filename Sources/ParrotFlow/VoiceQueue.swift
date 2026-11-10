@@ -118,16 +118,38 @@ struct VoiceQueue {
     }
 }
 
+/// What a call did to the voice.
+enum VoiceCall: Equatable {
+    /// The app holds the voice: the `.call` hold.
+    case on(String)
+    /// It ended with answers waiting. The voice stays paused, `.user`, until resumed.
+    case over
+    /// Not now: still paused, and no pill.
+    case dismissed
+}
+
 /// What the pill says about the voice.
 enum VoicePill: Equatable {
     /// `status` is "2 waiting", "1 of 3" or nil.
     case speaking(name: String, status: String?, goToSession: Bool)
     case paused(waiting: Int)
+    case call(app: String)
+    case callOver(waiting: Int)
 
     /// A dictation hold alone shows nothing: the recording pill has the screen.
-    /// `name` is the playing session's; nil shows nothing.
-    static func of(_ queue: VoiceQueue, name: String?, goToSession: Bool) -> VoicePill? {
-        if !queue.holds.isDisjoint(with: [.user, .call]) { return .paused(waiting: queue.waiting.count) }
+    /// `name` is the playing session's; nil shows nothing. A call shows only while answers wait.
+    static func of(_ queue: VoiceQueue, name: String?, goToSession: Bool, call: VoiceCall? = nil) -> VoicePill? {
+        if queue.holds.contains(.user) {
+            switch call {
+            case .over?: return .callOver(waiting: queue.waiting.count)
+            case .dismissed?: return nil
+            case .on?, nil: return .paused(waiting: queue.waiting.count)
+            }
+        }
+        if queue.holds.contains(.call) {
+            guard case .on(let app)? = call, !queue.waiting.isEmpty else { return nil }
+            return .call(app: app)
+        }
         guard queue.holds.isEmpty, queue.playing != nil, let name else { return nil }
         let status: String?
         if queue.resumed, let place = queue.place, place.count > 1 {
@@ -148,6 +170,10 @@ enum VoicePill: Equatable {
             return (["speaking " + name, status] + [goTo ? "go to session" : nil]).compactMap { $0 }.joined(separator: " · ")
         case .paused(let waiting):
             return "paused · \(waiting) waiting"
+        case .call(let app):
+            return "paused · \(app) is using the mic"
+        case .callOver(let waiting):
+            return "call over · \(waiting) waiting"
         }
     }
 }
