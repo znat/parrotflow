@@ -59,7 +59,7 @@ in the last column.
 
 | Area | What it does | Key | Cost | Default | A user might ask | More |
 |---|---|---|---|---|---|---|
-| Agent voice | Speaks what Claude Code, Codex and mini-swe-agent do, and a short version of each answer. Its three prompts are files in `voice/` you can replace. The menu bar pauses it for an hour, until tomorrow or until you resume. It pauses on its own while another app uses the mic | `voice.enabled`, `voice.agents`, `voice.local_voices`, `voice.speech`, `voice.pause_key`, `voice.pause_during_calls` | none per dictation; with a model, calls for progress lines, answers and reminders; `speech` is a request per sentence | off; `enabled: true` turns it on for Claude Code, one of six voices per session on this Mac | "Read me Codex's answers too" | settings |
+| Agent voice | Speaks what Claude Code, Codex and mini-swe-agent do, and a spoken version of each answer, as long as the answer needs. Its three prompts are files in `voice/` you can replace. The menu bar pauses it for an hour, until tomorrow or until you resume. It pauses on its own while another app uses the mic | `voice.enabled`, `voice.agents`, `voice.local_voices`, `voice.speech`, `voice.pause_key`, `voice.pause_during_calls` | none per dictation; with a model, calls for progress lines, answers and reminders; `speech` is a request per sentence | off; `enabled: true` turns it on for Claude Code, one of six voices per session on this Mac | "Read me Codex's answers too" | settings |
 
 ## Models
 

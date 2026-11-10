@@ -317,6 +317,11 @@ enum ClaudeHooksCommand {
         var turns: [Turn] = []
         var parse: [Parse] = []
         var capped: [Clean] = []
+        var ceiling: [Clean] = []
+        var tables: [Clean] = []
+        var plain: [Clean] = []
+        struct Cut: Decodable { var name: String; var input: String; var limit: Int; var want: String }
+        var headAndTail: [Cut] = []
         var redacted: [Clean] = []
         struct Naming: Decodable {
             var name: String; var otherSpokeLast: Bool; var quietFor: Double; var inFront: Bool; var named: Bool
@@ -379,7 +384,9 @@ enum ClaudeHooksCommand {
         var calls: [Call] = []
 
         enum CodingKeys: String, CodingKey {
-            case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary, waiting, titles
+            case clean, progress, turns, parse, capped, ceiling, tables, plain, redacted, naming, grounded, speakable
+            case spoken, summary, waiting, titles
+            case headAndTail = "head_and_tail"
             case queue, pill
             case answers = "answers_menu"
             case pauseUntil = "pause_until"
@@ -397,6 +404,10 @@ enum ClaudeHooksCommand {
             turns = try c.decodeIfPresent([Turn].self, forKey: .turns) ?? []
             parse = try c.decodeIfPresent([Parse].self, forKey: .parse) ?? []
             capped = try c.decodeIfPresent([Clean].self, forKey: .capped) ?? []
+            ceiling = try c.decodeIfPresent([Clean].self, forKey: .ceiling) ?? []
+            tables = try c.decodeIfPresent([Clean].self, forKey: .tables) ?? []
+            plain = try c.decodeIfPresent([Clean].self, forKey: .plain) ?? []
+            headAndTail = try c.decodeIfPresent([Cut].self, forKey: .headAndTail) ?? []
             redacted = try c.decodeIfPresent([Clean].self, forKey: .redacted) ?? []
             naming = try c.decodeIfPresent([Naming].self, forKey: .naming) ?? []
             grounded = try c.decodeIfPresent([Grounding].self, forKey: .grounded) ?? []
@@ -614,6 +625,19 @@ enum ClaudeHooksCommand {
         for item in cases.pauseRestored { check(item.name, got: pause(item, .restored), want: item.want) }
         for item in cases.pauseMenu { check(item.name, got: pause(item, .menu), want: item.want) }
         for item in cases.calls { check(item.name, got: calls(item), want: item.want) }
+        for item in cases.ceiling {
+            check(item.name, got: ClaudeSpeakable.ceiling(item.input), want: item.want)
+        }
+        for item in cases.tables {
+            check(item.name, got: ClaudeSpeakable.redacted(ClaudeSpeakable.clean(ClaudeSpeakable.tableRows(item.input))),
+                  want: item.want)
+        }
+        for item in cases.plain {
+            check(item.name, got: ClaudeSpeakable.plainAnswer(ClaudeSpeakable.tableRows(item.input)), want: item.want)
+        }
+        for item in cases.headAndTail {
+            check(item.name, got: ClaudeSpeakable.headAndTail(item.input, limit: item.limit), want: item.want)
+        }
         for item in cases.redacted {
             check(item.name, got: ClaudeSpeakable.redacted(item.input), want: item.want)
         }
@@ -724,9 +748,9 @@ enum ClaudeHooksCommand {
         let cut = ClaudeSpeakable.explainInput(
             tool: "Bash", input: [:], context: "Use token=hunter2 " + String(repeating: "ok ", count: 164)
         )
-        let fallback = ClaudeSpeakable.truncated(ClaudeSpeakable.clean(
+        let fallback = ClaudeSpeakable.plainAnswer(
             "Done. I set `OPENROUTER_API_KEY=sk-or-v1-abcdef1234567890` in your shell."
-        ))
+        )
         check("a key in a reply said plain is not said", got: ClaudeSpeakable.spokenRedacted(fallback),
               want: "Done. I set OPENROUTER_API_KEY=redacted in your shell.")
         check("a password after a colon is not said", got: ClaudeSpeakable.spokenRedacted("Use password: hunter2 now."),
