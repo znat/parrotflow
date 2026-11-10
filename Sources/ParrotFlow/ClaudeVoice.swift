@@ -248,13 +248,16 @@ final class ClaudeVoice {
         hold(.dictation)
         guard dictationWatch == nil else { return }
         // Called before the microphone opens, so the first look is half a second on.
-        dictationWatch = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
+        let watch = Timer(timeInterval: 0.5, repeats: true) { [weak self] timer in
             guard let self else { return timer.invalidate() }
             guard !self.isRecording() else { return }
             timer.invalidate()
             self.dictationWatch = nil
             self.release(.dictation)
         }
+        // Common modes: an open menu would stall a default-mode timer until it closes.
+        RunLoop.main.add(watch, forMode: .common)
+        dictationWatch = watch
     }
 
     /// The Pause button: every session waits until `resume`.
