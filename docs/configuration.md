@@ -1547,6 +1547,8 @@ voice:
     Speak in a relaxed, friendly, natural tone, like a software engineer colleague
     collaborating with a teammate, speaking face to face. Clear and conversational,
     not performative.
+  pause_key: { key: p, modifiers: [control, option] }  # pause and resume; none turns it off
+  pause_during_calls: true  # hold the voice while another app uses the mic
 ```
 
 Each session takes the first voice no active session holds, and keeps it.
@@ -1634,18 +1636,95 @@ URL query strings. An
   project's root folder into the title, so a session started in a subfolder
   is not found. mini runs in the foreground of its terminal, so it is framed
   like Claude, from its own process.
-- **Which session, on screen:** while a session speaks and its
-  window is not in front, the pill names it: the project folder and two or
+- **Which session, on screen:** while an answer, a notification or a
+  question plays, the pill names its session: the project folder and two or
   three words about the task, like "parrotflow · fixing the glow". The words
   come from the same model call that writes the answer; before the first
-  answer, they are the first words of the request. "Go to session" brings its
-  app to the front and raises its window; tabs in one window cannot be told
-  apart, so the window comes up. The pill goes away a moment after the voice
-  stops. A dictation always takes the pill; it comes back while the session
-  still speaks. Under tmux there is no app to go to, and no pill.
+  answer, they are the first words of the request. Progress lines do not
+  raise the pill. Next to the name, "2 waiting" counts the lines queued
+  behind it. After a pause or a dictation, the list plays as a run and the
+  pill says "1 of 3" instead. **Pause** holds the voice for every session;
+  the pill then says "Voice paused", counts what waits, and stays until you
+  press **Resume**. "Go to session" shows only while the session's window is
+  not in front. It brings its app to the front and raises its window; tabs in
+  one window cannot be told apart, so the window comes up. The pill goes away
+  a moment after the voice stops. A dictation always takes the pill; it comes
+  back when the dictation is over. Under tmux there is no app to go to, so
+  there is no "Go to session".
 
-Pressing the hotkey or sending a new prompt in that session stops the voice.
-An answer that arrives while you dictate waits until you stop. The voice on
+### Pausing the voice
+
+While the voice is on, the menu bar menu has a **Voice** section with three
+ways to pause it: **Pause until I resume**, **Pause for 1 hour** and **Pause
+until tomorrow**. Tomorrow means the next 8:00, local time: before 8:00, that
+is today's. While paused, the section says until when and how many answers
+wait, like "Paused until 15:42 · 3 waiting", and offers **Resume**. The menu
+bar icon shows the same count next to it. Answers that arrive while paused
+join the list, and the list plays in order on resume.
+
+The pill's **Pause** is the same as Pause until I resume. Resume from the
+menu, the pill or the shortcut ends any pause. Pausing again replaces the
+deadline. A pause survives a relaunch: one whose deadline passed while the app
+was closed is over at launch. Turning the voice off and on again keeps it too.
+
+`pause_key` pauses the voice until you resume, or resumes it. It is ⌃⌥P by
+default. It takes the same `key` and `modifiers` as `hotkey`, with at least
+one modifier and no bare modifier key. `none` turns it off. The menu shows it
+beside the item it does. Registered only while the voice is on. When macOS
+refuses it, the log says `claude voice: pause shortcut ⌃⌥P not registered`
+and the menu still works. macOS does not refuse a combo another app already
+holds, so pick one no other app uses. The dev and release builds share ⌃⌥P.
+The log says each change: `claude voice: paused until 16:42 (menu)`,
+`claude voice: resumed (shortcut)`, `claude voice: pause ended at 16:42`.
+
+`pause_during_calls` holds the voice while another app uses the mic, as Zoom,
+Teams, FaceTime or a call in the browser do. The app must keep the mic open
+for 2 seconds; the call is over once the mic has been closed for 5 seconds.
+The answer that was playing goes back to the front at its sentence, and new
+answers wait. While answers wait, the pill says "Voice paused · Zoom is using
+the mic"; the menu says it too. **Resume** plays them during the call, and
+that call does not hold the voice again. When the call ends with answers
+waiting, the voice stays paused, and the pill says "Call over · 3 waiting"
+with **Resume** and **Not now**. Not now takes the pill away; the menu and the
+shortcut still resume, and the menu bar icon still counts. When nothing
+waits, the voice simply goes on. A pause of your own
+from before the call is left as it was. ParrotFlow's own recording does not
+count, and neither does the other build's. Some apps keep the mic open
+between calls; set `pause_during_calls: false` if one does. The log says
+`claude voice: call started (Zoom), held` and `claude voice: call over (Zoom),
+3 waiting`.
+
+### Answers
+
+The Voice section's **Answers** submenu lists the answers waiting, in the
+order they will play, then the last 10 heard, newest first. Its title counts
+the waiting ones: "Answers · 3 waiting". Each row says the session, how long
+ago the answer came, and how it starts. The answer playing now is in neither
+list.
+
+A row's own submenu has **Play now** for a waiting answer, **Play again** for
+a heard one, and **Go to session** when its window is known. Either one plays
+at once, in the voice and tone it had, without the session's name first. The
+answer it cuts off goes back to the front at its sentence and goes on after.
+It plays through a pause or a call, and the pause stays on after. A dictation
+holds it like any answer; it goes on after the dictation. Pause, or a call
+starting, stops it, and it waits at the front like any held answer. A replay
+leaves the heard list as it was.
+
+ParrotFlow keeps the audio of each answer it said in one go, up to about
+30 MB in all, in memory only. A replay of one plays that audio: no new call to
+the remote voice. Past 30 MB, the oldest answers lose their audio. An answer
+that was held part way, or one a voice failed on, has none; its replay is made
+again, and that new audio is kept. The log says `claude voice: replay
+parrotflow (cached)`, `claude voice: replay parrotflow (made again)` or
+`claude voice: play now parrotflow`.
+
+Pressing the hotkey holds the voice. The answer it was saying goes back to
+the front of the list, and answers that arrive while you dictate join the
+end. When the dictation is over, the list plays in order, and the held answer
+picks up at the sentence it stopped on. Progress lines that come during a
+dictation are dropped. A new prompt in a session drops that session's
+answers and stops its voice; other sessions keep their place. The voice on
 this Mac is PocketTTS, through FluidAudio. It downloads on first use, streams
 each sentence, and speaks English only. `voice` and `local` chose Kokoro,
 which is gone; `--check-config` names them so you can delete the lines.

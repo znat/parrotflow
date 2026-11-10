@@ -83,9 +83,9 @@ enum PillState: Equatable {
     /// have to carry the same three values to be able to open into this one,
     /// and every switch in the file would have to handle both.
     case offer([OfferedCommand], Headline?, Confidence.Reading, open: Bool)
-    /// A coding session speaks while its window is not in front: its name, and
-    /// a click to go to it. Shown only while nothing else has the pill.
-    case session(String)
+    /// The coding agents' voice: who speaks, with Pause, or that it is paused.
+    /// Shown only while nothing else has the pill.
+    case voice(VoicePill)
 
 }
 
@@ -408,8 +408,11 @@ final class PillModel: ObservableObject {
     /// alert and an offer cannot take each other's closure.
     var onAlertHover: ((Bool) -> Void)?
     var onAlertClose: (() -> Void)?
-    /// A click on a speaking session's name.
+    /// The voice pill's buttons.
     var onGoToSession: (() -> Void)?
+    var onPauseVoice: (() -> Void)?
+    var onResumeVoice: (() -> Void)?
+    var onNotNowVoice: (() -> Void)?
 
     /// How much of the alert's clock is left, 1 down to 0. Published, because
     /// a `withAnimation` over 15s does not give the value back.
@@ -541,17 +544,17 @@ final class PillHUD {
         return false
     }
 
-    /// Names a speaking session, only on a pill that is free or already naming
-    /// one. Nil takes away only that state, never a dictation's.
-    func session(_ name: String?) {
+    /// The voice, only on a pill that is free or already showing it. Nil takes
+    /// away only that state, never a dictation's.
+    func voice(_ pill: VoicePill?) {
         let showing: Bool
-        if case .session = model.state, panel?.isVisible == true, !isFading { showing = true } else { showing = false }
-        guard let name else {
+        if case .voice = model.state, panel?.isVisible == true, !isFading { showing = true } else { showing = false }
+        guard let pill else {
             if showing { fadeOut() }
             return
         }
-        if showing ? model.state == .session(name) : panel?.isVisible == true { return }
-        set(.session(name))
+        if showing ? model.state == .voice(pill) : panel?.isVisible == true { return }
+        set(.voice(pill))
     }
 
     /// Several lines about something that could not run, as markdown. A
@@ -923,9 +926,9 @@ final class PillHUD {
             panel.ignoresMouseEvents = false
         } else {
             // On an alert the pointer holds the clock and a click copies a code
-            // block. A session's name is a click.
+            // block. The voice pill has buttons.
             switch state {
-            case .alert, .session: panel.ignoresMouseEvents = false
+            case .alert, .voice: panel.ignoresMouseEvents = false
             default: panel.ignoresMouseEvents = true
             }
             // No offer, nothing for the pointer to hold: `hovering` reads these
@@ -1643,7 +1646,7 @@ enum PillMetrics {
             // sentence needs the height it has always had.
             if case .notice = state { return height }
             if case .clipboard = state { return height }
-            if case .session = state { return height }
+            if case .voice = state { return height }
             return tabHeight
         }
         guard open else { return tabHeight }
@@ -1756,7 +1759,7 @@ enum PillMetrics {
             return tabWidth(label: message, icon: icon)
         case .notice(let message, _), .clipboard(let message): return text(message)
         case .alert: return alertWidth
-        case .session(let name): return text(name + "    " + goToSession)
+        case .voice(let pill): return voice(pill)
         case .offer(let commands, let headline, let reading, let open):
             guard open else { return tabWidth(hotkey: hotkey) }
             return offer(commands, headline: headline, reading: reading, hotkey: hotkey)
@@ -1771,6 +1774,62 @@ enum PillMetrics {
     }
 
     static let goToSession = "Go to session ›"
+    static let pauseVoice = "Pause"
+    static let resumeVoice = "Resume"
+    static let voicePaused = "Voice paused"
+    static let notNow = "Not now"
+    static func usingTheMic(_ app: String) -> String { "\(app) is using the mic" }
+    static func callOver(_ waiting: Int) -> String { "Call over · \(waiting) waiting" }
+
+    static let voiceChipFont: NSFont = rounded(11, .semibold)
+    static let voiceButtonFont: NSFont = rounded(12, .semibold)
+    static let voiceSymbol: CGFloat = 14
+    static let voiceButtonPad: CGFloat = 9
+    static let voiceChipPad: CGFloat = 7
+    static let voiceButtonHeight: CGFloat = 24
+
+    private static func rounded(_ size: CGFloat, _ weight: NSFont.Weight) -> NSFont {
+        let plain = NSFont.systemFont(ofSize: size, weight: weight)
+        guard let rounded = plain.fontDescriptor.withDesign(.rounded) else { return plain }
+        return NSFont(descriptor: rounded, size: size) ?? plain
+    }
+
+    private static func measure(_ text: String, _ font: NSFont) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: font]).width) + chipFit
+    }
+
+    /// Summed from its parts. Past 540 the name is cut.
+    static func voice(_ pill: VoicePill) -> CGFloat {
+        let button = { (label: String, symbol: Bool) in
+            measure(label, voiceButtonFont) + voiceButtonPad * 2 + (symbol ? 9 + 5 : 0)
+        }
+        let rule = 1 + gap
+        var parts: [CGFloat] = [voiceSymbol]
+        let status: String?
+        switch pill {
+        case .speaking(let name, let text, let goTo):
+            parts.append(measure(name, sentenceFont))
+            status = text
+            parts.append(rule + button(pauseVoice, true))
+            if goTo { parts.append(rule + button(goToSession, false)) }
+        case .paused(let count):
+            parts.append(measure(voicePaused, sentenceFont))
+            status = VoicePill.waiting(count)
+            parts.append(rule + button(resumeVoice, true))
+        case .call(let app):
+            parts += [measure(voicePaused, sentenceFont), measure(usingTheMic(app), sentenceFont)]
+            status = nil
+            parts.append(rule + button(resumeVoice, true))
+        case .callOver(let count):
+            parts.append(measure(callOver(count), sentenceFont))
+            status = nil
+            parts += [rule + button(resumeVoice, true), button(notNow, false)]
+        }
+        if let status { parts.append(measure(status, voiceChipFont) + voiceChipPad * 2) }
+        // One more gap for the spacer before the buttons, which sit closer to the edge than the symbol.
+        let width = parts.reduce(0, +) + gap * CGFloat(parts.count) + padding + voiceButtonPad
+        return min(540, width)
+    }
 
     /// A row of chips, and no minimum.
     ///
@@ -2165,10 +2224,8 @@ struct PillView: View {
                 case .clipboard(let message):
                     MessageContent(message: message, tone: .plain, symbol: "doc.on.clipboard")
                         .transition(.opacity)
-                case .session(let name):
-                    MessageContent(message: name, tone: .plain, symbol: "waveform", action: PillMetrics.goToSession)
-                        .contentShape(Rectangle())
-                        .onTapGesture { model.onGoToSession?() }
+                case .voice(let pill):
+                    VoiceContent(pill: pill)
                         .transition(.opacity)
                 case .alert(let markdown, let tone):
                     AlertContent(
@@ -2196,7 +2253,7 @@ struct PillView: View {
             // `onHover` belongs to whoever raised the offer.
             switch model.state {
             case .alert: model.onAlertHover?(inside)
-            case .session: break
+            case .voice: break
             default: model.onHover?(inside)
             }
         }
@@ -2440,11 +2497,6 @@ private struct MessageContent: View {
     let tone: NoticeTone
     /// Drawn in place of the dot.
     var symbol: String?
-    /// A link at the end, kept whole when the message is cut.
-    var action: String?
-
-    @Environment(\.contextPrimaryColor) private var primaryColor
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: PillMetrics.gap) {
@@ -2460,24 +2512,117 @@ private struct MessageContent: View {
                 .lineLimit(1)
 
             Spacer(minLength: 0)
-
-            if let action {
-                let theme = ContextTheme(scheme: colorScheme, primaryHex: primaryColor)
-                Text(action)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.horizontal, 8)
-                    .frame(height: 24)
-                    .background {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(theme.accent.opacity(0.17))
-                            .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(theme.accent, lineWidth: 1) }
-                    }
-            }
         }
         .padding(.horizontal, PillMetrics.padding)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// `[waveform] name  2 waiting | [Pause] | [Go to session ›]`,
+/// `[pause] Voice paused  3 waiting | [Resume]`, `[muted] Voice paused  Zoom is using the mic | [Resume]`,
+/// or `[waveform] Call over · 3 waiting | [Resume] [Not now]`. Measured by `PillMetrics.voice`.
+private struct VoiceContent: View {
+    let pill: VoicePill
+
+    @EnvironmentObject private var model: PillModel
+    @Environment(\.contextPrimaryColor) private var primaryColor
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var theme: ContextTheme { ContextTheme(scheme: colorScheme, primaryHex: primaryColor) }
+
+    var body: some View {
+        HStack(spacing: PillMetrics.gap) {
+            switch pill {
+            case .speaking(let name, let status, let goTo):
+                Image(systemName: "waveform")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(theme.accent)
+                    .frame(width: PillMetrics.voiceSymbol)
+                Text(name).font(Font(PillMetrics.sentenceFont)).lineLimit(1)
+                chip(status)
+                Spacer(minLength: 0)
+                rule
+                button(PillMetrics.pauseVoice, symbol: "pause.fill", accent: false) { model.onPauseVoice?() }
+                if goTo {
+                    rule
+                    button(PillMetrics.goToSession, symbol: nil, accent: true) { model.onGoToSession?() }
+                }
+            case .paused(let waiting):
+                Image(systemName: "pause.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(theme.muted)
+                    .frame(width: PillMetrics.voiceSymbol)
+                Text(PillMetrics.voicePaused).font(Font(PillMetrics.sentenceFont)).lineLimit(1).fixedSize()
+                chip(VoicePill.waiting(waiting))
+                Spacer(minLength: 0)
+                rule
+                button(PillMetrics.resumeVoice, symbol: "play.fill", accent: true) { model.onResumeVoice?() }
+            case .call(let app):
+                symbol("speaker.slash.fill", color: theme.accent)
+                Text(PillMetrics.voicePaused).font(Font(PillMetrics.sentenceFont)).lineLimit(1).fixedSize()
+                Text(PillMetrics.usingTheMic(app)).font(Font(PillMetrics.sentenceFont)).foregroundStyle(theme.muted)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                rule
+                button(PillMetrics.resumeVoice, symbol: "play.fill", accent: false) { model.onResumeVoice?() }
+            case .callOver(let waiting):
+                symbol("waveform", color: theme.accent)
+                Text(PillMetrics.callOver(waiting)).font(Font(PillMetrics.sentenceFont)).lineLimit(1).fixedSize()
+                Spacer(minLength: 0)
+                rule
+                button(PillMetrics.resumeVoice, symbol: "play.fill", accent: true) { model.onResumeVoice?() }
+                button(PillMetrics.notNow, symbol: nil, accent: false) { model.onNotNowVoice?() }
+            }
+        }
+        .padding(.leading, PillMetrics.padding)
+        .padding(.trailing, PillMetrics.voiceButtonPad)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func symbol(_ name: String, color: Color) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(color)
+            .frame(width: PillMetrics.voiceSymbol)
+    }
+
+    @ViewBuilder private func chip(_ text: String?) -> some View {
+        if let text {
+            Text(text)
+                .font(Font(PillMetrics.voiceChipFont))
+                .foregroundStyle(theme.accent)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, PillMetrics.voiceChipPad)
+                .padding(.vertical, 2)
+                .background { Capsule().fill(theme.accent.opacity(0.14)) }
+        }
+    }
+
+    private var rule: some View {
+        Rectangle().fill(theme.foreground.opacity(0.10)).frame(width: 1, height: 22)
+    }
+
+    private func button(_ label: String, symbol: String?, accent: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if let symbol { Image(systemName: symbol).font(.system(size: 9, weight: .bold)) }
+                Text(label).font(Font(PillMetrics.voiceButtonFont)).lineLimit(1)
+            }
+            .fixedSize()
+            .padding(.horizontal, PillMetrics.voiceButtonPad)
+            .frame(height: PillMetrics.voiceButtonHeight)
+            .background {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(accent ? theme.accent.opacity(0.17) : theme.controlFill)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(accent ? theme.accent : theme.controlEdge, lineWidth: 1)
+                    }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

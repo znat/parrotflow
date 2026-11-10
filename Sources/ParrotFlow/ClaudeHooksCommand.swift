@@ -338,9 +338,54 @@ enum ClaudeHooksCommand {
         var waiting: [Progress] = []
         var codexTurns: [CodexTurn] = []
         var sessionNames: [SessionName] = []
+        /// `audio_limit`: samples kept in all, for the cap cases.
+        struct Queue: Decodable {
+            var name: String; var steps: [QueueStep]; var want: String; var audioLimit: Int?
+            enum CodingKeys: String, CodingKey { case name, steps, want, audioLimit = "audio_limit" }
+        }
+        /// `ago`: an add's age in seconds. `samples`: a finish made each sentence whole, this long.
+        struct QueueStep: Decodable {
+            enum Operation: String, Decodable { case add, next, hold, release, finish, drop, progress, ask }
+            var op: Operation; var session: String?; var text: String?; var hold: VoiceQueue.Hold?; var at: Int?
+            var id: Int?; var ago: Double?; var samples: Int?
+        }
+        var queue: [Queue] = []
+        /// The Answers submenu after `steps`. `known`: the sessions with a window to go to.
+        struct Answers: Decodable { var name: String; var steps: [QueueStep]; var known: [String]?; var want: String }
+        var answers: [Answers] = []
+        /// The pill after `steps`. The playing session's key is its name. `call`: an app on a call,
+        /// `over` or `dismissed`.
+        struct Pill: Decodable {
+            var name: String; var steps: [QueueStep]; var outOfSight: Bool?; var call: String?; var want: String
+            enum CodingKeys: String, CodingKey { case name, steps, call, want, outOfSight = "out_of_sight" }
+        }
+        var pill: [Pill] = []
+        /// Times are "yyyy-MM-dd HH:mm" in `Pause.zone`. `paused` and `saved` take a time or "until resumed";
+        /// left out, not paused.
+        struct Pause: Decodable {
+            static let zone = "America/Toronto"
+            var name: String; var now: String; var choose: VoicePause.Choice?; var paused: String?; var saved: String?
+            var waiting: Int?; var locale: String?; var call: String?; var want: String
+        }
+        var pauseUntil: [Pause] = []
+        var pauseRestored: [Pause] = []
+        var pauseMenu: [Pause] = []
+        /// `at` is seconds from the first step; `mic` the processes with the mic open then. Our pid is 1.
+        struct Call: Decodable {
+            struct Look: Decodable { var at: Double; var mic: [Mic] }
+            struct Mic: Decodable { var pid: pid_t?; var bundle: String?; var name: String? }
+            var name: String; var steps: [Look]; var want: String
+        }
+        var calls: [Call] = []
 
         enum CodingKeys: String, CodingKey {
             case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary, waiting, titles
+            case queue, pill
+            case answers = "answers_menu"
+            case pauseUntil = "pause_until"
+            case pauseRestored = "pause_restored"
+            case pauseMenu = "pause_menu"
+            case calls
             case codexTurns = "codex_turns"
             case sessionNames = "session_names"
         }
@@ -362,7 +407,139 @@ enum ClaudeHooksCommand {
             waiting = try c.decodeIfPresent([Progress].self, forKey: .waiting) ?? []
             codexTurns = try c.decodeIfPresent([CodexTurn].self, forKey: .codexTurns) ?? []
             sessionNames = try c.decodeIfPresent([SessionName].self, forKey: .sessionNames) ?? []
+            queue = try c.decodeIfPresent([Queue].self, forKey: .queue) ?? []
+            pill = try c.decodeIfPresent([Pill].self, forKey: .pill) ?? []
+            answers = try c.decodeIfPresent([Answers].self, forKey: .answers) ?? []
+            pauseUntil = try c.decodeIfPresent([Pause].self, forKey: .pauseUntil) ?? []
+            pauseRestored = try c.decodeIfPresent([Pause].self, forKey: .pauseRestored) ?? []
+            pauseMenu = try c.decodeIfPresent([Pause].self, forKey: .pauseMenu) ?? []
+            calls = try c.decodeIfPresent([Call].self, forKey: .calls) ?? []
         }
+    }
+
+    /// `pause_until`: the deadline a choice sets. `pause_restored`: what a launch starts with.
+    /// `pause_menu`: the Voice rows, a line in parentheses, the shortcut's row marked "[shortcut]".
+    enum PauseCase { case until, restored, menu }
+
+    static func pause(_ item: Cases.Pause, _ kind: PauseCase) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: Cases.Pause.zone) ?? .current
+        let locale = Locale(identifier: item.locale ?? "en_GB")
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.timeZone = calendar.timeZone
+        format.dateFormat = "yyyy-MM-dd HH:mm"
+        guard let now = format.date(from: item.now) else { return "bad now: \(item.now)" }
+        func read(_ text: String?) -> Date? {
+            text.map { $0 == "until resumed" ? .distantFuture : format.date(from: $0) ?? .distantPast }
+        }
+        switch kind {
+        case .until:
+            guard let choice = item.choose else { return "a pause_until case needs choose:" }
+            return VoicePause(choice, now: now, calendar: calendar).deadline.map(format.string) ?? "until resumed"
+        case .restored:
+            let pause = VoicePause.restored(read(item.saved), now: now)
+            return pause.map { "paused " + $0.phrase(now: now, calendar: calendar, locale: locale) } ?? "not paused"
+        case .menu:
+            let pause = read(item.paused).flatMap { VoicePause.restored($0, now: .distantPast) }
+            return VoiceMenu.rows(pause, call: item.call, waiting: item.waiting ?? 0, now: now, calendar: calendar,
+                                  locale: locale)
+                .map { row in
+                    (row.action == nil ? "(\(row.title))" : row.title) + (row.shortcut ? " [shortcut]" : "")
+                }
+                .joined(separator: " | ")
+        }
+    }
+
+    /// The events, "2s call started (Zoom) | 9s call over (Zoom)", or "nothing".
+    static func calls(_ item: Cases.Call) -> String {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        var state = CallState.idle
+        var said: [String] = []
+        for look in item.steps {
+            let users = look.mic.map { MicUser(pid: $0.pid ?? 100, bundle: $0.bundle ?? "", name: $0.name) }
+            let (next, event) = state.step(users, ourPid: 1, now: start + look.at)
+            state = next
+            let at = String(format: "%gs ", look.at)
+            switch event {
+            case .started(let app)?: said.append(at + "call started (\(app))")
+            case .ended(let app)?: said.append(at + "call over (\(app))")
+            case nil: break
+            }
+        }
+        return said.isEmpty ? "nothing" : said.joined(separator: " | ")
+    }
+
+    /// The queue after `steps`, in one line: "playing a:Two. 1 of 2 | waiting b:One. | held user | heard c:One.".
+    /// An entry shows its session and the sentence it starts from, then "asked" and "audio" when so. A
+    /// `progress` step adds "progress said" or "progress dropped", for a progress line that came then.
+    static func replay(_ steps: [Cases.QueueStep], audioLimit: Int? = nil) -> String {
+        let (queue, progress, problem) = play(steps, audioLimit: audioLimit)
+        if let problem { return problem }
+        func entry(_ entry: VoiceQueue.Entry) -> String {
+            entry.session + ":" + (entry.remaining.first ?? "") + (entry.asked ? " asked" : "")
+                + (entry.audio == nil ? "" : " audio")
+        }
+        var parts: [String] = []
+        if let playing = queue.playing, let place = queue.place {
+            parts.append("playing \(entry(playing)) \(place.position) of \(place.count)")
+        }
+        if !queue.waiting.isEmpty { parts.append("waiting " + queue.waiting.map(entry).joined(separator: ", ")) }
+        if !queue.holds.isEmpty { parts.append("held " + queue.holds.map(\.rawValue).sorted().joined(separator: ", ")) }
+        if !queue.heard.isEmpty { parts.append("heard " + queue.heard.map(entry).joined(separator: ", ")) }
+        parts += progress
+        return parts.isEmpty ? "empty" : parts.joined(separator: " | ")
+    }
+
+    /// What the pill says after `steps`, as `VoicePill.summary`, or "nothing".
+    static func pill(_ item: Cases.Pill) -> String {
+        let (queue, _, problem) = play(item.steps)
+        if let problem { return problem }
+        let call: VoiceCall? = item.call.map { ["over": .over, "dismissed": .dismissed][$0] ?? .on($0) }
+        let pill = VoicePill.of(queue, name: queue.playing?.session, goToSession: item.outOfSight ?? false, call: call)
+        return pill?.summary ?? "nothing"
+    }
+
+    /// "Answers · 1 waiting > b · just now · Two. [Play now] | --- | a · 2 min ago · One. [Play again]".
+    static func answers(_ item: Cases.Answers) -> String {
+        let (queue, _, problem) = play(item.steps)
+        if let problem { return problem }
+        let rows = AnswersMenu.rows(queue, name: { $0 }, known: { item.known?.contains($0) == true }, now: stepsNow)
+            .map { row in
+                (row.separated ? "--- | " : "") + row.title + " · " + row.said
+                    + " [" + row.actions.map(\.title).joined(separator: ", ") + "]"
+            }
+        return ([AnswersMenu.title(queue)] + (rows.isEmpty ? [] : [rows.joined(separator: " | ")]))
+            .joined(separator: " > ")
+    }
+
+    private static let stepsNow = Date(timeIntervalSinceReferenceDate: 0)
+
+    private static func play(_ steps: [Cases.QueueStep], audioLimit: Int? = nil) -> (VoiceQueue, [String], String?) {
+        var queue = VoiceQueue()
+        if let audioLimit { queue.audioLimit = audioLimit }
+        var progress: [String] = []
+        for step in steps {
+            switch step.op {
+            case .add:
+                queue.add(session: step.session ?? "", text: step.text ?? "", at: stepsNow - (step.ago ?? 0))
+            case .next: _ = queue.startNext()
+            case .hold, .release:
+                guard let cause = step.hold else { return (queue, progress, "a \(step.op.rawValue) step needs hold:") }
+                if step.op == .hold { queue.hold(cause, stoppedAt: step.at) } else { queue.release(cause) }
+            case .finish:
+                let audio = step.samples.flatMap { count in
+                    queue.playing.map { Array(repeating: [Float](repeating: 0, count: count), count: $0.sentences.count) }
+                }
+                if let id = step.id ?? queue.playing?.id { queue.finish(id, audio: audio) }
+            case .ask:
+                guard let id = step.id else { return (queue, progress, "an ask step needs id:") }
+                queue.ask(id, stoppedAt: step.at)
+            case .drop: queue.drop(session: step.session ?? "")
+            case .progress: progress.append(queue.takesProgress ? "progress said" : "progress dropped")
+            }
+        }
+        return (queue, progress, nil)
     }
 
     static func test(cases path: String) -> Int32 {
@@ -426,6 +603,17 @@ enum ClaudeHooksCommand {
         for item in cases.capped {
             check(item.name, got: ClaudeSpeakable.capped(item.input), want: item.want)
         }
+        for item in cases.queue {
+            check(item.name, got: replay(item.steps, audioLimit: item.audioLimit), want: item.want)
+        }
+        for item in cases.answers { check(item.name, got: answers(item), want: item.want) }
+        for item in cases.pill {
+            check(item.name, got: pill(item), want: item.want)
+        }
+        for item in cases.pauseUntil { check(item.name, got: pause(item, .until), want: item.want) }
+        for item in cases.pauseRestored { check(item.name, got: pause(item, .restored), want: item.want) }
+        for item in cases.pauseMenu { check(item.name, got: pause(item, .menu), want: item.want) }
+        for item in cases.calls { check(item.name, got: calls(item), want: item.want) }
         for item in cases.redacted {
             check(item.name, got: ClaudeSpeakable.redacted(item.input), want: item.want)
         }
@@ -1049,3 +1237,5 @@ enum ClaudeHooksCommand {
         return data
     }
 }
+
+extension VoiceQueue.Hold: Decodable {}

@@ -823,12 +823,20 @@ enum PanelsCommand {
 
         let notice = pill(.notice("Grammar applied", .done), docked: .below)
         let caution = pill(.notice("Grammar copied — this app won't let me edit it", .caution), docked: .below)
-        let session = pill(.session("parrotflow · fixing the glow"), docked: .free)
-        let longSession = pill(
-            .session(ClaudeSpeakable.sessionName(
+        let glow = "parrotflow · fixing the glow"
+        let voices = [
+            VoicePill.speaking(name: glow, status: nil, goToSession: false),
+            .speaking(name: glow, status: "2 waiting", goToSession: true),
+            .speaking(name: glow, status: "1 of 3", goToSession: false),
+            .speaking(name: ClaudeSpeakable.sessionName(
                 project: "parrotflow-claude-voice-session-pill", task: "réparer le halo"
-            ) ?? ""), docked: .free
-        )
+            ) ?? "", status: "12 waiting", goToSession: true),
+            .paused(waiting: 3),
+            .paused(waiting: 0),
+            .call(app: "Zoom"),
+            .call(app: "Microsoft Teams"),
+            .callOver(waiting: 3),
+        ].map { pill(.voice($0), docked: .free) }
         // The offer before it is asked for: the bird and the key, and nothing
         // else. First because it is what every dictation now ends as — the ones
         // below are what it becomes when you rest on it.
@@ -1143,10 +1151,7 @@ enum PanelsCommand {
              pillSize(notice), nil, true),
             (AnyView(PillView().environmentObject(caution)),
              pillSize(caution), nil, true),
-            (AnyView(PillView().environmentObject(session)),
-             pillSize(session), nil, true),
-            (AnyView(PillView().environmentObject(longSession)),
-             pillSize(longSession), nil, true),
+        ] + voices.map { (AnyView(PillView().environmentObject($0)), pillSize($0), nil, true) } + [
             // What every dictation now ends as, and what the rest of this
             // block is that surface opened. Next to the notices because that is
             // the comparison that matters: it has to not look like one, and at
@@ -1420,8 +1425,11 @@ enum PanelsCommand {
             pill.notice("Grammar copied — this app won't let me edit it", tone: .caution, duration: nil)
         case "failure":
             pill.notice("Ollama is not running on localhost:11434", tone: .failure, duration: nil)
-        case "session":
-            pill.session("parrotflow · fixing the glow")
+        case "speaking", "paused":
+            let speaking = VoicePill.speaking(name: "parrotflow · fixing the glow", status: "2 waiting", goToSession: true)
+            pill.model.onPauseVoice = { pill.voice(.paused(waiting: 2)) }
+            pill.model.onResumeVoice = { pill.voice(speaking) }
+            pill.voice(surface == "paused" ? .paused(waiting: 2) : speaking)
         case "alert":
             hold = max(seconds, AppDelegate.alertSeconds)
             // The grammar transform's shipped `failed:`, word for word.
@@ -1773,7 +1781,7 @@ enum PanelsCommand {
             sizer.window = preview
             setupWindow = preview
         default:
-            print("usage: ParrotFlow --panels <notice|caution|failure|alert|thinking|offer"
+            print("usage: ParrotFlow --panels <notice|caution|failure|speaking|paused|alert|thinking|offer"
                 + "|confidence|vocabulary|punctuation|rule|proposal|proposal-light"
                 + "|proposal-dark|dictation|preview|microphone"
                 + "|keyboard|pill|learn|learn-long|selector|selector-long|selector-two"

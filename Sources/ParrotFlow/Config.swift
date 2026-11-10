@@ -2899,6 +2899,31 @@ struct Config: Decodable, Equatable {
         /// Gemini's conversational voices: friendly, warm, casual, easy-going, breezy.
         /// Kore and Charon, firm and informative, sounded like announcements.
         static let geminiVoices = ["Achird", "Sulafat", "Zubenelgenubi", "Callirrhoe", "Umbriel", "Aoede"]
+        /// Pauses the voice, or resumes it. Nil: no shortcut.
+        var pauseKey: Shortcut? = Shortcut(key: "p", modifiers: ["control", "option"])
+        /// What `problems()` says about a `pause_key` it could not read.
+        var refusedPauseKey: String?
+        /// Holds the voice while another app uses the mic.
+        var pauseDuringCalls = true
+
+        struct Shortcut: Decodable, Equatable {
+            var key: String
+            var modifiers: [String]
+            var display: String { KeyCodes.displayString(key: key, modifiers: modifiers) }
+
+            enum CodingKeys: String, CodingKey, CaseIterable { case key, modifiers }
+
+            init(key: String, modifiers: [String]) {
+                self.key = key
+                self.modifiers = modifiers
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                key = try c.decode(String.self, forKey: .key)
+                modifiers = try c.decodeIfPresent([String].self, forKey: .modifiers) ?? []
+            }
+        }
         /// Always in the voice. The model adds a shift for what happened.
         var speechTone = "Speak in a relaxed, friendly, natural tone, like a software engineer colleague "
             + "collaborating with a teammate, speaking face to face. Clear and conversational, not performative."
@@ -2920,6 +2945,8 @@ struct Config: Decodable, Equatable {
             case localPlacement = "local_placement"
             case speechVoices = "speech_voices"
             case speechTone = "speech_tone"
+            case pauseKey = "pause_key"
+            case pauseDuringCalls = "pause_during_calls"
         }
 
         init() {}
@@ -2949,6 +2976,35 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent([String].self, forKey: .localVoices) { localVoices = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .progressLocal) { progressLocal = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .localPlacement) { localPlacement = v }
+            if c.contains(.pauseKey) { readPauseKey(c) }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .pauseDuringCalls) { pauseDuringCalls = v }
+        }
+
+        private mutating func readPauseKey(_ c: KeyedDecodingContainer<CodingKeys>) {
+            pauseKey = nil
+            if (try? c.decodeNil(forKey: .pauseKey)) == true { return }
+            if let word = try? c.decode(String.self, forKey: .pauseKey) {
+                if !["", "none", "off", "false"].contains(word.lowercased()) {
+                    refusedPauseKey = "\"\(word)\" is not a shortcut — expected { key: p, modifiers: [control, option] }"
+                        + " or none; the shortcut is off"
+                }
+                return
+            }
+            guard let written = try? c.decode(Shortcut.self, forKey: .pauseKey) else {
+                refusedPauseKey = "expected { key: p, modifiers: [control, option] } or none; the shortcut is off"
+                return
+            }
+            let unknown = written.modifiers.filter { KeyCodes.carbonModifiers([$0]) == 0 }
+            if ModifierKey(name: written.key) != nil {
+                refusedPauseKey = "\"\(written.key)\" is a modifier alone — it needs a key; the shortcut is off"
+            } else if KeyCodes.code(for: written.key) == nil {
+                refusedPauseKey = "\"\(written.key)\" is not a known key name; the shortcut is off"
+            } else if written.modifiers.isEmpty || !unknown.isEmpty {
+                refusedPauseKey = (unknown.isEmpty ? "" : "\(unknown.joined(separator: ", ")) is not a modifier — ")
+                    + "it needs one or more of command, control, option, shift; the shortcut is off"
+            } else {
+                pauseKey = written
+            }
         }
 
         /// A value it cannot read is said by `problems()`, and the rest of the
@@ -3252,6 +3308,7 @@ struct Config: Decodable, Equatable {
             found.append("voice.agents.\(agent): takes no folder — \(agent) has no hooks file, so the value is ignored")
         }
         if let refused = voice.refusedAgents { found.append("voice.agents: \(refused)") }
+        if let refused = voice.refusedPauseKey { found.append("voice.pause_key: \(refused)") }
         let speech = voice.speech.trimmingCharacters(in: .whitespaces)
         if !speech.isEmpty {
             if let spec = model(named: speech) {

@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let configReloadGraceSeconds: TimeInterval = 10
 
     private let hotKeys = HotKeyManager()
+    private let pauseKey = HotKeyManager(id: 2)
     private let recorder = Recorder()
     private let pill = PillHUD()
     private let claudeVoice = ClaudeVoice()
@@ -33,6 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusInfoItem: NSMenuItem!
     private var inputDeviceItem: NSMenuItem!
     private var permissionsItem: NSMenuItem!
+    /// Ends the Voice section; its rows go above it as the menu opens.
+    private var voiceSeparator: NSMenuItem!
+    private var voiceItems: [NSMenuItem] = []
 
     /// The Context mark currently installed in the status item. Appearance and
     /// primary colour are part of the cache key because processing is coloured.
@@ -586,12 +590,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the pill's own window, which costs as much again.
         pill.warm()
         claudeVoice.isRecording = { [weak self] in self?.recorder.isRecording ?? false }
-        claudeVoice.onPill = { [weak self] name in
-            guard let self, name == nil || !(self.recorder.isRecording || self.runsInFlight > 0 || self.offerIsUp)
+        claudeVoice.onVoicePill = { [weak self] state in
+            self?.showWaitingCount()
+            guard let self, state == nil || !(self.recorder.isRecording || self.runsInFlight > 0 || self.offerIsUp)
             else { return }
-            self.pill.session(name)
+            self.pill.voice(state)
         }
         pill.model.onGoToSession = { [weak self] in self?.claudeVoice.goToPillSession() }
+        pill.model.onPauseVoice = { [weak self] in self?.claudeVoice.pause() }
+        pill.model.onResumeVoice = { [weak self] in self?.claudeVoice.resume() }
+        pill.model.onNotNowVoice = { [weak self] in self?.claudeVoice.notNow() }
         recorder.onLevel = { [weak self] level in
             self?.pill.model.level = level
         }
@@ -1028,6 +1036,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // pill — see `OfferContent.hold`.
             pill.model.hotkey = ""
         }
+        registerPauseKey()
 
         // Before the setup window is built, because that is where the tour
         // measures the boxes it reserves for a surface and a different key is a
@@ -1041,6 +1050,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startKeepWarm()
         startUpdateChecks()
         updateUI()
+    }
+
+    // MARK: - Voice pause
+
+    /// Only while the voice is on. A combo macOS refuses is logged; the menu still pauses.
+    private func registerPauseKey() {
+        pauseKey.onPress = { [weak self] _ in
+            guard let self else { return }
+            self.voice(VoiceMenu.toggle(self.claudeVoice.paused, call: self.claudeVoice.callApp), by: "shortcut")
+        }
+        guard config.voice.enabled, let key = config.voice.pauseKey else { return pauseKey.unregister() }
+        do {
+            try pauseKey.register(key: key.key, modifiers: key.modifiers)
+        } catch {
+            Log.write("claude voice: pause shortcut \(key.display) not registered: \(error.localizedDescription)")
+        }
+    }
+
+    @objc private func voiceMenuAction(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? VoiceMenu.Action else { return }
+        voice(action, by: "menu")
+    }
+
+    private func voice(_ action: VoiceMenu.Action, by cause: String) {
+        switch action {
+        case .pause(let choice): claudeVoice.pause(VoicePause(choice, now: Date()), by: cause)
+        case .resume: claudeVoice.resume(by: cause)
+        case .play(let id): claudeVoice.play(id)
+        case .goTo(let session): claudeVoice.goTo(session)
+        }
+    }
+
+    /// Beside the menu bar icon, while a pause or a call keeps answers waiting.
+    private func showWaitingCount() {
+        guard let button = statusItem?.button else { return }
+        let count = claudeVoice.heldCount
+        let title = count > 0 ? "\(count)" : ""
+        if button.title != title { button.title = title }
     }
 
     // MARK: - Updates
@@ -1858,6 +1905,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // from the original key-down would put a minute of reading
                     // into a measurement of the microphone.
                     self.pressedAt = Date()
+                    // The hold from the press ended while the dialog was open.
+                    self.claudeVoice.silence()
                     self.startRecording()
                     self.startPushToTalkPollIfHeld()
                 } else {
@@ -7209,6 +7258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state: .idle, primaryHex: config.feedback.primaryColor, dark: false
         )
         statusItem.button?.setAccessibilityLabel(ContextStatusMark.State.idle.accessibilityLabel)
+        statusItem.button?.imagePosition = .imageLeading
 
         let menu = NSMenu()
 
@@ -7251,6 +7301,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(updateItem)
 
         menu.addItem(.separator())
+
+        voiceSeparator = .separator()
+        voiceSeparator.isHidden = true
+        menu.addItem(voiceSeparator)
 
         let revealItem = NSMenuItem(
             title: "Open Recordings Folder",
@@ -7647,6 +7701,64 @@ extension AppDelegate: NSMenuDelegate {
         inputDeviceItem.isHidden = device == nil
         inputDeviceItem.title = device.map { "Microphone  ·  \($0)" } ?? ""
         inputDeviceItem.submenu = microphoneMenu()
+        if menu === statusItem.menu { fillVoiceSection(menu) }
+    }
+
+    private func fillVoiceSection(_ menu: NSMenu) {
+        for item in voiceItems { menu.removeItem(item) }
+        voiceItems = []
+        voiceSeparator.isHidden = !config.voice.enabled
+        guard config.voice.enabled else { return }
+        voiceItems.append(.sectionHeader(title: "Voice"))
+        let shortcut = pauseKey.binding == nil ? nil : config.voice.pauseKey
+        for row in VoiceMenu.rows(claudeVoice.paused, call: claudeVoice.callApp, waiting: claudeVoice.waitingCount,
+                                  now: Date()) {
+            let item = NSMenuItem(title: row.title, action: row.action.map { _ in #selector(voiceMenuAction(_:)) },
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = row.action
+            if row.shortcut, let shortcut, let key = Self.keyEquivalent(shortcut.key) {
+                item.keyEquivalent = key
+                item.keyEquivalentModifierMask = KeyCodes.cocoaModifiers(shortcut.modifiers)
+            }
+            Self.hideAutomaticImage(item)
+            voiceItems.append(item)
+        }
+        voiceItems.append(answersItem())
+        let at = menu.index(of: voiceSeparator)
+        for (offset, item) in voiceItems.enumerated() { menu.insertItem(item, at: at + offset) }
+    }
+
+    /// Each row's actions in a submenu of its own: a row with a submenu cannot be clicked.
+    private func answersItem() -> NSMenuItem {
+        let (title, rows) = claudeVoice.answersMenu()
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        Self.hideAutomaticImage(item)
+        guard !rows.isEmpty else { return item }
+        let menu = NSMenu()
+        for row in rows {
+            if row.separated { menu.addItem(.separator()) }
+            let entry = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
+            entry.subtitle = row.said
+            Self.hideAutomaticImage(entry)
+            entry.submenu = NSMenu()
+            for (title, action) in row.actions {
+                let choice = NSMenuItem(title: title, action: #selector(voiceMenuAction(_:)), keyEquivalent: "")
+                choice.target = self
+                choice.representedObject = action
+                Self.hideAutomaticImage(choice)
+                entry.submenu?.addItem(choice)
+            }
+            menu.addItem(entry)
+        }
+        item.submenu = menu
+        return item
+    }
+
+    /// Display only: the global hotkey does the work, and swallows the key before the menu sees it.
+    private static func keyEquivalent(_ name: String) -> String? {
+        if name.lowercased() == "space" { return " " }
+        return name.count == 1 ? name.lowercased() : nil
     }
 
     /// What the menu bar offers to finish.
