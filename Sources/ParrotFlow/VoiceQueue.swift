@@ -11,6 +11,8 @@ struct VoiceQueue {
         case user
         /// From hotkey down to the end of the dictation.
         case dictation
+        /// Another app is using the mic: `CallState`.
+        case call
     }
 
     struct Entry: Equatable {
@@ -125,7 +127,7 @@ enum VoicePill: Equatable {
     /// A dictation hold alone shows nothing: the recording pill has the screen.
     /// `name` is the playing session's; nil shows nothing.
     static func of(_ queue: VoiceQueue, name: String?, goToSession: Bool) -> VoicePill? {
-        if queue.holds.contains(.user) { return .paused(waiting: queue.waiting.count) }
+        if !queue.holds.isDisjoint(with: [.user, .call]) { return .paused(waiting: queue.waiting.count) }
         guard queue.holds.isEmpty, queue.playing != nil, let name else { return nil }
         let status: String?
         if queue.resumed, let place = queue.place, place.count > 1 {

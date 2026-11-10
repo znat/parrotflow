@@ -567,6 +567,9 @@ enum ConfigSchema {
                 "Pauses the voice until you resume, or resumes it. A character key and one or more"
                     + " modifiers, as for hotkey. none turns it off.",
                 default: ["key": "p", "modifiers": ["control", "option"]]),
+            key("pause_during_calls", .bool,
+                "Holds the voice while another app uses the mic, as on a call. Answers wait.",
+                default: defaults.pauseDuringCalls),
         ])
     }
 

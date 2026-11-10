@@ -356,11 +356,18 @@ enum ClaudeHooksCommand {
         struct Pause: Decodable {
             static let zone = "America/Toronto"
             var name: String; var now: String; var choose: VoicePause.Choice?; var paused: String?; var saved: String?
-            var waiting: Int?; var locale: String?; var want: String
+            var waiting: Int?; var locale: String?; var call: String?; var want: String
         }
         var pauseUntil: [Pause] = []
         var pauseRestored: [Pause] = []
         var pauseMenu: [Pause] = []
+        /// `at` is seconds from the first step; `mic` the processes with the mic open then. Our pid is 1.
+        struct Call: Decodable {
+            struct Look: Decodable { var at: Double; var mic: [Mic] }
+            struct Mic: Decodable { var pid: pid_t?; var bundle: String?; var name: String? }
+            var name: String; var steps: [Look]; var want: String
+        }
+        var calls: [Call] = []
 
         enum CodingKeys: String, CodingKey {
             case clean, progress, turns, parse, capped, redacted, naming, grounded, speakable, spoken, summary, waiting, titles
@@ -368,6 +375,7 @@ enum ClaudeHooksCommand {
             case pauseUntil = "pause_until"
             case pauseRestored = "pause_restored"
             case pauseMenu = "pause_menu"
+            case calls
             case codexTurns = "codex_turns"
             case sessionNames = "session_names"
         }
@@ -394,6 +402,7 @@ enum ClaudeHooksCommand {
             pauseUntil = try c.decodeIfPresent([Pause].self, forKey: .pauseUntil) ?? []
             pauseRestored = try c.decodeIfPresent([Pause].self, forKey: .pauseRestored) ?? []
             pauseMenu = try c.decodeIfPresent([Pause].self, forKey: .pauseMenu) ?? []
+            calls = try c.decodeIfPresent([Call].self, forKey: .calls) ?? []
         }
     }
 
@@ -422,12 +431,32 @@ enum ClaudeHooksCommand {
             return pause.map { "paused " + $0.phrase(now: now, calendar: calendar, locale: locale) } ?? "not paused"
         case .menu:
             let pause = read(item.paused).flatMap { VoicePause.restored($0, now: .distantPast) }
-            return VoiceMenu.rows(pause, waiting: item.waiting ?? 0, now: now, calendar: calendar, locale: locale)
+            return VoiceMenu.rows(pause, call: item.call, waiting: item.waiting ?? 0, now: now, calendar: calendar,
+                                  locale: locale)
                 .map { row in
                     (row.action == nil ? "(\(row.title))" : row.title) + (row.shortcut ? " [shortcut]" : "")
                 }
                 .joined(separator: " | ")
         }
+    }
+
+    /// The events, "2s call started (Zoom) | 9s call over (Zoom)", or "nothing".
+    static func calls(_ item: Cases.Call) -> String {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        var state = CallState.idle
+        var said: [String] = []
+        for look in item.steps {
+            let users = look.mic.map { MicUser(pid: $0.pid ?? 100, bundle: $0.bundle ?? "", name: $0.name ?? "") }
+            let (next, event) = state.step(users, ourPid: 1, now: start + look.at)
+            state = next
+            let at = String(format: "%gs ", look.at)
+            switch event {
+            case .started(let app)?: said.append(at + "call started (\(app))")
+            case .ended(let app)?: said.append(at + "call over (\(app))")
+            case nil: break
+            }
+        }
+        return said.isEmpty ? "nothing" : said.joined(separator: " | ")
     }
 
     /// The queue after `steps`, in one line: "playing a:Two. 1 of 2 | waiting b:One. | held user | heard c:One.".
@@ -544,6 +573,7 @@ enum ClaudeHooksCommand {
         for item in cases.pauseUntil { check(item.name, got: pause(item, .until), want: item.want) }
         for item in cases.pauseRestored { check(item.name, got: pause(item, .restored), want: item.want) }
         for item in cases.pauseMenu { check(item.name, got: pause(item, .menu), want: item.want) }
+        for item in cases.calls { check(item.name, got: calls(item), want: item.want) }
         for item in cases.redacted {
             check(item.name, got: ClaudeSpeakable.redacted(item.input), want: item.want)
         }

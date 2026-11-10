@@ -98,6 +98,10 @@ final class ClaudeVoice {
     private var pauseEnd: Timer?
     private var wakeWatch: NSObjectProtocol?
     static let pausedKey = "voice.pausedUntil"
+    /// While `voice.pause_during_calls` is on.
+    private var callWatch: CallWatch?
+    /// The app on a call, while the `.call` hold is on.
+    private(set) var call: String?
     var waitingCount: Int { queue.waiting.count }
     /// The Speaker line saying `queue.playing`.
     private var answerLine: Int?
@@ -212,13 +216,48 @@ final class ClaudeVoice {
             pauseEnd?.invalidate()
             pauseEnd = nil
             queue = VoiceQueue()
+            call = nil
             answerLine = nil
             dictationWatch?.invalidate()
             dictationWatch = nil
             speaker.stop()
         }
+        watchCalls()
         warmIfNeeded()
         syncHooks()
+    }
+
+    private func watchCalls() {
+        let wanted = settings.enabled && settings.pauseDuringCalls
+        if wanted, callWatch == nil {
+            let watch = CallWatch()
+            watch.onEvent = { [weak self] event in self?.callEvent(event) }
+            callWatch = watch
+        } else if !wanted, let watch = callWatch {
+            watch.stop()
+            callWatch = nil
+            if call != nil {
+                call = nil
+                release(.call)
+            }
+        }
+    }
+
+    /// A call holds the voice. Over, it leaves the voice paused while answers wait.
+    /// Resumed during the call, it is not held again until the next call.
+    private func callEvent(_ event: CallState.Event) {
+        switch event {
+        case .started(let app):
+            Log.write("claude voice: call started (\(app)), held" + (paused == nil ? "" : ", already paused"))
+            call = app
+            hold(.call)
+        case .ended(let app):
+            guard call != nil else { return Log.write("claude voice: call over (\(app)), not held") }
+            Log.write("claude voice: call over (\(app)), \(queue.waiting.count) waiting")
+            call = nil
+            if paused == nil, !queue.waiting.isEmpty { pause(.untilResumed, by: "call over") }
+            release(.call)
+        }
     }
 
     /// The hooks follow `voice.enabled` and `voice.agents`, so nobody runs `--install-claude-hooks`.
@@ -286,10 +325,15 @@ final class ClaudeVoice {
         Log.write("claude voice: paused \(pause.phrase(now: Date())) (\(cause)), \(queue.waiting.count) waiting")
     }
 
+    /// Also lets a call's hold go: the voice plays during the call.
     func resume(by cause: String = "pill") {
-        guard paused != nil else { return }
+        guard paused != nil || call != nil else { return }
         Log.write("claude voice: resumed (\(cause)), \(queue.waiting.count) waiting")
-        endPause()
+        if call != nil {
+            call = nil
+            release(.call)
+        }
+        if paused != nil { endPause() }
     }
 
     private func endPause() {

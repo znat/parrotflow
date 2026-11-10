@@ -1057,7 +1057,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func registerPauseKey() {
         pauseKey.onPress = { [weak self] _ in
             guard let self else { return }
-            self.voice(VoiceMenu.toggle(self.claudeVoice.paused), by: "shortcut")
+            self.voice(VoiceMenu.toggle(self.claudeVoice.paused, call: self.claudeVoice.call), by: "shortcut")
         }
         guard config.voice.enabled, let key = config.voice.pauseKey else { return pauseKey.unregister() }
         do {
@@ -7709,7 +7709,8 @@ extension AppDelegate: NSMenuDelegate {
         guard config.voice.enabled else { return }
         voiceItems.append(.sectionHeader(title: "Voice"))
         let shortcut = pauseKey.binding == nil ? nil : config.voice.pauseKey
-        for row in VoiceMenu.rows(claudeVoice.paused, waiting: claudeVoice.waitingCount, now: Date()) {
+        for row in VoiceMenu.rows(claudeVoice.paused, call: claudeVoice.call, waiting: claudeVoice.waitingCount,
+                                  now: Date()) {
             let item = NSMenuItem(title: row.title, action: row.action.map { _ in #selector(voiceMenuAction(_:)) },
                                   keyEquivalent: "")
             item.target = self

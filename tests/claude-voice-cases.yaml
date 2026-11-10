@@ -832,6 +832,23 @@ queue:
       {op: next}, {op: finish}, {op: next}, {op: finish}, {op: next}, {op: finish}]
     want: "heard b:Eleven., a:Ten., a:Nine., a:Eight., a:Seven., a:Six., a:Five., a:Four., a:Three., a:Two."
 
+  - name: a call holds the playing answer at its sentence, like a pause
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: next}
+      - {op: hold, hold: call, at: 1}
+      - {op: add, session: b, text: "Three."}
+      - {op: next}
+    want: "waiting a:Two., b:Three. | held call"
+  - name: a call over with your pause still on keeps it held
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: hold, hold: user}
+      - {op: hold, hold: call}
+      - {op: release, hold: call}
+      - {op: next}
+    want: "waiting a:One. | held user"
+
 # What the pill says after the steps. The playing session's key stands for its name.
 pill:
   - name: nothing plays, nothing shows
@@ -941,6 +958,14 @@ pill:
       - {op: drop, session: a}
     want: "paused · 1 waiting"
 # The Voice menu's pauses. Times are local to America/Toronto; labels in en_GB unless `locale:` says.
+  - name: held by a call, the pill says paused
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: hold, hold: call, at: 0}
+      - {op: add, session: b, text: "Two."}
+    want: "paused · 2 waiting"
+
 pause_until:
   - name: until tomorrow, after 8:00, is tomorrow 8:00
     now: "2026-11-10 15:42"
@@ -1026,3 +1051,75 @@ pause_menu:
     paused: "2026-11-10 16:42"
     locale: en_US
     want: "(Paused until 4:42\u202FPM) | Resume [shortcut]"  # a narrow no-break space, as macOS writes it
+  - name: held by a call, it names the app and offers Resume
+    now: "2026-11-10 15:42"
+    call: Zoom
+    waiting: 3
+    want: "(Paused · Zoom is using the mic · 3 waiting) | Resume [shortcut]"
+  - name: a pause of your own during a call says your pause
+    now: "2026-11-10 15:42"
+    paused: "2026-11-10 16:42"
+    call: Zoom
+    want: "(Paused until 16:42) | Resume [shortcut]"
+
+# CallState: who has the mic open at each look, and the events. Our own pid is 1.
+calls:
+  - name: under two seconds is not a call
+    steps:
+      - {at: 0, mic: [{name: Zoom}]}
+      - {at: 1.9, mic: [{name: Zoom}]}
+      - {at: 2.5, mic: []}
+    want: "nothing"
+  - name: two seconds with the mic open is a call
+    steps:
+      - {at: 0, mic: [{name: Zoom}]}
+      - {at: 2, mic: [{name: Zoom}]}
+    want: "2s call started (Zoom)"
+  - name: the mic closed for five seconds ends it
+    steps:
+      - {at: 0, mic: [{name: Zoom}]}
+      - {at: 2, mic: [{name: Zoom}]}
+      - {at: 10, mic: []}
+      - {at: 14.9, mic: []}
+      - {at: 15, mic: []}
+    want: "2s call started (Zoom) | 15s call over (Zoom)"
+  - name: closed for under five seconds, the call goes on
+    steps:
+      - {at: 0, mic: [{name: Zoom}]}
+      - {at: 2, mic: [{name: Zoom}]}
+      - {at: 10, mic: []}
+      - {at: 14, mic: [{name: Zoom}]}
+      - {at: 18, mic: [{name: Zoom}]}
+    want: "2s call started (Zoom)"
+  - name: closing restarts the two seconds
+    steps:
+      - {at: 0, mic: [{name: Zoom}]}
+      - {at: 1.5, mic: []}
+      - {at: 2, mic: [{name: Zoom}]}
+      - {at: 3.5, mic: [{name: Zoom}]}
+      - {at: 4, mic: [{name: Zoom}]}
+    want: "4s call started (Zoom)"
+  - name: a second app joining is the same call
+    steps:
+      - {at: 0, mic: [{name: Zoom}]}
+      - {at: 2, mic: [{name: Zoom}]}
+      - {at: 5, mic: [{name: Zoom}, {name: FaceTime, pid: 200}]}
+      - {at: 6, mic: [{name: FaceTime, pid: 200}]}
+      - {at: 20, mic: []}
+      - {at: 25, mic: []}
+    want: "2s call started (Zoom) | 25s call over (Zoom)"
+  - name: our own recording is not a call
+    steps:
+      - {at: 0, mic: [{pid: 1, bundle: com.parrotflow.app, name: ParrotFlow}]}
+      - {at: 30, mic: [{pid: 1, bundle: com.parrotflow.app, name: ParrotFlow}]}
+    want: "nothing"
+  - name: the other ParrotFlow dictating is not a call
+    steps:
+      - {at: 0, mic: [{bundle: com.parrotflow.app.dev, name: ParrotFlow Dev}]}
+      - {at: 30, mic: [{bundle: com.parrotflow.app.dev, name: ParrotFlow Dev}]}
+    want: "nothing"
+  - name: another app beside our recording is a call
+    steps:
+      - {at: 0, mic: [{pid: 1, bundle: com.parrotflow.app, name: ParrotFlow}, {name: Microsoft Teams}]}
+      - {at: 3, mic: [{pid: 1, bundle: com.parrotflow.app, name: ParrotFlow}, {name: Microsoft Teams}]}
+    want: "3s call started (Microsoft Teams)"

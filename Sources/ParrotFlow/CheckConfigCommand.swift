@@ -375,6 +375,7 @@ enum CheckConfigCommand {
         emit("  · agents            " + (!config.voice.enabled ? "off — voice.enabled is false"
             : agents.isEmpty ? "none" : agents.joined(separator: "; ")))
         emit("  · pause key         " + (config.voice.pauseKey?.display ?? "none"))
+        emit("  · during calls      " + (config.voice.pauseDuringCalls ? "paused" : "keeps speaking"))
         for prompt in VoicePrompt.allCases {
             let label = "voice \(prompt.rawValue)".padding(toLength: 18, withPad: " ", startingAt: 0)
             if let problem = prompt.overrideProblem {
