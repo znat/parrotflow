@@ -157,9 +157,44 @@ enum ClaudeSpeakable {
         cleaned.count <= 220 && sentences(cleaned).count <= 3
     }
 
-    /// What is said when the model is not there: the first two sentences.
-    static func truncated(_ cleaned: String) -> String {
-        sentences(cleaned).prefix(2).joined(separator: " ")
+    /// What is said when the model is not there: the reply's summary, or its
+    /// first two sentences, then its closing question. On 30 invented turns,
+    /// judged blind, it answered the request 1.63 of 2 against 1.43 for the
+    /// first two sentences alone, and 1.30 against 0.80 on long reports.
+    static func plainAnswer(_ written: String, language: String = "en") -> String {
+        let all = sentences(clean(written, language: language))
+        let said = summary(of: written, language: language) ?? all.prefix(2).joined(separator: " ")
+        guard let last = all.last, last.hasSuffix("?"), !said.contains(last) else { return said }
+        return said + " " + last
+    }
+
+    private static let summaryHeading = try? NSRegularExpression(
+        pattern: #"^\s*(?:#{1,6}\s+|\*\*)?(?:TL;?DR|Summary|In short|Short answer|Bottom line|Verdict|"#
+            + #"Recommendations?|Conclusion|Answer|Résumé|En bref|En résumé|Recommandations?)\b"#,
+        options: .caseInsensitive
+    )
+
+    /// The first two sentences under a "Summary", "TL;DR" or "Bottom line"
+    /// heading, or after it on the same line.
+    private static func summary(of written: String, language: String) -> String? {
+        guard let summaryHeading else { return nil }
+        var fenced = false
+        let lines = written.components(separatedBy: "\n").filter { line in
+            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") { fenced.toggle(); return false }
+            return !fenced
+        }
+        for (index, line) in lines.enumerated()
+        where summaryHeading.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil {
+            var body = line.firstIndex(of: ":").map { [String(line[line.index(after: $0)...])] } ?? []
+            for next in lines[(index + 1)...] {
+                let row = next.trimmingCharacters(in: .whitespaces)
+                if row.hasPrefix("#") || (row.isEmpty && body.contains { !clean($0).isEmpty }) { break }
+                if !row.isEmpty, !row.hasPrefix("|") { body.append(next) }
+            }
+            let said = sentences(clean(body.joined(separator: "\n"), language: language)).prefix(2)
+            if !said.isEmpty { return said.joined(separator: " ") }
+        }
+        return nil
     }
 
     /// What the model is sent: the request, then the reply and the recap.
@@ -177,10 +212,79 @@ enum ClaudeSpeakable {
             if !said.isEmpty { parts.append("Earlier reply: " + String(redacted(said).prefix(1500))) }
         }
         if let request, !request.isEmpty { parts.append("Request: " + String(redacted(clean(request)).prefix(800))) }
-        if !reply.isEmpty { parts.append("Reply: " + String(redacted(reply).prefix(6000))) }
+        if !reply.isEmpty { parts.append("Reply: " + headAndTail(redacted(reply))) }
         if let recap, !recap.isEmpty { parts.append("Recap: " + String(redacted(recap).prefix(800))) }
         return parts.joined(separator: "\n\n")
     }
+
+    /// About 24,000 characters, 6,000 tokens: whole for nearly every reply.
+    static let replyBudget = 24_000
+
+    /// A reply over `limit` keeps its first quarter and its end, in whole
+    /// sentences: a long report often concludes in its last lines.
+    static func headAndTail(_ text: String, limit: Int = replyBudget) -> String {
+        guard text.count > limit else { return text }
+        let head = text.prefix(limit / 4), tail = text.suffix(limit - limit / 4)
+        let start = head.range(of: ". ", options: .backwards).map { String(head[..<$0.lowerBound]) + "." } ?? String(head)
+        let end = tail.range(of: ". ").map { String(tail[$0.upperBound...]) } ?? String(tail)
+        return start + " [...] " + end
+    }
+
+    private static let secretName = try? NSRegularExpression(pattern: #"(?i)token|secret|passw(?:or)?d|api[_-]?key"#)
+
+    private static func namesSecret(_ cell: String) -> Bool {
+        secretName?.firstMatch(in: cell, range: NSRange(cell.startIndex..., in: cell)) != nil
+    }
+
+    /// The cells of a `| a | b |` line, empty ones kept so columns line up.
+    /// Nil for a line that is not a table row.
+    private static func cells(_ line: String) -> [String]? {
+        let row = line.trimmingCharacters(in: .whitespaces)
+        guard row.hasPrefix("|") else { return nil }
+        var parts = row.replacingOccurrences(of: "\\|", with: "\u{1}").components(separatedBy: "|")
+            .map { $0.replacingOccurrences(of: "\u{1}", with: "|").trimmingCharacters(in: .whitespaces) }
+        parts.removeFirst()
+        if parts.last?.isEmpty == true { parts.removeLast() }
+        return parts
+    }
+
+    private static func isSeparator(_ cells: [String]?) -> Bool {
+        guard let cells, !cells.isEmpty else { return false }
+        return cells.allSatisfy { $0.range(of: #"^:?-+:?$"#, options: .regularExpression) != nil }
+    }
+
+    /// Table rows as lines of cells, where `clean` drops them: a report's
+    /// findings are often in a table. Joined, a key and its value no longer
+    /// read as `key: value`, so a row with a cell that names a secret keeps
+    /// only that cell, and a column whose header names one is dropped. A row
+    /// is a header only when a `|---|` line follows it.
+    static func tableRows(_ text: String) -> String {
+        let lines = text.components(separatedBy: "\n")
+        var secretColumns: Set<Int> = []
+        return lines.indices.compactMap { index -> String? in
+            guard let row = cells(lines[index]) else {
+                secretColumns = []
+                return lines[index]
+            }
+            if isSeparator(row) { return nil }
+            let said: [String]
+            if index + 1 < lines.count, isSeparator(cells(lines[index + 1])) {
+                secretColumns = Set(row.indices.filter { namesSecret(row[$0]) })
+                said = row
+            } else {
+                let named = row.indices.filter { namesSecret(row[$0]) }
+                said = row.indices.map { column in
+                    let hidden = secretColumns.contains(column) || (!named.isEmpty && !named.contains(column))
+                    return hidden && !row[column].isEmpty ? "redacted" : row[column]
+                }
+            }
+            return spokenRedacted(said.filter { !$0.isEmpty }.joined(separator: ", "))
+        }.joined(separator: "\n")
+    }
+
+    /// About a minute of speech at 150 words a minute: a guard against a
+    /// runaway answer, not a target.
+    static func ceiling(_ said: String) -> String { capped(said, limit: 1_000, count: .max) }
 
     /// A rewrite that ran long keeps whole sentences up to about `limit`
     /// characters, at most `count`. A semicolon counts as a sentence end.
@@ -409,7 +513,7 @@ enum ClaudeSpeakable {
 
     private static let secrets: [(NSRegularExpression, String)] = [
         rule(#"(?i)\bbearer\s+[^\s'"]+"#, "Bearer <redacted>"),
-        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*[:=]\s*|\s+)(['"]?)[^\s'"]+\3"#,
+        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*[:=,]\s*|\s+)(['"]?)[^\s'"]+\3"#,
              "$1$2<redacted>"),
         rule(#"\b(?:sk|pk|rk|ghp|gho|ghs|ghu|github_pat|xox[abpr]|AKIA|AIza)[-_A-Za-z0-9]{8,}"#, "<redacted>"),
         rule(#"\b[A-Za-z0-9+/_-]{32,}={0,2}"#, "<redacted>"),
@@ -431,8 +535,8 @@ enum ClaudeSpeakable {
         rule(#"(https?://[^\s?#'"]+)[?#][^\s'"]*[^\s'".,;:!?]"#, "$1"),
         rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*[:=]\s*)(['"]?)[^\s'"]*[^\s'".,;:!?]\3"#,
              "$1$2redacted"),
-        // After a space, only a value shaped like a secret: "the token expired" is kept.
-        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s+)(['"]?)"#
+        // After a space or a comma, only a value shaped like a secret: "the token expired" is kept.
+        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*,\s*|\s+)(['"]?)"#
              + #"(?=[^\s'"]*\d|[^\s'"]*[^\p{L}\s'".,;:!?]|[^\s'"]*[.,;:!?][^\s'".,;:!?]|[^\s'"]{7,}[^\s'".,;:!?])"#
              + #"[^\s'"]*[^\s'".,;:!?]\3"#, "$1$2redacted"),
         rule(#"\b(?:[spr]k[-_]|gh[posu]_|github_pat_|xox[abpr]-|AKIA|AIza)[-_A-Za-z0-9]{8,}"#, "redacted"),

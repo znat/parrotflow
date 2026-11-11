@@ -339,6 +339,98 @@ capped:
     input: "I merged number 403 into main and the spoken digits now become identifiers the way they should, which closes the bug you saw on Monday with the server names and the ports. CI is green across all of the checks, and the branch passes twelve of twelve of the invented cases against eight of twelve on main today. One test run wrote a few lines to the release log."
     want: "I merged number 403 into main and the spoken digits now become identifiers the way they should, which closes the bug you saw on Monday with the server names and the ports."
 
+# The spoken answer's only limit: about a minute of speech, 1,000 characters.
+ceiling:
+  - name: a long answer of eight sentences is said whole
+    input: "The dashboard is slow because the orders query scans the whole table. The index on created_at was dropped in the March migration. I put it back in a new migration. The page now loads in under a second on staging. Two other reports use the same query and get faster too. The nightly export was not affected. Nothing is deployed yet. Say the word and I will open the PR."
+    want: "The dashboard is slow because the orders query scans the whole table. The index on created_at was dropped in the March migration. I put it back in a new migration. The page now loads in under a second on staging. Two other reports use the same query and get faster too. The nightly export was not affected. Nothing is deployed yet. Say the word and I will open the PR."
+  - name: past a minute of speech, whole sentences stop near 1000 characters
+    input: "The audit covered all fourteen services that talk to the payments database, one by one. Nine of them open a new connection for every request instead of using the shared pool. Three of those nine run on every page view, which explains the connection spikes at noon. The billing worker holds transactions open while it calls the card provider over the network. That is the cause of the lock waits you saw in the slow query log last week. The reporting service reads from the primary when it could read from the replica. Moving it would take about a fifth of the load off the primary at peak. The search indexer is fine and needs no change at all. The fix for the pool is one shared client per service, created at startup. The fix for billing is to call the provider before the transaction opens. Both changes are small and can ship separately. I would start with billing, because the lock waits are what users feel. Tell me which one to do first. I can also add a CI check that fails when a service opens its own connection. That would stop the problem from coming back."
+    want: "The audit covered all fourteen services that talk to the payments database, one by one. Nine of them open a new connection for every request instead of using the shared pool. Three of those nine run on every page view, which explains the connection spikes at noon. The billing worker holds transactions open while it calls the card provider over the network. That is the cause of the lock waits you saw in the slow query log last week. The reporting service reads from the primary when it could read from the replica. Moving it would take about a fifth of the load off the primary at peak. The search indexer is fine and needs no change at all. The fix for the pool is one shared client per service, created at startup. The fix for billing is to call the provider before the transaction opens. Both changes are small and can ship separately. I would start with billing, because the lock waits are what users feel. Tell me which one to do first."
+
+# A table reaches the model as lines of cells; `clean` alone drops it. A row
+# with a cell that names a secret keeps only that cell; a column whose header
+# names one is dropped.
+tables:
+  - name: table rows become lines of cells
+    input: "Findings:\n\n| Service | p95 | Status |\n|---|---:|---|\n| `orders-api` | 840 ms | **slow** |\n| billing | 120 ms | ok |\n\nThe orders index is missing."
+    want: "Findings: Service, p95, Status. orders-api, 840 milliseconds, slow. billing, 120 milliseconds, ok. The orders index is missing."
+  - name: a pipe in a code block is still code
+    input: "Run this:\n```\n| grep error\n```\nThen retry."
+    want: "Run this: Then retry."
+  - name: text with no table is left alone
+    input: "No table here. Just text."
+    want: "No table here. Just text."
+  - name: a secret in a table row is not sent
+    input: "| Name | Value |\n|---|---|\n| DB_PASSWORD | hunter2 |\n| region | eu-west-1 |"
+    want: "Name, Value. DB_PASSWORD, <redacted> region, eu-west-1."
+  - name: a column under a secret's header is not sent
+    input: "| name | token |\n|---|---|\n| ci | abc123def |\n| deploy | xyz789 |"
+    want: "name, token. ci, redacted. deploy, redacted."
+  - name: a first row with a secret and no separator is not a header
+    input: "| API_KEY | hunter2 |"
+    want: "API_KEY, <redacted>"
+  - name: an empty cell before a secret column keeps the columns aligned
+    input: "| name | | token |\n|---|---|---|\n| ci | | hunter2 |"
+    want: "name, token. ci, redacted."
+  - name: a wide row hides every cell but the one that names a secret
+    input: "| Name | Env | Value |\n|---|---|---|\n| DB_PASSWORD | prod | hunter2 |"
+    want: "Name, Env, Value. DB_PASSWORD, <redacted> redacted."
+  - name: an escaped pipe stays inside its cell
+    input: "| command | note |\n|---|---|\n| grep a \\| wc | counts lines |"
+    want: "command, note. grep a | wc, counts lines."
+  - name: a secret after a comma is redacted
+    input: "The api_key, hunter2 is in the vault."
+    want: "The api_key, <redacted> is in the vault."
+
+# What is said with no model: the summary, or the first two sentences, then
+# the closing question.
+plain:
+  - name: a short reply gives its first two sentences
+    input: "Fixed. The test was racing the cache. It passes 20 of 20 now."
+    want: "Fixed. The test was racing the cache."
+  - name: a summary heading wins over a preamble
+    input: "I read the logs of the last two weeks.\n\n## Summary\n\nThe cache is cold after each deploy. Warming it fixes the spike. More on that below.\n\n## Details\n\nLots of detail."
+    want: "The cache is cold after each deploy. Warming it fixes the spike."
+  - name: a TL;DR on its own line
+    input: "**TL;DR:** Two causes, an N+1 query and a missing index.\n\nDetails follow."
+    want: "Two causes, an N+1 query and a missing index."
+  - name: the closing question is added
+    input: "I checked the flags. 23 are older than 90 days.\n\nShould I remove the 16 unused ones?"
+    want: "I checked the flags. 23 are older than 90 days. Should I remove the 16 unused ones?"
+  - name: a French summary
+    input: "J'ai regardé les logs.\n\n## En bref\n\nLa sauvegarde bloque les imports. Il faut la décaler.\n\nTu veux que je le fasse ?"
+    want: "La sauvegarde bloque les imports. Il faut la décaler. Tu veux que je le fasse?"
+  - name: code under a summary heading is not said
+    input: "## Summary\n\n```\nmake deploy TARGET=prod\n```\nThe deploy is fixed. It runs in two minutes now.\n"
+    want: "The deploy is fixed. It runs in two minutes now."
+  - name: a heading inside a code block is not a summary
+    input: "I fixed the parser.\n\n```\nSummary: hunter2\n```\nIt handles empty lines now."
+    want: "I fixed the parser. It handles empty lines now."
+  - name: a reply that is only a table says its rows
+    input: "| Job | Status |\n|---|---|\n| nightly export | done |"
+    want: "Job, Status. nightly export, done."
+  - name: a secret in a table row is not said
+    input: "| Name | Value |\n|---|---|\n| DB_PASSWORD | hunter2 |"
+    want: "Name, Value. DB_PASSWORD, redacted."
+  - name: a first-row secret with no separator is not said
+    input: "| DB_PASSWORD | hunter2 |"
+    want: "DB_PASSWORD, redacted."
+  - name: a word that starts like a heading is not one
+    input: "Answering that took a while. The job runs nightly. It is fine."
+    want: "Answering that took a while. The job runs nightly."
+
+# A reply too long to send keeps its start and its end, in whole sentences.
+head_and_tail:
+  - name: a reply under the limit is sent whole
+    input: "First point. The answer is yes."
+    limit: 100
+    want: "First point. The answer is yes."
+  - name: a long reply keeps its first sentence and its last ones
+    input: "First point. Second point. Third point. Fourth point. Fifth point. Sixth point. The answer is yes."
+    limit: 60
+    want: "First point. [...] Sixth point. The answer is yes."
+
 redacted:
   - name: plain command is left alone
     input: "swift build -c release && scripts/check-claude-voice.sh"

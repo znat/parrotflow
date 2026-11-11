@@ -1391,8 +1391,8 @@ open ParrotFlow once Claude Code has created it.
 1. Restart open Claude Code sessions. Claude Code reads hooks when a session
    starts.
 2. Send a prompt. While the app that session runs in is in front, you hear a
-   short line on what Claude does. When the turn ends, you hear a short
-   version of the answer. The first line waits for the voice on this Mac,
+   short line on what Claude does. When the turn ends, you hear the answer
+   in a few sentences, more for a long report. The first line waits for the voice on this Mac,
    PocketTTS, to download.
 3. `$PF --check-config` says `claude ~/.claude` on its `agents` line.
 
@@ -1608,10 +1608,15 @@ URL query strings. An
 - **When Claude asks:** a question or a plan to approve is said at once.
 - **When the turn ends:** in the desktop app, the turn's recap. It is said
   as soon as Claude sends it, before the closing message is written. Elsewhere the
-  answer is cleaned (code, tables, paths and links removed, `owner/repo#12`
-  said as "PR 12 in repo"). A short one is said as it is. A long one is
-  rewritten into one to three sentences by `model`. With no model, or when the
-  call fails, the first two sentences are said.
+  answer is cleaned (code, paths and links removed, `owner/repo#12`
+  said as "PR 12 in repo") and rewritten by `model`. The spoken answer follows
+  the length of the written one: one sentence for a one-line reply, up to
+  about eight for a long report, grouped by theme. It stops near 1,000
+  characters, about a minute of speech. The model reads table rows as text,
+  and a reply over 24,000 characters is sent as its first quarter and its
+  end. With no model, or when the call fails, the recap is said. Without
+  one, the reply's summary (the lines after a "Summary", "TL;DR" or "Bottom
+  line" heading) or its first two sentences, then its closing question.
 - **Which session:** a line starts with its project, in a varied way
   ("Update from parrotflow:", "parrotflow here:"), when the line before came
   from another active session. A session that was quiet for two minutes is
@@ -1771,7 +1776,7 @@ reads. For `rewrite`, the app asks for JSON with `opener`, `say`, `tone` and
 `explain` and `reminder`, it asks for the sentence alone. Do not write a reply
 format of your own. If a reply to `rewrite` is not that JSON anyway, a short
 one (at most 220 characters and three sentences) is said as written. A longer
-one is not: the answer is said plain, its recap or first two sentences. The
+one is not: the answer is said plain, as when the call fails. The
 log says `claude voice: rewrite reply is not JSON (prompt: …)`.
 
 `voice/` also holds the recordings of your own voice that the vocabulary keeps

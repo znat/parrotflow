@@ -691,9 +691,8 @@ final class ClaudeVoice {
     }
 
     /// What the end of a turn is worth saying, and how. Fails open: no
-    /// model, or a model that fails, still says the recap or the first two
-    /// sentences. `toned` asks the model for a tone even when the words
-    /// need no rewrite.
+    /// model, or a model that fails, still says the recap or `plainAnswer`.
+    /// `toned` asks the model for a tone even when the words need no rewrite.
     static func spoken(
         turn: ClaudeSpeakable.TurnEnd?, written: String?, request: String? = nil, language: String? = nil,
         settings: Config.Voice, config: Config, toned: Bool, opening: Int? = nil
@@ -702,11 +701,12 @@ final class ClaudeVoice {
         let written = turn.flatMap { $0.answer.isEmpty ? nil : $0.answer } ?? written ?? ""
         let language = language ?? asked.flatMap(ClaudeSpeakable.language(of:))
             ?? ClaudeSpeakable.language(of: written) ?? "en"
-        let reply = ClaudeSpeakable.clean(written, language: language)
+        let rows = ClaudeSpeakable.tableRows(written)
+        let reply = ClaudeSpeakable.clean(rows, language: language)
         let recap = turn?.recap.map {
             ClaudeSpeakable.clean([$0, turn?.ask].compactMap { $0 }.joined(separator: "\n"), language: language)
         }
-        let plain = recap ?? ClaudeSpeakable.truncated(reply)
+        let plain = recap ?? ClaudeSpeakable.plainAnswer(rows, language: language)
         guard !plain.isEmpty else { return nil }
         let base = toned ? settings.speechTone : nil
         let fallback = Spoken(text: plain, tone: base.map { ClaudeSpeakable.instructions(base: $0, shift: nil) },
@@ -726,7 +726,7 @@ final class ClaudeVoice {
                 user: ClaudeSpeakable.rewriteInput(request: asked, reply: reply, recap: recap,
                                                    earlier: turn?.earlier, language: language,
                                                    opening: opening),
-                json: true, maxTokens: 300, config: model
+                json: true, maxTokens: 800, config: model
             )
             let parsed = ClaudeSpeakable.parseSpoken(LLM.stripThinking(raw))
             if !parsed.json {
@@ -734,7 +734,7 @@ final class ClaudeVoice {
                     + (parsed.say.isEmpty ? "saying it plain" : "saying it as written"))
                 if parsed.say.isEmpty { return fallback }
             }
-            let said = ClaudeSpeakable.capped(ClaudeSpeakable.clean(parsed.say, language: language), limit: 480, count: 4)
+            let said = ClaudeSpeakable.ceiling(ClaudeSpeakable.clean(parsed.say, language: language))
             let ground = ClaudeSpeakable.grounded(said, in: [reply, recap ?? "", asked ?? ""].joined(separator: " "))
             // Translated, the words cannot overlap, so the check would always say no.
             let source = ClaudeSpeakable.language(of: written)
