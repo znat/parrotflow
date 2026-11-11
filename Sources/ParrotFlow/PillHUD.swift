@@ -1181,6 +1181,8 @@ final class PillHUD {
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
+        // Off by default: the voice pill's tooltips would not show while another app is in front.
+        panel.allowsToolTipsWhenApplicationIsInactive = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         // Unlike the other HUDs, this surface has an intentional platinum
         // light appearance as well as its charcoal dark appearance.
