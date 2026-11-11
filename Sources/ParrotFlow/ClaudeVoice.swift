@@ -124,6 +124,8 @@ final class ClaudeVoice {
     private var lastKind: ClaudeSpeakable.Kind?
     /// By `key(_:_:)`, so two agents' session ids never meet.
     private var sessions: [String: Session] = [:]
+    /// Pins from this launch and earlier ones. A session not by title, with a pid, keeps one here.
+    private lazy var savedPins = SavedPin.load()
     /// Per session, bumped by a new prompt, so that session's answer still
     /// being rewritten is dropped. Other sessions' answers are kept.
     private var turns: [String: Int] = [:]
@@ -843,7 +845,8 @@ final class ClaudeVoice {
         else { return }
         sessions[id]?.window = target
         sessions[id]?.rect = SpeakingFrame.frame(of: target)
-        let at = sessions[id]?.rect.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" } ?? "-"
+        if let rect = sessions[id]?.rect { keepPin(id, rect: rect) }
+        let at = sessions[id]?.rect.map(SpeakingFrame.describe) ?? "-"
         Log.write("claude voice: pinned \(sessions[id]?.project ?? id) to \(NSRunningApplication(processIdentifier: host)?.localizedName ?? "?") at \(at)")
     }
 
@@ -859,15 +862,21 @@ final class ClaudeVoice {
         frame.onRetarget = { [weak self] element, rect in
             self?.sessions[id]?.window = element
             self?.sessions[id]?.rect = rect
+            // A guess is not kept. Ghostty re-ties at the same place often: written only on a move.
+            guard let self, let saved = self.savedPins[id], !SpeakingFrame.close(saved.rect, rect) else { return }
+            // A kept pane element can report the focused pane instead, so a pane's move is not trusted.
+            if SpeakingFrame.isWindow(element) { return self.keepPin(id, rect: rect) }
+            self.savedPins[id] = nil
+            self.savedPins = SavedPin.save(self.savedPins)
         }
         let app = NSRunningApplication(processIdentifier: host)?.localizedName ?? "pid \(host)"
         func note(_ how: String, _ rect: CGRect?) {
-            let at = rect.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" } ?? "-"
+            let at = rect.map(SpeakingFrame.describe) ?? "-"
             Log.write("claude voice: glow for \(session.project) (\(session.agent.rawValue) pid \(session.pid ?? 0)) on \(app), \(how) at \(at)")
         }
-        if let window = session.window {
-            note("pinned", session.rect)
-            return frame.show(window: window, host: host, rect: session.rect)
+        if let window = session.window ?? restorePin(id, host: host) {
+            note("pinned", sessions[id]?.rect)
+            return frame.show(window: window, host: host, rect: sessions[id]?.rect)
         }
         guard let guess = SpeakingFrame.guessWindow(host: host, project: session.project) else {
             note("no pin and no safe guess, hidden", nil)
@@ -877,6 +886,34 @@ final class ClaudeVoice {
         sessions[id]?.rect = SpeakingFrame.frame(of: guess)
         note("guessed", sessions[id]?.rect)
         frame.show(window: guess, host: host, rect: sessions[id]?.rect)
+    }
+
+    private func keepPin(_ id: String, rect: CGRect) {
+        guard let session = sessions[id], !session.byTitle, let agent = session.pid, let host = session.hostPid
+        else { return }
+        savedPins[id] = SavedPin(agent: agent, host: host, rect: rect, at: Date())
+        savedPins = SavedPin.save(savedPins)
+    }
+
+    /// The pin an earlier launch saved, when exactly one of the host's windows or panes is still there.
+    /// Tried once per launch: a pin that fails is dropped.
+    private func restorePin(_ id: String, host: pid_t) -> AXUIElement? {
+        guard let session = sessions[id], !session.byTitle, let pin = savedPins[id] else { return nil }
+        let places = SpeakingFrame.places(host: host)
+        switch SavedPin.check(pin, agent: session.pid, host: host, places: places?.map { ($0.rect, $0.window) }, now: Date()) {
+        case .drop(let why):
+            savedPins[id] = nil
+            savedPins = SavedPin.save(savedPins)
+            Log.write("claude voice: dropped \(session.project)'s saved pin, \(why)")
+            return nil
+        case .restore(let index):
+            guard let place = places?[index] else { return nil }
+            sessions[id]?.window = place.element
+            sessions[id]?.rect = place.rect
+            keepPin(id, rect: place.rect)
+            Log.write("claude voice: restored \(session.project)'s pin at \(SpeakingFrame.describe(place.rect))")
+            return place.element
+        }
     }
 
     /// Once the queue settles: finishing one answer and starting the next is one change.

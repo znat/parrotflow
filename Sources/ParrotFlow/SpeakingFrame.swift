@@ -91,31 +91,65 @@ final class SpeakingFrame {
         abs(a.minX - b.minX) < 4 && abs(a.minY - b.minY) < 4 && abs(a.width - b.width) < 4 && abs(a.height - b.height) < 4
     }
 
+    static func describe(_ rect: CGRect) -> String {
+        "\(Int(rect.minX)),\(Int(rect.minY)) \(Int(rect.width))x\(Int(rect.height))"
+    }
+
     /// The host's window or pane at `rect`, looked up afresh.
     static func element(at rect: CGRect, host pid: pid_t) -> AXUIElement? {
-        guard var queue = value(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement]
-        else { return nil }
+        var found: AXUIElement?
+        _ = walk(host: pid) { element, frame, _ in
+            if close(frame, rect) { found = element }
+            return found != nil
+        }
+        return found
+    }
+
+    typealias Place = (element: AXUIElement, rect: CGRect, window: Int)
+
+    /// Every window and pane of the host with its frame and the index of its window.
+    /// Nil when the walk may have missed one.
+    static func places(host pid: pid_t) -> [Place]? {
+        var all: [Place] = []
+        let complete = walk(host: pid, deadline: Date() + 1) { all.append(($0, $1, $2)); return false }
+        return complete ? all : nil
+    }
+
+    /// Visits the host's windows and scroll areas, with the index of the window
+    /// each sits in, until `visit` says stop. False when the budget or the time ran out,
+    /// or when a window or pane may sit where the walk did not look.
+    private static func walk(host pid: pid_t, deadline: Date = .distantFuture,
+                             visit: (AXUIElement, CGRect, Int) -> Bool) -> Bool {
+        guard let windows = value(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement]
+        else { return false }
+        // A pane's own contents hold no other pane, so what is cut there is not missed.
+        var queue = windows.enumerated().map { (element: $0.element, window: $0.offset, inPane: false) }
         var depth = 0
         // 24 children over 6 levels is millions of calls on the main thread in a deep tree.
         var budget = 400
+        var complete = true
         while !queue.isEmpty, depth < 6 {
-            var next: [AXUIElement] = []
-            for element in queue {
+            var next: [(element: AXUIElement, window: Int, inPane: Bool)] = []
+            for (element, window, inPane) in queue {
                 budget -= 1
-                if budget < 0 { return nil }
+                if budget < 0 || Date() > deadline { return false }
                 let kind = role(of: element)
                 if kind == kAXWindowRole || kind == kAXScrollAreaRole, let frame = frame(of: element),
-                   close(frame, rect) {
-                    return element
+                   visit(element, frame, window) {
+                    return true
                 }
+                let below = inPane || kind == kAXScrollAreaRole || kind == kAXTextAreaRole
                 if let children = value(element, kAXChildrenAttribute) as? [AXUIElement] {
-                    next += children.prefix(24)
+                    next += children.prefix(24).map { ($0, window, below) }
+                    if children.count > 24, !below { complete = false }
+                } else if kind == kAXWindowRole {
+                    complete = false
                 }
             }
             queue = next
             depth += 1
         }
-        return nil
+        return complete && queue.allSatisfy { $0.inPane }
     }
 
     /// Half a second after the voice stops, so a pause between sentences
@@ -484,6 +518,10 @@ final class SpeakingFrame {
         guard let found = value(parent, attribute), CFGetTypeID(found) == AXUIElementGetTypeID() else { return nil }
         // swiftlint:disable:next force_cast
         return (found as! AXUIElement)
+    }
+
+    static func isWindow(_ element: AXUIElement) -> Bool {
+        role(of: element) == kAXWindowRole
     }
 
     /// The window a pane sits in. A window is its own.
