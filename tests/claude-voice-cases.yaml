@@ -348,8 +348,8 @@ ceiling:
     input: "The audit covered all fourteen services that talk to the payments database, one by one. Nine of them open a new connection for every request instead of using the shared pool. Three of those nine run on every page view, which explains the connection spikes at noon. The billing worker holds transactions open while it calls the card provider over the network. That is the cause of the lock waits you saw in the slow query log last week. The reporting service reads from the primary when it could read from the replica. Moving it would take about a fifth of the load off the primary at peak. The search indexer is fine and needs no change at all. The fix for the pool is one shared client per service, created at startup. The fix for billing is to call the provider before the transaction opens. Both changes are small and can ship separately. I would start with billing, because the lock waits are what users feel. Tell me which one to do first. I can also add a CI check that fails when a service opens its own connection. That would stop the problem from coming back."
     want: "The audit covered all fourteen services that talk to the payments database, one by one. Nine of them open a new connection for every request instead of using the shared pool. Three of those nine run on every page view, which explains the connection spikes at noon. The billing worker holds transactions open while it calls the card provider over the network. That is the cause of the lock waits you saw in the slow query log last week. The reporting service reads from the primary when it could read from the replica. Moving it would take about a fifth of the load off the primary at peak. The search indexer is fine and needs no change at all. The fix for the pool is one shared client per service, created at startup. The fix for billing is to call the provider before the transaction opens. Both changes are small and can ship separately. I would start with billing, because the lock waits are what users feel. Tell me which one to do first."
 
-# A table reaches the model as lines of cells, with its secrets taken out;
-# `clean` alone drops it.
+# A table reaches the model as lines of cells; `clean` alone drops it. A cell
+# under a secret's header, or after a cell that names one, is redacted.
 tables:
   - name: table rows become lines of cells
     input: "Findings:\n\n| Service | p95 | Status |\n|---|---:|---|\n| `orders-api` | 840 ms | **slow** |\n| billing | 120 ms | ok |\n\nThe orders index is missing."
@@ -362,7 +362,10 @@ tables:
     want: "No table here. Just text."
   - name: a secret in a table row is not sent
     input: "| Name | Value |\n|---|---|\n| DB_PASSWORD | hunter2 |\n| region | eu-west-1 |"
-    want: "Name, Value. DB_PASSWORD, <redacted> region, eu-west-1."
+    want: "Name, Value. DB_PASSWORD, redacted. region, eu-west-1."
+  - name: a column under a secret's header is not sent
+    input: "| name | token |\n|---|---|\n| ci | abc123def |\n| deploy | xyz789 |"
+    want: "name, token. ci, redacted. deploy, redacted."
 
 # What is said with no model: the summary, or the first two sentences, then
 # the closing question.
@@ -391,6 +394,9 @@ plain:
   - name: a reply that is only a table says its rows
     input: "| Job | Status |\n|---|---|\n| nightly export | done |"
     want: "Job, Status. nightly export, done."
+  - name: a secret in a table row is not said
+    input: "| Name | Value |\n|---|---|\n| DB_PASSWORD | hunter2 |"
+    want: "Name, Value. DB_PASSWORD, redacted."
   - name: a word that starts like a heading is not one
     input: "Answering that took a while. The job runs nightly. It is fine."
     want: "Answering that took a while. The job runs nightly."

@@ -230,14 +230,35 @@ enum ClaudeSpeakable {
         return start + " [...] " + end
     }
 
-    /// Table rows as lines of cells for the model, where `clean` drops them:
-    /// a report's findings are often in a table.
+    private static let secretName = try? NSRegularExpression(pattern: #"(?i)token|secret|passw(?:or)?d|api[_-]?key"#)
+
+    private static func namesSecret(_ cell: String) -> Bool {
+        secretName?.firstMatch(in: cell, range: NSRange(cell.startIndex..., in: cell)) != nil
+    }
+
+    /// Table rows as lines of cells, where `clean` drops them: a report's
+    /// findings are often in a table. Once joined, a key and its value no
+    /// longer read as `key: value`, so a cell under a secret's header, or
+    /// after a cell that names one, is redacted here.
     static func tableRows(_ text: String) -> String {
-        text.components(separatedBy: "\n").compactMap { line -> String? in
+        var header: [String]?
+        return text.components(separatedBy: "\n").compactMap { line -> String? in
             let row = line.trimmingCharacters(in: .whitespaces)
-            guard row.hasPrefix("|") else { return line }
+            guard row.hasPrefix("|") else {
+                header = nil
+                return line
+            }
             let cells = row.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-            return cells.allSatisfy({ $0.allSatisfy { "-: ".contains($0) } }) ? nil : cells.joined(separator: ", ")
+            if cells.allSatisfy({ $0.allSatisfy { "-: ".contains($0) } }) { return nil }
+            guard let names = header else {
+                header = cells
+                return cells.joined(separator: ", ")
+            }
+            return cells.indices.map { index in
+                let named = (index < names.count && namesSecret(names[index]))
+                    || (index > 0 && namesSecret(cells[index - 1]))
+                return named ? "redacted" : cells[index]
+            }.joined(separator: ", ")
         }.joined(separator: "\n")
     }
 
@@ -472,8 +493,7 @@ enum ClaudeSpeakable {
 
     private static let secrets: [(NSRegularExpression, String)] = [
         rule(#"(?i)\bbearer\s+[^\s'"]+"#, "Bearer <redacted>"),
-        // A comma too: `tableRows` joins a key cell and its value cell with one.
-        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*[:=,]\s*|\s+)(['"]?)[^\s'"]+\3"#,
+        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*[:=]\s*|\s+)(['"]?)[^\s'"]+\3"#,
              "$1$2<redacted>"),
         rule(#"\b(?:sk|pk|rk|ghp|gho|ghs|ghu|github_pat|xox[abpr]|AKIA|AIza)[-_A-Za-z0-9]{8,}"#, "<redacted>"),
         rule(#"\b[A-Za-z0-9+/_-]{32,}={0,2}"#, "<redacted>"),

@@ -633,7 +633,8 @@ enum ClaudeHooksCommand {
                   want: item.want)
         }
         for item in cases.plain {
-            check(item.name, got: ClaudeSpeakable.plainAnswer(ClaudeSpeakable.tableRows(item.input)), want: item.want)
+            check(item.name, got: ClaudeSpeakable.spokenRedacted(ClaudeSpeakable.plainAnswer(ClaudeSpeakable.tableRows(item.input))),
+                  want: item.want)
         }
         for item in cases.headAndTail {
             check(item.name, got: ClaudeSpeakable.headAndTail(item.input, limit: item.limit), want: item.want)
