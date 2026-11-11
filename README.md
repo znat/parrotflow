@@ -138,7 +138,7 @@ To match the skill to the app version you run, name its tag:
 
 <!-- x-release-please-start-version -->
 ```sh
-npx skills add 'znat/parrotflow#v0.19.0@parrotflow'
+npx skills add 'znat/parrotflow#v0.20.0@parrotflow'
 ```
 <!-- x-release-please-end -->
 

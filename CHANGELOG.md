@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.20.0](https://github.com/znat/parrotflow/compare/v0.19.0...v0.20.0) (2026-11-11)
+
+### Highlights
+
+* **Pause the voice, keep the answers.** Pause your coding agents' voice for every session at once: from the pill, from the menu bar (until you resume, for an hour, or until tomorrow 8:00) or with ⌃⌥P. Answers wait in a list, and Resume plays them from the sentence where the voice stopped. ([#442](https://github.com/znat/parrotflow/pull/442))
+* **Quiet in meetings.** The voice pauses on its own while another app uses the mic, such as Zoom, Teams, Meet or FaceTime. After the call, the pill says how many answers wait. ([#442](https://github.com/znat/parrotflow/pull/442))
+* **Dictate over the voice.** Holding the hotkey holds the voice, and it picks up where it stopped when you finish. Before, a dictation dropped the answers still to come. ([#442](https://github.com/znat/parrotflow/pull/442))
+* **Hear an answer again.** Voice → Answers in the menu lists the answers waiting and the last 10 heard. Play again is instant: it reuses the audio. ([#442](https://github.com/znat/parrotflow/pull/442))
+* **Spoken answers that answer.** The spoken version now grows with the answer, up to about eight sentences for a long report, and starts with what answers your request. It reads the whole reply, tables included. ([#443](https://github.com/znat/parrotflow/pull/443))
+* **One voice per session.** Each agent session speaks with one of six local voices, so you can tell them apart by ear. ([#433](https://github.com/znat/parrotflow/pull/433))
+* **The glow stays on the right window.** The glow around the speaking session sits behind the windows in front of it, comes back after the app restarts, and stays on the session's own pane. ([#435](https://github.com/znat/parrotflow/pull/435), [#444](https://github.com/znat/parrotflow/pull/444), [#445](https://github.com/znat/parrotflow/pull/445))
+
+### Upgrading
+
+* Nothing to do. config.yaml is upgraded to version 5 at launch: the voice lines of the shipped example are replaced if you left them unchanged, and the old file is kept beside it as `config.yaml.bak-v<N>-<date>`. ([#433](https://github.com/znat/parrotflow/pull/433))
+* The voice is still off by default. Set `voice.enabled: true` in config.yaml to hear it. New settings, with defaults: `voice.pause_key` (⌃⌥P, or `none`) and `voice.pause_during_calls` (true). ([#442](https://github.com/znat/parrotflow/pull/442))
+* A remote voice other than Gemini needs its voice names in `voice.speech_voices`. `--check-config` says so. ([#433](https://github.com/znat/parrotflow/pull/433))
+
+[Every change since 0.19.0](https://github.com/znat/parrotflow/compare/v0.19.0...v0.20.0)
+
 ## [0.19.0](https://github.com/znat/parrotflow/compare/v0.18.0...v0.19.0) (2026-11-09)
 
 ### Highlights
