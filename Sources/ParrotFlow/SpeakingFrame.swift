@@ -108,26 +108,30 @@ final class SpeakingFrame {
     typealias Place = (element: AXUIElement, rect: CGRect, window: Int)
 
     /// Every window and pane of the host with its frame and the index of its window.
-    /// Nil when the walk ran out first.
+    /// Nil when the walk ran out, or left out some children, before it saw them all.
     static func places(host pid: pid_t) -> [Place]? {
         var all: [Place] = []
-        return walk(host: pid) { all.append(($0, $1, $2)); return false } ? all : nil
+        let complete = walk(host: pid, deadline: Date() + 1) { all.append(($0, $1, $2)); return false }
+        return complete ? all : nil
     }
 
     /// Visits the host's windows and scroll areas, with the index of the window
-    /// each sits in, until `visit` says stop. False when the budget ran out.
-    private static func walk(host pid: pid_t, visit: (AXUIElement, CGRect, Int) -> Bool) -> Bool {
+    /// each sits in, until `visit` says stop. False when the budget or the time ran out,
+    /// or when a window or group had more children than were looked at.
+    private static func walk(host pid: pid_t, deadline: Date = .distantFuture,
+                             visit: (AXUIElement, CGRect, Int) -> Bool) -> Bool {
         guard let windows = value(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement]
         else { return false }
         var queue = windows.enumerated().map { ($0.element, $0.offset) }
         var depth = 0
         // 24 children over 6 levels is millions of calls on the main thread in a deep tree.
         var budget = 400
+        var complete = true
         while !queue.isEmpty, depth < 6 {
             var next: [(AXUIElement, Int)] = []
             for (element, window) in queue {
                 budget -= 1
-                if budget < 0 { return false }
+                if budget < 0 || Date() > deadline { return false }
                 let kind = role(of: element)
                 if kind == kAXWindowRole || kind == kAXScrollAreaRole, let frame = frame(of: element),
                    visit(element, frame, window) {
@@ -135,12 +139,14 @@ final class SpeakingFrame {
                 }
                 if let children = value(element, kAXChildrenAttribute) as? [AXUIElement] {
                     next += children.prefix(24).map { ($0, window) }
+                    // A pane's own contents hold no other pane.
+                    if children.count > 24, kind != kAXScrollAreaRole, kind != kAXTextAreaRole { complete = false }
                 }
             }
             queue = next
             depth += 1
         }
-        return true
+        return complete
     }
 
     /// Half a second after the voice stops, so a pause between sentences

@@ -867,7 +867,8 @@ final class ClaudeVoice {
         }
         let app = NSRunningApplication(processIdentifier: host)?.localizedName ?? "pid \(host)"
         func note(_ how: String, _ rect: CGRect?) {
-            Log.write("claude voice: glow for \(session.project) (\(session.agent.rawValue) pid \(session.pid ?? 0)) on \(app), \(how) at \(rect.map(SpeakingFrame.describe) ?? "-")")
+            let at = rect.map(SpeakingFrame.describe) ?? "-"
+            Log.write("claude voice: glow for \(session.project) (\(session.agent.rawValue) pid \(session.pid ?? 0)) on \(app), \(how) at \(at)")
         }
         if let window = session.window ?? restorePin(id, host: host) {
             note("pinned", sessions[id]?.rect)

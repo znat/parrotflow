@@ -894,7 +894,7 @@ enum ClaudeHooksCommand {
         }
         let kept = SavedPin.kept(stored, now: pinnedAt + 8 * 3600 + 120, running: { $0 != 999 })
         check("saved pins keep the newest 20 whose agent runs, none older than 8 hours",
-              got: kept.keys.sorted { Int($0.dropFirst())! < Int($1.dropFirst())! }.joined(separator: " "),
+              got: kept.keys.compactMap { Int($0.dropFirst()) }.sorted().map { "s\($0)" }.joined(separator: " "),
               want: (Array(4...19) + Array(21...24)).map { "s\($0)" }.joined(separator: " "))
         typealias Ancestor = SpeakingFrame.Ancestor
         let shell = Ancestor(pid: 3, arguments: ["-zsh"])
