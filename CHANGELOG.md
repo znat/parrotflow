@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.20.0](https://github.com/znat/parrotflow/compare/v0.19.0...v0.20.0) (2026-11-11)
+
+
+### Features
+
+* each agent session gets its own voice, and the remote voice's model is in the config ([#433](https://github.com/znat/parrotflow/issues/433)) ([7a8d2e3](https://github.com/znat/parrotflow/commit/7a8d2e3072a938cd92f22d8920ac629da7da61bc))
+* pause the coding agents' voice, and replay its answers ([#442](https://github.com/znat/parrotflow/issues/442)) ([a3d5125](https://github.com/znat/parrotflow/commit/a3d512574d8742d72eb4e22abe9d5a61b439373d))
+* spoken answers follow the length of the reply ([#443](https://github.com/znat/parrotflow/issues/443)) ([af2d813](https://github.com/znat/parrotflow/commit/af2d813a0bc91870cf9da231ddbe685cf383537a))
+
+
+### Fixes
+
+* the glow stays on a session's own pane when a background task reports back ([#435](https://github.com/znat/parrotflow/issues/435)) ([e506cc1](https://github.com/znat/parrotflow/commit/e506cc144d5a1e6981c9981ed928fa94c07b40f6))
+* the speaking glow comes back after the app restarts ([#445](https://github.com/znat/parrotflow/issues/445)) ([0e6f755](https://github.com/znat/parrotflow/commit/0e6f7550662a8d43545e7a9ce340e8f4a4c9552d))
+* the speaking glow stays behind the windows in front of it ([#444](https://github.com/znat/parrotflow/issues/444)) ([b72e6ba](https://github.com/znat/parrotflow/commit/b72e6ba48168d586eefea72e7e6c4f11bc6d680c))
+
 ## [0.19.0](https://github.com/znat/parrotflow/compare/v0.18.0...v0.19.0) (2026-11-09)
 
 ### Highlights
