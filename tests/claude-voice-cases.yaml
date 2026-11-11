@@ -1127,6 +1127,59 @@ queue:
       - {op: next}
       - {op: finish}
     want: "heard b:Two. audio, a:One. audio"
+  - name: skip hears the one playing, and the next one waiting plays
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: add, session: b, text: "Three."}
+      - {op: add, session: c, text: "Four."}
+      - {op: next}
+      - {op: skip}
+      - {op: next}
+    want: "playing b:Three. 2 of 3 | waiting c:Four. | heard a:One."
+  - name: skip with nothing waiting leaves the voice free
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: skip}
+      - {op: next}
+      - {op: progress}
+    want: "heard a:One. | progress said"
+  - name: skip with nothing playing changes nothing
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: skip}
+    want: "waiting a:One."
+  - name: skip during a resumed list moves to the next
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: add, session: c, text: "Three."}
+      - {op: next}
+      - {op: hold, hold: user, at: 0}
+      - {op: release, hold: user}
+      - {op: next}
+      - {op: skip}
+      - {op: next}
+    want: "playing b:Two. 2 of 3 | waiting c:Three. | heard a:One."
+  - name: skip while paused changes nothing
+    steps:
+      - {op: add, session: a, text: "One. Two."}
+      - {op: next}
+      - {op: hold, hold: user, at: 1}
+      - {op: skip}
+    want: "waiting a:Two. | held user"
+  - name: skip stops a replay played through a pause, and the pause holds the rest
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: finish, samples: 5}
+      - {op: hold, hold: user}
+      - {op: ask, id: 1}
+      - {op: next}
+      - {op: skip}
+      - {op: next}
+    want: "waiting b:Two. | held user | heard a:One. audio"
 
 # What the pill says after the steps. The playing session's key stands for its name.
 pill:
@@ -1297,6 +1350,23 @@ pill:
       - {op: ask, id: 1}
       - {op: next}
       - {op: finish}
+    want: "paused · 1 waiting"
+  - name: skip the last one and the speaking pill goes
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: next}
+      - {op: skip}
+    want: "nothing"
+  - name: skip a replay played through a pause and the paused pill comes back
+    steps:
+      - {op: add, session: a, text: "One."}
+      - {op: add, session: b, text: "Two."}
+      - {op: next}
+      - {op: finish}
+      - {op: hold, hold: user}
+      - {op: ask, id: 1}
+      - {op: next}
+      - {op: skip}
     want: "paused · 1 waiting"
 
 # The Answers submenu: its title, then each row as name · when · what was said [its actions].

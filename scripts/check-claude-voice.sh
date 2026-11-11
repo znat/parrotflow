@@ -67,13 +67,16 @@ check "a reference copy no longer shipped is removed" "$([ -e "$VOICE/built-in/r
 check "the refresh leaves the rest of voice/ alone" "$(cat "$VOICE/observations.jsonl" "$VOICE/reminder.md")" \
   '{"term": "Mira"}'$'\n'"Say it in one sentence."
 
-# pause_key <value>: the check-config lines about it. No value: the key left out.
-pause_key() {
+# voice_key <pause|skip> <value>: the check-config lines about that key. No value: the key left out.
+voice_key() {
+  local name=$1; shift
   printf 'voice:\n  enabled: false\n' > "$WORK/config.yaml"
-  [ $# -gt 0 ] && printf '  pause_key: %s\n' "$1" >> "$WORK/config.yaml"
+  [ $# -gt 0 ] && printf '  %s_key: %s\n' "$name" "$1" >> "$WORK/config.yaml"
   PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config </dev/null 2>/dev/null \
-    | grep -E "pause key|voice.pause_key" | sed 's/^ *//; s/  */ /g'
+    | grep -E "$name key|voice.${name}_key" | sed 's/^ *//; s/  */ /g'
 }
+pause_key() { voice_key pause "$@"; }
+skip_key() { voice_key skip "$@"; }
 
 echo
 echo "voice.pause_key"
@@ -92,6 +95,16 @@ check "a bare modifier is a problem" "$(pause_key '{ key: right_option }')" \
   "✗ voice.pause_key: \"right_option\" is a modifier alone — it needs a key; the shortcut is off"$'\n'"· pause key none"
 check "a word that is not none is a problem" "$(pause_key ctrl-p)" \
   "✗ voice.pause_key: \"ctrl-p\" is not a shortcut — expected { key: p, modifiers: \[control, option\] } or none; the shortcut is off"$'\n'"· pause key none"
+
+echo
+echo "voice.skip_key"
+check "the default is ⌃⌥S" "$(skip_key)" "· skip key ⌃⌥S"
+check "a key and modifiers" "$(skip_key '{ key: f14, modifiers: [cmd] }')" "· skip key ⌘F14"
+check "none turns it off" "$(skip_key none)" "· skip key none"
+check "a word that is not none names the skip example" "$(skip_key ctrl-s)" \
+  "✗ voice.skip_key: \"ctrl-s\" is not a shortcut — expected { key: s, modifiers: \[control, option\] } or none; the shortcut is off"$'\n'"· skip key none"
+check "a key with no modifier is a problem" "$(skip_key '{ key: s }')" \
+  "✗ voice.skip_key: it needs one or more of command, control, option, shift; the shortcut is off"$'\n'"· skip key none"
 
 # during_calls [value]: the check-config line for voice.pause_during_calls.
 during_calls() {

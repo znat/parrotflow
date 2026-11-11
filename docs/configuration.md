@@ -1548,6 +1548,7 @@ voice:
     collaborating with a teammate, speaking face to face. Clear and conversational,
     not performative.
   pause_key: { key: p, modifiers: [control, option] }  # pause and resume; none turns it off
+  skip_key: { key: s, modifiers: [control, option] }   # skip the answer playing; none turns it off
   pause_during_calls: true  # hold the voice while another app uses the mic
 ```
 
@@ -1653,9 +1654,10 @@ URL query strings. An
   answer, they are the first words of the request. Progress lines do not
   raise the pill. Next to the name, "2 waiting" counts the lines queued
   behind it. After a pause or a dictation, the list plays as a run and the
-  pill says "1 of 3" instead. **Pause** holds the voice for every session;
+  pill says "1 of 3" instead. **Pause** (⏸) holds the voice for every session;
   the pill then says "Voice paused", counts what waits, and stays until you
-  press **Resume**. "Go to session" shows only while the session's window is
+  press **Resume**. **Skip** (⏭) stops the answer and plays the next one
+  waiting. "Go to session" shows only while the session's window is
   not in front. It brings its app to the front and raises its window; tabs in
   one window cannot be told apart, so the window comes up. The pill goes away
   a moment after the voice stops. A dictation always takes the pill; it comes
@@ -1686,6 +1688,16 @@ and the menu still works. macOS does not refuse a combo another app already
 holds, so pick one no other app uses. The dev and release builds share ⌃⌥P.
 The log says each change: `claude voice: paused until 16:42 (menu)`,
 `claude voice: resumed (shortcut)`, `claude voice: pause ended at 16:42`.
+
+**Skip** on the speaking pill, or `skip_key` (⌃⌥S by default), stops the
+answer playing now and plays the next one waiting. With nothing waiting, the
+voice stops and the pill goes. During "1 of 3", Skip moves to 2 of 3. It
+also stops an answer replayed from the menu. With nothing playing, it does
+nothing. A skipped answer is listed under **Answers**, so **Play again**
+still works. `skip_key` is written like `pause_key`, and `none` turns it off.
+When macOS refuses it, the log says `claude voice: skip shortcut ⌃⌥S not
+registered`. Each skip is logged: `claude voice: skipped parrotflow (pill),
+2 waiting`.
 
 `pause_during_calls` holds the voice while another app uses the mic, as Zoom,
 Teams, FaceTime or a call in the browser do. The app must keep the mic open

@@ -411,6 +411,7 @@ final class PillModel: ObservableObject {
     /// The voice pill's buttons.
     var onGoToSession: (() -> Void)?
     var onPauseVoice: (() -> Void)?
+    var onSkipVoice: (() -> Void)?
     var onResumeVoice: (() -> Void)?
     var onNotNowVoice: (() -> Void)?
 
@@ -1180,6 +1181,8 @@ final class PillHUD {
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
+        // Off by default: the voice pill's tooltips would not show while another app is in front.
+        panel.allowsToolTipsWhenApplicationIsInactive = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         // Unlike the other HUDs, this surface has an intentional platinum
         // light appearance as well as its charcoal dark appearance.
@@ -1775,6 +1778,7 @@ enum PillMetrics {
 
     static let goToSession = "Go to session ›"
     static let pauseVoice = "Pause"
+    static let skipVoice = "Skip"
     static let resumeVoice = "Resume"
     static let voicePaused = "Voice paused"
     static let notNow = "Not now"
@@ -1810,7 +1814,7 @@ enum PillMetrics {
         case .speaking(let name, let text, let goTo):
             parts.append(measure(name, sentenceFont))
             status = text
-            parts.append(rule + button(pauseVoice, true))
+            parts += [rule + voiceButtonHeight, voiceButtonHeight]
             if goTo { parts.append(rule + button(goToSession, false)) }
         case .paused(let count):
             parts.append(measure(voicePaused, sentenceFont))
@@ -2518,7 +2522,7 @@ private struct MessageContent: View {
     }
 }
 
-/// `[waveform] name  2 waiting | [Pause] | [Go to session ›]`,
+/// `[waveform] name  2 waiting | [⏸] [⏭] | [Go to session ›]`,
 /// `[pause] Voice paused  3 waiting | [Resume]`, `[muted] Voice paused  Zoom is using the mic | [Resume]`,
 /// or `[waveform] Call over · 3 waiting | [Resume] [Not now]`. Measured by `PillMetrics.voice`.
 private struct VoiceContent: View {
@@ -2542,7 +2546,8 @@ private struct VoiceContent: View {
                 chip(status)
                 Spacer(minLength: 0)
                 rule
-                button(PillMetrics.pauseVoice, symbol: "pause.fill", accent: false) { model.onPauseVoice?() }
+                iconButton(PillMetrics.pauseVoice, symbol: "pause.fill") { model.onPauseVoice?() }
+                iconButton(PillMetrics.skipVoice, symbol: "forward.end.fill") { model.onSkipVoice?() }
                 if goTo {
                     rule
                     button(PillMetrics.goToSession, symbol: nil, accent: true) { model.onGoToSession?() }
@@ -2612,17 +2617,32 @@ private struct VoiceContent: View {
             .fixedSize()
             .padding(.horizontal, PillMetrics.voiceButtonPad)
             .frame(height: PillMetrics.voiceButtonHeight)
-            .background {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(accent ? theme.accent.opacity(0.17) : theme.controlFill)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 4)
-                            .strokeBorder(accent ? theme.accent : theme.controlEdge, lineWidth: 1)
-                    }
-            }
+            .background { face(accent: accent) }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private func iconButton(_ label: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .frame(width: PillMetrics.voiceButtonHeight, height: PillMetrics.voiceButtonHeight)
+                .background { face(accent: false) }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    private func face(accent: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 4)
+            .fill(accent ? theme.accent.opacity(0.17) : theme.controlFill)
+            .overlay {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(accent ? theme.accent : theme.controlEdge, lineWidth: 1)
+            }
     }
 }
 

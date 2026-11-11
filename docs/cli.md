@@ -97,8 +97,9 @@ It also names, every time and whether or not anything is wrong:
 - which agents `voice.agents` hooks, and in which folders. A `claude:` section
   is a `✗` that names `--upgrade-config --write`. A name under `agents` other
   than `claude`, `codex` or `mini` is a `✗` too, and so is a folder after `mini`
-- the shortcut that pauses the voice, `voice.pause_key`, or `none`. A key it
-  cannot read is a `✗`, and the shortcut is off
+- the shortcuts that pause the voice and skip an answer, `voice.pause_key`
+  and `voice.skip_key`, or `none`. A key it cannot read is a `✗`, and the
+  shortcut is off
 - whether the voice pauses while another app uses the mic, `voice.pause_during_calls`
 - which prompt the voice uses for `rewrite`, `explain` and `reminder`: `built-in`,
   or the path of your file in `voice/`. An empty or unreadable file there is a `✗`. See

@@ -350,7 +350,7 @@ enum ClaudeHooksCommand {
         }
         /// `ago`: an add's age in seconds. `samples`: a finish made each sentence whole, this long.
         struct QueueStep: Decodable {
-            enum Operation: String, Decodable { case add, next, hold, release, finish, drop, progress, ask }
+            enum Operation: String, Decodable { case add, next, hold, release, finish, skip, drop, progress, ask }
             var op: Operation; var session: String?; var text: String?; var hold: VoiceQueue.Hold?; var at: Int?
             var id: Int?; var ago: Double?; var samples: Int?
         }
@@ -546,6 +546,7 @@ enum ClaudeHooksCommand {
             case .ask:
                 guard let id = step.id else { return (queue, progress, "an ask step needs id:") }
                 queue.ask(id, stoppedAt: step.at)
+            case .skip: queue.skip()
             case .drop: queue.drop(session: step.session ?? "")
             case .progress: progress.append(queue.takesProgress ? "progress said" : "progress dropped")
             }
