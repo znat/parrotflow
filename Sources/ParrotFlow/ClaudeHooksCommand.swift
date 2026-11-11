@@ -858,6 +858,44 @@ enum ClaudeHooksCommand {
               want: "hidden")
         check("the glow hides when another app's window holds the place",
               got: stack([SpeakingFrame.Shown(id: 7, pid: other, bounds: ownWindow.bounds)]), want: "hidden")
+        let pinnedAt = Date(timeIntervalSinceReferenceDate: 0)
+        let saved = SavedPin(agent: 300, host: terminal, rect: pane, at: pinnedAt)
+        let window = CGRect(x: 0, y: 0, width: 1600, height: 1000)
+        /// Each rect sits in its own window, unless `window` names one.
+        func restore(_ places: [CGRect]?, window: [Int]? = nil, agent: pid_t? = 300, host: pid_t = terminal,
+                     after: TimeInterval = 60) -> String {
+            let placed = places.map { $0.enumerated().map { (rect: $0.element, window: window?[$0.offset] ?? $0.offset) } }
+            switch SavedPin.check(saved, agent: agent, host: host, places: placed, now: pinnedAt + after) {
+            case .restore(let index): return "restore \(index)"
+            case .drop(let why): return "drop: " + why
+            }
+        }
+        check("a saved pin comes back on the one pane at its place",
+              got: restore([window, pane.offsetBy(dx: 2, dy: 1), pane.offsetBy(dx: 0, dy: 600)]), want: "restore 1")
+        check("a saved pin with nothing at its place is dropped",
+              got: restore([window, pane.offsetBy(dx: 40, dy: 0)]), want: "drop: nothing at 100,200 800x600")
+        check("a saved pin with two windows at its place is dropped",
+              got: restore([pane, window, pane]), want: "drop: 2 windows at 100,200 800x600")
+        check("a window and its own pane at the saved place are one place",
+              got: restore([window, pane, pane.offsetBy(dx: 1, dy: 0)], window: [0, 1, 1]), want: "restore 1")
+        check("a saved pin is dropped when the windows could not all be read",
+              got: restore(nil), want: "drop: too many windows to look through")
+        check("a saved pin of another agent process is dropped",
+              got: restore([pane], agent: 301), want: "drop: another agent process")
+        check("a saved pin with no agent pid now is dropped", got: restore([pane], agent: nil),
+              want: "drop: another agent process")
+        check("a saved pin in another host app is dropped", got: restore([pane], host: other),
+              want: "drop: another host app")
+        check("a saved pin 7 hours old comes back", got: restore([pane], after: 7 * 3600), want: "restore 0")
+        check("a saved pin 9 hours old is dropped", got: restore([pane], after: 9 * 3600), want: "drop: older than 8 h")
+        let stored = (0..<25).reduce(into: [String: SavedPin]()) { pins, index in
+            pins["s\(index)"] = SavedPin(agent: pid_t(index == 20 ? 999 : 300), host: terminal, rect: pane,
+                                         at: pinnedAt + TimeInterval(index * 60))
+        }
+        let kept = SavedPin.kept(stored, now: pinnedAt + 8 * 3600 + 120, running: { $0 != 999 })
+        check("saved pins keep the newest 20 whose agent runs, none older than 8 hours",
+              got: kept.keys.sorted { Int($0.dropFirst())! < Int($1.dropFirst())! }.joined(separator: " "),
+              want: (Array(4...19) + Array(21...24)).map { "s\($0)" }.joined(separator: " "))
         typealias Ancestor = SpeakingFrame.Ancestor
         let shell = Ancestor(pid: 3, arguments: ["-zsh"])
         let iterm = Ancestor(pid: 9, bundle: "com.googlecode.iterm2", regular: true)

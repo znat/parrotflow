@@ -1628,8 +1628,11 @@ URL query strings. An
 - **Which window:** with `frame`, a glow in `feedback.primary_color` sits
   around the speaking session's window and brightens with the voice. The
   window is found from the Claude process: the app it runs in (the Claude
-  app, Terminal, Ghostty, VS Code…), then that app's only window, the one
-  whose title names the project, or its main window. The desktop app shows
+  app, Terminal, Ghostty, VS Code…), then the window or pane you last sent a
+  prompt from, else that app's only window or the one whose title names the
+  project. After the app restarts, a session goes back to its window or pane
+  when the same app still has exactly one there, for up to 8 hours after the
+  prompt. The app keeps only the place, never the title. The desktop app shows
   every session in one window, so the glow goes around all of it. Under tmux
   there is no app above Claude, and no glow.
   Codex in its desktop app (ChatGPT.app) is framed the same way. Codex 0.157
