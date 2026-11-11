@@ -863,7 +863,11 @@ final class ClaudeVoice {
             self?.sessions[id]?.window = element
             self?.sessions[id]?.rect = rect
             // A guess is not kept. Ghostty re-ties at the same place often: written only on a move.
-            if let saved = self?.savedPins[id], !SpeakingFrame.close(saved.rect, rect) { self?.keepPin(id, rect: rect) }
+            guard let self, let saved = self.savedPins[id], !SpeakingFrame.close(saved.rect, rect) else { return }
+            // A kept pane element can report the focused pane instead, so a pane's move is not trusted.
+            if SpeakingFrame.isWindow(element) { return self.keepPin(id, rect: rect) }
+            self.savedPins[id] = nil
+            self.savedPins = SavedPin.save(self.savedPins)
         }
         let app = NSRunningApplication(processIdentifier: host)?.localizedName ?? "pid \(host)"
         func note(_ how: String, _ rect: CGRect?) {

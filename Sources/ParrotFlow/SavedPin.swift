@@ -49,7 +49,7 @@ struct SavedPin: Codable, Equatable {
     static func load() -> [String: SavedPin] {
         guard let data = UserDefaults.standard.data(forKey: key),
               let pins = try? JSONDecoder().decode([String: SavedPin].self, from: data) else { return [:] }
-        return kept(pins, now: Date(), running: running)
+        return save(pins)
     }
 
     /// Returns what it kept.

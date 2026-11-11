@@ -1632,8 +1632,9 @@ URL query strings. An
   prompt from, else that app's only window or the one whose title names the
   project. After the app restarts, a session goes back to its window or pane
   when the same app still has exactly one there, for up to 8 hours after the
-  prompt. The app keeps numbers only: the session id, the agent's and the app's
-  process ids, the place and the time. Never the title. The desktop app shows
+  prompt, a window move or the last restart that found it. The app keeps
+  numbers only: the session id, the agent's and the app's process ids, the
+  place and the time. Never the title. The desktop app shows
   every session in one window, so the glow goes around all of it. Under tmux
   there is no app above Claude, and no glow.
   Codex in its desktop app (ChatGPT.app) is framed the same way. Codex 0.157
