@@ -144,6 +144,11 @@ struct VoiceQueue {
         if waiting.isEmpty { resumed = false }
     }
 
+    /// The one playing is heard, as if it had ended.
+    mutating func skip(audio: [[Float]]? = nil) {
+        if let id = playing?.id { finish(id, audio: audio) }
+    }
+
     /// A new prompt in `session`: its answers, waiting or playing, are stale. Returns how many.
     @discardableResult
     mutating func drop(session: String) -> Int {

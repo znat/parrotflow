@@ -563,17 +563,20 @@ enum ConfigSchema {
             key("speech_tone", .text,
                 "Sent with every line to the remote voice. The model adds a shift for what happened.",
                 default: defaults.speechTone),
-            key("pause_key", .either([.empty, .text, .object(pauseKey)]),
+            key("pause_key", .either([.empty, .text, .object(shortcut)]),
                 "Pauses the voice until you resume, or resumes it. A character key and one or more"
                     + " modifiers, as for hotkey. none turns it off.",
                 default: ["key": "p", "modifiers": ["control", "option"]]),
+            key("skip_key", .either([.empty, .text, .object(shortcut)]),
+                "Skips the answer playing; the next one waiting plays. Written as pause_key. none turns it off.",
+                default: ["key": "s", "modifiers": ["control", "option"]]),
             key("pause_during_calls", .bool,
                 "Holds the voice while another app uses the mic, as on a call. Answers wait.",
                 default: defaults.pauseDuringCalls),
         ])
     }
 
-    static var pauseKey: Section {
+    static var shortcut: Section {
         Section(source: "Config.Voice.Shortcut",
                 keys: Config.Voice.Shortcut.CodingKeys.allCases.map(\.stringValue), fields: [
             key("key", .text, "A character key: a-z, 0-9, f1-f20, space, …", required: true),

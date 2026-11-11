@@ -2903,6 +2903,9 @@ struct Config: Decodable, Equatable {
         var pauseKey: Shortcut? = Shortcut(key: "p", modifiers: ["control", "option"])
         /// What `problems()` says about a `pause_key` it could not read.
         var refusedPauseKey: String?
+        /// Skips the answer playing. Nil: no shortcut.
+        var skipKey: Shortcut? = Shortcut(key: "s", modifiers: ["control", "option"])
+        var refusedSkipKey: String?
         /// Holds the voice while another app uses the mic.
         var pauseDuringCalls = true
 
@@ -2946,6 +2949,7 @@ struct Config: Decodable, Equatable {
             case speechVoices = "speech_voices"
             case speechTone = "speech_tone"
             case pauseKey = "pause_key"
+            case skipKey = "skip_key"
             case pauseDuringCalls = "pause_during_calls"
         }
 
@@ -2976,35 +2980,34 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent([String].self, forKey: .localVoices) { localVoices = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .progressLocal) { progressLocal = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .localPlacement) { localPlacement = v }
-            if c.contains(.pauseKey) { readPauseKey(c) }
+            if c.contains(.pauseKey) { (pauseKey, refusedPauseKey) = Self.readShortcut(c, .pauseKey, example: "p") }
+            if c.contains(.skipKey) { (skipKey, refusedSkipKey) = Self.readShortcut(c, .skipKey, example: "s") }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .pauseDuringCalls) { pauseDuringCalls = v }
         }
 
-        private mutating func readPauseKey(_ c: KeyedDecodingContainer<CodingKeys>) {
-            pauseKey = nil
-            if (try? c.decodeNil(forKey: .pauseKey)) == true { return }
-            if let word = try? c.decode(String.self, forKey: .pauseKey) {
-                if !["", "none", "off", "false"].contains(word.lowercased()) {
-                    refusedPauseKey = "\"\(word)\" is not a shortcut — expected { key: p, modifiers: [control, option] }"
-                        + " or none; the shortcut is off"
-                }
-                return
+        /// The shortcut, or nil and what `problems()` says about it.
+        private static func readShortcut(
+            _ c: KeyedDecodingContainer<CodingKeys>, _ field: CodingKeys, example: String
+        ) -> (Shortcut?, String?) {
+            let expected = "{ key: \(example), modifiers: [control, option] }"
+            if (try? c.decodeNil(forKey: field)) == true { return (nil, nil) }
+            if let word = try? c.decode(String.self, forKey: field) {
+                guard !["", "none", "off", "false"].contains(word.lowercased()) else { return (nil, nil) }
+                return (nil, "\"\(word)\" is not a shortcut — expected \(expected) or none; the shortcut is off")
             }
-            guard let written = try? c.decode(Shortcut.self, forKey: .pauseKey) else {
-                refusedPauseKey = "expected { key: p, modifiers: [control, option] } or none; the shortcut is off"
-                return
+            guard let written = try? c.decode(Shortcut.self, forKey: field) else {
+                return (nil, "expected \(expected) or none; the shortcut is off")
             }
             let unknown = written.modifiers.filter { KeyCodes.carbonModifiers([$0]) == 0 }
             if ModifierKey(name: written.key) != nil {
-                refusedPauseKey = "\"\(written.key)\" is a modifier alone — it needs a key; the shortcut is off"
+                return (nil, "\"\(written.key)\" is a modifier alone — it needs a key; the shortcut is off")
             } else if KeyCodes.code(for: written.key) == nil {
-                refusedPauseKey = "\"\(written.key)\" is not a known key name; the shortcut is off"
+                return (nil, "\"\(written.key)\" is not a known key name; the shortcut is off")
             } else if written.modifiers.isEmpty || !unknown.isEmpty {
-                refusedPauseKey = (unknown.isEmpty ? "" : "\(unknown.joined(separator: ", ")) is not a modifier — ")
-                    + "it needs one or more of command, control, option, shift; the shortcut is off"
-            } else {
-                pauseKey = written
+                return (nil, (unknown.isEmpty ? "" : "\(unknown.joined(separator: ", ")) is not a modifier — ")
+                    + "it needs one or more of command, control, option, shift; the shortcut is off")
             }
+            return (written, nil)
         }
 
         /// A value it cannot read is said by `problems()`, and the rest of the
@@ -3309,6 +3312,7 @@ struct Config: Decodable, Equatable {
         }
         if let refused = voice.refusedAgents { found.append("voice.agents: \(refused)") }
         if let refused = voice.refusedPauseKey { found.append("voice.pause_key: \(refused)") }
+        if let refused = voice.refusedSkipKey { found.append("voice.skip_key: \(refused)") }
         let speech = voice.speech.trimmingCharacters(in: .whitespaces)
         if !speech.isEmpty {
             if let spec = model(named: speech) {

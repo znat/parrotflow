@@ -1428,6 +1428,9 @@ enum PanelsCommand {
         case "speaking", "paused":
             let speaking = VoicePill.speaking(name: "parrotflow · fixing the glow", status: "2 waiting", goToSession: true)
             pill.model.onPauseVoice = { pill.voice(.paused(waiting: 2)) }
+            pill.model.onSkipVoice = {
+                pill.voice(.speaking(name: "parrotflow · fixing the glow", status: "1 waiting", goToSession: true))
+            }
             pill.model.onResumeVoice = { pill.voice(speaking) }
             pill.voice(surface == "paused" ? .paused(waiting: 2) : speaking)
         case "alert":

@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let hotKeys = HotKeyManager()
     private let pauseKey = HotKeyManager(id: 2)
+    private let skipKey = HotKeyManager(id: 3)
     private let recorder = Recorder()
     private let pill = PillHUD()
     private let claudeVoice = ClaudeVoice()
@@ -598,6 +599,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         pill.model.onGoToSession = { [weak self] in self?.claudeVoice.goToPillSession() }
         pill.model.onPauseVoice = { [weak self] in self?.claudeVoice.pause() }
+        pill.model.onSkipVoice = { [weak self] in self?.claudeVoice.skip() }
         pill.model.onResumeVoice = { [weak self] in self?.claudeVoice.resume() }
         pill.model.onNotNowVoice = { [weak self] in self?.claudeVoice.notNow() }
         recorder.onLevel = { [weak self] level in
@@ -1036,7 +1038,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // pill — see `OfferContent.hold`.
             pill.model.hotkey = ""
         }
-        registerPauseKey()
+        registerVoiceKeys()
 
         // Before the setup window is built, because that is where the tour
         // measures the boxes it reserves for a surface and a different key is a
@@ -1055,16 +1057,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Voice pause
 
     /// Only while the voice is on. A combo macOS refuses is logged; the menu still pauses.
-    private func registerPauseKey() {
+    private func registerVoiceKeys() {
         pauseKey.onPress = { [weak self] _ in
             guard let self else { return }
             self.voice(VoiceMenu.toggle(self.claudeVoice.paused, call: self.claudeVoice.callApp), by: "shortcut")
         }
-        guard config.voice.enabled, let key = config.voice.pauseKey else { return pauseKey.unregister() }
-        do {
-            try pauseKey.register(key: key.key, modifiers: key.modifiers)
-        } catch {
-            Log.write("claude voice: pause shortcut \(key.display) not registered: \(error.localizedDescription)")
+        skipKey.onPress = { [weak self] _ in self?.claudeVoice.skip(by: "shortcut") }
+        for (manager, key, name) in [(pauseKey, config.voice.pauseKey, "pause"), (skipKey, config.voice.skipKey, "skip")] {
+            guard config.voice.enabled, let key else {
+                manager.unregister()
+                continue
+            }
+            do {
+                try manager.register(key: key.key, modifiers: key.modifiers)
+            } catch {
+                Log.write("claude voice: \(name) shortcut \(key.display) not registered: \(error.localizedDescription)")
+            }
         }
     }
 

@@ -442,9 +442,24 @@ final class ClaudeVoice {
     private func lineDone(_ line: Int) {
         guard line == answerLine else { return }
         answerLine = nil
-        let audio = take?.allSatisfy { $0 != nil } == true ? take?.compactMap { $0 } : nil
+        let audio = wholeTake
         take = nil
         if let id = queue.playing?.id { queue.finish(id, audio: audio) }
+        playNext()
+    }
+
+    /// Every sentence of the answer playing, once all are made.
+    private var wholeTake: [[Float]]? { take?.allSatisfy { $0 != nil } == true ? take?.compactMap { $0 } : nil }
+
+    /// The answer playing stops and goes to the heard ones; the next one waiting plays.
+    func skip(by cause: String = "pill") {
+        guard settings.enabled, let playing = queue.playing else { return }
+        let audio = wholeTake
+        speaker.stop()
+        answerLine = nil
+        take = nil
+        queue.skip(audio: audio)
+        Log.write("claude voice: skipped \(project(of: playing.session)) (\(cause)), \(queue.waiting.count) waiting")
         playNext()
     }
 
