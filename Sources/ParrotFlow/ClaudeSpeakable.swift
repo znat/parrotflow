@@ -236,29 +236,49 @@ enum ClaudeSpeakable {
         secretName?.firstMatch(in: cell, range: NSRange(cell.startIndex..., in: cell)) != nil
     }
 
+    /// The cells of a `| a | b |` line, empty ones kept so columns line up.
+    /// Nil for a line that is not a table row.
+    private static func cells(_ line: String) -> [String]? {
+        let row = line.trimmingCharacters(in: .whitespaces)
+        guard row.hasPrefix("|") else { return nil }
+        var parts = row.replacingOccurrences(of: "\\|", with: "\u{1}").components(separatedBy: "|")
+            .map { $0.replacingOccurrences(of: "\u{1}", with: "|").trimmingCharacters(in: .whitespaces) }
+        parts.removeFirst()
+        if parts.last?.isEmpty == true { parts.removeLast() }
+        return parts
+    }
+
+    private static func isSeparator(_ cells: [String]?) -> Bool {
+        guard let cells, !cells.isEmpty else { return false }
+        return cells.allSatisfy { $0.range(of: #"^:?-+:?$"#, options: .regularExpression) != nil }
+    }
+
     /// Table rows as lines of cells, where `clean` drops them: a report's
-    /// findings are often in a table. Once joined, a key and its value no
-    /// longer read as `key: value`, so a cell under a secret's header, or
-    /// after a cell that names one, is redacted here.
+    /// findings are often in a table. Joined, a key and its value no longer
+    /// read as `key: value`, so a row with a cell that names a secret keeps
+    /// only that cell, and a column whose header names one is dropped. A row
+    /// is a header only when a `|---|` line follows it.
     static func tableRows(_ text: String) -> String {
-        var header: [String]?
-        return text.components(separatedBy: "\n").compactMap { line -> String? in
-            let row = line.trimmingCharacters(in: .whitespaces)
-            guard row.hasPrefix("|") else {
-                header = nil
-                return line
+        let lines = text.components(separatedBy: "\n")
+        var secretColumns: Set<Int> = []
+        return lines.indices.compactMap { index -> String? in
+            guard let row = cells(lines[index]) else {
+                secretColumns = []
+                return lines[index]
             }
-            let cells = row.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-            if cells.allSatisfy({ $0.allSatisfy { "-: ".contains($0) } }) { return nil }
-            guard let names = header else {
-                header = cells
-                return cells.joined(separator: ", ")
+            if isSeparator(row) { return nil }
+            let said: [String]
+            if index + 1 < lines.count, isSeparator(cells(lines[index + 1])) {
+                secretColumns = Set(row.indices.filter { namesSecret(row[$0]) })
+                said = row
+            } else {
+                let named = row.indices.filter { namesSecret(row[$0]) }
+                said = row.indices.map { column in
+                    let hidden = secretColumns.contains(column) || (!named.isEmpty && !named.contains(column))
+                    return hidden && !row[column].isEmpty ? "redacted" : row[column]
+                }
             }
-            return cells.indices.map { index in
-                let named = (index < names.count && namesSecret(names[index]))
-                    || (index > 0 && namesSecret(cells[index - 1]))
-                return named ? "redacted" : cells[index]
-            }.joined(separator: ", ")
+            return spokenRedacted(said.filter { !$0.isEmpty }.joined(separator: ", "))
         }.joined(separator: "\n")
     }
 
@@ -493,7 +513,7 @@ enum ClaudeSpeakable {
 
     private static let secrets: [(NSRegularExpression, String)] = [
         rule(#"(?i)\bbearer\s+[^\s'"]+"#, "Bearer <redacted>"),
-        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*[:=]\s*|\s+)(['"]?)[^\s'"]+\3"#,
+        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*[:=,]\s*|\s+)(['"]?)[^\s'"]+\3"#,
              "$1$2<redacted>"),
         rule(#"\b(?:sk|pk|rk|ghp|gho|ghs|ghu|github_pat|xox[abpr]|AKIA|AIza)[-_A-Za-z0-9]{8,}"#, "<redacted>"),
         rule(#"\b[A-Za-z0-9+/_-]{32,}={0,2}"#, "<redacted>"),
@@ -515,8 +535,8 @@ enum ClaudeSpeakable {
         rule(#"(https?://[^\s?#'"]+)[?#][^\s'"]*[^\s'".,;:!?]"#, "$1"),
         rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*[:=]\s*)(['"]?)[^\s'"]*[^\s'".,;:!?]\3"#,
              "$1$2redacted"),
-        // After a space, only a value shaped like a secret: "the token expired" is kept.
-        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s+)(['"]?)"#
+        // After a space or a comma, only a value shaped like a secret: "the token expired" is kept.
+        rule(#"(?i)\b([\w-]*(?:token|secret|passw(?:or)?d|api[_-]?key)[\w-]*)(\s*,\s*|\s+)(['"]?)"#
              + #"(?=[^\s'"]*\d|[^\s'"]*[^\p{L}\s'".,;:!?]|[^\s'"]*[.,;:!?][^\s'".,;:!?]|[^\s'"]{7,}[^\s'".,;:!?])"#
              + #"[^\s'"]*[^\s'".,;:!?]\3"#, "$1$2redacted"),
         rule(#"\b(?:[spr]k[-_]|gh[posu]_|github_pat_|xox[abpr]-|AKIA|AIza)[-_A-Za-z0-9]{8,}"#, "redacted"),

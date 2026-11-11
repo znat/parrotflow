@@ -348,8 +348,9 @@ ceiling:
     input: "The audit covered all fourteen services that talk to the payments database, one by one. Nine of them open a new connection for every request instead of using the shared pool. Three of those nine run on every page view, which explains the connection spikes at noon. The billing worker holds transactions open while it calls the card provider over the network. That is the cause of the lock waits you saw in the slow query log last week. The reporting service reads from the primary when it could read from the replica. Moving it would take about a fifth of the load off the primary at peak. The search indexer is fine and needs no change at all. The fix for the pool is one shared client per service, created at startup. The fix for billing is to call the provider before the transaction opens. Both changes are small and can ship separately. I would start with billing, because the lock waits are what users feel. Tell me which one to do first. I can also add a CI check that fails when a service opens its own connection. That would stop the problem from coming back."
     want: "The audit covered all fourteen services that talk to the payments database, one by one. Nine of them open a new connection for every request instead of using the shared pool. Three of those nine run on every page view, which explains the connection spikes at noon. The billing worker holds transactions open while it calls the card provider over the network. That is the cause of the lock waits you saw in the slow query log last week. The reporting service reads from the primary when it could read from the replica. Moving it would take about a fifth of the load off the primary at peak. The search indexer is fine and needs no change at all. The fix for the pool is one shared client per service, created at startup. The fix for billing is to call the provider before the transaction opens. Both changes are small and can ship separately. I would start with billing, because the lock waits are what users feel. Tell me which one to do first."
 
-# A table reaches the model as lines of cells; `clean` alone drops it. A cell
-# under a secret's header, or after a cell that names one, is redacted.
+# A table reaches the model as lines of cells; `clean` alone drops it. A row
+# with a cell that names a secret keeps only that cell; a column whose header
+# names one is dropped.
 tables:
   - name: table rows become lines of cells
     input: "Findings:\n\n| Service | p95 | Status |\n|---|---:|---|\n| `orders-api` | 840 ms | **slow** |\n| billing | 120 ms | ok |\n\nThe orders index is missing."
@@ -362,10 +363,25 @@ tables:
     want: "No table here. Just text."
   - name: a secret in a table row is not sent
     input: "| Name | Value |\n|---|---|\n| DB_PASSWORD | hunter2 |\n| region | eu-west-1 |"
-    want: "Name, Value. DB_PASSWORD, redacted. region, eu-west-1."
+    want: "Name, Value. DB_PASSWORD, <redacted> region, eu-west-1."
   - name: a column under a secret's header is not sent
     input: "| name | token |\n|---|---|\n| ci | abc123def |\n| deploy | xyz789 |"
     want: "name, token. ci, redacted. deploy, redacted."
+  - name: a first row with a secret and no separator is not a header
+    input: "| API_KEY | hunter2 |"
+    want: "API_KEY, <redacted>"
+  - name: an empty cell before a secret column keeps the columns aligned
+    input: "| name | | token |\n|---|---|---|\n| ci | | hunter2 |"
+    want: "name, token. ci, redacted."
+  - name: a wide row hides every cell but the one that names a secret
+    input: "| Name | Env | Value |\n|---|---|---|\n| DB_PASSWORD | prod | hunter2 |"
+    want: "Name, Env, Value. DB_PASSWORD, <redacted> redacted."
+  - name: an escaped pipe stays inside its cell
+    input: "| command | note |\n|---|---|\n| grep a \\| wc | counts lines |"
+    want: "command, note. grep a | wc, counts lines."
+  - name: a secret after a comma is redacted
+    input: "The api_key, hunter2 is in the vault."
+    want: "The api_key, <redacted> is in the vault."
 
 # What is said with no model: the summary, or the first two sentences, then
 # the closing question.
@@ -397,6 +413,9 @@ plain:
   - name: a secret in a table row is not said
     input: "| Name | Value |\n|---|---|\n| DB_PASSWORD | hunter2 |"
     want: "Name, Value. DB_PASSWORD, redacted."
+  - name: a first-row secret with no separator is not said
+    input: "| DB_PASSWORD | hunter2 |"
+    want: "DB_PASSWORD, redacted."
   - name: a word that starts like a heading is not one
     input: "Answering that took a while. The job runs nightly. It is fine."
     want: "Answering that took a while. The job runs nightly."
