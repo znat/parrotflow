@@ -27,7 +27,10 @@ final class SpeakingFrame {
     /// Called when the frame re-ties to the element now at the remembered place.
     var onRetarget: ((AXUIElement, CGRect) -> Void)?
     private var targetHost: pid_t?
-    private var coveredNow = false
+    private var outOfSight = false
+    /// The window the glow sits above, kept while it still holds the framed rect.
+    private var holder: Int?
+    private var watchers: [NSObjectProtocol] = []
     private var lastRect: CGRect?
 
     /// Frames `window` (a window or a pane) and follows it. `rect` is where it
@@ -40,19 +43,21 @@ final class SpeakingFrame {
         target = window
         targetHost = host
         lastRect = rect
+        holder = nil
         guard let frame = resolve() else { return hide(now: true) }
         let panel = self.panel ?? makePanel()
-        if !panel.isVisible {
-            panel.alphaValue = 0
-            panel.orderFrontRegardless()
-        }
+        if !panel.isVisible { panel.alphaValue = 0 }
         place(panel, around: frame)
         // Always run: during a fade-out alphaValue still reads 1, and that fade would end at 0.
-        NSAnimationContext.runAnimationGroup { $0.duration = 0.2; panel.animator().alphaValue = coveredNow ? 0 : 1 }
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.2; panel.animator().alphaValue = outOfSight ? 0 : 1 }
         // A read that timed out also gives nil, and `show` runs again only when the speaking session changes.
         var misses = 0
-        follow = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+        var ticks = 0
+        // The window list costs about 2 ms. Accessibility reads can wait 0.5 s each: every third tick.
+        follow = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self, self.target != nil, let panel = self.panel else { return }
+            ticks += 1
+            guard ticks % 3 == 0 else { return self.restack() }
             guard let frame = self.resolve() else {
                 misses += 1
                 return misses >= 3 ? self.hide(now: true) : ()
@@ -162,7 +167,7 @@ final class SpeakingFrame {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
-        panel.level = .floating
+        panel.level = .normal
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.alphaValue = 0
         let view = NSView()
@@ -181,45 +186,84 @@ final class SpeakingFrame {
         paint()
         panel.contentView = view
         self.panel = panel
+        // An app that activates raises its windows over the glow. A Space change can take its window away.
+        let center = NSWorkspace.shared.notificationCenter
+        watchers = [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification].map {
+            center.addObserver(forName: $0, object: nil, queue: .main) { [weak self] _ in
+                if self?.target != nil { self?.restack() }
+            }
+        }
         return panel
     }
 
-    /// Whether `rect` is out of sight. The glow floats above everything, so
-    /// around a covered window it looked like it framed the window in front.
-    static func covered(_ rect: CGRect, host: pid_t) -> Bool {
-        guard let top = NSScreen.screens.first?.frame.maxY,
-              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-                as? [[String: Any]] else { return false }
-        let windows = list.compactMap { window -> (pid: pid_t, bounds: CGRect)? in
+    /// A window on screen, measured from the top of the main screen like Accessibility.
+    struct Shown {
+        var id: Int
+        var pid: pid_t
+        var bounds: CGRect
+    }
+
+    enum Stacking: Equatable {
+        /// Minimized, on another Space, or its app hidden.
+        case outOfSight
+        case inPlace(Int)
+        case above(Int)
+    }
+
+    /// Where the glow goes. `windows` are on screen, front to back. The window
+    /// holding `rect` is `held` while it still does, else the smallest of the
+    /// host's around it, the frontmost of two the same size. With no `rect`, as
+    /// between Accessibility reads, it is `held` while on screen. The glow sits
+    /// just above it, so windows in front of it cover the glow too.
+    static func stacking(_ rect: CGRect?, host: pid_t, glow: Int, held: Int?, windows: [Shown]) -> Stacking {
+        let holders = windows.indices.filter { index in
+            windows[index].pid == host
+                && rect.map { windows[index].bounds.insetBy(dx: -4, dy: -4).contains($0) } ?? (windows[index].id == held)
+        }
+        let area = { (index: Int) in windows[index].bounds.width * windows[index].bounds.height }
+        guard let index = holders.first(where: { windows[$0].id == held }) ?? holders.min(by: { area($0) < area($1) })
+        else { return .outOfSight }
+        let id = windows[index].id
+        return index > 0 && windows[index - 1].id == glow ? .inPlace(id) : .above(id)
+    }
+
+    private static func shown() -> [Shown]? {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return nil }
+        return list.compactMap { window in
             guard (window[kCGWindowLayer as String] as? Int) == 0,
                   (window[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let id = window[kCGWindowNumber as String] as? Int,
                   let pid = window[kCGWindowOwnerPID as String] as? pid_t,
                   let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
                   let x = bounds["X"], let y = bounds["Y"], let width = bounds["Width"], let height = bounds["Height"]
             else { return nil }
-            return (pid, CGRect(x: x, y: y, width: width, height: height))
+            return Shown(id: id, pid: pid, bounds: CGRect(x: x, y: y, width: width, height: height))
         }
-        return covered(rect, host: host, top: top, windows: windows)
     }
 
-    /// `windows` are on screen, front to back, measured from the top of the main
-    /// screen like Accessibility. Out of sight: the first one at the centre is
-    /// another app's or another window of the host, or none is there (minimized,
-    /// on another Space, the app hidden).
-    static func covered(_ rect: CGRect, host: pid_t, top: CGFloat, windows: [(pid: pid_t, bounds: CGRect)]) -> Bool {
-        let flipped = CGRect(x: rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height)
-        let centre = CGPoint(x: flipped.midX, y: flipped.midY)
-        guard let front = windows.first(where: { $0.bounds.contains(centre) }) else { return true }
-        return front.pid != host || !front.bounds.insetBy(dx: -4, dy: -4).contains(flipped)
+    /// Puts the glow just above the framed window, from the window list alone.
+    /// `window`: where Accessibility just read it.
+    private func restack(around window: CGRect? = nil) {
+        guard let panel, let host = targetHost, let top = NSScreen.screens.first?.frame.maxY,
+              let windows = Self.shown() else { return }
+        let flipped = window.map { CGRect(x: $0.minX, y: top - $0.maxY, width: $0.width, height: $0.height) }
+        let stacking = Self.stacking(flipped, host: host, glow: panel.windowNumber, held: holder, windows: windows)
+        switch stacking {
+        case .outOfSight: break
+        case .inPlace(let id): holder = id
+        case .above(let id):
+            holder = id
+            panel.order(.above, relativeTo: id)
+        }
+        if (stacking == .outOfSight) != outOfSight {
+            outOfSight.toggle()
+            panel.alphaValue = outOfSight ? 0 : 1
+            if outOfSight { Log.write("claude voice: glow off, the speaking window is out of sight") }
+        }
     }
 
     private func place(_ panel: NSPanel, around window: CGRect) {
-        let hidden = targetHost.map { Self.covered(window, host: $0) } ?? false
-        if hidden != coveredNow {
-            coveredNow = hidden
-            panel.alphaValue = hidden ? 0 : 1
-            if hidden { Log.write("claude voice: glow off, the speaking window is out of sight") }
-        }
         let outer = window.insetBy(dx: -margin, dy: -margin)
         if panel.frame != outer { panel.setFrame(outer, display: false) }
         let bounds = CGRect(origin: .zero, size: outer.size)
@@ -231,6 +275,7 @@ final class SpeakingFrame {
             layer.frame = bounds
             layer.path = edge
         }
+        restack(around: window)
     }
 
     // MARK: - Finding the window
