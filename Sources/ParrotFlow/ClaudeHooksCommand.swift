@@ -820,19 +820,44 @@ enum ClaudeHooksCommand {
               got: SpeakingFrame.close(pane, pane.offsetBy(dx: 3, dy: -3)) ? "same" : "other", want: "same")
         check("a pane 4 points wider is another place",
               got: SpeakingFrame.close(pane, pane.insetBy(dx: -2, dy: 0)) ? "same" : "other", want: "other")
-        // A pane at y 200 to 800 in AppKit is y 200 to 800 from the top of a 1000-point main screen.
-        let terminal: pid_t = 10, other: pid_t = 20
-        let ownWindow = (pid: terminal, bounds: CGRect(x: 50, y: 150, width: 900, height: 700))
-        func sight(_ windows: [(pid: pid_t, bounds: CGRect)]) -> String {
-            SpeakingFrame.covered(pane, host: terminal, top: 1000, windows: windows) ? "hidden" : "shown"
+        let terminal: pid_t = 10, other: pid_t = 20, glow = 99
+        let ownWindow = SpeakingFrame.Shown(id: 5, pid: terminal, bounds: CGRect(x: 50, y: 150, width: 900, height: 700))
+        let glowWindow = SpeakingFrame.Shown(id: glow, pid: 1, bounds: ownWindow.bounds.insetBy(dx: -48, dy: -48))
+        func stack(_ windows: [SpeakingFrame.Shown], held: Int? = nil, rect: CGRect? = pane) -> String {
+            switch SpeakingFrame.stacking(rect, host: terminal, glow: glow, held: held, windows: windows) {
+            case .outOfSight: "hidden"
+            case .inPlace(let id): "in place \(id)"
+            case .above(let id): "above \(id)"
+            }
         }
-        check("the glow shows on its own window in front", got: sight([ownWindow]), want: "shown")
-        check("the glow hides behind another app", got: sight([(other, pane.insetBy(dx: 200, dy: 200)), ownWindow]),
+        let otherApp = SpeakingFrame.Shown(id: 7, pid: other, bounds: pane.insetBy(dx: 200, dy: 200))
+        check("the glow goes just above its own window", got: stack([ownWindow]), want: "above 5")
+        check("the glow just above its window stays", got: stack([otherApp, glowWindow, ownWindow]), want: "in place 5")
+        check("the glow goes back above its window once raised", got: stack([ownWindow, glowWindow]), want: "above 5")
+        check("another app in front covers the glow, the glow stays on", got: stack([otherApp, ownWindow]), want: "above 5")
+        check("another window of the same terminal in front covers it too",
+              got: stack([SpeakingFrame.Shown(id: 6, pid: terminal, bounds: otherApp.bounds), ownWindow]), want: "above 5")
+        check("a pane's glow goes above the smallest window around it",
+              got: stack([SpeakingFrame.Shown(id: 8, pid: terminal, bounds: CGRect(x: 0, y: 0, width: 1600, height: 1000)),
+                           ownWindow]), want: "above 5")
+        check("of two windows the same size, the glow goes above the front one",
+              got: stack([SpeakingFrame.Shown(id: 6, pid: terminal, bounds: ownWindow.bounds), ownWindow]), want: "above 6")
+        let paneCover = SpeakingFrame.Shown(id: 6, pid: terminal, bounds: pane.insetBy(dx: -10, dy: -10))
+        check("a smaller window of the terminal moved over the pane does not take the glow",
+              got: stack([paneCover, ownWindow], held: 5), want: "above 5")
+        check("a window that no longer holds the pane gives up the glow",
+              got: stack([otherApp, ownWindow], held: 6), want: "above 5")
+        check("between reads, the held window keeps the glow as it moves",
+              got: stack([SpeakingFrame.Shown(id: 5, pid: terminal, bounds: ownWindow.bounds.offsetBy(dx: 300, dy: 0))],
+                         held: 5, rect: nil), want: "above 5")
+        check("between reads, the held window gone, the glow hides",
+              got: stack([SpeakingFrame.Shown(id: 6, pid: terminal, bounds: ownWindow.bounds)], held: 5, rect: nil),
               want: "hidden")
-        check("the glow hides behind another window of the same terminal",
-              got: sight([(terminal, pane.insetBy(dx: 200, dy: 200)), ownWindow]), want: "hidden")
-        check("the glow hides when its window is off screen", got: sight([(other, CGRect(x: 0, y: 0, width: 40, height: 40))]),
+        check("the glow hides when its window is off screen",
+              got: stack([SpeakingFrame.Shown(id: 7, pid: other, bounds: CGRect(x: 0, y: 0, width: 40, height: 40))]),
               want: "hidden")
+        check("the glow hides when another app's window holds the place",
+              got: stack([SpeakingFrame.Shown(id: 7, pid: other, bounds: ownWindow.bounds)]), want: "hidden")
         typealias Ancestor = SpeakingFrame.Ancestor
         let shell = Ancestor(pid: 3, arguments: ["-zsh"])
         let iterm = Ancestor(pid: 9, bundle: "com.googlecode.iterm2", regular: true)
