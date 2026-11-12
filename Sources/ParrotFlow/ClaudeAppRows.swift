@@ -88,7 +88,7 @@ final class ClaudeAppRows {
     }
 
     /// Finds the open session's rename button and the rows named `title`. A walk that
-    /// runs out of budget or time keeps neither, so the window glows.
+    /// runs out of budget or time, or fails a read, keeps neither, so the window glows.
     private func walk(_ target: AXUIElement) {
         renameButton = nil
         rows = []
@@ -101,15 +101,16 @@ final class ClaudeAppRows {
         let attributes = [kAXRoleAttribute, kAXChildrenAttribute, kAXDescriptionAttribute] as CFArray
         while let element = stack.popLast() {
             budget -= 1
-            guard budget > 0, Date() < deadline else {
+            AXUIElementSetMessagingTimeout(element, 0.25)
+            var values: CFArray?
+            // A missed element can hide a second row with the same title.
+            guard budget > 0, Date() < deadline,
+                  AXUIElementCopyMultipleAttributeValues(element, attributes, [], &values) == .success,
+                  let values = values as? [AnyObject], values.count == 3 else {
                 renameButton = nil
                 rows = []
                 return
             }
-            AXUIElementSetMessagingTimeout(element, 0.25)
-            var values: CFArray?
-            guard AXUIElementCopyMultipleAttributeValues(element, attributes, [], &values) == .success,
-                  let values = values as? [AnyObject], values.count == 3 else { continue }
             let role = values[0] as? String
             let label = values[2] as? String ?? ""
             if role == kAXPopUpButtonRole, label == Self.menuPrefix + title, let row = Self.row(around: element) {
