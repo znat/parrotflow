@@ -1211,6 +1211,14 @@ queue:
       - {op: release, hold: user}
       - {op: next}
     want: "playing a:Two. 1 of 1"
+  - name: a catch-up made from plain answers loses their secrets
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: user}
+      - {op: add, session: a, text: "Set API_KEY=sk-abcdef123456 in the env.", draft: true}
+      - {op: add, session: a, text: "Done.", draft: true}
+      - {op: release, hold: user}
+    want: "waiting a:Set API_KEY=redacted in the env. draft ×2"
   - name: a draft does not play before it is written, and nothing behind it plays
     steps:
       - {op: catch_up}
@@ -1230,7 +1238,7 @@ queue:
       - {op: fill, id: 1, text: "While you were away: A is done."}
       - {op: next}
     want: "playing a:While you were away: A is done. 1 of 2 | waiting b:B asks for an OK."
-  - name: a failed call plays the plain answers it covers
+  - name: a failed call plays the plain answers it covers, not opened, so the session is named
     steps:
       - {op: catch_up}
       - {op: hold, hold: user}
@@ -1315,7 +1323,7 @@ queue:
       - {op: next}
       - {op: skip}
       - {op: next}
-    want: "playing b:B one. 2 of 2 | heard a:A is done. ×2"
+    want: "playing b:B one. 2 of 2 | heard a:A is done. ×2 opened"
 
 pill:
   - name: between resume and the first word of a catch-up, it says which session and its place

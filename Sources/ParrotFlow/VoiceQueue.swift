@@ -49,6 +49,8 @@ struct VoiceQueue {
         fileprivate(set) var replies: [Reply] = []
         /// `text` is the plain fallback until a model call fills it. It does not play before.
         fileprivate(set) var draft = false
+        /// A catch-up the model wrote: its opener names the session.
+        fileprivate(set) var opened = false
 
         var remaining: [String] { Array(sentences[resume...]) }
     }
@@ -80,12 +82,14 @@ struct VoiceQueue {
         return waiting.first?.draft == true ? (played + 1, played + waiting.count) : nil
     }
 
-    /// Nil, and nothing queued, when the text has nothing to say.
+    /// Nil, and nothing queued, when the text has nothing to say. Every text that enters the
+    /// queue loses its secrets here: it is logged and may go to a remote voice.
     @discardableResult
     mutating func add(
         session: String, text: String, style: Speaker.Style? = nil, localVoice: String? = nil, at now: Date = Date(),
         reply: Reply? = nil, draft: Bool = false
     ) -> Int? {
+        let text = ClaudeSpeakable.spokenRedacted(text)
         let sentences = ClaudeSpeakable.sentences(ClaudeSpeakable.speakable(text))
         guard !sentences.isEmpty else { return nil }
         lastID += 1
@@ -115,10 +119,12 @@ struct VoiceQueue {
     @discardableResult
     mutating func fill(_ id: Int, text: String?, style: Speaker.Style?) -> Bool {
         guard let index = waiting.firstIndex(where: { $0.id == id && $0.draft }) else { return false }
+        let text = text.map(ClaudeSpeakable.spokenRedacted)
         let sentences = text.map { ClaudeSpeakable.sentences(ClaudeSpeakable.speakable($0)) } ?? []
         if let text, !sentences.isEmpty {
             waiting[index].text = text
             waiting[index].sentences = sentences
+            waiting[index].opened = waiting[index].replies.count > 1
         }
         waiting[index].style = style
         waiting[index].draft = false
@@ -188,7 +194,7 @@ struct VoiceQueue {
             }
             lastID += 1
             let replies = kept[at].replies + entry.replies
-            let text = replies.map(\.plain).joined(separator: " ")
+            let text = ClaudeSpeakable.spokenRedacted(replies.map(\.plain).joined(separator: " "))
             var merged = Entry(id: lastID, session: entry.session, text: text,
                                sentences: ClaudeSpeakable.sentences(ClaudeSpeakable.speakable(text)),
                                style: nil, localVoice: kept[at].localVoice, added: kept[at].added)
@@ -197,7 +203,7 @@ struct VoiceQueue {
             kept[at] = merged
         }
         waiting = kept
-        catchingUp = waiting.contains(where: \.draft)
+        catchingUp = catchingUp || waiting.contains(where: \.draft)
     }
 
     /// Ignored unless `id` is the one playing: a late callback for a held answer. `audio`: every

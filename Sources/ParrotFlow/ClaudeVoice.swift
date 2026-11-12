@@ -439,7 +439,7 @@ final class ClaudeVoice {
         reply: VoiceQueue.Reply? = nil, draft: Bool = false
     ) {
         let voice = style(for: session, progress: progress, tone: tone)
-        queue.add(session: session, text: ClaudeSpeakable.spokenRedacted(text), style: voice.style,
+        queue.add(session: session, text: text, style: voice.style,
                   localVoice: voice.local, reply: reply, draft: draft)
         playNext()
     }
@@ -454,7 +454,8 @@ final class ClaudeVoice {
         guard gap == nil, let entry = queue.startNext() else { return }
         // Progress lines give way; another session's answer keeps its place.
         speaker.dropProgress()
-        let lead = entry.asked || entry.replies.count > 1 ? "" : opening(for: entry.session)
+        let intro = entry.asked ? "" : opening(for: entry.session)
+        let lead = entry.opened ? "" : intro
         if entry.resume > 0 {
             Log.write("claude voice: resumed \(project(of: entry.session)) at sentence \(entry.resume + 1) "
                 + "of \(entry.sentences.count)")
@@ -757,7 +758,9 @@ final class ClaudeVoice {
         guard writing.insert(entry.id).inserted else { return }
         let (id, session, replies) = (entry.id, entry.session, entry.replies)
         let (settings, config, toned) = (settings, config, speaker.remote != nil)
-        let (name, away) = (project(of: session), away)
+        let name = project(of: session)
+        // A catch-up merged again after a second pause covers answers from before it too.
+        let away = away.map { max($0, Date().timeIntervalSince(replies[0].at)) }
         let request = sessions[session]?.task ?? replies.last?.request
         let opening = VoicePrompt.opening(from: VoicePrompt.openings(in: VoicePrompt.rewrite.current?.text ?? ""),
                                           after: lastAnswerOpening)
@@ -773,10 +776,12 @@ final class ClaudeVoice {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.writing.remove(id)
+                // The voice was turned off and on: the id may now be another entry's.
+                guard self.queue.entry(id)?.replies == replies else { return self.playNext() }
                 if replies.count == 1 { self.lastAnswerOpening = opening }
                 if let task = spoken?.task { self.sessions[session]?.label = task }
                 let voice = self.style(for: session, progress: false, tone: spoken?.tone)
-                self.queue.fill(id, text: spoken.map { ClaudeSpeakable.spokenRedacted($0.text) }, style: voice.style)
+                self.queue.fill(id, text: spoken?.text, style: voice.style)
                 self.playNext()
             }
         }

@@ -495,7 +495,7 @@ enum ClaudeHooksCommand {
         func entry(_ entry: VoiceQueue.Entry) -> String {
             entry.session + ":" + (entry.remaining.first ?? "") + (entry.asked ? " asked" : "")
                 + (entry.audio == nil ? "" : " audio") + (entry.draft ? " draft" : "")
-                + (entry.replies.count > 1 ? " ×\(entry.replies.count)" : "")
+                + (entry.replies.count > 1 ? " ×\(entry.replies.count)" : "") + (entry.opened ? " opened" : "")
         }
         var parts: [String] = []
         if let playing = queue.playing, let place = queue.place {
