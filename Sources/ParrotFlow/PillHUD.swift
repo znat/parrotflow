@@ -410,6 +410,8 @@ final class PillModel: ObservableObject {
     var onAlertClose: (() -> Void)?
     /// The voice pill's buttons.
     var onGoToSession: (() -> Void)?
+    /// The glyphs of the keys the voice pill's buttons answer to. Nil draws no keycap.
+    var voiceKeys = VoiceKeys()
     var onPauseVoice: (() -> Void)?
     var onSkipVoice: (() -> Void)?
     var onResumeVoice: (() -> Void)?
@@ -487,7 +489,7 @@ final class PillHUD {
     private var wantedSize: NSSize {
         PillMetrics.panelSize(
             for: model.state, hasIcon: model.appIcon != nil, hotkey: model.shownHotkey,
-            dock: wantedDock
+            dock: wantedDock, voiceKeys: model.voiceKeys
         )
     }
 
@@ -1470,9 +1472,9 @@ enum PillMetrics {
     static func bleed(for state: PillState) -> CGFloat { dockBleed }
 
     static func panelSize(
-        for state: PillState, hasIcon: Bool, hotkey: String = "", dock: Dock
+        for state: PillState, hasIcon: Bool, hotkey: String = "", dock: Dock, voiceKeys: VoiceKeys = VoiceKeys()
     ) -> NSSize {
-        let width = width(for: state, hasIcon: hasIcon, hotkey: hotkey, dock: dock)
+        let width = width(for: state, hasIcon: hasIcon, hotkey: hotkey, dock: dock, voiceKeys: voiceKeys)
         let margin = bleed(for: state)
         return NSSize(
             width: width + margin * 2,
@@ -1572,8 +1574,9 @@ enum PillMetrics {
     /// and "Right ⌘" is not the width of "⌥". A fixed box is what let the glyph
     /// be a literal in the first place.
     static func holdKeycapWidth(_ hotkey: String) -> CGFloat {
-        max(20, title(hotkey) + 4) + 12
+        keycapWidth(hotkey) + 12
     }
+    static func keycapWidth(_ glyph: String) -> CGFloat { max(20, title(glyph) + 4) }
     /// Its box, which is taller than a line of the text beside it.
     static let holdKeycapHeight: CGFloat = 17
     /// The highlight's own padding, either side of the words.
@@ -1746,7 +1749,7 @@ enum PillMetrics {
     static let dot: CGFloat = 8
 
     static func width(
-        for state: PillState, hasIcon: Bool, hotkey: String = "", dock: Dock
+        for state: PillState, hasIcon: Bool, hotkey: String = "", dock: Dock, voiceKeys: VoiceKeys = VoiceKeys()
     ) -> CGFloat {
         // The icon says where the words are going, and a tab hanging off a line
         // has already said it by hanging there. Free, nothing else says it.
@@ -1762,7 +1765,7 @@ enum PillMetrics {
             return tabWidth(label: message, icon: icon)
         case .notice(let message, _), .clipboard(let message): return text(message)
         case .alert: return alertWidth
-        case .voice(let pill): return voice(pill)
+        case .voice(let pill): return voice(pill, keys: voiceKeys)
         case .offer(let commands, let headline, let reading, let open):
             guard open else { return tabWidth(hotkey: hotkey) }
             return offer(commands, headline: headline, reading: reading, hotkey: hotkey)
@@ -1802,10 +1805,11 @@ enum PillMetrics {
         ceil((text as NSString).size(withAttributes: [.font: font]).width) + chipFit
     }
 
-    /// Summed from its parts. Past 540 the name is cut.
-    static func voice(_ pill: VoicePill) -> CGFloat {
-        let button = { (label: String, symbol: Bool) in
+    /// Summed from its parts. Past 640 the name is cut.
+    static func voice(_ pill: VoicePill, keys: VoiceKeys = VoiceKeys()) -> CGFloat {
+        let button = { (label: String, symbol: Bool, key: String?) in
             measure(label, voiceButtonFont) + voiceButtonPad * 2 + (symbol ? 9 + 5 : 0)
+                + (key.map { keycapWidth($0) + 5 } ?? 0)
         }
         let rule = 1 + gap
         var parts: [CGFloat] = [voiceSymbol]
@@ -1814,25 +1818,25 @@ enum PillMetrics {
         case .speaking(let name, let text, let goTo):
             parts.append(measure(name, sentenceFont))
             status = text
-            parts += [rule + voiceButtonHeight, voiceButtonHeight]
-            if goTo { parts.append(rule + button(goToSession, false)) }
+            parts += [rule + button(pauseVoice, true, keys.pause), button(skipVoice, true, keys.skip)]
+            if goTo { parts.append(rule + button(goToSession, false, nil)) }
         case .paused(let count):
             parts.append(measure(voicePaused, sentenceFont))
             status = VoicePill.waiting(count)
-            parts.append(rule + button(resumeVoice, true))
+            parts.append(rule + button(resumeVoice, true, keys.pause))
         case .call(let app):
             parts += [measure(voicePaused, sentenceFont), measure(usingTheMic(app), sentenceFont)]
             status = nil
-            parts.append(rule + button(resumeVoice, true))
+            parts.append(rule + button(resumeVoice, true, keys.pause))
         case .callOver(let count):
             parts.append(measure(callOver(count), sentenceFont))
             status = nil
-            parts += [rule + button(resumeVoice, true), button(notNow, false)]
+            parts += [rule + button(resumeVoice, true, keys.pause), button(notNow, false, nil)]
         }
         if let status { parts.append(measure(status, voiceChipFont) + voiceChipPad * 2) }
         // One more gap for the spacer before the buttons, which sit closer to the edge than the symbol.
         let width = parts.reduce(0, +) + gap * CGFloat(parts.count) + padding + voiceButtonPad
-        return min(540, width)
+        return min(640, width)
     }
 
     /// A row of chips, and no minimum.
@@ -2522,8 +2526,8 @@ private struct MessageContent: View {
     }
 }
 
-/// `[waveform] name  2 waiting | [⏸] [⏭] | [Go to session ›]`,
-/// `[pause] Voice paused  3 waiting | [Resume]`, `[muted] Voice paused  Zoom is using the mic | [Resume]`,
+/// `[waveform] name  2 waiting | [⏸ Pause ⌃⌥P] [⏭ Skip ⌃⌥S] | [Go to session ›]`,
+/// `[pause] Voice paused  3 waiting | [▶ Resume ⌃⌥P]`, `[muted] Voice paused  Zoom is using the mic | [Resume]`,
 /// or `[waveform] Call over · 3 waiting | [Resume] [Not now]`. Measured by `PillMetrics.voice`.
 private struct VoiceContent: View {
     let pill: VoicePill
@@ -2546,8 +2550,12 @@ private struct VoiceContent: View {
                 chip(status)
                 Spacer(minLength: 0)
                 rule
-                iconButton(PillMetrics.pauseVoice, symbol: "pause.fill") { model.onPauseVoice?() }
-                iconButton(PillMetrics.skipVoice, symbol: "forward.end.fill") { model.onSkipVoice?() }
+                button(PillMetrics.pauseVoice, symbol: "pause.fill", accent: false, key: model.voiceKeys.pause) {
+                    model.onPauseVoice?()
+                }
+                button(PillMetrics.skipVoice, symbol: "forward.end.fill", accent: false, key: model.voiceKeys.skip) {
+                    model.onSkipVoice?()
+                }
                 if goTo {
                     rule
                     button(PillMetrics.goToSession, symbol: nil, accent: true) { model.onGoToSession?() }
@@ -2561,7 +2569,7 @@ private struct VoiceContent: View {
                 chip(VoicePill.waiting(waiting))
                 Spacer(minLength: 0)
                 rule
-                button(PillMetrics.resumeVoice, symbol: "play.fill", accent: true) { model.onResumeVoice?() }
+                button(PillMetrics.resumeVoice, symbol: "play.fill", accent: true, key: model.voiceKeys.pause) { model.onResumeVoice?() }
             case .call(let app):
                 symbol("speaker.slash.fill", color: theme.accent)
                 Text(PillMetrics.voicePaused).font(Font(PillMetrics.sentenceFont)).lineLimit(1).fixedSize()
@@ -2569,13 +2577,13 @@ private struct VoiceContent: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 rule
-                button(PillMetrics.resumeVoice, symbol: "play.fill", accent: false) { model.onResumeVoice?() }
+                button(PillMetrics.resumeVoice, symbol: "play.fill", accent: false, key: model.voiceKeys.pause) { model.onResumeVoice?() }
             case .callOver(let waiting):
                 symbol("waveform", color: theme.accent)
                 Text(PillMetrics.callOver(waiting)).font(Font(PillMetrics.sentenceFont)).lineLimit(1).fixedSize()
                 Spacer(minLength: 0)
                 rule
-                button(PillMetrics.resumeVoice, symbol: "play.fill", accent: true) { model.onResumeVoice?() }
+                button(PillMetrics.resumeVoice, symbol: "play.fill", accent: true, key: model.voiceKeys.pause) { model.onResumeVoice?() }
                 button(PillMetrics.notNow, symbol: nil, accent: false) { model.onNotNowVoice?() }
             }
         }
@@ -2608,28 +2616,20 @@ private struct VoiceContent: View {
         Rectangle().fill(theme.foreground.opacity(0.10)).frame(width: 1, height: 22)
     }
 
-    private func button(_ label: String, symbol: String?, accent: Bool, action: @escaping () -> Void) -> some View {
+    private func button(
+        _ label: String, symbol: String?, accent: Bool, key: String? = nil, action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {
                 if let symbol { Image(systemName: symbol).font(.system(size: 9, weight: .bold)) }
                 Text(label).font(Font(PillMetrics.voiceButtonFont)).lineLimit(1)
+                if let key { Keycap(glyph: key, theme: theme) }
             }
             .fixedSize()
             .padding(.horizontal, PillMetrics.voiceButtonPad)
             .frame(height: PillMetrics.voiceButtonHeight)
             .background { face(accent: accent) }
             .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func iconButton(_ label: String, symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .bold))
-                .frame(width: PillMetrics.voiceButtonHeight, height: PillMetrics.voiceButtonHeight)
-                .background { face(accent: false) }
-                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(label)
@@ -2644,6 +2644,36 @@ private struct VoiceContent: View {
                     .strokeBorder(accent ? theme.accent : theme.controlEdge, lineWidth: 1)
             }
     }
+}
+
+/// The key drawn on the hold line and on the voice pill's buttons. Measured by
+/// `PillMetrics.keycapWidth`, so the floor and the padding must match.
+private struct Keycap: View {
+    let glyph: String
+    let theme: ContextTheme
+
+    var body: some View {
+        Text(glyph)
+            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .foregroundStyle(theme.foreground)
+            .fixedSize()
+            .padding(.horizontal, 2)
+            .frame(minWidth: 20, minHeight: PillMetrics.holdKeycapHeight)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(theme.controlFill)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(theme.foreground.opacity(0.25), lineWidth: 0.5)
+                    )
+            )
+    }
+}
+
+/// The shortcuts shown on the voice pill, as hotkey glyphs. Nil shows none.
+struct VoiceKeys: Equatable {
+    var pause: String?
+    var skip: String?
 }
 
 /// An alert's markdown, in the two shapes the pill draws.
@@ -3141,22 +3171,7 @@ private struct OfferContent: View {
     /// clips the long ones or leaves the short ones swimming. The floor and the
     /// padding are the same numbers `PillMetrics.holdKeycapWidth` measures, or
     /// the capsule is sized for a cap it does not draw.
-    private func keycap(_ glyph: String) -> some View {
-        Text(glyph)
-            .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .foregroundStyle(theme.foreground)
-            .fixedSize()
-            .padding(.horizontal, 2)
-            .frame(minWidth: 20, minHeight: PillMetrics.holdKeycapHeight)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(theme.controlFill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .strokeBorder(theme.foreground.opacity(0.25), lineWidth: 0.5)
-                    )
-            )
-    }
+    private func keycap(_ glyph: String) -> some View { Keycap(glyph: glyph, theme: theme) }
 
     /// Whether this is the three-row shape, which is centred throughout.
     private var centred: Bool { headline?.isSelection == true }

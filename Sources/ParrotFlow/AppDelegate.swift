@@ -1074,6 +1074,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.write("claude voice: \(name) shortcut \(key.display) not registered: \(error.localizedDescription)")
             }
         }
+        pill.model.voiceKeys = VoiceKeys(
+            pause: pauseKey.binding == nil ? nil : config.voice.pauseKey?.display,
+            skip: skipKey.binding == nil ? nil : config.voice.skipKey?.display
+        )
     }
 
     @objc private func voiceMenuAction(_ sender: NSMenuItem) {

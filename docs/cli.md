@@ -1043,7 +1043,7 @@ $PF --tutorial-sheet w.png walk      # every screen as the setup window frames i
 $PF --tour-film out names,slack,hack:2 15 3  # the tour as numbered PNGs, for a film
 ```
 
-`--panels` takes `pill`, `notice`, `caution`, `failure`, `speaking`, `paused`,
+`--panels` takes `pill`, `notice`, `caution`, `failure`, `speaking`, `paused`, `speaking-unbound`, `paused-unbound`,
 `thinking`, `offer`, `confidence`, `learn`, `learn-long`, `selector`, `selector-long`,
 `selector-two`, `vocabulary`, `punctuation`, `rule`, `dictation`, `preview`,
 `microphone`, `keyboard`, `update`, `models`, `setup`, `launch`, `sequence`,
