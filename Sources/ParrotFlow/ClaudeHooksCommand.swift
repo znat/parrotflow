@@ -382,6 +382,13 @@ enum ClaudeHooksCommand {
             var name: String; var steps: [Look]; var want: String
         }
         var calls: [Call] = []
+        /// Frames are "x,y wxh". `want`: "row" and its frame, or "window:" and why.
+        struct AppRows: Decodable {
+            struct Row: Decodable { var title: String; var frame: String }
+            var name: String; var speaking: String; var open: String?; var rows: [Row]?; var window: String
+            var want: String
+        }
+        var appRows: [AppRows] = []
 
         enum CodingKeys: String, CodingKey {
             case clean, progress, turns, parse, capped, ceiling, tables, plain, redacted, naming, grounded, speakable
@@ -395,6 +402,7 @@ enum ClaudeHooksCommand {
             case calls
             case codexTurns = "codex_turns"
             case sessionNames = "session_names"
+            case appRows = "app_rows"
         }
 
         init(from decoder: Decoder) throws {
@@ -425,6 +433,19 @@ enum ClaudeHooksCommand {
             pauseRestored = try c.decodeIfPresent([Pause].self, forKey: .pauseRestored) ?? []
             pauseMenu = try c.decodeIfPresent([Pause].self, forKey: .pauseMenu) ?? []
             calls = try c.decodeIfPresent([Call].self, forKey: .calls) ?? []
+            appRows = try c.decodeIfPresent([AppRows].self, forKey: .appRows) ?? []
+        }
+    }
+
+    static func appRows(_ item: Cases.AppRows) -> String {
+        func rect(_ text: String) -> CGRect {
+            let n = text.split(whereSeparator: { ", x".contains($0) }).compactMap { Double($0) }
+            return n.count == 4 ? CGRect(x: n[0], y: n[1], width: n[2], height: n[3]) : .null
+        }
+        let rows = (item.rows ?? []).map { ClaudeAppRows.Row(title: $0.title, frame: rect($0.frame)) }
+        switch ClaudeAppRows.glow(speaking: item.speaking, open: item.open, rows: rows, window: rect(item.window)) {
+        case .row(let frame): return "row " + SpeakingFrame.describe(frame)
+        case .window(let why): return "window: " + why
         }
     }
 
@@ -625,6 +646,7 @@ enum ClaudeHooksCommand {
         for item in cases.pauseRestored { check(item.name, got: pause(item, .restored), want: item.want) }
         for item in cases.pauseMenu { check(item.name, got: pause(item, .menu), want: item.want) }
         for item in cases.calls { check(item.name, got: calls(item), want: item.want) }
+        for item in cases.appRows { check(item.name, got: appRows(item), want: item.want) }
         for item in cases.ceiling {
             check(item.name, got: ClaudeSpeakable.ceiling(item.input), want: item.want)
         }

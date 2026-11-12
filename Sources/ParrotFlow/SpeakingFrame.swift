@@ -32,17 +32,22 @@ final class SpeakingFrame {
     private var holder: Int?
     private var watchers: [NSObjectProtocol] = []
     private var lastRect: CGRect?
+    private var narrow: ((AXUIElement) -> CGRect?)?
+    /// 1 around a window, less around a sidebar row.
+    private var scale: CGFloat = 1
 
     /// Frames `window` (a window or a pane) and follows it. `rect` is where it
     /// was last seen: if the element dies or starts answering for another pane,
     /// the one still at `rect` is used instead, never the one with focus.
-    func show(window: AXUIElement, host: pid_t, rect: CGRect?) {
+    /// `narrow`, at each Accessibility read: a part of the window to glow instead.
+    func show(window: AXUIElement, host: pid_t, rect: CGRect?, narrow: ((AXUIElement) -> CGRect?)? = nil) {
         hiding?.cancel()
         follow?.invalidate()
         shown = 0
         target = window
         targetHost = host
         lastRect = rect
+        self.narrow = narrow
         holder = nil
         guard let frame = resolve() else { return hide(now: true) }
         let panel = self.panel ?? makePanel()
@@ -177,10 +182,10 @@ final class SpeakingFrame {
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.05)
         core.opacity = Float(0.7 + 0.2 * shown)
-        core.lineWidth = 2 + 2 * shown
+        core.lineWidth = scale * (2 + 2 * shown)
         halo.opacity = Float(0.35 + 0.5 * shown)
-        halo.lineWidth = 5 + 7 * shown
-        halo.shadowRadius = 10 + 16 * shown
+        halo.lineWidth = scale * (5 + 7 * shown)
+        halo.shadowRadius = scale * (10 + 16 * shown)
         CATransaction.commit()
     }
 
@@ -213,7 +218,6 @@ final class SpeakingFrame {
             view.layer?.addSublayer(layer)
         }
         core.lineWidth = 2
-        core.shadowRadius = 4
         halo.lineWidth = 5
         halo.shadowRadius = 10
         halo.opacity = 0.35
@@ -298,13 +302,16 @@ final class SpeakingFrame {
     }
 
     private func place(_ panel: NSPanel, around window: CGRect) {
-        let outer = window.insetBy(dx: -margin, dy: -margin)
+        let spot = target.flatMap { narrow?($0) }
+        scale = spot == nil ? 1 : 0.5
+        core.shadowRadius = 4 * scale
+        let outer = (spot ?? window).insetBy(dx: -margin, dy: -margin)
         if panel.frame != outer { panel.setFrame(outer, display: false) }
         let bounds = CGRect(origin: .zero, size: outer.size)
-        let edge = CGPath(
-            roundedRect: bounds.insetBy(dx: margin - 2, dy: margin - 2),
-            cornerWidth: 12, cornerHeight: 12, transform: nil
-        )
+        let rim = bounds.insetBy(dx: margin - 2, dy: margin - 2)
+        // The app's sidebar rows are pills.
+        let corner = spot == nil ? 12 : min(rim.width, rim.height) / 2
+        let edge = CGPath(roundedRect: rim, cornerWidth: corner, cornerHeight: corner, transform: nil)
         for layer in [halo, core] {
             layer.frame = bounds
             layer.path = edge
@@ -367,7 +374,7 @@ final class SpeakingFrame {
 
     /// These calls run on the main thread. A timeout set on an element covers
     /// only that element, and the default lets a hung host hold the thread for seconds.
-    private static func value(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
+    static func value(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
         AXUIElementSetMessagingTimeout(element, 0.5)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
@@ -514,7 +521,7 @@ final class SpeakingFrame {
         focusedWindow(host: pid).flatMap { names(title(of: $0), project: project) ? $0 : nil }
     }
 
-    private static func element(_ parent: AXUIElement, _ attribute: String) -> AXUIElement? {
+    static func element(_ parent: AXUIElement, _ attribute: String) -> AXUIElement? {
         guard let found = value(parent, attribute), CFGetTypeID(found) == AXUIElementGetTypeID() else { return nil }
         // swiftlint:disable:next force_cast
         return (found as! AXUIElement)

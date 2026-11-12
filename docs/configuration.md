@@ -1634,10 +1634,14 @@ URL query strings. An
   when the same app still has exactly one there, for up to 8 hours after the
   prompt, a window move or the last restart that found it. The app keeps
   numbers only: the session id, the agent's and the app's process ids, the
-  place and the time. Never the title. The desktop app shows
-  every session in one window, so the glow goes around all of it. Under tmux
+  place and the time. Never the title. The Claude app shows every session
+  in one window. When the session that speaks is not the open one, the glow
+  marks its row in the Code sidebar instead. It goes around the whole window
+  when the session is the open one, when its row is scrolled out of view or
+  the sidebar is hidden, and when two rows share its title. Under tmux
   there is no app above Claude, and no glow.
-  Codex in its desktop app (ChatGPT.app) is framed the same way. Codex 0.157
+  Codex in its desktop app (ChatGPT.app) is framed the same way, always
+  around the whole window. Codex 0.157
   and later run terminal sessions through one shared app server, so the
   process no longer tells which terminal a session is in. Then the window is
   the terminal window in front when you send a prompt, if its title names the
