@@ -98,6 +98,15 @@ final class ClaudeVoice {
     private var pauseEnd: Timer?
     private var wakeWatch: NSObjectProtocol?
     static let pausedKey = "voice.pausedUntil"
+    /// When the pause or the call began, kept across a relaunch for the catch-up's time away.
+    static let pausedSinceKey = "voice.pausedSince"
+    private var heldSince: Date?
+    /// The last pause or call, as long as it lasted. Nil when its start is not known.
+    private var away: TimeInterval?
+    /// Drafts being written.
+    private var writing: Set<Int> = []
+    /// The silence between two sessions' catch-ups.
+    private var gap: DispatchWorkItem?
     /// While `voice.pause_during_calls` is on.
     private var callWatch: CallWatch?
     private var call: VoiceCall? { didSet { pillSoon() } }
@@ -216,9 +225,11 @@ final class ClaudeVoice {
             }
             let stored = UserDefaults.standard.object(forKey: Self.pausedKey) as? Date
             if let restored = VoicePause.restored(stored, now: Date()) {
+                heldSince = UserDefaults.standard.object(forKey: Self.pausedSinceKey) as? Date
                 pause(restored, by: "restored")
             } else if stored != nil {
                 UserDefaults.standard.removeObject(forKey: Self.pausedKey)
+                UserDefaults.standard.removeObject(forKey: Self.pausedSinceKey)
             }
         } else if !settings.enabled, listener != nil {
             listener = nil
@@ -227,12 +238,14 @@ final class ClaudeVoice {
             pauseEnd?.invalidate()
             pauseEnd = nil
             queue = VoiceQueue()
+            heldSince = nil
             call = nil
             answerLine = nil
             dictationWatch?.invalidate()
             dictationWatch = nil
             speaker.stop()
         }
+        queue.catchUp = settings.catchUp
         watchCalls()
         warmIfNeeded()
         syncHooks()
@@ -261,6 +274,7 @@ final class ClaudeVoice {
         case .started(let app):
             Log.write("claude voice: call started (\(app)), held" + (paused == nil ? "" : ", already paused"))
             call = .on(app)
+            if heldSince == nil { heldSince = Date() }
             hold(.call)
         case .ended(let app):
             guard callApp != nil else { return Log.write("claude voice: call over (\(app)), not held") }
@@ -343,6 +357,8 @@ final class ClaudeVoice {
         if callApp == nil { call = nil }
         UserDefaults.standard.set(pause.stored, forKey: Self.pausedKey)
         if !queue.holds.contains(.user) || queue.playing != nil { hold(.user) }
+        if heldSince == nil { heldSince = Date() }
+        UserDefaults.standard.set(heldSince, forKey: Self.pausedSinceKey)
         armPauseEnd()
         Log.write("claude voice: paused \(pause.phrase(now: Date())) (\(cause)), \(queue.waiting.count) waiting")
     }
@@ -404,6 +420,11 @@ final class ClaudeVoice {
     private func release(_ cause: VoiceQueue.Hold) {
         guard queue.holds.contains(cause) else { return }
         queue.release(cause)
+        if cause != .dictation, queue.holds.isDisjoint(with: [.user, .call]) {
+            away = heldSince.map { Date().timeIntervalSince($0) }
+            heldSince = nil
+            UserDefaults.standard.removeObject(forKey: Self.pausedSinceKey)
+        }
         if !queue.waiting.isEmpty {
             let still = queue.holds.map(\.rawValue).sorted().joined(separator: ", ")
             Log.write("claude voice: released (\(cause.rawValue)), \(queue.waiting.count) waiting"
@@ -412,21 +433,28 @@ final class ClaudeVoice {
         playNext()
     }
 
-    private func enqueue(_ text: String, session: String, progress: Bool = false, tone: String? = nil) {
+    /// `reply`: an agent's answer, not a notification or a question. `draft`: said once a model writes it.
+    private func enqueue(
+        _ text: String, session: String, progress: Bool = false, tone: String? = nil,
+        reply: VoiceQueue.Reply? = nil, draft: Bool = false
+    ) {
         let voice = style(for: session, progress: progress, tone: tone)
         queue.add(session: session, text: ClaudeSpeakable.spokenRedacted(text), style: voice.style,
-                  localVoice: voice.local)
+                  localVoice: voice.local, reply: reply, draft: draft)
         playNext()
     }
 
     /// Says the next answer when none plays and nothing holds the voice. The
     /// session's name goes on a line of its own, so it never shifts the
-    /// sentence a held answer resumes from. An answer asked for from the menu has none.
+    /// sentence a held answer resumes from. An answer asked for from the menu has none,
+    /// and a catch-up names its session itself. Drafts are written once no pause holds them.
     private func playNext() {
-        guard let entry = queue.startNext() else { return }
+        let free = queue.holds.isDisjoint(with: [.user, .call])
+        for entry in queue.waiting where entry.draft && (free || entry.id == queue.due?.id) { write(entry) }
+        guard gap == nil, let entry = queue.startNext() else { return }
         // Progress lines give way; another session's answer keeps its place.
         speaker.dropProgress()
-        let lead = entry.asked ? "" : opening(for: entry.session)
+        let lead = entry.asked || entry.replies.count > 1 ? "" : opening(for: entry.session)
         if entry.resume > 0 {
             Log.write("claude voice: resumed \(project(of: entry.session)) at sentence \(entry.resume + 1) "
                 + "of \(entry.sentences.count)")
@@ -444,7 +472,17 @@ final class ClaudeVoice {
         answerLine = nil
         let audio = wholeTake
         take = nil
-        if let id = queue.playing?.id { queue.finish(id, audio: audio) }
+        let finished = queue.playing
+        if let finished { queue.finish(finished.id, audio: audio) }
+        if queue.catchingUp, let next = queue.waiting.first, next.session != finished?.session {
+            let work = DispatchWorkItem { [weak self] in
+                self?.gap = nil
+                self?.playNext()
+            }
+            gap = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
+            return
+        }
         playNext()
     }
 
@@ -547,6 +585,7 @@ final class ClaudeVoice {
                 pinWindow(id)
                 if let language = ClaudeSpeakable.language(of: prompt) { sessions[id]?.language = language }
                 if !prompt.isEmpty {
+                    sessions[id]?.task = prompt
                     Task.detached {
                         let latest = transcript.flatMap { agent.latestSummary(transcript: $0) }
                         let title = transcript.flatMap { agent.title(transcript: $0) }
@@ -674,6 +713,7 @@ final class ClaudeVoice {
     }
 
     /// `settle`: the hook can arrive before the last line of the transcript is written.
+    /// During a pause or a call, the answer is kept raw for the catch-up, not rewritten.
     private func answer(
         _ ended: ClaudeSpeakable.TurnEnd?, transcript: URL? = nil, written: String?,
         session: String, settle: TimeInterval
@@ -682,6 +722,7 @@ final class ClaudeVoice {
         let settings = settings
         let config = config
         let toned = speaker.remote != nil
+        let held = settings.catchUp && !queue.holds.isDisjoint(with: [.user, .call])
         let request = sessions[session]?.task
         let language = sessions[session]?.language
         let agent = sessions[session]?.agent
@@ -690,91 +731,184 @@ final class ClaudeVoice {
         Task.detached {
             if settle > 0 { try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000)) }
             let turn = ended ?? transcript.flatMap { agent?.lastTurn(transcript: $0) }
-            let spoken = await Self.spoken(turn: turn, written: written, request: request, language: language,
-                                           settings: settings, config: config, toned: toned, opening: opening)
+            guard let reply = Self.prepared(turn: turn, written: written, request: request, language: language)
+            else { return }
+            let spoken = held ? nil : await Self.spoken(reply, settings: settings, config: config, toned: toned,
+                                                         opening: opening)
             await MainActor.run { [weak self] in
-                guard let self, let spoken else { return }
+                guard let self else { return }
                 guard asked == self.turns[session, default: 0] else {
                     Log.write("claude voice: dropped an answer — a new prompt came first in that session")
                     return
                 }
-                self.lastAnswerOpening = opening
                 self.lastKind = nil
-                if self.sessions[session]?.language == nil { self.sessions[session]?.language = spoken.language }
+                if self.sessions[session]?.language == nil { self.sessions[session]?.language = reply.language }
+                guard let spoken else { return self.enqueue(reply.plain, session: session, reply: reply, draft: true) }
+                self.lastAnswerOpening = opening
                 if let task = spoken.task { self.sessions[session]?.label = task }
-                self.enqueue(spoken.text, session: session, tone: spoken.tone)
+                self.enqueue(spoken.text, session: session, tone: spoken.tone, reply: reply)
             }
         }
+    }
+
+    /// A draft's words: the rewrite of its one answer, or one catch-up for several. A catch-up
+    /// that fails leaves the plain answers it covers.
+    private func write(_ entry: VoiceQueue.Entry) {
+        guard writing.insert(entry.id).inserted else { return }
+        let (id, session, replies) = (entry.id, entry.session, entry.replies)
+        let (settings, config, toned) = (settings, config, speaker.remote != nil)
+        let (name, away) = (project(of: session), away)
+        let request = sessions[session]?.task ?? replies.last?.request
+        let opening = VoicePrompt.opening(from: VoicePrompt.openings(in: VoicePrompt.rewrite.current?.text ?? ""),
+                                          after: lastAnswerOpening)
+        if replies.count > 1 {
+            Log.write("claude voice: catch-up \(name), \(replies.count) answers over "
+                + (away.map(ClaudeSpeakable.away) ?? "an unknown time"))
+        }
+        Task.detached {
+            let spoken: Spoken? = replies.count == 1
+                ? await Self.spoken(replies[0], settings: settings, config: config, toned: toned, opening: opening)
+                : await Self.caughtUp(replies, project: name, away: away, request: request, settings: settings,
+                                      config: config, toned: toned)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.writing.remove(id)
+                if replies.count == 1 { self.lastAnswerOpening = opening }
+                if let task = spoken?.task { self.sessions[session]?.label = task }
+                let voice = self.style(for: session, progress: false, tone: spoken?.tone)
+                self.queue.fill(id, text: spoken.map { ClaudeSpeakable.spokenRedacted($0.text) }, style: voice.style)
+                self.playNext()
+            }
+        }
+    }
+
+    /// A turn's answer as the rewrite and the catch-up read it. Nil when it has nothing to say.
+    static func prepared(
+        turn: ClaudeSpeakable.TurnEnd?, written: String?, request: String? = nil, language: String? = nil
+    ) -> VoiceQueue.Reply? {
+        let asked = request ?? turn?.prompt
+        let written = turn.flatMap { $0.answer.isEmpty ? nil : $0.answer } ?? written ?? ""
+        let language = language ?? asked.flatMap(ClaudeSpeakable.language(of:))
+            ?? ClaudeSpeakable.language(of: written) ?? "en"
+        let rows = ClaudeSpeakable.tableRows(written)
+        let recap = turn?.recap.map {
+            ClaudeSpeakable.clean([$0, turn?.ask].compactMap { $0 }.joined(separator: "\n"), language: language)
+        }
+        let plain = recap ?? ClaudeSpeakable.plainAnswer(rows, language: language)
+        guard !plain.isEmpty else { return nil }
+        return VoiceQueue.Reply(request: asked, reply: ClaudeSpeakable.clean(rows, language: language), recap: recap,
+                                earlier: turn?.earlier, language: language, written: written, plain: plain)
     }
 
     /// What the end of a turn is worth saying, and how. Fails open: no
     /// model, or a model that fails, still says the recap or `plainAnswer`.
     /// `toned` asks the model for a tone even when the words need no rewrite.
     static func spoken(
-        turn: ClaudeSpeakable.TurnEnd?, written: String?, request: String? = nil, language: String? = nil,
-        settings: Config.Voice, config: Config, toned: Bool, opening: Int? = nil
-    ) async -> Spoken? {
-        let asked = request ?? turn?.prompt
-        let written = turn.flatMap { $0.answer.isEmpty ? nil : $0.answer } ?? written ?? ""
-        let language = language ?? asked.flatMap(ClaudeSpeakable.language(of:))
-            ?? ClaudeSpeakable.language(of: written) ?? "en"
-        let rows = ClaudeSpeakable.tableRows(written)
-        let reply = ClaudeSpeakable.clean(rows, language: language)
-        let recap = turn?.recap.map {
-            ClaudeSpeakable.clean([$0, turn?.ask].compactMap { $0 }.joined(separator: "\n"), language: language)
-        }
-        let plain = recap ?? ClaudeSpeakable.plainAnswer(rows, language: language)
-        guard !plain.isEmpty else { return nil }
+        _ reply: VoiceQueue.Reply, settings: Config.Voice, config: Config, toned: Bool, opening: Int? = nil
+    ) async -> Spoken {
         let base = toned ? settings.speechTone : nil
-        let fallback = Spoken(text: plain, tone: base.map { ClaudeSpeakable.instructions(base: $0, shift: nil) },
-                               language: language)
+        let fallback = Spoken(text: reply.plain, tone: base.map { ClaudeSpeakable.instructions(base: $0, shift: nil) },
+                              language: reply.language)
         guard config.llmEnabled else { return fallback }
         guard let prompt = VoicePrompt.rewrite.current else {
             Log.write("claude voice: \(VoicePrompt.rewrite.builtIn.path) is missing, saying it plain")
             return fallback
         }
-
         let named = settings.model.trimmingCharacters(in: .whitespaces)
         let model = config.model(named: named) ?? config.model(for: .general)
         let started = Date()
         do {
             let raw = try await LLM.complete(
                 system: prompt.text,
-                user: ClaudeSpeakable.rewriteInput(request: asked, reply: reply, recap: recap,
-                                                   earlier: turn?.earlier, language: language,
+                user: ClaudeSpeakable.rewriteInput(request: reply.request, reply: reply.reply, recap: reply.recap,
+                                                   earlier: reply.earlier, language: reply.language,
                                                    opening: opening),
                 json: true, maxTokens: 800, config: model
             )
-            let parsed = ClaudeSpeakable.parseSpoken(LLM.stripThinking(raw))
-            if !parsed.json {
-                Log.write("claude voice: rewrite reply is not JSON (prompt: \(prompt.source.shown)), "
-                    + (parsed.say.isEmpty ? "saying it plain" : "saying it as written"))
-                if parsed.say.isEmpty { return fallback }
-            }
-            let said = ClaudeSpeakable.ceiling(ClaudeSpeakable.clean(parsed.say, language: language))
-            let ground = ClaudeSpeakable.grounded(said, in: [reply, recap ?? "", asked ?? ""].joined(separator: " "))
-            // Translated, the words cannot overlap, so the check would always say no.
-            let source = ClaudeSpeakable.language(of: written)
-            let translated = source != nil && source != language
-            if translated, let source { Log.write("claude voice: answer translated from \(source) to \(language), not checked") }
-            guard !said.isEmpty, translated || ground >= ClaudeSpeakable.groundedFloor else {
-                Log.write(String(format: "claude voice: %@ wrote words the reply does not have (%.2f), saying it plain",
-                                 model.name, ground))
+            let said = said(raw, from: [reply], prompt: (VoicePrompt.rewrite, prompt.source), model: model.name,
+                            base: base)
+            guard let spoken = said.spoken else {
                 var plain = fallback
-                plain.task = parsed.task
+                plain.task = said.task
                 return plain
             }
-            let opener = ClaudeSpeakable.spokenOpener(parsed.opener)
-            let text = opener.isEmpty ? said : opener + " " + said
             Log.write(String(format: "claude voice: %@ answered in %.1fs, %d chars of reply to %d, shift \"%@\"",
-                             model.name, Date().timeIntervalSince(started), reply.count + (recap?.count ?? 0),
-                             text.count, parsed.tone ?? "none"))
-            return Spoken(text: text, tone: base.map { ClaudeSpeakable.instructions(base: $0, shift: parsed.tone) },
-                          language: language, task: parsed.task)
+                             model.name, Date().timeIntervalSince(started),
+                             reply.reply.count + (reply.recap?.count ?? 0), spoken.text.count, said.shift ?? "none"))
+            return spoken
         } catch {
             Log.write("claude voice: rewrite failed, saying it plain — \(error.localizedDescription)")
             return fallback
         }
+    }
+
+    /// One line for a session's missed answers, or nil: the caller says each one plain.
+    static func caughtUp(
+        _ replies: [VoiceQueue.Reply], project: String, away: TimeInterval?, request: String?,
+        settings: Config.Voice, config: Config, toned: Bool
+    ) async -> Spoken? {
+        let plain = "claude voice: catch-up \(project), saying \(replies.count) answers plain"
+        guard config.llmEnabled else {
+            Log.write(plain + " — no model")
+            return nil
+        }
+        guard let prompt = VoicePrompt.catchUp.current else {
+            Log.write(plain + " — \(VoicePrompt.catchUp.builtIn.path) is missing")
+            return nil
+        }
+        let named = settings.model.trimmingCharacters(in: .whitespaces)
+        let model = config.model(named: named) ?? config.model(for: .general)
+        let language = replies.last?.language ?? "en"
+        let started = Date()
+        do {
+            let raw = try await LLM.complete(
+                system: prompt.text,
+                user: ClaudeSpeakable.catchUpInput(project: project, away: away, request: request, replies: replies,
+                                                   language: language),
+                json: true, maxTokens: 800, config: model
+            )
+            let said = said(raw, from: replies, prompt: (VoicePrompt.catchUp, prompt.source), model: model.name,
+                            base: toned ? settings.speechTone : nil)
+            guard let spoken = said.spoken else {
+                Log.write(plain + " — the reply could not be said")
+                return nil
+            }
+            Log.write(String(format: "claude voice: %@ caught up on %@ in %.1fs, %d answers to %d chars",
+                             model.name, project, Date().timeIntervalSince(started), replies.count, spoken.text.count))
+            return spoken
+        } catch {
+            Log.write(plain + " — \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// The model's JSON as a line, or nil when it is empty or has words the answers do not.
+    private static func said(
+        _ raw: String, from replies: [VoiceQueue.Reply], prompt: (VoicePrompt, VoicePrompt.Source), model: String,
+        base: String?
+    ) -> (spoken: Spoken?, task: String?, shift: String?) {
+        let language = replies.last?.language ?? "en"
+        let parsed = ClaudeSpeakable.parseSpoken(LLM.stripThinking(raw))
+        if !parsed.json {
+            Log.write("claude voice: \(prompt.0.rawValue) reply is not JSON (prompt: \(prompt.1.shown)), "
+                + (parsed.say.isEmpty ? "saying it plain" : "saying it as written"))
+            if parsed.say.isEmpty { return (nil, nil, nil) }
+        }
+        let said = ClaudeSpeakable.ceiling(ClaudeSpeakable.clean(parsed.say, language: language))
+        let sources = replies.flatMap { [$0.reply, $0.recap ?? "", $0.request ?? ""] }.joined(separator: " ")
+        let ground = ClaudeSpeakable.grounded(said, in: sources)
+        // Translated, the words cannot overlap, so the check would always say no.
+        let source = replies.lazy.compactMap { ClaudeSpeakable.language(of: $0.written) }.first { $0 != language }
+        if let source { Log.write("claude voice: answer translated from \(source) to \(language), not checked") }
+        guard !said.isEmpty, source != nil || ground >= ClaudeSpeakable.groundedFloor else {
+            Log.write(String(format: "claude voice: %@ wrote words the reply does not have (%.2f), saying it plain",
+                             model, ground))
+            return (nil, parsed.task, nil)
+        }
+        let opener = ClaudeSpeakable.spokenOpener(parsed.opener)
+        return (Spoken(text: opener.isEmpty ? said : opener + " " + said,
+                       tone: base.map { ClaudeSpeakable.instructions(base: $0, shift: parsed.tone) },
+                       language: language, task: parsed.task), parsed.task, parsed.tone)
     }
 
     // MARK: - Which session is talking
@@ -944,7 +1078,7 @@ final class ClaudeVoice {
     /// Also each second, so "Go to session" follows the window, and the pill comes back
     /// after a dictation took it.
     private func updatePill() {
-        let id = queue.playing?.session
+        let id = queue.playing?.session ?? (queue.catchingUp ? queue.waiting.first?.session : nil)
         if id == nil || id != pillSession { pillDismissed = nil }
         if let id { pillSession = id }
         let state = VoicePill.of(

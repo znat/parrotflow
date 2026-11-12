@@ -42,6 +42,7 @@ copies() {
 echo
 echo "voice prompt files"
 check "with no override, the rewrite prompt is the built-in" "$(prompt_line rewrite)" "· voice rewrite built-in"
+check "the catch-up prompt ships too" "$(prompt_line catch-up)" "· voice catch-up built-in"
 check "launch writes the reference copies to voice/built-in/" "$(copies)" "same"
 
 echo "Say it in one sentence." > "$VOICE/reminder.md"
@@ -118,6 +119,18 @@ echo
 echo "voice.pause_during_calls"
 check "on by default" "$(during_calls)" "· during calls paused"
 check "false keeps the voice speaking" "$(during_calls false)" "· during calls keeps speaking"
+
+catch_up() {
+  printf 'voice:\n  enabled: false\n' > "$WORK/config.yaml"
+  [ $# -gt 0 ] && printf '  catch_up: %s\n' "$1" >> "$WORK/config.yaml"
+  PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config </dev/null 2>/dev/null \
+    | grep "after a pause" | sed 's/^ *//; s/  */ /g'
+}
+
+echo
+echo "voice.catch_up"
+check "on by default" "$(catch_up)" "· after a pause one summary per session"
+check "false plays every answer" "$(catch_up false)" "· after a pause every answer"
 
 printf '\n%d/%d\n' "$pass" "$total"
 [ "$cases" -eq 0 ] && [ "$pass" -eq "$total" ]

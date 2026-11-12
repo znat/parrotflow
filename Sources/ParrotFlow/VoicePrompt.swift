@@ -1,10 +1,11 @@
 import Foundation
 
-/// The voice's three model prompts. The instructions ship in
+/// The voice's model prompts. The instructions ship in
 /// `built-in/voice/<name>.md`; a file with the same name in `<config>/voice/`
 /// replaces them. `format` is the app's and always follows them.
 enum VoicePrompt: String, CaseIterable {
     case rewrite, explain, reminder
+    case catchUp = "catch-up"
 
     enum Source: Equatable {
         case builtIn
@@ -19,10 +20,10 @@ enum VoicePrompt: String, CaseIterable {
     }
 
     /// The reply shape the code reads: `parseSpoken` and `taskLabel` for the
-    /// rewrite, the whole reply as the line for the other two.
+    /// rewrite and the catch-up, the whole reply as the line for the other two.
     var format: String {
         switch self {
-        case .rewrite:
+        case .rewrite, .catchUp:
             return """
                 Return JSON: {"opener": "...", "say": "...", "tone": "...", "task": "..."}
 

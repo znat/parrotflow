@@ -101,7 +101,9 @@ It also names, every time and whether or not anything is wrong:
   and `voice.skip_key`, or `none`. A key it cannot read is a `✗`, and the
   shortcut is off
 - whether the voice pauses while another app uses the mic, `voice.pause_during_calls`
-- which prompt the voice uses for `rewrite`, `explain` and `reminder`: `built-in`,
+- what a session's missed answers become after a pause, `voice.catch_up`: one
+  summary per session, or every answer
+- which prompt the voice uses for `rewrite`, `explain`, `reminder` and `catch-up`: `built-in`,
   or the path of your file in `voice/`. An empty or unreadable file there is a `✗`. See
   [Prompts](configuration.md#prompts)
 - a key no setting reads, by its full path, with the closest key. This is a
@@ -1227,6 +1229,7 @@ $PF --install-claude-hooks --agent codex [--folder <dir>]  # voice.agents.codex,
 $PF --uninstall-claude-hooks --agent codex [--folder <dir>]
 $PF --claude-voice-test [cases.yaml]             # text rules; no config, no audio
 $PF --claude-spoken <session.jsonl>              # what the last turn would say
+$PF --claude-catch-up <missed.json>              # one session's missed answers, as one summary
 $PF --claude-explain '<PreToolUse json>' [--context "<text>"]  # one progress line, explained
 $PF --claude-say "<text>" [--tone "<instructions>"] [--voice <name>]  # say it
 $PF --claude-say "<text>" --output <clip.wav>     # the remote voice into a 24 kHz WAV
@@ -1240,6 +1243,9 @@ approve the hooks once in Codex afterwards. They must run from the installed app
 not from `.build`. A binary outside an app bundle cannot tell the dev build from the release build,
 so its hook would reach the wrong app. `--speak-event` sends stdin to the
 running app, as the hooks do with `nc`; it is there for testing. See [configuration.md](configuration.md#voice).
+`--claude-catch-up` reads `{"project", "away", "request", "replies": [{"reply",
+"recap", "ago"}]}`, times in seconds, and prints the plain answers and the summary.
+It exits 1 when the summary fails, so the app would say the plain answers.
 mini-swe-agent has no hooks to install. It speaks through a plugin. See
 [integrations/mini-swe-agent/README.md](../integrations/mini-swe-agent/README.md).
 

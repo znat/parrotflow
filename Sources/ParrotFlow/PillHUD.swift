@@ -1784,6 +1784,7 @@ enum PillMetrics {
     static let notNow = "Not now"
     static func usingTheMic(_ app: String) -> String { "\(app) is using the mic" }
     static func callOver(_ waiting: Int) -> String { "Call over · \(waiting) waiting" }
+    static func catchingUp(_ name: String) -> String { "Catching up · \(name)" }
 
     static let voiceChipFont: NSFont = rounded(11, .semibold)
     static let voiceButtonFont: NSFont = rounded(12, .semibold)
@@ -1828,6 +1829,9 @@ enum PillMetrics {
             parts.append(measure(callOver(count), sentenceFont))
             status = nil
             parts += [rule + button(resumeVoice, true), button(notNow, false)]
+        case .catchingUp(let name, let place):
+            parts.append(measure(catchingUp(name), sentenceFont))
+            status = place
         }
         if let status { parts.append(measure(status, voiceChipFont) + voiceChipPad * 2) }
         // One more gap for the spacer before the buttons, which sit closer to the edge than the symbol.
@@ -2524,7 +2528,8 @@ private struct MessageContent: View {
 
 /// `[waveform] name  2 waiting | [⏸] [⏭] | [Go to session ›]`,
 /// `[pause] Voice paused  3 waiting | [Resume]`, `[muted] Voice paused  Zoom is using the mic | [Resume]`,
-/// or `[waveform] Call over · 3 waiting | [Resume] [Not now]`. Measured by `PillMetrics.voice`.
+/// `[waveform] Call over · 3 waiting | [Resume] [Not now]`, or `[waveform] Catching up · name  1 of 3`.
+/// Measured by `PillMetrics.voice`.
 private struct VoiceContent: View {
     let pill: VoicePill
 
@@ -2577,6 +2582,11 @@ private struct VoiceContent: View {
                 rule
                 button(PillMetrics.resumeVoice, symbol: "play.fill", accent: true) { model.onResumeVoice?() }
                 button(PillMetrics.notNow, symbol: nil, accent: false) { model.onNotNowVoice?() }
+            case .catchingUp(let name, let place):
+                symbol("waveform", color: theme.accent)
+                Text(PillMetrics.catchingUp(name)).font(Font(PillMetrics.sentenceFont)).lineLimit(1)
+                chip(place)
+                Spacer(minLength: 0)
             }
         }
         .padding(.leading, PillMetrics.padding)

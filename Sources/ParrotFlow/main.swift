@@ -143,6 +143,9 @@ if arguments.contains("--install-claude-hooks") || arguments.contains("--uninsta
 if let index = arguments.firstIndex(of: "--claude-spoken"), arguments.indices.contains(index + 1) {
     exit(ClaudeHooksCommand.spoken(transcript: arguments[index + 1], config: (try? ConfigStore.load()) ?? Config()))
 }
+if let index = arguments.firstIndex(of: "--claude-catch-up"), arguments.indices.contains(index + 1) {
+    exit(ClaudeHooksCommand.catchUp(arguments[index + 1], config: (try? ConfigStore.load()) ?? Config()))
+}
 if let index = arguments.firstIndex(of: "--claude-explain"), arguments.indices.contains(index + 1) {
     let context = arguments.firstIndex(of: "--context").flatMap {
         arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil

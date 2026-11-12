@@ -2908,6 +2908,8 @@ struct Config: Decodable, Equatable {
         var refusedSkipKey: String?
         /// Holds the voice while another app uses the mic.
         var pauseDuringCalls = true
+        /// After a pause or a call, a session's missed answers are said as one summary.
+        var catchUp = true
 
         struct Shortcut: Decodable, Equatable {
             var key: String
@@ -2951,6 +2953,7 @@ struct Config: Decodable, Equatable {
             case pauseKey = "pause_key"
             case skipKey = "skip_key"
             case pauseDuringCalls = "pause_during_calls"
+            case catchUp = "catch_up"
         }
 
         init() {}
@@ -2983,6 +2986,7 @@ struct Config: Decodable, Equatable {
             if c.contains(.pauseKey) { (pauseKey, refusedPauseKey) = Self.readShortcut(c, .pauseKey, example: "p") }
             if c.contains(.skipKey) { (skipKey, refusedSkipKey) = Self.readShortcut(c, .skipKey, example: "s") }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .pauseDuringCalls) { pauseDuringCalls = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .catchUp) { catchUp = v }
         }
 
         /// The shortcut, or nil and what `problems()` says about it.

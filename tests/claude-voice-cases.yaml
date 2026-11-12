@@ -1182,7 +1182,166 @@ queue:
     want: "waiting b:Two. | held user | heard a:One. audio"
 
 # What the pill says after the steps. The playing session's key stands for its name.
+  # voice.catch_up. `answer: true` is an agent's answer; `draft: true` one kept raw during a pause.
+  - name: a pause keeps answers raw, and resume makes one draft per session where its oldest was
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: user}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: add, session: b, text: "B asks for an OK."}
+      - {op: add, session: a, text: "A two.", draft: true}
+      - {op: add, session: c, text: "C one.", draft: true}
+      - {op: release, hold: user}
+    want: "waiting a:A one. draft ×2, b:B asks for an OK., c:C one. draft"
+  - name: the answer playing when the pause began joins its session's catch-up
+    steps:
+      - {op: catch_up}
+      - {op: add, session: a, text: "A one. A two.", answer: true}
+      - {op: next}
+      - {op: hold, hold: user, at: 1}
+      - {op: add, session: a, text: "A three.", draft: true}
+      - {op: release, hold: user}
+    want: "waiting a:A one. draft ×2"
+  - name: a lone answer held mid-way resumes at its sentence, as without catch-up
+    steps:
+      - {op: catch_up}
+      - {op: add, session: a, text: "One. Two.", answer: true}
+      - {op: next}
+      - {op: hold, hold: user, at: 1}
+      - {op: release, hold: user}
+      - {op: next}
+    want: "playing a:Two. 1 of 1"
+  - name: a draft does not play before it is written, and nothing behind it plays
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: user}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: add, session: b, text: "B asks for an OK."}
+      - {op: release, hold: user}
+      - {op: next}
+    want: "waiting a:A one. draft, b:B asks for an OK."
+  - name: written, the draft plays its new words
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: user}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: add, session: b, text: "B asks for an OK."}
+      - {op: release, hold: user}
+      - {op: fill, id: 1, text: "While you were away: A is done."}
+      - {op: next}
+    want: "playing a:While you were away: A is done. 1 of 2 | waiting b:B asks for an OK."
+  - name: a failed call plays the plain answers it covers
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: user}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: add, session: a, text: "A two.", draft: true}
+      - {op: release, hold: user}
+      - {op: fill, id: 3}
+      - {op: next}
+    want: "playing a:A one. ×2 1 of 1"
+  - name: sessions play in the order of their oldest missed answer
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: user}
+      - {op: add, session: b, text: "B one.", draft: true}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: add, session: b, text: "B two.", draft: true}
+      - {op: add, session: a, text: "A two.", draft: true}
+      - {op: release, hold: user}
+    want: "waiting b:B one. draft ×2, a:A one. draft ×2"
+  - name: a prompt during the pause drops its session's answers before the catch-up
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: user}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: add, session: a, text: "A two.", draft: true}
+      - {op: add, session: b, text: "B one.", draft: true}
+      - {op: drop, session: a}
+      - {op: add, session: a, text: "A three.", draft: true}
+      - {op: release, hold: user}
+    want: "waiting b:B one. draft, a:A three. draft"
+  - name: a dictation alone does not gather answers
+    steps:
+      - {op: catch_up}
+      - {op: add, session: a, text: "A one.", answer: true}
+      - {op: add, session: a, text: "A two.", answer: true}
+      - {op: hold, hold: dictation}
+      - {op: release, hold: dictation}
+    want: "waiting a:A one., a:A two."
+  - name: with catch_up off, a resume plays every answer
+    steps:
+      - {op: hold, hold: user}
+      - {op: add, session: a, text: "A one.", answer: true}
+      - {op: add, session: a, text: "A two.", answer: true}
+      - {op: release, hold: user}
+    want: "waiting a:A one., a:A two."
+  - name: a call over while still paused does not gather yet
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: user}
+      - {op: hold, hold: call}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: add, session: a, text: "A two.", draft: true}
+      - {op: release, hold: call}
+    want: "waiting a:A one. draft, a:A two. draft | held user"
+  - name: the end of a call gathers like a resume
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: call}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: add, session: a, text: "A two.", draft: true}
+      - {op: release, hold: call}
+    want: "waiting a:A one. draft ×2"
+  - name: play now on a draft during a pause waits for its rewrite, then plays through the pause
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: user}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: ask, id: 1}
+      - {op: next}
+      - {op: fill, id: 1, text: "A is done."}
+      - {op: next}
+    want: "playing a:A is done. asked 1 of 1 | held user"
+  - name: skip on a catch-up skips that session's, and the next session's plays
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: user}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: add, session: a, text: "A two.", draft: true}
+      - {op: add, session: b, text: "B one.", answer: true}
+      - {op: release, hold: user}
+      - {op: fill, id: 4, text: "A is done."}
+      - {op: next}
+      - {op: skip}
+      - {op: next}
+    want: "playing b:B one. 2 of 2 | heard a:A is done. ×2"
+
 pill:
+  - name: between resume and the first word of a catch-up, it says which session and its place
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: user}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: add, session: a, text: "A two.", draft: true}
+      - {op: add, session: b, text: "B one.", draft: true}
+      - {op: release, hold: user}
+    want: "catching up · a · 1 of 2"
+  - name: one session to catch up on has no place
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: user}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: add, session: a, text: "A two.", draft: true}
+      - {op: release, hold: user}
+    want: "catching up · a"
+  - name: a draft rewritten after a dictation is not a catch-up
+    steps:
+      - {op: catch_up}
+      - {op: hold, hold: dictation}
+      - {op: add, session: a, text: "A one.", draft: true}
+      - {op: release, hold: dictation}
+    want: "nothing"
   - name: nothing plays, nothing shows
     steps:
       - {op: add, session: a, text: "One."}

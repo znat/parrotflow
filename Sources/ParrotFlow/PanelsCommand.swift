@@ -836,6 +836,7 @@ enum PanelsCommand {
             .call(app: "Zoom"),
             .call(app: "Microsoft Teams"),
             .callOver(waiting: 3),
+            .catchingUp(name: glow, status: "1 of 3"),
         ].map { pill(.voice($0), docked: .free) }
         // The offer before it is asked for: the bird and the key, and nothing
         // else. First because it is what every dictation now ends as — the ones
