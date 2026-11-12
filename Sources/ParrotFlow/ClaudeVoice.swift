@@ -874,9 +874,10 @@ final class ClaudeVoice {
             let at = rect.map(SpeakingFrame.describe) ?? "-"
             Log.write("claude voice: glow for \(session.project) (\(session.agent.rawValue) pid \(session.pid ?? 0)) on \(app), \(how) at \(at)")
         }
+        let rows = appRows(id, host: host)
         if let window = session.window ?? restorePin(id, host: host) {
             note("pinned", sessions[id]?.rect)
-            return frame.show(window: window, host: host, rect: sessions[id]?.rect)
+            return frame.show(window: window, host: host, rect: sessions[id]?.rect, narrow: rows)
         }
         guard let guess = SpeakingFrame.guessWindow(host: host, project: session.project) else {
             note("no pin and no safe guess, hidden", nil)
@@ -885,7 +886,16 @@ final class ClaudeVoice {
         sessions[id]?.window = guess
         sessions[id]?.rect = SpeakingFrame.frame(of: guess)
         note("guessed", sessions[id]?.rect)
-        frame.show(window: guess, host: host, rect: sessions[id]?.rect)
+        frame.show(window: guess, host: host, rect: sessions[id]?.rect, narrow: rows)
+    }
+
+    /// In the Claude app, a session other than the open one glows on its sidebar row.
+    private func appRows(_ id: String, host: pid_t) -> ((AXUIElement) -> CGRect?)? {
+        guard let session = sessions[id], session.agent == .claude,
+              let app = NSRunningApplication(processIdentifier: host), app.bundleIdentifier == session.agent.desktopApp,
+              let title = session.transcript.flatMap(session.agent.title(transcript:)) else { return nil }
+        ChromiumAccessibility.askIfNeeded(app)
+        return ClaudeAppRows(title: title).spot
     }
 
     private func keepPin(_ id: String, rect: CGRect) {
