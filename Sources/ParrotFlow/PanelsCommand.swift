@@ -837,6 +837,10 @@ enum PanelsCommand {
             .call(app: "Microsoft Teams"),
             .callOver(waiting: 3),
         ].map { pill(.voice($0), docked: .free) }
+        let voiceKeys = VoiceKeys(pause: "⌃⌥P", skip: "⌃⌥S")
+        for model in voices { model.voiceKeys = voiceKeys }
+        let unbound = [VoicePill.speaking(name: glow, status: "2 waiting", goToSession: true), .paused(waiting: 3)]
+            .map { pill(.voice($0), docked: .free) }
         // The offer before it is asked for: the bird and the key, and nothing
         // else. First because it is what every dictation now ends as — the ones
         // below are what it becomes when you rest on it.
@@ -1151,7 +1155,7 @@ enum PanelsCommand {
              pillSize(notice), nil, true),
             (AnyView(PillView().environmentObject(caution)),
              pillSize(caution), nil, true),
-        ] + voices.map { (AnyView(PillView().environmentObject($0)), pillSize($0), nil, true) } + [
+        ] + (voices + unbound).map { (AnyView(PillView().environmentObject($0)), pillSize($0), nil, true) } + [
             // What every dictation now ends as, and what the rest of this
             // block is that surface opened. Next to the notices because that is
             // the comparison that matters: it has to not look like one, and at
@@ -1336,7 +1340,7 @@ enum PanelsCommand {
     private static func pillSize(_ model: PillModel) -> NSSize {
         PillMetrics.panelSize(
             for: model.state, hasIcon: model.appIcon != nil, hotkey: model.hotkey,
-            dock: model.docked
+            dock: model.docked, voiceKeys: model.voiceKeys
         )
     }
 
@@ -1425,14 +1429,15 @@ enum PanelsCommand {
             pill.notice("Grammar copied — this app won't let me edit it", tone: .caution, duration: nil)
         case "failure":
             pill.notice("Ollama is not running on localhost:11434", tone: .failure, duration: nil)
-        case "speaking", "paused":
+        case "speaking", "paused", "speaking-unbound", "paused-unbound":
             let speaking = VoicePill.speaking(name: "parrotflow · fixing the glow", status: "2 waiting", goToSession: true)
+            pill.model.voiceKeys = surface.hasSuffix("-unbound") ? VoiceKeys() : VoiceKeys(pause: "⌃⌥P", skip: "⌃⌥S")
             pill.model.onPauseVoice = { pill.voice(.paused(waiting: 2)) }
             pill.model.onSkipVoice = {
                 pill.voice(.speaking(name: "parrotflow · fixing the glow", status: "1 waiting", goToSession: true))
             }
             pill.model.onResumeVoice = { pill.voice(speaking) }
-            pill.voice(surface == "paused" ? .paused(waiting: 2) : speaking)
+            pill.voice(surface.hasPrefix("paused") ? .paused(waiting: 2) : speaking)
         case "alert":
             hold = max(seconds, AppDelegate.alertSeconds)
             // The grammar transform's shipped `failed:`, word for word.
@@ -1784,7 +1789,7 @@ enum PanelsCommand {
             sizer.window = preview
             setupWindow = preview
         default:
-            print("usage: ParrotFlow --panels <notice|caution|failure|speaking|paused|alert|thinking|offer"
+            print("usage: ParrotFlow --panels <notice|caution|failure|speaking|paused|speaking-unbound|paused-unbound|alert|thinking|offer"
                 + "|confidence|vocabulary|punctuation|rule|proposal|proposal-light"
                 + "|proposal-dark|dictation|preview|microphone"
                 + "|keyboard|pill|learn|learn-long|selector|selector-long|selector-two"
