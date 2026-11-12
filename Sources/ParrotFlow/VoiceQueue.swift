@@ -15,13 +15,28 @@ struct VoiceQueue {
         case call
     }
 
+    /// A real answer as the agent wrote it, kept for a rewrite or a catch-up.
+    struct Reply: Equatable {
+        var request: String?
+        /// Cleaned, its table rows kept.
+        var reply: String
+        var recap: String?
+        var earlier: ClaudeSpeakable.Earlier?
+        var language: String
+        /// As written, for its own language.
+        var written: String
+        /// What is said without a model: the recap, else `ClaudeSpeakable.plainAnswer`.
+        var plain: String
+        var at = Date()
+    }
+
     struct Entry: Equatable {
         let id: Int
         let session: String
-        let text: String
+        fileprivate(set) var text: String
         /// Split as `Speaker.say` splits, so a sentence index means the same in both.
-        let sentences: [String]
-        let style: Speaker.Style?
+        fileprivate(set) var sentences: [String]
+        fileprivate(set) var style: Speaker.Style?
         let localVoice: String?
         let added: Date
         /// The sentence to start from: the one that was playing when it was held.
@@ -30,6 +45,12 @@ struct VoiceQueue {
         fileprivate(set) var asked = false
         /// Each sentence's samples, kept for a replay. Nil when not made in one go.
         fileprivate(set) var audio: [[Float]]?
+        /// The answers it says: one, or several in a catch-up. None for a notification or a question.
+        fileprivate(set) var replies: [Reply] = []
+        /// `text` is the plain fallback until a model call fills it. It does not play before.
+        fileprivate(set) var draft = false
+        /// A catch-up the model wrote: its opener names the session.
+        fileprivate(set) var opened = false
 
         var remaining: [String] { Array(sentences[resume...]) }
     }
@@ -49,31 +70,65 @@ struct VoiceQueue {
     private var played = 0
     /// The run playing now began when a hold let go of a list.
     private(set) var resumed = false
+    /// `voice.catch_up`: after a pause or a call, a session's answers are said as one.
+    var catchUp = false
+    /// The run playing now is a catch-up.
+    private(set) var catchingUp = false
 
-    /// The playing answer's place in the run, and the run's length so far.
+    /// The playing answer's place in the run, and the run's length so far. Before a draft at
+    /// the head plays, its place.
     var place: (position: Int, count: Int)? {
-        playing.map { _ in (played + 1, played + 1 + waiting.count) }
+        if playing != nil { return (played + 1, played + 1 + waiting.count) }
+        return waiting.first?.draft == true ? (played + 1, played + waiting.count) : nil
     }
 
-    /// Nil, and nothing queued, when the text has nothing to say.
+    /// Nil, and nothing queued, when the text has nothing to say. Every text that enters the
+    /// queue loses its secrets here: it is logged and may go to a remote voice.
     @discardableResult
     mutating func add(
-        session: String, text: String, style: Speaker.Style? = nil, localVoice: String? = nil, at now: Date = Date()
+        session: String, text: String, style: Speaker.Style? = nil, localVoice: String? = nil, at now: Date = Date(),
+        reply: Reply? = nil, draft: Bool = false
     ) -> Int? {
+        let text = ClaudeSpeakable.spokenRedacted(text)
         let sentences = ClaudeSpeakable.sentences(ClaudeSpeakable.speakable(text))
         guard !sentences.isEmpty else { return nil }
         lastID += 1
-        waiting.append(Entry(id: lastID, session: session, text: text, sentences: sentences, style: style,
-                             localVoice: localVoice, added: now))
+        var entry = Entry(id: lastID, session: session, text: text, sentences: sentences, style: style,
+                          localVoice: localVoice, added: now)
+        entry.replies = reply.map { [$0] } ?? []
+        entry.draft = draft && reply != nil
+        waiting.append(entry)
         return lastID
     }
 
-    /// The answer to say now: nil while held, while one plays, or when none waits.
-    mutating func startNext() -> Entry? {
+    /// The answer due now, draft or not: nil while held, while one plays, or when none waits.
+    var due: Entry? {
         guard playing == nil, let next = waiting.first,
               holds.isEmpty || next.asked && holds.isSubset(of: [.user, .call]) else { return nil }
+        return next
+    }
+
+    /// The answer to say now. A draft waits for its text, and the rest wait behind it.
+    mutating func startNext() -> Entry? {
+        guard let next = due, !next.draft else { return nil }
         playing = waiting.removeFirst()
         return playing
+    }
+
+    /// A draft's text, written by a model. Nil keeps the plain fallback. False when `id` is gone.
+    @discardableResult
+    mutating func fill(_ id: Int, text: String?, style: Speaker.Style?) -> Bool {
+        guard let index = waiting.firstIndex(where: { $0.id == id && $0.draft }) else { return false }
+        let text = text.map(ClaudeSpeakable.spokenRedacted)
+        let sentences = text.map { ClaudeSpeakable.sentences(ClaudeSpeakable.speakable($0)) } ?? []
+        if let text, !sentences.isEmpty {
+            waiting[index].text = text
+            waiting[index].sentences = sentences
+            waiting[index].opened = waiting[index].replies.count > 1
+        }
+        waiting[index].style = style
+        waiting[index].draft = false
+        return true
     }
 
     func entry(_ id: Int) -> Entry? {
@@ -118,7 +173,37 @@ struct VoiceQueue {
 
     mutating func release(_ cause: Hold) {
         holds.remove(cause)
+        if catchUp, cause != .dictation, holds.isDisjoint(with: [.user, .call]) { gather() }
         if !waiting.isEmpty { resumed = true }
+    }
+
+    /// Per session, two or more answers become one draft where the oldest was, and the
+    /// answers it covers leave the list. Notifications and questions keep their place.
+    private mutating func gather() {
+        var first: [String: Int] = [:]
+        var kept: [Entry] = []
+        for entry in waiting {
+            guard !entry.replies.isEmpty else {
+                kept.append(entry)
+                continue
+            }
+            guard let at = first[entry.session] else {
+                first[entry.session] = kept.count
+                kept.append(entry)
+                continue
+            }
+            lastID += 1
+            let replies = kept[at].replies + entry.replies
+            let text = ClaudeSpeakable.spokenRedacted(replies.map(\.plain).joined(separator: " "))
+            var merged = Entry(id: lastID, session: entry.session, text: text,
+                               sentences: ClaudeSpeakable.sentences(ClaudeSpeakable.speakable(text)),
+                               style: nil, localVoice: kept[at].localVoice, added: kept[at].added)
+            merged.replies = replies
+            merged.draft = true
+            kept[at] = merged
+        }
+        waiting = kept
+        catchingUp = catchingUp || waiting.contains(where: \.draft)
     }
 
     /// Ignored unless `id` is the one playing: a late callback for a held answer. `audio`: every
@@ -141,7 +226,10 @@ struct VoiceQueue {
         }
         playing = nil
         played = waiting.isEmpty ? 0 : played + 1
-        if waiting.isEmpty { resumed = false }
+        if waiting.isEmpty {
+            resumed = false
+            catchingUp = false
+        }
     }
 
     /// The one playing is heard, as if it had ended.
@@ -162,6 +250,7 @@ struct VoiceQueue {
         if playing == nil, waiting.isEmpty {
             played = 0
             resumed = false
+            catchingUp = false
         }
         return dropped
     }
@@ -184,10 +273,13 @@ enum VoicePill: Equatable {
     case paused(waiting: Int)
     case call(app: String)
     case callOver(waiting: Int)
+    /// Between Resume and the first word of a catch-up: "1 of 3" or nil.
+    case catchingUp(name: String, status: String?)
 
     /// A dictation hold alone shows nothing: the recording pill has the screen.
-    /// `name` is the playing session's; nil shows nothing. A call shows only while answers wait.
-    /// An answer asked for from the menu shows as speaking, even through a pause.
+    /// `name` is the playing session's, or the catch-up's being written; nil shows nothing. A call
+    /// shows only while answers wait. An answer asked for from the menu shows as speaking, even
+    /// through a pause.
     static func of(_ queue: VoiceQueue, name: String?, goToSession: Bool, call: VoiceCall? = nil) -> VoicePill? {
         if queue.playing?.asked == true, let name {
             return .speaking(name: name, status: nil, goToSession: goToSession)
@@ -204,14 +296,13 @@ enum VoicePill: Equatable {
             guard case .on(let app)? = call, !queue.waiting.isEmpty else { return nil }
             return .call(app: app)
         }
-        guard queue.holds.isEmpty, queue.playing != nil, let name else { return nil }
-        let status: String?
-        if queue.resumed, let place = queue.place, place.count > 1 {
-            status = "\(place.position) of \(place.count)"
-        } else {
-            status = waiting(queue.waiting.count)
+        guard queue.holds.isEmpty, let name else { return nil }
+        let place = queue.place.flatMap { queue.resumed && $0.count > 1 ? "\($0.position) of \($0.count)" : nil }
+        if queue.playing == nil, queue.catchingUp, queue.waiting.first?.draft == true {
+            return .catchingUp(name: name, status: place)
         }
-        return .speaking(name: name, status: status, goToSession: goToSession)
+        guard queue.playing != nil else { return nil }
+        return .speaking(name: name, status: place ?? waiting(queue.waiting.count), goToSession: goToSession)
     }
 
     /// None when nothing waits.
@@ -228,6 +319,8 @@ enum VoicePill: Equatable {
             return "paused · \(app) is using the mic"
         case .callOver(let waiting):
             return "call over · \(waiting) waiting"
+        case .catchingUp(let name, let status):
+            return ["catching up · " + name, status].compactMap { $0 }.joined(separator: " · ")
         }
     }
 }

@@ -573,6 +573,10 @@ enum ConfigSchema {
             key("pause_during_calls", .bool,
                 "Holds the voice while another app uses the mic, as on a call. Answers wait.",
                 default: defaults.pauseDuringCalls),
+            key("catch_up", .bool,
+                "After a pause or a call, a session with two or more answers you missed gets one spoken"
+                    + " summary. false: each answer is said.",
+                default: defaults.catchUp),
         ])
     }
 

@@ -1550,6 +1550,7 @@ voice:
   pause_key: { key: p, modifiers: [control, option] }  # pause and resume; none turns it off
   skip_key: { key: s, modifiers: [control, option] }   # skip the answer playing; none turns it off
   pause_during_calls: true  # hold the voice while another app uses the mic
+  catch_up: true            # after a pause, one summary per session with 2+ missed answers
 ```
 
 Each session takes the first voice no active session holds, and keeps it.
@@ -1716,6 +1717,32 @@ between calls; set `pause_during_calls: false` if one does. The log says
 `claude voice: call started (Zoom), held` and `claude voice: call over (Zoom),
 3 waiting`.
 
+### Catching up after a pause
+
+With `catch_up: true`, the default, the voice does not read every answer you
+missed. When a pause or a call ends, each session with two or more answers
+gets one summary: where the work ended up, then what comes next if the agent
+said so. It starts with the time away, like "While you were away, about an
+hour, in parrotflow:". A session with one answer says it as usual. Sessions
+play one after another, in the order of their oldest missed answer, with a
+second of silence between them. Until the first one is written, the pill says
+"Catching up · parrotflow · 1 of 3".
+
+Only an agent's answer at the end of its turn counts. Notifications and
+permission requests play as before. An answer that comes during the pause is
+not rewritten then: the model gets it on resume. A new prompt in a session
+drops what that session said before it, so the summary covers only the
+answers after your latest prompt. The answer that was playing when you paused
+joins its session's summary. A dictation alone does not catch up: the answer
+it held picks up at its sentence.
+
+The summary is one entry under **Answers**, with **Play again**; the answers
+it covers leave the list. **Skip** skips that session's summary. When the
+model fails, each answer is said plain, as with no model. The log says
+`claude voice: catch-up parrotflow, 3 answers over about an hour`, and the
+reason when it falls back. The time away survives a relaunch. `catch_up:
+false` plays every answer in order, as before.
+
 ### Answers
 
 The Voice section's **Answers** submenu lists the answers waiting, in the
@@ -1755,13 +1782,14 @@ on `gemma`. A fast hosted model suits this job better.
 
 ### Prompts
 
-The voice sends `model` three prompts. Each one is a file you can replace:
+The voice sends `model` four prompts. Each one is a file you can replace:
 
 | File | What the model writes |
 |---|---|
 | `rewrite.md` | the spoken answer at the end of a turn, its opener and its tone |
 | `explain.md` | the progress line while the agent works. The app picks one of its numbered openings at random for each line, never the same twice in a row |
 | `reminder.md` | the reminder of what a session is about |
+| `catch-up.md` | after a pause, one summary of a session's missed answers, its opener and its tone |
 
 The built-in text ships with the app. On every launch the app copies it to
 `voice/built-in/` in the config folder, so you can read what it uses. That
@@ -1778,6 +1806,7 @@ To change a prompt, copy its file one folder up and edit the copy:
       rewrite.md
       explain.md
       reminder.md
+      catch-up.md
 ```
 
 The file is read again for each line, so the next line uses it, with no
@@ -1788,7 +1817,7 @@ prompt in use for each: `· voice explain built-in`, or the path of your file.
 
 The reply format is not in these files. The app adds it after your text, so
 your prompt only changes the instructions, and it cannot break what the code
-reads. For `rewrite`, the app asks for JSON with `opener`, `say`, `tone` and
+reads. For `rewrite` and `catch-up`, the app asks for JSON with `opener`, `say`, `tone` and
 `task`, where `task` is two or three lowercase words for the pill. For
 `explain` and `reminder`, it asks for the sentence alone. Do not write a reply
 format of your own. If a reply to `rewrite` is not that JSON anyway, a short

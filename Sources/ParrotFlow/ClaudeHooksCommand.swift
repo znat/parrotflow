@@ -9,6 +9,7 @@ import Yams
 ///   --uninstall-claude-hooks
 ///   --claude-voice-test <cases> score the text rules, no audio
 ///   --claude-spoken <file>      what the last turn of a transcript would say
+///   --claude-catch-up <file>    what a session's missed answers would say after a pause
 ///   --claude-say "<text>"       say it through PocketTTS or the remote voice
 enum ClaudeHooksCommand {
 
@@ -349,10 +350,14 @@ enum ClaudeHooksCommand {
             enum CodingKeys: String, CodingKey { case name, steps, want, audioLimit = "audio_limit" }
         }
         /// `ago`: an add's age in seconds. `samples`: a finish made each sentence whole, this long.
+        /// `answer`: an agent's answer, not a notification; `draft` too: kept raw. `catch_up` turns it on.
         struct QueueStep: Decodable {
-            enum Operation: String, Decodable { case add, next, hold, release, finish, skip, drop, progress, ask }
+            enum Operation: String, Decodable {
+                case add, next, hold, release, finish, skip, drop, progress, ask, fill
+                case catchUp = "catch_up"
+            }
             var op: Operation; var session: String?; var text: String?; var hold: VoiceQueue.Hold?; var at: Int?
-            var id: Int?; var ago: Double?; var samples: Int?
+            var id: Int?; var ago: Double?; var samples: Int?; var answer: Bool?; var draft: Bool?
         }
         var queue: [Queue] = []
         /// The Answers submenu after `steps`. `known`: the sessions with a window to go to.
@@ -489,7 +494,8 @@ enum ClaudeHooksCommand {
         if let problem { return problem }
         func entry(_ entry: VoiceQueue.Entry) -> String {
             entry.session + ":" + (entry.remaining.first ?? "") + (entry.asked ? " asked" : "")
-                + (entry.audio == nil ? "" : " audio")
+                + (entry.audio == nil ? "" : " audio") + (entry.draft ? " draft" : "")
+                + (entry.replies.count > 1 ? " ×\(entry.replies.count)" : "") + (entry.opened ? " opened" : "")
         }
         var parts: [String] = []
         if let playing = queue.playing, let place = queue.place {
@@ -507,7 +513,8 @@ enum ClaudeHooksCommand {
         let (queue, _, problem) = play(item.steps)
         if let problem { return problem }
         let call: VoiceCall? = item.call.map { ["over": .over, "dismissed": .dismissed][$0] ?? .on($0) }
-        let pill = VoicePill.of(queue, name: queue.playing?.session, goToSession: item.outOfSight ?? false, call: call)
+        let name = queue.playing?.session ?? queue.waiting.first?.session
+        let pill = VoicePill.of(queue, name: name, goToSession: item.outOfSight ?? false, call: call)
         return pill?.summary ?? "nothing"
     }
 
@@ -533,7 +540,15 @@ enum ClaudeHooksCommand {
         for step in steps {
             switch step.op {
             case .add:
-                queue.add(session: step.session ?? "", text: step.text ?? "", at: stepsNow - (step.ago ?? 0))
+                let text = step.text ?? ""
+                let reply = step.answer == true || step.draft == true
+                    ? VoiceQueue.Reply(reply: text, language: "en", written: text, plain: text) : nil
+                queue.add(session: step.session ?? "", text: text, at: stepsNow - (step.ago ?? 0), reply: reply,
+                          draft: step.draft == true)
+            case .catchUp: queue.catchUp = true
+            case .fill:
+                guard let id = step.id else { return (queue, progress, "a fill step needs id:") }
+                queue.fill(id, text: step.text, style: nil)
             case .next: _ = queue.startNext()
             case .hold, .release:
                 guard let cause = step.hold else { return (queue, progress, "a \(step.op.rawValue) step needs hold:") }
@@ -740,6 +755,33 @@ enum ClaudeHooksCommand {
               got: ClaudeSpeakable.explainInput(tool: "Bash", input: [:], context: nil, opening: 3,
                                                 said: ["Now the tests.", "Counting proposals."]),
               want: "Language: English\nTool: Bash\nOpening: 3\nAlready said:\n- Now the tests.\n- Counting proposals.")
+        let missed = [
+            VoiceQueue.Reply(reply: "The tests failed on the cache.", language: "en", written: "",
+                             plain: "", at: now - 3_000),
+            VoiceQueue.Reply(reply: "Fixed: token=abc123 was stale.", recap: "All 40 tests pass.", language: "en",
+                             written: "", plain: "", at: now - 120),
+        ]
+        check("a catch-up gets the time away, the request, and each reply with its age",
+              got: ClaudeSpeakable.catchUpInput(project: "parrotflow", away: 3_900, request: "fix the tests",
+                                                replies: missed, now: now),
+              want: "Language: English\n\nProject: parrotflow\n\nAway: about an hour\n\nRequest: fix the tests."
+                + "\n\nReply 1, 50 min ago:\nThe tests failed on the cache.\n\nReply 2, 2 min ago:\n"
+                + "Fixed: token=<redacted> was stale.\nRecap: All 40 tests pass.")
+        check("a catch-up with no pause start says no time away",
+              got: ClaudeSpeakable.catchUpInput(project: "p", away: nil, request: nil, replies: [missed[0]],
+                                                language: "fr", now: now),
+              want: "Language: French\n\nProject: p\n\nReply 1, 50 min ago:\nThe tests failed on the cache.")
+        let longReply = VoiceQueue.Reply(reply: String(repeating: "Word word. ", count: 2_000), language: "en",
+                                         written: "", plain: "", at: now)
+        let three = ClaudeSpeakable.catchUpInput(project: "p", away: nil, request: nil,
+                                                 replies: [longReply, longReply, longReply], now: now)
+        check("the replies of a catch-up share one reply's budget",
+              got: "\(three.components(separatedBy: "[...]").count - 1) cut, "
+                + (three.count <= ClaudeSpeakable.replyBudget + 200 ? "within" : "over \(three.count)"),
+              want: "3 cut, within")
+        check("time away", got: [120, 1_500, 3_000, 5_000, 10_800, 172_800].map(ClaudeSpeakable.away)
+                .joined(separator: " | "),
+              want: "a few minutes | about 25 minutes | about an hour | about an hour | about 3 hours | about 2 days")
         check("a prompt's numbered openings",
               got: VoicePrompt.openings(in: "- a\n  1. Now\n  3. Next\n10. Ten\n3 no").map(String.init).joined(separator: ","),
               want: "1,3,10")
@@ -1195,12 +1237,14 @@ enum ClaudeHooksCommand {
         var said: ClaudeVoice.Spoken?
         let done = DispatchSemaphore(value: 0)
         Task.detached {
-            said = await ClaudeVoice.spoken(
-                turn: ended, written: nil, settings: config.voice, config: config,
-                toned: ClaudeVoice.remote(config.voice, config) != nil,
-                opening: VoicePrompt.opening(from: VoicePrompt.openings(in: VoicePrompt.rewrite.current?.text ?? ""),
-                                             after: nil)
-            )
+            if let reply = ClaudeVoice.prepared(turn: ended, written: nil) {
+                said = await ClaudeVoice.spoken(
+                    reply, settings: config.voice, config: config,
+                    toned: ClaudeVoice.remote(config.voice, config) != nil,
+                    opening: VoicePrompt.opening(
+                        from: VoicePrompt.openings(in: VoicePrompt.rewrite.current?.text ?? ""), after: nil)
+                )
+            }
             done.signal()
         }
         done.wait()
@@ -1210,6 +1254,44 @@ enum ClaudeHooksCommand {
         print("spoken:  \(said.map { redacted($0.text) } ?? "(nothing)")")
         print("tone:    \(said?.tone.map(redacted) ?? "(none)")")
         return 0
+    }
+
+    /// A session's missed answers through the catch-up prompt, as the app would say them. The file:
+    /// `{"project", "away": seconds, "request", "replies": [{"reply", "recap", "ago": seconds}]}`.
+    static func catchUp(_ path: String, config: Config) -> Int32 {
+        struct Missed: Decodable {
+            struct Reply: Decodable { var reply: String; var recap: String?; var ago: Double }
+            var project: String; var away: Double?; var request: String?; var replies: [Reply]
+        }
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        guard let data = try? Data(contentsOf: url), let missed = try? JSONDecoder().decode(Missed.self, from: data)
+        else {
+            print("✗ \(path) is not a catch-up case")
+            return 2
+        }
+        let now = Date()
+        let replies = missed.replies.compactMap { item in
+            ClaudeVoice.prepared(turn: ClaudeSpeakable.TurnEnd(answer: item.reply, recap: item.recap), written: nil,
+                                 request: missed.request).map { reply -> VoiceQueue.Reply in
+                var reply = reply
+                reply.at = now - item.ago
+                return reply
+            }
+        }
+        var said: ClaudeVoice.Spoken?
+        let started = Date()
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            said = await ClaudeVoice.caughtUp(replies, project: missed.project, away: missed.away,
+                                              request: missed.request, settings: config.voice, config: config,
+                                              toned: false)
+            done.signal()
+        }
+        done.wait()
+        print("plain:   \(ClaudeSpeakable.spokenRedacted(replies.map(\.plain).joined(separator: " ")))")
+        print(String(format: "spoken:  %@  (%.1fs)", said.map { ClaudeSpeakable.spokenRedacted($0.text) } ?? "(failed)",
+                     Date().timeIntervalSince(started)))
+        return said == nil ? 1 : 0
     }
 
     /// One `PreToolUse` payload through the explain prompt, as the app would say it.

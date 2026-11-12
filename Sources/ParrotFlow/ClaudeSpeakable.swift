@@ -217,6 +217,37 @@ enum ClaudeSpeakable {
         return parts.joined(separator: "\n\n")
     }
 
+    /// What the catch-up model is sent: the latest request, then the replies since, oldest
+    /// first, each with its age. They share one reply's budget.
+    static func catchUpInput(
+        project: String, away: TimeInterval?, request: String?, replies: [VoiceQueue.Reply],
+        language: String = "en", now: Date = Date()
+    ) -> String {
+        var parts = ["Language: " + languageName(language), "Project: " + project]
+        if let away { parts.append("Away: " + Self.away(away)) }
+        if let request, !request.isEmpty { parts.append("Request: " + String(redacted(clean(request)).prefix(800))) }
+        let budget = replyBudget / max(replies.count, 1)
+        for (index, item) in replies.enumerated() {
+            var lines = ["Reply \(index + 1), \(AnswersMenu.ago(item.at, now: now)):"]
+            if !item.reply.isEmpty { lines.append(headAndTail(redacted(item.reply), limit: budget)) }
+            if let recap = item.recap, !recap.isEmpty { lines.append("Recap: " + String(redacted(recap).prefix(800))) }
+            parts.append(lines.joined(separator: "\n"))
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// "a few minutes", "about 25 minutes", "about an hour", "about 3 hours", "about 2 days".
+    static func away(_ seconds: TimeInterval) -> String {
+        let minutes = Int((seconds / 60).rounded())
+        switch minutes {
+        case ..<10: return "a few minutes"
+        case ..<45: return "about \((minutes + 2) / 5 * 5) minutes"
+        case ..<90: return "about an hour"
+        case ..<2_160: return "about \(Int((Double(minutes) / 60).rounded())) hours"
+        default: return "about \(Int((Double(minutes) / 1_440).rounded())) days"
+        }
+    }
+
     /// About 24,000 characters, 6,000 tokens: whole for nearly every reply.
     static let replyBudget = 24_000
 

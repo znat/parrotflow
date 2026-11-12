@@ -377,6 +377,7 @@ enum CheckConfigCommand {
         emit("  · pause key         " + (config.voice.pauseKey?.display ?? "none"))
         emit("  · skip key          " + (config.voice.skipKey?.display ?? "none"))
         emit("  · during calls      " + (config.voice.pauseDuringCalls ? "paused" : "keeps speaking"))
+        emit("  · after a pause     " + (config.voice.catchUp ? "one summary per session" : "every answer"))
         for prompt in VoicePrompt.allCases {
             let label = "voice \(prompt.rawValue)".padding(toLength: 18, withPad: " ", startingAt: 0)
             if let problem = prompt.overrideProblem {
