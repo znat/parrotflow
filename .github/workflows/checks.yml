@@ -352,6 +352,11 @@ jobs:
       - name: A selection placed in the value
         run: scripts/check-app-offsets.sh
 
+      # Which row of a Ghostty pane an offset is drawn on, from readings taken
+      # on a real window.
+      - name: A row in a Ghostty pane
+        run: scripts/check-terminal-grid.sh
+
       # Not a validation set: it checks that the file a new install is written
       # with still teaches everything built-in/config.example.yaml documents.
       # That has drifted twice, both times silently.

@@ -169,6 +169,13 @@ a delay.
 
 ### Ghostty and VS Code cannot be fixed from here
 
+**Superseded for Ghostty, 2026-11-22.** `TerminalGrid` finds the input row on
+1.4.0 without a caret. The pane's tty gives the rows and columns, and
+`AXContentSize` of its scroll area gives the total rows. 20 of 20 readings
+matched the cursor row the terminal reported. A pane where it fails gets the
+`pane` rung: the left edge, above the bottom 102pt. The rest of this section is
+how it was.
+
 Ghostty has no caret to report at any moment. It *does* know where it is — it
 implements `firstRectForCharacterRange:actualRange:` for input methods — but that
 is published to the text input system, not to accessibility. VS Code builds no

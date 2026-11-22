@@ -1143,11 +1143,10 @@ can see where they are headed before you have said any of them. Where the app
 will not say where that is, it sits at the bottom of the screen instead. That is
 where it always used to be.
 
-Terminals split two ways, and it is worth knowing which one you are in. A pane
-running a full-screen program shows only what fits on the screen. Claude Code,
-vim and less all work this way, and the pill follows your words there. A pane
-sitting at an ordinary shell prompt keeps everything you have run in it, and the
-pill goes to the bottom of the screen.
+A terminal that will not say where its caret is still shows its input line, and
+the pill goes under that. In Ghostty this works at a shell prompt with history,
+in a split, and in Claude Code. When no input line can be found, the pill goes to
+the left edge of the pane, a few rows above its bottom.
 
 A rewrite that lands says nothing. The text is the confirmation — it changes
 where you are already looking, with the pill sitting under it — so a notice

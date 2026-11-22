@@ -305,6 +305,31 @@ enum SelectionReader {
         return rows[0..<last].reduce(0) { $0 + $1.utf16.count + 1 }
     }
 
+    /// The UTF-16 offset of the last character typed on the input line, looking
+    /// only at the lines that can be on a screen of `rows` rows.
+    static func lastInputOffset(in screen: String, rows: Int) -> Int? {
+        var screen = screen
+        let (above, tail) = screen.withUTF8 { bytes -> (Int, String) in
+            var start = bytes.count
+            var breaks = 0
+            while start > 0 {
+                if bytes[start - 1] == 0x0A {
+                    breaks += 1
+                    if breaks == rows { break }
+                }
+                start -= 1
+            }
+            return (bytes[..<start].reduce(0) { $0 + TerminalGrid.units(of: $1) },
+                    String(bytes: bytes[start...], encoding: .utf8) ?? "")
+        }
+        let lines = tail.components(separatedBy: "\n")
+        guard let last = inputRowNumber(in: lines) else { return nil }
+        let before = lines[..<last].reduce(0) { $0 + $1.utf16.count + 1 }
+        let typed = lines[last].reversed().drop { $0 == " " }
+            .reduce(0) { $0 + String($1).utf16.count }
+        return above + before + max(0, typed - 1)
+    }
+
     private static func inputRowNumber(in rows: [String]) -> Int? {
         let borders = rows.indices.filter { isBorder(rows[$0]) }
         if borders.count >= 2 {
