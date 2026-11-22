@@ -21,7 +21,9 @@ struct TerminalGrid {
     let topPadding: CGFloat
 
     init?(pane: CGSize, content: CGFloat, scale: CGFloat, ttys: [Size]) {
-        guard scale > 0, let size = Self.match(pane, scale: scale, in: ttys) else { return nil }
+        // `Int` traps on a number this large, and these come from another app.
+        guard scale > 0, [pane.width, pane.height, content].allSatisfy({ (0..<1e9).contains($0) }),
+              let size = Self.match(pane, scale: scale, in: ttys) else { return nil }
         let history = ((content - pane.height) * scale).rounded()
         guard history >= 0 else { return nil }
 
@@ -131,8 +133,8 @@ struct TerminalGrid {
     /// knows ASCII only.
     private static func width(of character: Character) -> Int {
         guard let scalar = character.unicodeScalars.first else { return 0 }
-        if scalar.value < 0x300 { return 1 }
         if character.unicodeScalars.contains(where: { $0.value == 0xFE0F }) { return 2 }
+        if scalar.value < 0x300 { return 1 }
         switch scalar.value {
         case 0x1100...0x115F, 0x2E80...0x303E, 0x3041...0xA4CF, 0xAC00...0xD7A3,
              0xF900...0xFAFF, 0xFE30...0xFE6F, 0xFF00...0xFF60, 0xFFE0...0xFFE6,
@@ -160,8 +162,11 @@ struct TerminalGrid {
         return list.prefix(bytes / stride).compactMap { process in
             let device = process.kp_eproc.e_tdev
             guard process.kp_eproc.e_ppid == app, device != -1, device != 0,
-                  seen.insert(device).inserted, let name = devname(device, S_IFCHR)
+                  seen.insert(device).inserted
             else { return nil }
+            // `devname` shares one buffer, and this runs on two threads.
+            var name = [CChar](repeating: 0, count: 64)
+            guard devname_r(device, S_IFCHR, &name, Int32(name.count)) != nil else { return nil }
             let file = open("/dev/" + String(cString: name), O_RDONLY | O_NOCTTY | O_NONBLOCK)
             guard file >= 0 else { return nil }
             defer { close(file) }

@@ -70,6 +70,19 @@ enum TerminalGridTests {
             String(repeating: "─", count: 10) + "\n@", "@", columns: 10), [2, 1])
         check("an emoji", at("🙂🙂🙂🙂🙂🙂\n@", "@", columns: 10), [3, 2])
 
+        for content in [CGFloat.infinity, .nan, 1e300, 0] {
+            check("a content height of \(content)",
+                  TerminalGrid(pane: pane, content: content, scale: 2, ttys: [tty])?.totalRows, nil)
+        }
+        check("a pane of infinite width", TerminalGrid(
+            pane: CGSize(width: CGFloat.infinity, height: 1197), content: 1197, scale: 2, ttys: [tty])?.rows, nil)
+        check("a keycap is two columns", TerminalGrid.drawn("1️⃣2️⃣3️⃣@", columns: 6, offset: 9).at, 1)
+        check("rows counted too many in the history", TerminalGrid(
+            pane: pane, content: 8524, scale: 2, ttys: [tty])?
+            .row(atUTF16: (lines(520) as NSString).length, in: lines(520) + prompt), 69)
+        check("the nearer of two sizes wins", TerminalGrid.match(
+            pane, scale: 2, in: [.init(rows: 69, columns: 255, pixelWidth: 4100, pixelHeight: 2380), tty]), tty)
+
         check("the second unit of an emoji",
               TerminalGrid.drawn("12345678🙂 ", columns: 10, offset: 9).at, 0)
         check("the end of the text",

@@ -39,7 +39,7 @@ enum InputRowTests {
               ["output", rule, "more", labelled, "❯ hello", rule, status], "❯ hello")
         check("a bare shell", ["output", "❯ ls"], "❯ ls")
         check("prose with dashes is not a rule",
-              ["output", "── see this ──> and that", "more", rule, "❯ ls"], "❯ ls")
+              ["output", "── see this ──> and that", "more", rule, "$ ls"], "$ ls")
         // A rewrite erases what isBorder bounds.
         if SelectionReader.isBorder(labelled) || !SelectionReader.isBorder(rule) {
             failed += 1
@@ -49,6 +49,19 @@ enum InputRowTests {
         check("a menu glyph above the box", ["❯ 1. yes", rule, "❯ hello", rule, status], "❯ hello")
         check("a box cut off above", ["❯ hello", rule, status], "❯ hello")
         check("nothing to type on", ["output", "more"], nil)
+
+        // Offsets in the history, past a screen of rows.
+        let history = (0..<200).map { "é line \($0)" }.joined(separator: "\n")
+        let long = history + "\n" + labelled + "\n❯ one two   \n" + rule + "\n" + status
+        let end = (long as NSString).range(of: "two").location + 2
+        for (what, got, want) in [
+            ("the last character typed, after a history", SelectionReader.lastInputOffset(in: long, rows: 10), end),
+            ("a prompt only in the history", SelectionReader.lastInputOffset(in: "❯ old\n" + history, rows: 10), nil),
+        ] as [(String, Int?, Int?)] {
+            if got == want { passed += 1; continue }
+            failed += 1
+            print("  ✗ \(what): got \(got as Any), want \(want as Any)")
+        }
 
         let emoji = "❯ 123456🙂 "
         let offset = SelectionReader.lastInputOffset(in: emoji, rows: 70) ?? -1
