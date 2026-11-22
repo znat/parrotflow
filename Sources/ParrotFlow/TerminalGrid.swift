@@ -1,70 +1,59 @@
 import Darwin
 import Foundation
 
-/// A Ghostty pane's grid, which accessibility does not give.
-///
 /// Measured on Ghostty 1.4.0. `AXVisibleCharacterRange` is the whole content,
-/// and `AXValue` joins soft wraps and drops the blank rows at the end. The
-/// pane's tty has the rows and columns. `AXContentSize` of its scroll area is
-/// every row, history included, times the row height, plus the padding.
+/// and `AXValue` joins soft wraps and drops the blank rows at the end.
+/// `AXContentSize` of the pane's scroll area is every row, history included,
+/// times the row height, plus the padding.
 struct TerminalGrid {
 
-    /// What `TIOCGWINSZ` answers, in cells and device pixels.
     struct Size: Equatable {
         let rows: Int
         let columns: Int
-        let width: Int
-        let height: Int
+        let pixelWidth: Int
+        let pixelHeight: Int
     }
 
     let rows: Int
     let columns: Int
-    /// Rows in the history and the screen, blank ones included.
-    let total: Int
-    /// Points.
-    let cell: CGFloat
-    /// Points above the first row.
-    let padding: CGFloat
+    let totalRows: Int
+    let rowHeight: CGFloat
+    let topPadding: CGFloat
 
-    /// Nil when the sizes do not agree with one another.
     init?(pane: CGSize, content: CGFloat, scale: CGFloat, ttys: [Size]) {
         guard scale > 0, let size = Self.match(pane, scale: scale, in: ttys) else { return nil }
         let history = ((content - pane.height) * scale).rounded()
         guard history >= 0 else { return nil }
 
-        let fits = Self.cells(of: size).filter { Int(history) % $0 == 0 }
+        let fits = Self.rowHeights(of: size).filter { Int(history) % $0 == 0 }
         // A short pane leaves more than one candidate. Panes of one app share a
         // font unless one was zoomed, so the tallest decides.
-        let tallest = ttys.max { $0.rows < $1.rows }.map(Self.cells) ?? []
+        let tallest = ttys.max { $0.rows < $1.rows }.map(Self.rowHeights) ?? []
         guard let pixels = fits.first(where: { tallest.contains($0) }) ?? fits.first else { return nil }
 
         rows = size.rows
         columns = size.columns
-        total = size.rows + Int(history) / pixels
-        cell = CGFloat(pixels) / scale
-        padding = max(0, (pane.height * scale - CGFloat(size.height)) / 2 / scale)
+        totalRows = size.rows + Int(history) / pixels
+        rowHeight = CGFloat(pixels) / scale
+        topPadding = max(0, (pane.height * scale - CGFloat(size.pixelHeight)) / 2 / scale)
     }
 
-    /// The row on screen, from 0, that a UTF-16 offset of the value is drawn on
-    /// once the pane is scrolled to its end. Nil when it is in the history.
-    func row(at offset: Int, in text: String) -> Int? {
+    /// From 0, once the pane is scrolled to its end. Nil in the history.
+    func row(atUTF16 offset: Int, in text: String) -> Int? {
         let (all, at) = Self.drawn(text, columns: columns, offset: offset)
         guard let at else { return nil }
         // A width counted wrong far up the history makes this negative.
-        let blank = max(0, total - all)
+        let blank = max(0, totalRows - all)
         let row = rows - blank - (all - at)
         return (0..<rows).contains(row) ? row : nil
     }
 
-    // MARK: - Parts
-
-    /// The tty whose pixels are this pane's, less its padding. Ghostty's
-    /// default padding is 2pt a side, 8 device pixels at scale 2.
+    /// Ghostty's default padding is 2pt a side, 8 device pixels at scale 2.
     static func match(_ pane: CGSize, scale: CGFloat, in ttys: [Size]) -> Size? {
         let slack = 0...Int(20 * scale)
         let near = ttys.compactMap { tty -> (size: Size, off: Int)? in
-            let dx = Int((pane.width * scale).rounded()) - tty.width
-            let dy = Int((pane.height * scale).rounded()) - tty.height
+            let dx = Int((pane.width * scale).rounded()) - tty.pixelWidth
+            let dy = Int((pane.height * scale).rounded()) - tty.pixelHeight
             guard tty.rows > 0, tty.columns > 0, slack.contains(dx), slack.contains(dy) else { return nil }
             return (tty, dx + dy)
         }
@@ -73,23 +62,18 @@ struct TerminalGrid {
         return tied.allSatisfy { $0.size == best.size } ? best.size : nil
     }
 
-    /// Row heights, in device pixels, that give this many rows.
-    static func cells(of size: Size) -> [Int] {
+    static func rowHeights(of size: Size) -> [Int] {
         guard size.rows > 0 else { return [] }
-        let high = size.height / size.rows
-        let low = size.height / (size.rows + 1) + 1
+        let high = size.pixelHeight / size.rows
+        let low = size.pixelHeight / (size.rows + 1) + 1
         return low <= high ? Array((low...high).reversed()) : []
     }
 
-    /// How many rows the text is drawn on, and which one the offset is on.
-    ///
     /// Bytes, because `String.utf16` indexing took 26 ms on 9,000 lines of 80.
     static func drawn(_ text: String, columns: Int, offset: Int) -> (all: Int, at: Int?) {
-        // Text from accessibility is a bridged string, slow to walk by UTF-8.
         var text = text
-        text.makeContiguousUTF8()
         return text.withUTF8 { bytes in
-            guard let target = byte(at: offset, in: bytes) else { return (0, nil) }
+            guard let target = byteIndex(ofUTF16: offset, in: bytes) else { return (0, nil) }
             var rows = 0
             var at: Int?
             var start = 0
@@ -116,19 +100,16 @@ struct TerminalGrid {
         }
     }
 
-    /// The byte a UTF-16 offset falls on.
-    private static func byte(at offset: Int, in bytes: UnsafeBufferPointer<UInt8>) -> Int? {
+    private static func byteIndex(ofUTF16 offset: Int, in bytes: UnsafeBufferPointer<UInt8>) -> Int? {
         var units = 0
         for index in bytes.indices {
             if units >= offset, bytes[index] & 0xC0 != 0x80 { return index }
-            units += self.units(of: bytes[index])
+            units += utf16Units(ofUTF8: bytes[index])
         }
         return units >= offset ? bytes.count : nil
     }
 
-    /// The UTF-16 units a UTF-8 byte adds: none inside a character, two for the
-    /// first byte of one past U+FFFF.
-    static func units(of byte: UInt8) -> Int {
+    static func utf16Units(ofUTF8 byte: UInt8) -> Int {
         byte & 0xC0 == 0x80 ? 0 : byte >= 0xF0 ? 2 : 1
     }
 
@@ -146,8 +127,8 @@ struct TerminalGrid {
         return (row + 1, at)
     }
 
-    /// Columns a character takes. `wcwidth` depends on the locale, and a bundled
-    /// app runs in C, where it knows ASCII only.
+    /// `wcwidth` depends on the locale, and a bundled app runs in C, where it
+    /// knows ASCII only.
     private static func width(of character: Character) -> Int {
         guard let scalar = character.unicodeScalars.first else { return 0 }
         if scalar.value < 0x300 { return 1 }
@@ -162,11 +143,8 @@ struct TerminalGrid {
         }
     }
 
-    // MARK: - The ttys
-
-    /// The window size of every tty an app's children run on. Its children are
-    /// `login`, which is root's, so `proc_pidinfo` refuses them and `sysctl`
-    /// does not.
+    /// The app's children are `login`, which is root's, so `proc_pidinfo`
+    /// refuses them and `sysctl` does not.
     static func ttys(of app: pid_t) -> [Size] {
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
         var bytes = 0
@@ -190,7 +168,7 @@ struct TerminalGrid {
             var size = winsize()
             guard ioctl(file, TIOCGWINSZ, &size) == 0 else { return nil }
             return Size(rows: Int(size.ws_row), columns: Int(size.ws_col),
-                        width: Int(size.ws_xpixel), height: Int(size.ws_ypixel))
+                        pixelWidth: Int(size.ws_xpixel), pixelHeight: Int(size.ws_ypixel))
         }
     }
 }

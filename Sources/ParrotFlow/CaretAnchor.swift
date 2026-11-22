@@ -68,8 +68,7 @@ enum CaretAnchor {
         /// The bottom of the app's own window, for an app that answers
         /// nothing. A guess: their composer sits at the bottom.
         case window
-        /// The focused pane's left edge, above its last rows, for a terminal
-        /// whose input row could not be found. A guess.
+        /// The bottom of the focused pane, for a terminal. A guess.
         case pane
     }
 
@@ -261,7 +260,7 @@ enum CaretAnchor {
             var screen = screen
             screen.makeContiguousUTF8()
             guard let offset = SelectionReader.lastInputOffset(in: screen, rows: grid.rows),
-                  let row = grid.row(at: offset, in: screen)
+                  let row = grid.row(atUTF16: offset, in: screen)
             else { return .missed("nothing on screen looks like an input line") }
             return .found(rectangle(forRow: row, of: grid, in: pane))
         }
@@ -399,8 +398,6 @@ enum CaretAnchor {
         return Found(rect: strip, text: strip, source: .window)
     }
 
-    /// The focused pane's left edge, above its last rows, for a terminal whose
-    /// input row could not be found.
     static func pane(of element: AXUIElement?) -> Found? {
         guard Permissions.accessibility == .granted,
               let element, !SelectionReader.isOurs(element),
@@ -410,13 +407,11 @@ enum CaretAnchor {
         return Found(rect: row, text: row, source: .pane)
     }
 
-    /// The row the pill hangs under: high enough to leave the rows below clear,
-    /// or the pane's top row when it is too short for that.
     static func paneRow(in pane: NSRect) -> NSRect {
         // About six rows at 17pt: a prompt, or an empty Claude Code input box
         // with its borders and status lines.
-        let clear: CGFloat = 102
         let height: CGFloat = 17
+        let clear = 6 * height
         let row = min(
             pane.minY + clear + PillMetrics.height + PillMetrics.dockGap, pane.maxY - height)
         return NSRect(x: pane.minX, y: row, width: pane.width, height: height)
@@ -590,7 +585,7 @@ enum CaretAnchor {
         // answer for its own reasons and not only for that bug.
         if isGhostty(element) {
             guard let grid = ghosttyGrid(of: element, pane: pane),
-                  let row = grid.row(at: head + length - 1, in: now)
+                  let row = grid.row(atUTF16: head + length - 1, in: now)
             else { return .missed("no tty matches the pane, or the words are not on screen") }
             return .found(rectangle(forRow: row, of: grid, in: pane))
         }
@@ -609,13 +604,11 @@ enum CaretAnchor {
             == "com.mitchellh.ghostty"
     }
 
-    /// `pane` is in Cocoa coordinates.
     private static func ghosttyGrid(
         of element: AXUIElement, pane: NSRect, before deadline: Deadline? = nil
     ) -> TerminalGrid? {
         var pid: pid_t = 0
         guard AXUIElementGetPid(element, &pid) == .success else { return nil }
-        // The window's scale, which is the screen most of the pane is on.
         let scale = NSScreen.screens.max {
             area($0.frame.intersection(pane)) < area($1.frame.intersection(pane))
         }?.backingScaleFactor
@@ -650,8 +643,8 @@ enum CaretAnchor {
         forRow row: Int, of grid: TerminalGrid, in pane: NSRect
     ) -> Found {
         let rect = NSRect(
-            x: pane.minX, y: pane.maxY - grid.padding - CGFloat(row + 1) * grid.cell,
-            width: pane.width, height: grid.cell)
+            x: pane.minX, y: pane.maxY - grid.topPadding - CGFloat(row + 1) * grid.rowHeight,
+            width: pane.width, height: grid.rowHeight)
         return Found(rect: rect, text: rect, source: .landed)
     }
 

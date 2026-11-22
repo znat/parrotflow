@@ -1,6 +1,5 @@
 import Foundation
 
-/// Which row of a terminal's text is being typed on.
 extension SelectionReader {
 
     /// The UTF-16 index of the row being typed on.
@@ -15,8 +14,6 @@ extension SelectionReader {
         return rows[0..<last].reduce(0) { $0 + $1.utf16.count + 1 }
     }
 
-    /// The UTF-16 offset of the last character typed on the input line, looking
-    /// only at the lines that can be on a screen of `rows` rows.
     static func lastInputOffset(in screen: String, rows: Int) -> Int? {
         var screen = screen
         let (above, tail) = screen.withUTF8 { bytes -> (Int, String) in
@@ -29,7 +26,7 @@ extension SelectionReader {
                 }
                 start -= 1
             }
-            return (bytes[..<start].reduce(0) { $0 + TerminalGrid.units(of: $1) },
+            return (bytes[..<start].reduce(0) { $0 + TerminalGrid.utf16Units(ofUTF8: $1) },
                     String(bytes: bytes[start...], encoding: .utf8) ?? "")
         }
         let lines = tail.components(separatedBy: "\n")
@@ -60,8 +57,6 @@ extension SelectionReader {
         }
     }
 
-    /// A box's top rule with a label in it: `────── a name ─`. Not in `isBorder`,
-    /// which also decides what a rewrite erases.
     private static func isLabelledRule(_ row: String) -> Bool {
         let bare = row.trimmingCharacters(in: .whitespaces)
         return bare.hasPrefix("──") && bare.hasSuffix("─")

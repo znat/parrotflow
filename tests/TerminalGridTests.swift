@@ -14,11 +14,11 @@ enum TerminalGridTests {
     }
 
     static let pane = CGSize(width: 2056, height: 1197)
-    static let tty = TerminalGrid.Size(rows: 70, columns: 256, width: 4104, height: 2386)
+    static let tty = TerminalGrid.Size(rows: 70, columns: 256, pixelWidth: 4104, pixelHeight: 2386)
     static let others = [
-        TerminalGrid.Size(rows: 68, columns: 256, width: 4104, height: 2314),
-        TerminalGrid.Size(rows: 49, columns: 254, width: 4066, height: 1688),
-        TerminalGrid.Size(rows: 68, columns: 84, width: 1352, height: 2314),
+        TerminalGrid.Size(rows: 68, columns: 256, pixelWidth: 4104, pixelHeight: 2314),
+        TerminalGrid.Size(rows: 49, columns: 254, pixelWidth: 4066, pixelHeight: 1688),
+        TerminalGrid.Size(rows: 68, columns: 84, pixelWidth: 1352, pixelHeight: 2314),
     ]
     static let prompt = "❯ PFMARK"
 
@@ -27,7 +27,7 @@ enum TerminalGridTests {
     static func row(_ text: String, content: CGFloat) -> Int? {
         let grid = TerminalGrid(pane: pane, content: content, scale: 2, ttys: others + [tty])
         let mark = (text as NSString).range(of: "PFMARK").location
-        return grid?.row(at: mark, in: text).map { $0 + 1 }
+        return grid?.row(atUTF16: mark, in: text).map { $0 + 1 }
     }
 
     static func main() {
@@ -41,21 +41,20 @@ enum TerminalGridTests {
         check("off screen, in the history", row(prompt + "\n" + lines(500), content: 8524), nil)
 
         let grid = TerminalGrid(pane: pane, content: 8524, scale: 2, ttys: [tty])
-        check("row height", grid?.cell, 17)
-        check("padding", grid?.padding, 2)
-        check("total rows", grid?.total, 501)
+        check("row height", grid?.rowHeight, 17)
+        check("padding", grid?.topPadding, 2)
+        check("total rows", grid?.totalRows, 501)
         check("content that is not whole rows",
-              TerminalGrid(pane: pane, content: 8530, scale: 2, ttys: [tty])?.total, nil)
+              TerminalGrid(pane: pane, content: 8530, scale: 2, ttys: [tty])?.totalRows, nil)
         check("no tty of this size", TerminalGrid.match(pane, scale: 2, in: others), nil)
         check("two ttys, one size, different fonts", TerminalGrid.match(
-            pane, scale: 2, in: [tty, .init(rows: 80, columns: 290, width: 4104, height: 2386)]), nil)
+            pane, scale: 2, in: [tty, .init(rows: 80, columns: 290, pixelWidth: 4104, pixelHeight: 2386)]), nil)
         check("two ttys, one size, one font", TerminalGrid.match(pane, scale: 2, in: [tty, tty]), tty)
 
-        // 10 rows of 350px leave 32 to 35 as the row height.
-        let short = TerminalGrid.Size(rows: 10, columns: 256, width: 4104, height: 350)
-        check("a short pane alone", TerminalGrid.cells(of: short), [35, 34, 33, 32])
+        let short = TerminalGrid.Size(rows: 10, columns: 256, pixelWidth: 4104, pixelHeight: 350)
+        check("a short pane alone", TerminalGrid.rowHeights(of: short), [35, 34, 33, 32])
         check("a short pane takes the tallest pane's font", TerminalGrid(
-            pane: CGSize(width: 2056, height: 179), content: 179, scale: 2, ttys: [short, tty])?.cell, 17)
+            pane: CGSize(width: 2056, height: 179), content: 179, scale: 2, ttys: [short, tty])?.rowHeight, 17)
 
         func at(_ text: String, _ mark: String, columns: Int) -> [Int] {
             let got = TerminalGrid.drawn(

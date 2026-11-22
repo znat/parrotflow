@@ -12,7 +12,6 @@ enum InputRowTests {
     static let labelled = String(repeating: "─", count: 58) + " a session with a name ─"
     static let status = "  ⏵⏵ accept edits on (shift+tab to cycle)"
 
-    /// What is on the line the pill would open under.
     static func line(_ rows: [String]) -> String? {
         let screen = rows.joined(separator: "\n")
         guard let offset = SelectionReader.lastInputOffset(in: screen, rows: 70) else { return nil }
@@ -41,6 +40,11 @@ enum InputRowTests {
         check("a bare shell", ["output", "❯ ls"], "❯ ls")
         check("prose with dashes is not a rule",
               ["output", "── see this ──> and that", "more", rule, "❯ ls"], "❯ ls")
+        // A rewrite erases what isBorder bounds.
+        if SelectionReader.isBorder(labelled) || !SelectionReader.isBorder(rule) {
+            failed += 1
+            print("  ✗ isBorder takes a plain rule and not a labelled one")
+        } else { passed += 1 }
         check("nothing to type on", ["output", "more"], nil)
 
         print(failed == 0 ? "  ✓ the input row (\(passed) cases)" : "  \(failed) failed, \(passed) passed")
