@@ -41,18 +41,15 @@ extension SelectionReader {
     }
 
     private static func inputRowNumber(in rows: [String]) -> Int? {
-        let borders = rows.indices.filter { isBorder(rows[$0]) }
-        if borders.count >= 2 {
-            let lower = borders[borders.count - 1]
-            let upper = borders[borders.count - 2]
-            if upper + 1 < lower {
-                // The last row inside the box with anything on it. A box is
-                // drawn its full height whatever is typed into it, so the
-                // bottom row is padding and anchoring there sits below the box.
-                return (upper + 1..<lower).last {
-                    !rows[$0].trimmingCharacters(in: .whitespaces).isEmpty
-                } ?? upper + 1
-            }
+        if let lower = rows.lastIndex(where: isBorder),
+           let upper = rows[..<lower].lastIndex(where: { isBorder($0) || isLabelledRule($0) }),
+           upper + 1 < lower {
+            // The last row inside the box with anything on it. A box is drawn
+            // its full height whatever is typed into it, so the bottom row is
+            // padding and anchoring there sits below the box.
+            return (upper + 1..<lower).last {
+                !rows[$0].trimmingCharacters(in: .whitespaces).isEmpty
+            } ?? upper + 1
         }
         // No box, so a bare shell. By the prompt glyph rather than the last row
         // with text on it, because a status bar sits below the shell and under
@@ -61,6 +58,13 @@ extension SelectionReader {
             guard let first = rows[$0].drop(while: { $0 == " " }).first else { return false }
             return "❯>$#%⏵".contains(first)
         }
+    }
+
+    /// A box's top rule with a label in it: `────── a name ─`. Not in `isBorder`,
+    /// which also decides what a rewrite erases.
+    private static func isLabelledRule(_ row: String) -> Bool {
+        let bare = row.trimmingCharacters(in: .whitespaces)
+        return bare.hasPrefix("──") && bare.hasSuffix("─")
     }
 
     /// A rule the TUI drew, rather than anything anyone typed.
