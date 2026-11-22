@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/znat/parrotflow/compare/v0.20.0...v0.20.1) (2026-11-22)
+
+
+### Fixes
+
+* the pill opens at the input line in Ghostty panes with history ([#450](https://github.com/znat/parrotflow/issues/450)) ([7e174e5](https://github.com/znat/parrotflow/commit/7e174e51bf25aee5d0322acf13666038c42416dc))
+
 ## [0.20.0](https://github.com/znat/parrotflow/compare/v0.19.0...v0.20.0) (2026-11-11)
 
 ### Highlights
