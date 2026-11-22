@@ -1692,9 +1692,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // why a read that does not finish in time refuses.
             //
             // And the landing must be under a minute old. Refused, the pill
-            // opens at the bottom of the screen and rung 4 moves it a moment
-            // later: starting nowhere in particular beats starting somewhere
-            // wrong.
+            // opens at the bottom of the screen, or of the pane in a terminal,
+            // and rung 4 moves it a moment later: starting nowhere in
+            // particular beats starting somewhere wrong.
             if anchorAtPress == nil {
                 if let last = lastLanding, let now = focusAtPress?.element,
                    CFEqual(last.element, now),
@@ -1705,6 +1705,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     )
                 } else {
                     Log.write("pill: no caret — \(why); will look for the words afterwards")
+                    if appAtPress.map({ AppProfile.of($0).readsPane }) == true {
+                        anchorAtPress = CaretAnchor.pane(of: focusAtPress?.element)
+                    }
                 }
             }
 

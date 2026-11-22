@@ -32,9 +32,9 @@ import ApplicationServices
 ///                    caret is doing — so there is nothing to place
 ///     VS Code        no focused element at all, only a window
 ///
-/// Three of five, and the two that do not answer cannot be made to: Ghostty has
-/// no caret to report and VS Code builds no accessibility tree unless it
-/// detects a screen reader.
+/// Three of five. Ghostty has no caret to report, so its input row comes from
+/// `TerminalGrid`. VS Code builds no accessibility tree unless it detects a
+/// screen reader.
 ///
 /// ## The apps that give no caret
 ///
@@ -68,6 +68,8 @@ enum CaretAnchor {
         /// The bottom of the app's own window, for an app that answers
         /// nothing. A guess: their composer sits at the bottom.
         case window
+        /// The bottom of the focused pane, for a terminal. A guess.
+        case pane
     }
 
     struct Found {
@@ -250,6 +252,19 @@ enum CaretAnchor {
               let screen = SelectionReader.visibleText(of: element, within: nil)
         else { return .missed("the terminal will not say what is on screen in time") }
 
+        if isGhostty(element) {
+            guard let grid = ghosttyGrid(of: element, pane: pane, before: deadline) else {
+                return .missed("no tty matches the pane, or the budget ran out")
+            }
+            // Once here: 11.6 ms on 738 KB, and both calls below would do it.
+            var screen = screen
+            screen.makeContiguousUTF8()
+            guard let offset = SelectionReader.lastInputOffset(in: screen, rows: grid.rows),
+                  let row = grid.row(atUTF16: offset, in: screen)
+            else { return .missed("nothing on screen looks like an input line") }
+            return .found(rectangle(forRow: row, of: grid, in: pane))
+        }
+
         guard let index = SelectionReader.lastInputRowIndex(in: screen) else {
             return .missed("nothing on screen looks like an input line")
         }
@@ -381,6 +396,25 @@ enum CaretAnchor {
             CGRect(x: x + width / 4, y: y + height - 96, width: width / 2, height: 44)
         )
         return Found(rect: strip, text: strip, source: .window)
+    }
+
+    static func pane(of element: AXUIElement?) -> Found? {
+        guard Permissions.accessibility == .granted,
+              let element, !SelectionReader.isOurs(element),
+              let pane = frame(of: element, before: Deadline(timeout)).map(flipped)
+        else { return nil }
+        let row = paneRow(in: pane)
+        return Found(rect: row, text: row, source: .pane)
+    }
+
+    static func paneRow(in pane: NSRect) -> NSRect {
+        // About six rows at 17pt: a prompt, or an empty Claude Code input box
+        // with its borders and status lines.
+        let height: CGFloat = 17
+        let clear = 6 * height
+        let row = min(
+            pane.minY + clear + PillMetrics.height + PillMetrics.dockGap, pane.maxY - height)
+        return NSRect(x: pane.minX, y: row, width: pane.width, height: height)
     }
 
     /// A fingerprint of what the pane is showing, read at the press.
@@ -549,11 +583,69 @@ enum CaretAnchor {
         // one thing this rung must never do. Below the last row is below all of
         // them, and it is also where the caret has ended up, so it is the right
         // answer for its own reasons and not only for that bug.
+        if isGhostty(element) {
+            guard let grid = ghosttyGrid(of: element, pane: pane),
+                  let row = grid.row(atUTF16: head + length - 1, in: now)
+            else { return .missed("no tty matches the pane, or the words are not on screen") }
+            return .found(rectangle(forRow: row, of: grid, in: pane))
+        }
+
         guard let row = line(of: head + length - 1, in: element),
               let grid = visibleGrid(of: element)
         else { return .missed("no bounds, and it will not say how the grid is laid out") }
 
         return rectangle(forRow: row, of: grid, in: pane, source: .landed)
+    }
+
+    private static func isGhostty(_ element: AXUIElement) -> Bool {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success else { return false }
+        return NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
+            == "com.mitchellh.ghostty"
+    }
+
+    private static func ghosttyGrid(
+        of element: AXUIElement, pane: NSRect, before deadline: Deadline? = nil
+    ) -> TerminalGrid? {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success else { return nil }
+        let scale = NSScreen.screens.max {
+            area($0.frame.intersection(pane)) < area($1.frame.intersection(pane))
+        }?.backingScaleFactor
+
+        var parent: CFTypeRef?
+        guard let scale, deadline?.arm(element) != false,
+              AXUIElementCopyAttributeValue(
+                  element, kAXParentAttribute as CFString, &parent) == .success,
+              let parent, CFGetTypeID(parent) == AXUIElementGetTypeID()
+        else { return nil }
+        let scroll = parent as! AXUIElement
+
+        var content: CFTypeRef?
+        var size = CGSize.zero
+        guard deadline?.arm(scroll) != false,
+              AXUIElementCopyAttributeValue(
+                  scroll, "AXContentSize" as CFString, &content) == .success,
+              let content, CFGetTypeID(content) == AXValueGetTypeID(),
+              AXValueGetValue(content as! AXValue, .cgSize, &size)
+        else { return nil }
+
+        return TerminalGrid(
+            pane: pane.size, content: size.height, scale: scale,
+            ttys: TerminalGrid.ttys(of: pid))
+    }
+
+    private static func area(_ rect: NSRect) -> CGFloat {
+        rect.isNull ? 0 : rect.width * rect.height
+    }
+
+    private static func rectangle(
+        forRow row: Int, of grid: TerminalGrid, in pane: NSRect
+    ) -> Found {
+        let rect = NSRect(
+            x: pane.minX, y: pane.maxY - grid.topPadding - CGFloat(row + 1) * grid.rowHeight,
+            width: pane.width, height: grid.rowHeight)
+        return Found(rect: rect, text: rect, source: .landed)
     }
 
     /// A grid row as a rectangle on screen.
