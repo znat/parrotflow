@@ -40,7 +40,8 @@ extension SelectionReader {
     private static func inputRowNumber(in rows: [String]) -> Int? {
         if let lower = rows.lastIndex(where: isBorder),
            let upper = rows[..<lower].lastIndex(where: { isBorder($0) || isLabelledRule($0) }),
-           upper + 1 < lower {
+           upper + 1 < lower,
+           !rows[lower...].contains(where: { $0.drop(while: { $0 == " " }).first == "❯" }) {
             // The last row inside the box with anything on it. A box is drawn
             // its full height whatever is typed into it, so the bottom row is
             // padding and anchoring there sits below the box.
@@ -52,7 +53,9 @@ extension SelectionReader {
         // with text on it, because a status bar sits below the shell and under
         // tmux it is always the last thing on screen.
         return rows.indices.reversed().first {
-            guard let first = rows[$0].drop(while: { $0 == " " }).first else { return false }
+            let row = rows[$0].drop(while: { $0 == " " })
+            // Claude Code's status line.
+            guard let first = row.first, !row.hasPrefix("⏵⏵") else { return false }
             return "❯>$#%⏵".contains(first)
         }
     }

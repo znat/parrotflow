@@ -70,6 +70,11 @@ enum TerminalGridTests {
             String(repeating: "─", count: 10) + "\n@", "@", columns: 10), [2, 1])
         check("an emoji", at("🙂🙂🙂🙂🙂🙂\n@", "@", columns: 10), [3, 2])
 
+        check("the second unit of an emoji",
+              TerminalGrid.drawn("12345678🙂 ", columns: 10, offset: 9).at, 0)
+        check("the end of the text",
+              TerminalGrid.drawn("123456789\n", columns: 10, offset: 10).at, 1)
+
         print(failed == 0 ? "  ✓ the terminal grid (\(passed) cases)" : "  \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }

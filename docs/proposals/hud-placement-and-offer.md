@@ -172,7 +172,9 @@ a delay.
 **Superseded for Ghostty, 2026-11-22.** `TerminalGrid` finds the input row on
 1.4.0 without a caret. The pane's tty gives the rows and columns, and
 `AXContentSize` of its scroll area gives the total rows. 20 of 20 readings
-matched the cursor row the terminal reported. A pane where it fails gets the
+matched the cursor row the terminal reported. They were taken before the scan
+was rewritten over bytes, and the window was not rerun; the rewrite matches the
+first version on random text. A pane where it fails gets the
 `pane` rung: the left edge, above the bottom 102pt. The rest of this section is
 how it was.
 

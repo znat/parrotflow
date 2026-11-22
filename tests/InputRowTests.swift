@@ -45,7 +45,18 @@ enum InputRowTests {
             failed += 1
             print("  ✗ isBorder takes a plain rule and not a labelled one")
         } else { passed += 1 }
+        check("a prompt under an old box", [rule, "❯ old", rule, "output", "❯ ls"], "❯ ls")
+        check("a menu glyph above the box", ["❯ 1. yes", rule, "❯ hello", rule, status], "❯ hello")
+        check("a box cut off above", ["❯ hello", rule, status], "❯ hello")
         check("nothing to type on", ["output", "more"], nil)
+
+        let emoji = "❯ 123456🙂 "
+        let offset = SelectionReader.lastInputOffset(in: emoji, rows: 70) ?? -1
+        let drawn = TerminalGrid.drawn(emoji, columns: 10, offset: offset)
+        if drawn.all == 2, drawn.at == 0 { passed += 1 } else {
+            failed += 1
+            print("  ✗ an emoji before a space that wraps: got \(drawn), want (2, 0)")
+        }
 
         print(failed == 0 ? "  ✓ the input row (\(passed) cases)" : "  \(failed) failed, \(passed) passed")
         exit(failed == 0 ? 0 : 1)

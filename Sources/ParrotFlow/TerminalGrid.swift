@@ -103,10 +103,10 @@ struct TerminalGrid {
     private static func byteIndex(ofUTF16 offset: Int, in bytes: UnsafeBufferPointer<UInt8>) -> Int? {
         var units = 0
         for index in bytes.indices {
-            if units >= offset, bytes[index] & 0xC0 != 0x80 { return index }
             units += utf16Units(ofUTF8: bytes[index])
+            if units > offset { return index }
         }
-        return units >= offset ? bytes.count : nil
+        return units == offset ? bytes.count : nil
     }
 
     static func utf16Units(ofUTF8 byte: UInt8) -> Int {
